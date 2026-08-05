@@ -23,6 +23,10 @@ import {
     isPettyCashBankAccount,
     validatePaymentLine,
 } from "@/app/api/fm/treasury/disbursements/_payment-method";
+import {
+    findMissingPayableDivisionError,
+    normalizeVatSplitDivisions,
+} from "@/app/api/fm/treasury/disbursements/_payable-split-integrity";
 
 // 1. Business Logic Code to Test (Usually resides in controllers/utilities)
 export function validateMutation(disbursement: Pick<Disbursement, "isPosted" | "status">) {
@@ -154,6 +158,36 @@ describe("Disbursement Module Core Business Rules", () => {
                 { coaId: 10, checkNo: "" },
                 "Office Expenses",
             )).toBe("Please select a bank account.");
+        });
+    });
+
+    describe("Payable cost division requirements", () => {
+        it("rejects a populated payable line without a Division", () => {
+            expect(findMissingPayableDivisionError([
+                { referenceNo: "INV-001", remarks: "Office supplies" },
+            ])).toBe("Cost Division is required on payable row 1.");
+        });
+
+        it("rejects zero, negative, and non-integer Division IDs", () => {
+            expect(findMissingPayableDivisionError([{ divisionId: 0 }])).toBe("Cost Division is required on payable row 1.");
+            expect(findMissingPayableDivisionError([{ divisionId: -2 }])).toBe("Cost Division is required on payable row 1.");
+            expect(findMissingPayableDivisionError([{ divisionId: 1.5 }])).toBe("Cost Division is required on payable row 1.");
+        });
+
+        it("accepts a positive integer Division ID", () => {
+            expect(findMissingPayableDivisionError([{ divisionId: 4 }])).toBeNull();
+        });
+
+        it("accepts VAT split rows after the principal Division cascades", () => {
+            const normalizedLines = normalizeVatSplitDivisions([
+                { referenceNo: "INV-002", remarks: "Principal Net of VAT", divisionId: 4 },
+                { referenceNo: "INV-002", remarks: "Input VAT (12%)" },
+                { referenceNo: "INV-002", remarks: "EWT Deduction (1%)" },
+            ]);
+
+            expect(normalizedLines[1].divisionId).toBe(4);
+            expect(normalizedLines[2].divisionId).toBe(4);
+            expect(findMissingPayableDivisionError(normalizedLines)).toBeNull();
         });
     });
     
