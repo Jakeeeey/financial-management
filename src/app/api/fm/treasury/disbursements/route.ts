@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
-import { findUnpostedPurchaseOrderReferences } from "./_purchase-order-eligibility";
+import {
+    findTaggedPurchaseOrderReferences,
+    findUnpostedPurchaseOrderReferences,
+} from "./_purchase-order-eligibility";
 import { findMissingPayableDivisionError, findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "./_payable-split-integrity";
 import { acquireMemoCapLock, validateSupplierMemoCaps } from "./_memo-cap-integrity";
 import { isPettyCashBankAccount, validatePaymentLine } from "./_payment-method";
@@ -1188,13 +1191,31 @@ export async function POST(request: NextRequest) {
         const memoCapError = await validateSupplierMemoCaps(Number(body.payeeId), requestedPayables);
         if (memoCapError) {
             return NextResponse.json({
-                message: "Supplier memo amount exceeds its authorized cap.",
+                message: memoCapError.isLocked
+                    ? "Supplier memo is currently locked by an unposted TR."
+                    : "Supplier memo amount exceeds its authorized cap.",
                 detail: memoCapError.message,
                 memoNumber: memoCapError.memoNumber,
                 authorizedAmount: memoCapError.authorizedAmount,
                 appliedAmount: memoCapError.appliedAmount,
                 requestedAmount: memoCapError.requestedAmount,
                 remainingAmount: memoCapError.remainingAmount,
+                isLocked: memoCapError.isLocked || false,
+                lockingTrDocNo: memoCapError.lockingTrDocNo || null,
+                lockingTrStatus: memoCapError.lockingTrStatus || null,
+                lockingTrCount: memoCapError.lockingTrCount || 0,
+            }, { status: 409 });
+        }
+
+        const taggedPoReferences = await findTaggedPurchaseOrderReferences(
+            requestedPayables.map((line) => line.referenceNo),
+            Number(body.payeeId),
+        );
+        if (taggedPoReferences.length > 0) {
+            return NextResponse.json({
+                message: "Disbursement cannot include purchase orders already tagged to an existing TR.",
+                detail: `Already-tagged references: ${taggedPoReferences.join(", ")}`,
+                references: taggedPoReferences,
             }, { status: 409 });
         }
 

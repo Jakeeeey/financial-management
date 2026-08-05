@@ -182,10 +182,12 @@ export const disbursementProvider = {
         return data as UnpaidPoDto[];
     },
 
-    getSupplierMemos: async (supplierId: number): Promise<MemoDto[]> => {
-        const res = await fetch(`/api/fm/treasury/disbursements/memos/${supplierId}`);
-        if (!res.ok) throw new Error("Failed to fetch supplier memos");
-        return res.json();
+    getSupplierMemos: async (supplierId: number, signal?: AbortSignal): Promise<MemoDto[]> => {
+        const res = await fetch(`/api/fm/treasury/disbursements/memos/${supplierId}`, { signal });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.detail || data?.message || "Failed to fetch supplier memos");
+        if (!Array.isArray(data)) throw new Error("Supplier memos returned an invalid response");
+        return (data as MemoDto[]).filter((memo) => Number(memo.supplier_id) === Number(supplierId));
     },
 
     getDivisions: async (): Promise<DivisionDto[]> => {

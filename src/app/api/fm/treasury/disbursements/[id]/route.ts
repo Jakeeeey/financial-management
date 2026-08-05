@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
 import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentInput, RelationValue, resolveEncoderId, cleanSupportingDocsUrl, getCoaMap, getDivisionMap, getBankMap, relationId, canonicalizeDisbursementPayload, canonicalizePersistedDisbursement, loadNormalizedDisbursement, DisbursementRow, findMissingPayableDateError, resolveTransactionTypeId } from "../route";
-import { findUnpostedPurchaseOrderReferences } from "../_purchase-order-eligibility";
+import {
+    findTaggedPurchaseOrderReferences,
+    findUnpostedPurchaseOrderReferences,
+} from "../_purchase-order-eligibility";
 import { findMissingPayableDivisionError, findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "../_payable-split-integrity";
 import { acquireMemoCapLock, refreshSupplierMemoStatuses, validateSupplierMemoCaps } from "../_memo-cap-integrity";
 import { isPettyCashBankAccount, validatePaymentLine } from "../_payment-method";
@@ -357,17 +360,28 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         }
 
         if (!isPaymentOnlyPartialEdit) {
+            const payableSupplierId = body.payeeId != null ? Number(body.payeeId) : currentPayeeId;
+            const taggedPoReferences = await findTaggedPurchaseOrderReferences(
+                requestedPayables.map((line) => line.referenceNo),
+                payableSupplierId,
+                id,
+            );
+            if (taggedPoReferences.length > 0) {
+                return NextResponse.json({
+                    message: "Disbursement cannot include purchase orders already tagged to another TR.",
+                    detail: `Already-tagged references: ${taggedPoReferences.join(", ")}`,
+                    references: taggedPoReferences,
+                }, { status: 409 });
+            }
+
             releaseMemoCapLock = await acquireMemoCapLock([
                 ...currentPayables.map((line) => ({ referenceNo: line.reference_no, amount: line.amount })),
                 ...payableLinesInput,
             ]);
 
-            const currentPayeeIdForEligibility = currentDis.payee && typeof currentDis.payee === "object" && "id" in currentDis.payee
-                ? Number(currentDis.payee.id)
-                : (typeof currentDis.payee === "number" ? currentDis.payee : Number(currentDis.payee));
             const unpostedPoReferences = await findUnpostedPurchaseOrderReferences(
                 requestedPayables.map((line) => line.referenceNo),
-                body.payeeId != null ? Number(body.payeeId) : currentPayeeIdForEligibility,
+                payableSupplierId,
             );
             if (unpostedPoReferences.length > 0) {
                 return NextResponse.json({
@@ -378,19 +392,25 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             }
 
             const memoCapError = await validateSupplierMemoCaps(
-                body.payeeId != null ? Number(body.payeeId) : currentPayeeIdForEligibility,
+                payableSupplierId,
                 requestedPayables,
                 id,
             );
             if (memoCapError) {
                 return NextResponse.json({
-                    message: "Supplier memo amount exceeds its authorized cap.",
+                    message: memoCapError.isLocked
+                        ? "Supplier memo is currently locked by an unposted TR."
+                        : "Supplier memo amount exceeds its authorized cap.",
                     detail: memoCapError.message,
                     memoNumber: memoCapError.memoNumber,
                     authorizedAmount: memoCapError.authorizedAmount,
                     appliedAmount: memoCapError.appliedAmount,
                     requestedAmount: memoCapError.requestedAmount,
                     remainingAmount: memoCapError.remainingAmount,
+                    isLocked: memoCapError.isLocked || false,
+                    lockingTrDocNo: memoCapError.lockingTrDocNo || null,
+                    lockingTrStatus: memoCapError.lockingTrStatus || null,
+                    lockingTrCount: memoCapError.lockingTrCount || 0,
                 }, { status: 409 });
             }
         }

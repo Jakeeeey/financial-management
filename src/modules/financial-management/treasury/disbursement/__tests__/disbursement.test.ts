@@ -8,8 +8,10 @@ import { Disbursement, PaymentLine } from "../types";
 import { sumLineAmounts } from "../../utils/line-amounts";
 import {
     isFullyPostedPurchaseOrder,
+    isPurchaseOrderReferenceTagged,
     isPostedReceivingAmount,
     postedReceivingRowsByPurchaseOrder,
+    purchaseOrderReferenceKeyFromParts,
 } from "@/app/api/fm/treasury/disbursements/_purchase-order-eligibility";
 import {
     normalizeDisbursementStatus,
@@ -27,6 +29,10 @@ import {
     findMissingPayableDivisionError,
     normalizeVatSplitDivisions,
 } from "@/app/api/fm/treasury/disbursements/_payable-split-integrity";
+import {
+    isMemoLockingDisbursementStatus,
+    shouldExposeSupplierMemo,
+} from "@/app/api/fm/treasury/disbursements/_memo-cap-integrity";
 
 // 1. Business Logic Code to Test (Usually resides in controllers/utilities)
 export function validateMutation(disbursement: Pick<Disbursement, "isPosted" | "status">) {
@@ -325,6 +331,34 @@ describe("Disbursement Module Core Business Rules", () => {
                 { isPosted: 1, is_posted_amounts: 1, is_reverted: 0 },
                 { isPosted: 1, is_posted_amounts: 1, is_reverted: 0 },
             ])).toBe(true);
+        });
+
+        it("matches an already-tagged PO reference regardless of separator spacing or case", () => {
+            const taggedReferences = new Set([
+                purchaseOrderReferenceKeyFromParts("PO-100", "RCV-01"),
+            ]);
+
+            expect(isPurchaseOrderReferenceTagged(" po-100 / rcv-01 ", taggedReferences)).toBe(true);
+            expect(isPurchaseOrderReferenceTagged("PO-100 / RCV-02", taggedReferences)).toBe(false);
+            expect(isPurchaseOrderReferenceTagged("Supplier memo 100", taggedReferences)).toBe(false);
+        });
+    });
+
+    describe("Supplier memo locks", () => {
+        it("locks every unposted TR workflow status", () => {
+            expect(["Draft", "Submitted", "Returned for Revision", "Approved", "Released", "Partially Released"]
+                .every(isMemoLockingDisbursementStatus)).toBe(true);
+        });
+
+        it("does not lock a memo after its TR is Posted", () => {
+            expect(isMemoLockingDisbursementStatus("Posted")).toBe(false);
+            expect(isMemoLockingDisbursementStatus("Deleted")).toBe(false);
+        });
+
+        it("keeps a fully allocated memo visible while an unposted TR holds it", () => {
+            expect(shouldExposeSupplierMemo({ remainingAmount: 0, isLocked: true })).toBe(true);
+            expect(shouldExposeSupplierMemo({ remainingAmount: 0, isLocked: false })).toBe(false);
+            expect(shouldExposeSupplierMemo({ remainingAmount: 50, isLocked: false })).toBe(true);
         });
     });
 
