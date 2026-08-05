@@ -17,6 +17,7 @@ interface SearchableDropdownProps<T extends string | number> {
     className?: string;
     popoverWidth?: string;
     overrideLabel?: string;
+    ariaInvalid?: boolean;
 }
 
 export function SearchableDropdown<T extends string | number>({
@@ -27,7 +28,8 @@ export function SearchableDropdown<T extends string | number>({
     disabled,
     className,
     popoverWidth = "w-[400px]",
-    overrideLabel
+    overrideLabel,
+    ariaInvalid,
 }: SearchableDropdownProps<T>) {
     const [open, setOpen] = useState(false);
     const listRef = React.useRef<HTMLDivElement>(null);
@@ -45,6 +47,7 @@ export function SearchableDropdown<T extends string | number>({
         <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger asChild>
                 <Button variant="outline" role="combobox" aria-expanded={open} disabled={disabled}
+                        aria-invalid={ariaInvalid}
                         className={cn("justify-between font-normal px-3", className)}>
                     <span className="truncate">{selectedLabel}</span>
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50"/>

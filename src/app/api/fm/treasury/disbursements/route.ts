@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
 import { findUnpostedPurchaseOrderReferences } from "./_purchase-order-eligibility";
-import { findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "./_payable-split-integrity";
+import { findMissingPayableDivisionError, findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "./_payable-split-integrity";
 import { acquireMemoCapLock, validateSupplierMemoCaps } from "./_memo-cap-integrity";
 import { isPettyCashBankAccount, validatePaymentLine } from "./_payment-method";
 
@@ -1111,6 +1111,10 @@ export async function POST(request: NextRequest) {
         const payableLinesInput = normalizedPayables.filter((line: PayableInput) =>
             !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.referenceNo && line.referenceNo.trim() !== "")
         );
+        const missingPayableDivisionError = findMissingPayableDivisionError(payableLinesInput);
+        if (missingPayableDivisionError) {
+            return NextResponse.json({ message: missingPayableDivisionError }, { status: 400 });
+        }
         const missingPayableDateError = findMissingPayableDateError(payableLinesInput);
         if (missingPayableDateError) {
             return NextResponse.json({ message: missingPayableDateError }, { status: 400 });
