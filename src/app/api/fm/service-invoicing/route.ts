@@ -279,6 +279,9 @@ export async function POST(request: NextRequest) {
         const finalGrossAmount = typeof gross_amount === "number" ? gross_amount : calculatedTotal;
         const finalDiscountAmount = typeof discount_amount === "number" ? discount_amount : 0;
 
+        // Resolve payment_terms FK ID
+        let resolvedPaymentTerms: number | null = payment_terms && Number(payment_terms) !== 0 ? Number(payment_terms) : null;
+
         // 3. Create Parent Sales Invoice in Directus
         const parentInvoicePayload = {
             invoice_no,
@@ -294,9 +297,9 @@ export async function POST(request: NextRequest) {
             dispatch_date: dispatch_date || null,
             transaction_status: "Serviced",
             payment_status: "Unpaid",
-            sales_type: sales_type ? Number(sales_type) : 0,
+            sales_type: sales_type && Number(sales_type) !== 0 ? Number(sales_type) : null,
             price_type: price_type || "",
-            payment_terms: payment_terms ? Number(payment_terms) : 0,
+            payment_terms: resolvedPaymentTerms,
             remarks: remarks || null,
             order_id: orderId,
             created_by: createdBy,

@@ -640,11 +640,11 @@ export default function ServiceInvoicingModulePage() {
         net_amount: calculatedNet,
         sales_type: salesmanObj && salesmanObj.operation
           ? (typeof salesmanObj.operation === "object" ? salesmanObj.operation.id : Number(salesmanObj.operation))
-          : 0,
+          : null,
         price_type: salesmanObj && salesmanObj.price_type ? salesmanObj.price_type : "",
         payment_terms: customerObj && customerObj.payment_term && typeof customerObj.payment_term === "object"
-          ? (customerObj.payment_term.payment_days || 0)
-          : 0,
+          ? customerObj.payment_term.id
+          : (customerObj && customerObj.payment_term ? Number(customerObj.payment_term) : null),
         remarks: remarks.trim() || null,
         mappings: selectedList.map(item => ({
           child_invoice_id: item.invoiceId,
