@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { SearchableSelect } from "@/app/(financial-management)/fm/reports/expected-collection-report/components/SearchableSelect";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { DateRange, ExpectedCollectionFilters, FilterOptions, ReportPeriod } from "../types";
 import { formatPeriodRange, periodLabel } from "../utils/date";

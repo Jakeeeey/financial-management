@@ -20,6 +20,8 @@ import {
 } from "@/components/ui/popover";
 
 export interface SearchableSelectProps {
+    id?: string;
+    "aria-label"?: string;
     options: { value: string; label: string }[];
     value?: string;
     onValueChange: (value: string) => void;
@@ -29,6 +31,8 @@ export interface SearchableSelectProps {
 }
 
 export function SearchableSelect({
+    id,
+    "aria-label": ariaLabel,
     options,
     value,
     onValueChange,
@@ -38,7 +42,6 @@ export function SearchableSelect({
 }: SearchableSelectProps) {
     const [open, setOpen] = React.useState(false);
 
-    // Find the label for the current value
     const selectedLabel = React.useMemo(() => {
         return options.find((opt) => opt.value === value)?.label;
     }, [options, value]);
@@ -47,15 +50,16 @@ export function SearchableSelect({
         <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger asChild>
                 <Button
+                    id={id}
+                    type="button"
                     variant="outline"
                     role="combobox"
                     aria-expanded={open}
+                    aria-label={ariaLabel}
                     className={cn("w-full justify-between", !value && "text-muted-foreground", className)}
                     disabled={disabled}
                 >
-
                     {selectedLabel || placeholder}
-
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
             </PopoverTrigger>
@@ -68,7 +72,7 @@ export function SearchableSelect({
                             {options.map((opt) => (
                                 <CommandItem
                                     key={opt.value}
-                                    value={opt.label} // Use label for searching
+                                    value={opt.label}
                                     onSelect={() => {
                                         onValueChange(opt.value);
                                         setOpen(false);
@@ -77,7 +81,7 @@ export function SearchableSelect({
                                     <Check
                                         className={cn(
                                             "mr-2 h-4 w-4",
-                                            value === opt.value ? "opacity-100" : "opacity-0"
+                                            value === opt.value ? "opacity-100" : "opacity-0",
                                         )}
                                     />
                                     {opt.label}
