@@ -31,17 +31,22 @@ interface CashIssuanceViewDialogProps {
 
 function AttachmentPreview({ docUrl }: { docUrl: string }) {
     const [contentType, setContentType] = useState<string>("");
-    const cleanBase = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "");
-    const viewUrl = docUrl.startsWith("http") ? docUrl : `${cleanBase}/assets/${docUrl}`;
+    const fileId = docUrl.split(/[/?#]/).filter(Boolean).pop() || "";
+    const viewUrl = `/api/fm/treasury/disbursements/attachments/${encodeURIComponent(fileId)}`;
 
     useEffect(() => {
         if (!viewUrl) return;
-        fetch(viewUrl, { method: "HEAD" })
+        const controller = new AbortController();
+        fetch(viewUrl, { method: "HEAD", signal: controller.signal })
             .then((res) => {
+                if (!res.ok) return;
                 const type = res.headers.get("content-type");
                 if (type) setContentType(type.toLowerCase());
             })
-            .catch((err) => console.warn("Failed to fetch document headers:", err));
+            .catch(() => {
+                if (!controller.signal.aborted) setContentType("");
+            });
+        return () => controller.abort();
     }, [viewUrl]);
 
     const isPdf = docUrl.toLowerCase().endsWith(".pdf") || viewUrl.toLowerCase().endsWith(".pdf") || contentType.includes("pdf");
