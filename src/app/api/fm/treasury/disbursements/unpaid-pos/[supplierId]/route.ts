@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import {
+    ACTIVE_DISBURSEMENT_STATUSES,
     activeReceivingRowsByPurchaseOrder,
     isFullyPostedPurchaseOrder,
+    purchaseOrderReferenceKey,
+    purchaseOrderReferenceKeyFromParts,
     postedReceivingRowsByPurchaseOrder,
 } from "../../_purchase-order-eligibility";
 
@@ -65,38 +68,41 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         }
 
         // Fetch active disbursements for this supplier (to avoid 403 relational filter issue)
-        const disRes = await fetch(`${DIRECTUS_URL}/items/disbursement?filter[payee][_eq]=${supplierId}&filter[status][_in]=Draft,Submitted,Approved,Released,Posted&fields=id&limit=-1`, {
+        const disbursementQuery = new URLSearchParams({
+            "filter[payee][_eq]": String(supplierId),
+            "filter[status][_in]": ACTIVE_DISBURSEMENT_STATUSES.join(","),
+            fields: "id",
+            limit: "-1",
+        });
+        const disRes = await fetch(`${DIRECTUS_URL}/items/disbursement?${disbursementQuery.toString()}`, {
             headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
             cache: "no-store",
         });
-        const disList = disRes.ok ? (((await disRes.json()).data || []) as Array<{ id: number }>) : [];
-        const disIdsForPaid = disList.map(d => d.id);
+        if (!disRes.ok) throw new Error(`Unable to load existing TRs (${disRes.status}).`);
+        const disList = (((await disRes.json()).data || []) as Array<{ id: number }>);
+        const activeDisbursementIds = disList.map(d => d.id);
 
-        const paidPayablesList: Array<{ reference_no?: string; amount?: number }> = [];
-        if (disIdsForPaid.length > 0) {
-            const paidPayablesParams = new URLSearchParams();
-            paidPayablesParams.set("filter[disbursement_id][_in]", disIdsForPaid.join(","));
-            paidPayablesParams.set("fields", "reference_no,amount");
-            paidPayablesParams.set("limit", "-1");
+        const taggedPayablesList: Array<{ reference_no?: string }> = [];
+        if (activeDisbursementIds.length > 0) {
+            const taggedPayablesParams = new URLSearchParams();
+            taggedPayablesParams.set("filter[disbursement_id][_in]", activeDisbursementIds.join(","));
+            taggedPayablesParams.set("fields", "reference_no");
+            taggedPayablesParams.set("limit", "-1");
 
-            const paidPayablesRes = await fetch(`${DIRECTUS_URL}/items/disbursement_payables?${paidPayablesParams.toString()}`, {
+            const taggedPayablesRes = await fetch(`${DIRECTUS_URL}/items/disbursement_payables?${taggedPayablesParams.toString()}`, {
                 headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
                 cache: "no-store",
             });
-            if (paidPayablesRes.ok) {
-                const json = await paidPayablesRes.json();
-                paidPayablesList.push(...(json.data || []));
-            }
+            if (!taggedPayablesRes.ok) throw new Error(`Unable to load existing TR payable references (${taggedPayablesRes.status}).`);
+            const json = await taggedPayablesRes.json();
+            taggedPayablesList.push(...(json.data || []));
         }
 
-        const paidMap: Record<string, number> = {};
-        for (const p of paidPayablesList) {
-            const ref = (p.reference_no || "").trim();
-            const amt = Number(p.amount) || 0;
-            if (ref) {
-                paidMap[ref] = (paidMap[ref] || 0) + amt;
-            }
-        }
+        const taggedPurchaseOrderKeys = new Set(
+            taggedPayablesList
+                .map((payable) => purchaseOrderReferenceKey(payable.reference_no))
+                .filter((key): key is string => key !== null),
+        );
 
         const poIds = poList.map(po => po.purchase_order_id);
 
@@ -165,9 +171,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
                     return sum + (amt || 0);
                 }, 0);
 
-                const refKey = `${poNo} / ADVANCE-CWO`;
-                const alreadyPaid = paidMap[refKey] || 0;
-                const remainingDue = Math.max(0, totalLiability - alreadyPaid);
+                const refKey = purchaseOrderReferenceKeyFromParts(poNo, "ADVANCE-CWO");
+                if (taggedPurchaseOrderKeys.has(refKey)) continue;
+                const remainingDue = Math.max(0, totalLiability);
 
                 if (remainingDue > 0.01) {
                     unpaidPos.push({
@@ -206,9 +212,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
                 }
 
                 for (const [receiptNo, data] of Object.entries(grouped)) {
-                    const refKey = `${poNo} / ${receiptNo}`;
-                    const alreadyPaid = paidMap[refKey] || 0;
-                    const remainingDue = Math.max(0, data.totalLiability - alreadyPaid);
+                    const refKey = purchaseOrderReferenceKeyFromParts(poNo, receiptNo);
+                    if (taggedPurchaseOrderKeys.has(refKey)) continue;
+                    const remainingDue = Math.max(0, data.totalLiability);
 
                     if (remainingDue > 0.01) {
                         unpaidPos.push({

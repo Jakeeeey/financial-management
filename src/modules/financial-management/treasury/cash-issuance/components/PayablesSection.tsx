@@ -28,6 +28,7 @@ interface PayablesSectionProps {
     disabled?: boolean;
     isAddDisabled?: boolean;
     memoReferences?: ReadonlySet<string>;
+    memoSupplierMismatchIndices?: ReadonlySet<number>;
     memoAmountErrors?: Readonly<Record<number, string>>;
     divisionValidationErrors?: ReadonlySet<string>;
     onDivisionSelect?: (index: number, divisionId?: number) => void;
@@ -50,6 +51,7 @@ export function PayablesSection({
     disabled = false,
     isAddDisabled = false,
     memoReferences = new Set(),
+    memoSupplierMismatchIndices = new Set(),
     memoAmountErrors = {},
     divisionValidationErrors = new Set(),
     onDivisionSelect,
@@ -91,10 +93,11 @@ export function PayablesSection({
                                 </TableRow>
                             ) : payables.map((p, i) => {
                                 const memoLine = isMemoPayableLine(p, memoReferences) || memoReferences.has(normalizeMemoReference(p.memoNumber));
+                                const memoSupplierMismatch = memoSupplierMismatchIndices.has(i);
                                 const memoAmountError = memoAmountErrors[i];
                                 const divisionError = divisionValidationErrors.has(`${i}:divisionId`);
                                 return (
-                                <TableRow key={i} className="hover:bg-muted/40 border-b border-border">
+                                <TableRow key={i} className={`hover:bg-muted/40 border-b ${memoSupplierMismatch ? "border-destructive bg-destructive/5" : "border-border"}`}>
                                     {/* Ref No */}
                                     <TableCell className="p-1 align-middle">
                                         <Input 
@@ -108,6 +111,11 @@ export function PayablesSection({
                                                 setPayables(n);
                                             }}
                                         />
+                                        {memoSupplierMismatch && (
+                                            <p className="px-2 pt-1 text-[10px] font-semibold text-destructive">
+                                                Memo belongs to another supplier. Remove and reapply it.
+                                            </p>
+                                        )}
                                     </TableCell>
                                     
                                     {/* Chart of Account */}

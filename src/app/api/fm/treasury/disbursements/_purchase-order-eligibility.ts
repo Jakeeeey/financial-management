@@ -19,6 +19,24 @@ type DirectusReceiving = {
     is_reverted?: unknown;
 };
 
+type DirectusDisbursement = {
+    id?: unknown;
+};
+
+type DirectusPayableReference = {
+    reference_no?: unknown;
+};
+
+export const ACTIVE_DISBURSEMENT_STATUSES = [
+    "Draft",
+    "Submitted",
+    "Returned for Revision",
+    "Approved",
+    "Partially Released",
+    "Released",
+    "Posted",
+] as const;
+
 export type PurchaseOrderReference = {
     poNo: string;
     receiptNo: string;
@@ -48,6 +66,93 @@ export function parsePurchaseOrderReference(value: unknown): PurchaseOrderRefere
     const poNo = raw.slice(0, separatorIndex).trim();
     const receiptNo = raw.slice(separatorIndex + 1).trim();
     return poNo && receiptNo ? { poNo, receiptNo } : null;
+}
+
+export function purchaseOrderReferenceKey(value: unknown): string | null {
+    const parsed = parsePurchaseOrderReference(value);
+    if (!parsed) return null;
+
+    return purchaseOrderReferenceKeyFromParts(parsed.poNo, parsed.receiptNo);
+}
+
+export function purchaseOrderReferenceKeyFromParts(poNo: unknown, receiptNo: unknown): string {
+    return `${asString(poNo).toUpperCase()}::${asString(receiptNo).toUpperCase()}`;
+}
+
+export function isPurchaseOrderReferenceTagged(
+    reference: unknown,
+    taggedReferenceKeys: ReadonlySet<string>,
+): boolean {
+    const key = purchaseOrderReferenceKey(reference);
+    return key !== null && taggedReferenceKeys.has(key);
+}
+
+/**
+ * Returns PO references already used by another active TR for the supplier.
+ * A reference is considered tagged when any payable line uses it; the line
+ * amount is deliberately ignored so tax-split lines cannot leave a remainder
+ * that makes the PO selectable again.
+ */
+export async function findTaggedPurchaseOrderReferences(
+    references: unknown[],
+    supplierId?: number,
+    excludeDisbursementId?: number,
+): Promise<string[]> {
+    const parsedReferences = references
+        .map((reference) => ({ raw: asString(reference), key: purchaseOrderReferenceKey(reference) }))
+        .filter((entry): entry is { raw: string; key: string } => entry.key !== null);
+
+    if (parsedReferences.length === 0) return [];
+
+    const disbursementQuery = new URLSearchParams({
+        "filter[status][_in]": ACTIVE_DISBURSEMENT_STATUSES.join(","),
+        fields: "id",
+        limit: "-1",
+    });
+    if (supplierId !== undefined) {
+        disbursementQuery.set("filter[payee][_eq]", String(supplierId));
+    }
+
+    const disbursementResponse = await fetch(`${DIRECTUS_URL}/items/disbursement?${disbursementQuery.toString()}`, {
+        headers: directusHeaders(),
+        cache: "no-store",
+    });
+    if (!disbursementResponse.ok) {
+        throw new Error(`Unable to verify existing TR purchase-order tags (${disbursementResponse.status}).`);
+    }
+
+    const disbursementRows = (await disbursementResponse.json()).data as DirectusDisbursement[] | undefined;
+    const disbursementIds = (disbursementRows || [])
+        .map((row) => asNumber(row.id))
+        .filter((id): id is number => id !== undefined && id !== excludeDisbursementId);
+
+    if (disbursementIds.length === 0) return [];
+
+    const payableQuery = new URLSearchParams({
+        "filter[disbursement_id][_in]": disbursementIds.join(","),
+        fields: "reference_no",
+        limit: "-1",
+    });
+    const payableResponse = await fetch(`${DIRECTUS_URL}/items/disbursement_payables?${payableQuery.toString()}`, {
+        headers: directusHeaders(),
+        cache: "no-store",
+    });
+    if (!payableResponse.ok) {
+        throw new Error(`Unable to verify existing TR payable references (${payableResponse.status}).`);
+    }
+
+    const payableRows = (await payableResponse.json()).data as DirectusPayableReference[] | undefined;
+    const taggedReferenceKeys = new Set(
+        (payableRows || [])
+            .map((row) => purchaseOrderReferenceKey(row.reference_no))
+            .filter((key): key is string => key !== null),
+    );
+
+    return [...new Set(
+        parsedReferences
+            .filter((entry) => taggedReferenceKeys.has(entry.key))
+            .map((entry) => entry.raw),
+    )];
 }
 
 export function isPostedReceivingAmount(row: DirectusReceiving): boolean {

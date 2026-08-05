@@ -17,8 +17,20 @@ type DirectusPayable = {
 
 type DirectusDisbursement = {
     id: number;
+    doc_no?: string | null;
     status?: string | null;
     payee?: number | { id?: number } | null;
+};
+
+type MemoBlockingDisbursement = {
+    id: number;
+    docNo: string;
+    status: string;
+};
+
+type MemoUsage = {
+    appliedAmount: number;
+    blockingDisbursements: MemoBlockingDisbursement[];
 };
 
 export type MemoCapInput = {
@@ -35,6 +47,10 @@ export type SupplierMemoBalance = {
     appliedAmount: number;
     remainingAmount: number;
     status: string;
+    isLocked: boolean;
+    lockingTrDocNo: string | null;
+    lockingTrStatus: string | null;
+    lockingTrCount: number;
 };
 
 export type MemoCapError = {
@@ -43,6 +59,10 @@ export type MemoCapError = {
     appliedAmount: number;
     requestedAmount: number;
     remainingAmount: number;
+    isLocked?: boolean;
+    lockingTrDocNo?: string | null;
+    lockingTrStatus?: string | null;
+    lockingTrCount?: number;
     message: string;
 };
 
@@ -53,11 +73,28 @@ const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "";
 const ACTIVE_DISBURSEMENT_STATUSES = new Set([
     "Draft",
     "Submitted",
+    "Returned for Revision",
     "Approved",
     "Released",
     "Partially Released",
     "Posted",
 ]);
+const LOCKING_DISBURSEMENT_STATUSES = new Set([
+    "Draft",
+    "Submitted",
+    "Returned for Revision",
+    "Approved",
+    "Released",
+    "Partially Released",
+]);
+
+export function isMemoLockingDisbursementStatus(status: unknown): boolean {
+    return LOCKING_DISBURSEMENT_STATUSES.has(String(status || "").trim());
+}
+
+export function shouldExposeSupplierMemo(balance: Pick<SupplierMemoBalance, "remainingAmount" | "isLocked">): boolean {
+    return balance.remainingAmount > 0.01 || balance.isLocked;
+}
 
 function asNumber(value: unknown): number | undefined {
     if (value == null || value === "") return undefined;
@@ -141,14 +178,15 @@ async function directusFetch<T>(path: string, options: RequestInit = {}): Promis
 
 function memoBalance(
     memo: DirectusMemo,
-    appliedAmount: number,
+    usage: MemoUsage,
 ): SupplierMemoBalance {
     const amount = roundMoney(Math.max(0, asNumber(memo.amount) || 0));
-    const normalizedApplied = roundMoney(Math.max(0, appliedAmount));
+    const normalizedApplied = roundMoney(Math.max(0, usage.appliedAmount));
     const memoStatus = memo.status?.toUpperCase();
-    const remainingAmount = memoStatus === "USED" || memoStatus === "CANCELLED"
+    const remainingAmount = memoStatus === "CANCELLED"
         ? 0
         : roundMoney(Math.max(0, amount - normalizedApplied));
+    const firstBlocker = usage.blockingDisbursements[0];
 
     return {
         id: Number(memo.id),
@@ -159,6 +197,10 @@ function memoBalance(
         appliedAmount: normalizedApplied,
         remainingAmount,
         status: String(memo.status || "Available"),
+        isLocked: usage.blockingDisbursements.length > 0,
+        lockingTrDocNo: firstBlocker?.docNo || null,
+        lockingTrStatus: firstBlocker?.status || null,
+        lockingTrCount: usage.blockingDisbursements.length,
     };
 }
 
@@ -183,12 +225,12 @@ async function fetchMemosForSupplier(supplierId: number): Promise<DirectusMemo[]
     return response.data || [];
 }
 
-async function fetchAppliedAmounts(
+async function fetchMemoUsage(
     references: string[],
     excludeDisbursementId?: number,
-): Promise<Map<string, number>> {
-    const totals = new Map<string, number>();
-    if (references.length === 0) return totals;
+): Promise<Map<string, MemoUsage>> {
+    const usageByReference = new Map<string, MemoUsage>();
+    if (references.length === 0) return usageByReference;
 
     const payableParams = new URLSearchParams();
     payableParams.set("filter[reference_no][_in]", references.join(","));
@@ -207,12 +249,13 @@ async function fetchAppliedAmounts(
 
     const disbursements = disbursementIds.length > 0
         ? (await directusFetch<DirectusList<DirectusDisbursement>>(
-            `/items/disbursement?filter[id][_in]=${disbursementIds.join(",")}&fields=id,status,payee&limit=-1`,
+            `/items/disbursement?filter[id][_in]=${disbursementIds.join(",")}&fields=id,doc_no,status,payee&limit=-1`,
         )).data || []
         : [];
+    const disbursementMap = new Map(disbursements.map((row) => [Number(row.id), row]));
     const activeIds = new Set(
         disbursements
-            .filter((row) => ACTIVE_DISBURSEMENT_STATUSES.has(String(row.status || "")))
+            .filter((row) => ACTIVE_DISBURSEMENT_STATUSES.has(String(row.status || "").trim()))
             .map((row) => Number(row.id)),
     );
 
@@ -222,18 +265,43 @@ async function fetchAppliedAmounts(
         if (!reference || !disbursementId || disbursementId === excludeDisbursementId || !activeIds.has(disbursementId)) {
             continue;
         }
+        const disbursement = disbursementMap.get(disbursementId);
+        if (!disbursement) continue;
+
+        const usage = usageByReference.get(reference) || {
+            appliedAmount: 0,
+            blockingDisbursements: [],
+        };
         const amount = Math.abs(asNumber(row.amount) || 0);
-        totals.set(reference, roundMoney((totals.get(reference) || 0) + amount));
+        usage.appliedAmount = roundMoney(usage.appliedAmount + amount);
+
+        const status = String(disbursement.status || "").trim();
+        if (amount > 0.01 && isMemoLockingDisbursementStatus(status)
+            && !usage.blockingDisbursements.some((blocker) => blocker.id === disbursementId)) {
+            usage.blockingDisbursements.push({
+                id: disbursementId,
+                docNo: String(disbursement.doc_no || `TR-${disbursementId}`),
+                status,
+            });
+        }
+        usageByReference.set(reference, usage);
     }
 
-    return totals;
+    for (const usage of usageByReference.values()) {
+        usage.blockingDisbursements.sort((left, right) => left.id - right.id);
+    }
+
+    return usageByReference;
 }
 
 export async function getSupplierMemoBalances(supplierId: number): Promise<SupplierMemoBalance[]> {
     const memos = await fetchMemosForSupplier(supplierId);
     const references = memos.map((memo) => memo.memo_number).filter(Boolean);
-    const appliedAmounts = await fetchAppliedAmounts(references);
-    return memos.map((memo) => memoBalance(memo, appliedAmounts.get(memo.memo_number) || 0));
+    const usageByReference = await fetchMemoUsage(references);
+    return memos.map((memo) => memoBalance(memo, usageByReference.get(memo.memo_number) || {
+        appliedAmount: 0,
+        blockingDisbursements: [],
+    }));
 }
 
 export async function validateSupplierMemoCaps(
@@ -273,14 +341,18 @@ export async function validateSupplierMemoCaps(
         };
     }
 
-    const appliedAmounts = await fetchAppliedAmounts(memoReferences, excludeDisbursementId);
+    const usageByReference = await fetchMemoUsage(memoReferences, excludeDisbursementId);
     for (const reference of memoReferences) {
         const memo = memoMap.get(reference);
         if (!memo) continue;
         const memoSupplierId = relationId(memo.supplier_id);
         const requestedAmount = requested.get(reference) || 0;
-        const appliedAmount = appliedAmounts.get(reference) || 0;
-        const balance = memoBalance(memo, appliedAmount);
+        const usage = usageByReference.get(reference) || {
+            appliedAmount: 0,
+            blockingDisbursements: [],
+        };
+        const appliedAmount = usage.appliedAmount;
+        const balance = memoBalance(memo, usage);
 
         if (memoSupplierId !== supplierId) {
             return {
@@ -289,7 +361,32 @@ export async function validateSupplierMemoCaps(
                 appliedAmount,
                 requestedAmount,
                 remainingAmount: balance.remainingAmount,
+                isLocked: balance.isLocked,
+                lockingTrDocNo: balance.lockingTrDocNo,
+                lockingTrStatus: balance.lockingTrStatus,
+                lockingTrCount: balance.lockingTrCount,
                 message: `Supplier memo ${reference} does not belong to this supplier.`,
+            };
+        }
+
+        if (balance.isLocked) {
+            const blockerLabel = balance.lockingTrDocNo
+                ? `${balance.lockingTrDocNo} (${balance.lockingTrStatus})`
+                : "another unposted TR";
+            const additionalBlockers = balance.lockingTrCount > 1
+                ? ` ${balance.lockingTrCount - 1} additional TR(s) also use this memo.`
+                : "";
+            return {
+                memoNumber: reference,
+                authorizedAmount: balance.amount,
+                appliedAmount,
+                requestedAmount,
+                remainingAmount: balance.remainingAmount,
+                isLocked: true,
+                lockingTrDocNo: balance.lockingTrDocNo,
+                lockingTrStatus: balance.lockingTrStatus,
+                lockingTrCount: balance.lockingTrCount,
+                message: `Supplier memo ${reference} is locked by ${blockerLabel} and cannot be used until that TR is Posted.${additionalBlockers}`,
             };
         }
 
@@ -306,6 +403,10 @@ export async function validateSupplierMemoCaps(
                 appliedAmount,
                 requestedAmount,
                 remainingAmount: balance.remainingAmount,
+                isLocked: balance.isLocked,
+                lockingTrDocNo: balance.lockingTrDocNo,
+                lockingTrStatus: balance.lockingTrStatus,
+                lockingTrCount: balance.lockingTrCount,
                 message: `${reference} must be applied as a ${expectedSign < 0 ? "credit" : "debit"} amount.`,
             };
         }
@@ -317,6 +418,10 @@ export async function validateSupplierMemoCaps(
                 appliedAmount,
                 requestedAmount,
                 remainingAmount: balance.remainingAmount,
+                isLocked: balance.isLocked,
+                lockingTrDocNo: balance.lockingTrDocNo,
+                lockingTrStatus: balance.lockingTrStatus,
+                lockingTrCount: balance.lockingTrCount,
                 message: `${reference} exceeds its remaining authorized amount. Requested ${requestedAmount.toFixed(2)}, remaining ${balance.remainingAmount.toFixed(2)}.`,
             };
         }
@@ -332,16 +437,20 @@ export async function refreshSupplierMemoStatuses(
     const uniqueReferences = Array.from(new Set(references.map(normalizedReference).filter(Boolean)));
     if (uniqueReferences.length === 0) return;
 
-    const [memos, appliedAmounts] = await Promise.all([
+    const [memos, usageByReference] = await Promise.all([
         fetchMemosByReferences(uniqueReferences),
-        fetchAppliedAmounts(uniqueReferences),
+        fetchMemoUsage(uniqueReferences),
     ]);
 
     await Promise.all(memos
         .filter((memo) => relationId(memo.supplier_id) === supplierId && String(memo.status || "").toUpperCase() !== "CANCELLED")
         .map(async (memo) => {
-            const balance = memoBalance(memo, appliedAmounts.get(memo.memo_number) || 0);
-            const nextStatus = balance.remainingAmount <= 0.01 ? "USED" : "Available";
+            const usage = usageByReference.get(memo.memo_number) || {
+                appliedAmount: 0,
+                blockingDisbursements: [],
+            };
+            const balance = memoBalance(memo, usage);
+            const nextStatus = !balance.isLocked && balance.remainingAmount <= 0.01 ? "USED" : "Available";
             if (String(memo.status || "") === nextStatus) return;
             await directusFetch(`/items/suppliers_memo/${memo.id}`, {
                 method: "PATCH",
