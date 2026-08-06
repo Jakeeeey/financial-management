@@ -473,7 +473,7 @@ export async function POST(request: NextRequest) {
         const now = new Date().toISOString();
 
         // Resolve payment_terms FK ID
-        let resolvedPaymentTerms: number | null = payment_terms && Number(payment_terms) !== 0 ? Number(payment_terms) : null;
+        const resolvedPaymentTerms: number | null = payment_terms && Number(payment_terms) !== 0 ? Number(payment_terms) : null;
 
         // 3. Create Parent Sales Invoice in Directus
         const parentInvoicePayload = {
