@@ -207,7 +207,7 @@ export function useCashiering(currentUser: CurrentUser) {
                         bankId: b.bankId?.toString() || "",
                         customerId: custObj ? custObj.id.toString() : "",
                         invoiceId: b.invoiceId?.toString() || "",
-                        checkNo: b.referenceNo,
+                        checkNo: String(b.referenceNo ?? ""),
                         amount: b.amount.toString(),
                         chequeDate: b.chequeDate ? b.chequeDate.split('T')[0] : ""
                     };
