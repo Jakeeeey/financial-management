@@ -548,7 +548,12 @@ export function useSettlement(pouchId: string | number) {
                 if (wItem && inv) {
                     const walletUsedElsewhere = prev.filter(a => a.sourceTempId === sourceId && a.invoiceId !== invoiceId).reduce((sum, a) => sum + a.amountApplied, 0);
                     const walletAvailable = Math.max(0, Math.abs(wItem.originalAmount) - walletUsedElsewhere);
-                    const finalAmount = Math.min(safeInput, walletAvailable);
+                    const invoiceUsedElsewhere = prev
+                        .filter(a => a.invoiceId === invoiceId && a.sourceTempId !== sourceId)
+                        .reduce((sum, a) => sum + a.amountApplied, 0);
+                    const invoiceBalance = Number(inv.remainingBalance ?? inv.originalAmount ?? 0);
+                    const invoiceAvailable = Math.max(0, invoiceBalance - invoiceUsedElsewhere);
+                    const finalAmount = Math.min(safeInput, walletAvailable, invoiceAvailable);
 
                     if (finalAmount > 0.009) {
                         filtered.push({
@@ -632,6 +637,20 @@ export function useSettlement(pouchId: string | number) {
 
     const submitSettlement = async (): Promise<boolean> => {
         try {
+            const unallocatedInvoice = cartInvoices.find(invoice => getInvoiceApplied(invoice.id) <= 0.01);
+            if (unallocatedInvoice) {
+                toast.error(`Apply an amount to ${unallocatedInvoice.invoiceNo} or remove it from the cart.`);
+                return false;
+            }
+
+            const overAllocatedInvoice = cartInvoices.find(invoice =>
+                getInvoiceApplied(invoice.id) > Number(invoice.remainingBalance ?? invoice.originalAmount ?? 0) + 0.01
+            );
+            if (overAllocatedInvoice) {
+                toast.error(`The allocation for ${overAllocatedInvoice.invoiceNo} exceeds its remaining balance.`);
+                return false;
+            }
+
             // 1. Process all pending edits in database
             for (const [, editInfo] of Object.entries(pendingEdits)) {
                 const endpoint = editInfo.type === "EWT"
@@ -693,7 +712,7 @@ export function useSettlement(pouchId: string | number) {
             await fetchData();
             return true;
         } catch (err) {
-            toast.error("Failed to secure settlement to ledger.");
+            toast.error(err instanceof Error && err.message ? err.message : "Failed to secure settlement to ledger.");
             console.error(err);
             return false;
         }

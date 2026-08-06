@@ -330,6 +330,28 @@ export function useCashiering(currentUser: CurrentUser) {
             return alert("Complete all required non-cash remittance fields before saving.");
         }
 
+        const selectedInvoiceAmounts = new Map<string, number>();
+        for (const check of checks) {
+            if (!check.invoiceId) continue;
+
+            const availableInvoices = check.customerId
+                ? (customerInvoices[check.customerId] || [])
+                : routeInvoices;
+            const invoice = availableInvoices.find(inv =>
+                String(inv.id || inv.invoiceId) === String(check.invoiceId)
+            );
+            if (!invoice) continue;
+
+            selectedInvoiceAmounts.set(
+                String(check.invoiceId),
+                (selectedInvoiceAmounts.get(String(check.invoiceId)) || 0) + (getPositiveAmount(check.amount) || 0)
+            );
+            const requestedAmount = selectedInvoiceAmounts.get(String(check.invoiceId)) || 0;
+            if (requestedAmount > invoice.remainingBalance + 0.01) {
+                return alert(`Invoice ${invoice.invoiceNo} has only ₱${invoice.remainingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })} remaining.`);
+            }
+        }
+
         setIsSubmitting(true);
 
         const payload = {

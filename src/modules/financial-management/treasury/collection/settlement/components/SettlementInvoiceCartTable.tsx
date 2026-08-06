@@ -65,8 +65,10 @@ export default function SettlementInvoiceCartTable({
         );
     }, [sortedCartInvoices, cartSearchQuery]);
 
-    const cartBalanceDifference = Math.round((cartTotalBalance - cartTotalAppliedSession) * 100) / 100;
-    const isCartBalanced = Math.abs(cartBalanceDifference) <= 0.01;
+    const unallocatedInvoice = cartInvoices.find(inv => getInvoiceApplied(inv.id) <= 0.01);
+    const overAllocatedInvoice = cartInvoices.find(inv =>
+        getInvoiceApplied(inv.id) > Number(inv.remainingBalance || inv.originalAmount || 0) + 0.01
+    );
 
     return (
         <div className="relative w-full h-full flex flex-col overflow-hidden bg-card">
@@ -84,13 +86,13 @@ export default function SettlementInvoiceCartTable({
                 </div>
             </div>
 
-            {cartInvoices.length > 0 && !isPosted && !isCartBalanced && (
+            {cartInvoices.length > 0 && !isPosted && (unallocatedInvoice || overAllocatedInvoice) && (
                 <div role="alert" className="px-3 py-2 border-b border-orange-200 bg-orange-50 text-orange-800 flex items-center gap-2 shrink-0">
                     <Info size={13} className="shrink-0" />
                     <span className="text-[10px] font-bold">
-                        {cartBalanceDifference > 0.01
-                            ? `₱${cartBalanceDifference.toLocaleString(undefined, { minimumFractionDigits: 2 })} remains unapplied in the invoice cart. Apply a remittance, variance, memo, return, or EWT, or remove the invoice before committing.`
-                            : `Allocations exceed the invoice cart balance by ₱${Math.abs(cartBalanceDifference).toLocaleString(undefined, { minimumFractionDigits: 2 })}.`}
+                        {unallocatedInvoice
+                            ? `Apply an amount to ${unallocatedInvoice.invoiceNo} or remove it from the cart before committing.`
+                            : `The allocation for ${overAllocatedInvoice?.invoiceNo} exceeds its remaining balance.`}
                     </span>
                 </div>
             )}
@@ -234,8 +236,8 @@ export default function SettlementInvoiceCartTable({
                     {filteredCartInvoices.length > 0 && (
                         <TableFooter className="bg-muted/90 backdrop-blur-md sticky bottom-0 z-20 outline outline-1 outline-border shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
                             <TableRow>
-                                <TableCell colSpan={2} className="text-right py-2"><span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mr-4">Cart Balance:</span><span className="font-mono font-black text-xs">₱{cartTotalBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}</span></TableCell>
-                                <TableCell className="text-right py-2 border-l border-border/50 pr-4"><div className="flex flex-col items-end"><span className="text-[8px] font-black uppercase tracking-widest text-emerald-600 mb-0.5 leading-none">Total Applied</span><span className="font-mono font-black text-emerald-600 text-xs leading-none">₱{cartTotalAppliedSession.toLocaleString(undefined, {minimumFractionDigits: 2})}</span></div></TableCell>
+                                <TableCell colSpan={2} className="text-right py-2"><span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mr-4">Open Balance:</span><span className="font-mono font-black text-xs">₱{cartTotalBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}</span></TableCell>
+                                <TableCell className="text-right py-2 border-l border-border/50 pr-4"><div className="flex flex-col items-end"><span className="text-[8px] font-black uppercase tracking-widest text-emerald-600 mb-0.5 leading-none">Applied This Pouch</span><span className="font-mono font-black text-emerald-600 text-xs leading-none">₱{cartTotalAppliedSession.toLocaleString(undefined, {minimumFractionDigits: 2})}</span></div></TableCell>
                             </TableRow>
                         </TableFooter>
                     )}

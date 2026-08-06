@@ -300,13 +300,18 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
     const remainingToAllocate = Math.round(((pouchTotal + ewtTotal + varianceTotal) - totalAllocated) * 100) / 100;
     const cartTotalBalance = Math.round(cartInvoices.reduce((sum, inv) => sum + (inv.remainingBalance || 0), 0) * 100) / 100;
     const cartTotalAppliedSession = Math.round(allocations.reduce((sum, a) => sum + a.amountApplied, 0) * 100) / 100;
-    const cartBalanceDifference = Math.round((cartTotalBalance - cartTotalAppliedSession) * 100) / 100;
-    const isCartBalanced = Math.abs(cartBalanceDifference) <= 0.01;
+    const unallocatedInvoice = cartInvoices.find(inv => getInvoiceApplied(inv.id) <= 0.01);
+    const overAllocatedInvoice = cartInvoices.find(inv =>
+        getInvoiceApplied(inv.id) > Number(inv.remainingBalance || inv.originalAmount || 0) + 0.01
+    );
+    const isCartBalanced = !unallocatedInvoice && !overAllocatedInvoice;
     const isPouchBalanced = Math.abs(remainingToAllocate) <= 0.01;
     const isCommitReady = isPouchBalanced && isCartBalanced;
-    const cartBalanceMessage = cartBalanceDifference > 0.01
-        ? `₱${cartBalanceDifference.toLocaleString(undefined, { minimumFractionDigits: 2 })} remains unapplied in the invoice cart.`
-        : `Invoice allocations exceed the cart balance by ₱${Math.abs(cartBalanceDifference).toLocaleString(undefined, { minimumFractionDigits: 2 })}.`;
+    const cartBalanceMessage = unallocatedInvoice
+        ? `Apply an amount to ${unallocatedInvoice.invoiceNo} or remove it from the cart.`
+        : overAllocatedInvoice
+            ? `The allocation for ${overAllocatedInvoice.invoiceNo} exceeds its remaining balance.`
+            : "";
 
     const handleMasterSave = async () => {
         if (!isCommitReady) {
