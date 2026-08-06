@@ -29,10 +29,34 @@ interface PouchDetailResponse {
 }
 
 export const getPositiveAmount = (value: string): number | null => {
-    if (!value.trim()) return null;
+    if (!value?.trim()) return null;
 
     const amount = Number(value);
     return Number.isFinite(amount) && amount > 0 ? amount : null;
+};
+
+export interface CheckValidationErrors {
+    paymentMethod: boolean;
+    coa: boolean;
+    bank: boolean;
+    reference: boolean;
+    chequeDate: boolean;
+    amount: boolean;
+}
+
+export const getCheckValidationErrors = (check: CheckDetail): CheckValidationErrors => {
+    const isAdjustment = check.tempId?.startsWith("adj-") ?? false;
+    const isEwt = check.tempId?.startsWith("ewt-") ?? false;
+    const isGenericRemittance = !isAdjustment && !isEwt;
+
+    return {
+        paymentMethod: isGenericRemittance && !check.paymentMethodId?.trim(),
+        coa: isGenericRemittance && !check.coaId?.trim(),
+        bank: isGenericRemittance && !check.bankId?.trim(),
+        reference: !isAdjustment && !check.checkNo?.trim(),
+        chequeDate: isGenericRemittance && !check.chequeDate?.trim(),
+        amount: getPositiveAmount(check.amount) === null,
+    };
 };
 
 const getSubmissionErrorMessage = (error: unknown): string => {
@@ -137,13 +161,15 @@ export function useCashiering(currentUser: CurrentUser) {
 
     useEffect(() => {
         if (salesmanId) {
-            fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/unpaid-invoices?salesmanId=${salesmanId}`)
+            const query = new URLSearchParams({ salesmanId });
+            if (editingId) query.set("currentPouchId", String(editingId));
+            fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/unpaid-invoices?${query.toString()}`)
                 .then(data => setRouteInvoices(data || []))
                 .catch(err => console.error("Failed to load route invoices", err));
         } else {
             setRouteInvoices([]);
         }
-    }, [salesmanId]);
+    }, [salesmanId, editingId]);
 
     const loadPouchForEdit = useCallback(async (id: number) => {
         if (!id || isNaN(id)) return;
@@ -181,7 +207,7 @@ export function useCashiering(currentUser: CurrentUser) {
                         bankId: b.bankId?.toString() || "",
                         customerId: custObj ? custObj.id.toString() : "",
                         invoiceId: b.invoiceId?.toString() || "",
-                        checkNo: b.referenceNo,
+                        checkNo: String(b.referenceNo ?? ""),
                         amount: b.amount.toString(),
                         chequeDate: b.chequeDate ? b.chequeDate.split('T')[0] : ""
                     };
@@ -192,7 +218,12 @@ export function useCashiering(currentUser: CurrentUser) {
                 await Promise.all(uniqueCustomerIds.map(async (cId) => {
                     if (cId) {
                         try {
-                            const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/unpaid-invoices?salesmanId=${pouch.salesmanId}&customerId=${cId}`);
+                            const query = new URLSearchParams({
+                                salesmanId: String(pouch.salesmanId),
+                                customerId: String(cId),
+                                currentPouchId: String(id),
+                            });
+                            const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/unpaid-invoices?${query.toString()}`);
                             setCustomerInvoices(prev => ({ ...prev, [cId]: data || [] }));
                         } catch (err) {
                             console.warn("Could not preload invoices for customer", cId);
@@ -235,10 +266,6 @@ export function useCashiering(currentUser: CurrentUser) {
     const handlePaymentMethodSelect = (index: number, methodId: string) => {
         const updated = [...checks];
         updated[index].paymentMethodId = methodId;
-        const method = paymentMethods.find(m => m.methodId.toString() === methodId);
-        if (method && method.coaId) {
-            updated[index].coaId = method.coaId.toString();
-        }
         setChecks(updated);
     };
 
@@ -250,7 +277,12 @@ export function useCashiering(currentUser: CurrentUser) {
 
         if (salesmanId && customerId && !customerInvoices[customerId]) {
             try {
-                const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/unpaid-invoices?salesmanId=${salesmanId}&customerId=${customerId}`);
+                const query = new URLSearchParams({
+                    salesmanId,
+                    customerId,
+                    ...(editingId ? { currentPouchId: String(editingId) } : {}),
+                });
+                const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/unpaid-invoices?${query.toString()}`);
                 setCustomerInvoices(prev => ({ ...prev, [customerId]: data || [] }));
             } catch (err) {
                 console.error("Failed to load customer invoices", err);
@@ -288,11 +320,36 @@ export function useCashiering(currentUser: CurrentUser) {
     };
 
     const handleSubmit = async () => {
+        if (isSheetLoading) return;
         if (!salesmanId) return alert("Please select a Collector.");
+        if (Object.values(denominations).some(quantity => !Number.isInteger(quantity) || quantity < 0)) {
+            return alert("Cash quantities must be non-negative whole numbers.");
+        }
         if (grandTotal <= 0) return alert("Cannot save an empty pouch.");
-        if (!checks.every(c => c.bankId && c.bankId !== "")) return alert("All non-cash assets require a Target Bank selection.");
-        if (checks.some(c => getPositiveAmount(c.amount) === null)) {
-            return alert("Each non-cash remittance requires an amount greater than ₱0.00.");
+        if (checks.some(check => Object.values(getCheckValidationErrors(check)).some(Boolean))) {
+            return alert("Complete all required non-cash remittance fields before saving.");
+        }
+
+        const selectedInvoiceAmounts = new Map<string, number>();
+        for (const check of checks) {
+            if (!check.invoiceId) continue;
+
+            const availableInvoices = check.customerId
+                ? (customerInvoices[check.customerId] || [])
+                : routeInvoices;
+            const invoice = availableInvoices.find(inv =>
+                String(inv.id || inv.invoiceId) === String(check.invoiceId)
+            );
+            if (!invoice) continue;
+
+            selectedInvoiceAmounts.set(
+                String(check.invoiceId),
+                (selectedInvoiceAmounts.get(String(check.invoiceId)) || 0) + (getPositiveAmount(check.amount) || 0)
+            );
+            const requestedAmount = selectedInvoiceAmounts.get(String(check.invoiceId)) || 0;
+            if (requestedAmount > invoice.remainingBalance + 0.01) {
+                return alert(`Invoice ${invoice.invoiceNo} has only ₱${invoice.remainingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })} remaining.`);
+            }
         }
 
         setIsSubmitting(true);
@@ -315,13 +372,13 @@ export function useCashiering(currentUser: CurrentUser) {
                     const custObj = customers.find(cust => cust.id.toString() === c.customerId);
                     return {
                         tempId: c.tempId,
-                        paymentMethodId: c.paymentMethodId ? parseInt(c.paymentMethodId) : null,
-                        coaId: parseInt(c.coaId) || 2,
-                        bankId: c.bankId ? parseInt(c.bankId) : null,
+                        paymentMethodId: Number(c.paymentMethodId),
+                        coaId: Number(c.coaId),
+                        bankId: Number(c.bankId),
                         customerCode: custObj ? (custObj.customerCode || custObj.code) : null,
                         invoiceId: c.invoiceId ? parseInt(c.invoiceId) || null : null,
-                        referenceNo: c.checkNo,
-                        amount: Number(c.amount),
+                        referenceNo: c.checkNo.trim(),
+                        amount: getPositiveAmount(c.amount) as number,
                         chequeDate: c.chequeDate ? `${c.chequeDate}T00:00:00` : null
                     };
                 })

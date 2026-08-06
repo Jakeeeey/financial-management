@@ -265,6 +265,7 @@ export default function SettlementMasterList() {
                         <SettlementCommandCenter
                             id={selectedPouchId}
                             autoAddInvoiceNo={qInvoiceNo || undefined}
+                            onChanged={fetchQueue}
                             onClose={(hasSaved) => {
                                 setIsCommandCenterOpen(false);
                                 // 🚀 Only refresh the queue if a save successfully occurred!
