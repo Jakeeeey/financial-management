@@ -10,6 +10,15 @@ const getSpringBaseUrl = () => {
     return (url || "http://localhost:8080").replace(/\/$/, "");
 };
 
+const getSpringErrorMessage = (errorText: string, fallback: string) => {
+    try {
+        const parsed = JSON.parse(errorText) as { detail?: string; message?: string; error?: string };
+        return parsed.detail || parsed.message || parsed.error || fallback;
+    } catch {
+        return errorText || fallback;
+    }
+};
+
 export async function POST(request: NextRequest) {
     const cookieStore = await cookies();
     const token = cookieStore.get("vos_access_token")?.value;
@@ -33,7 +42,9 @@ export async function POST(request: NextRequest) {
 
         if (!springRes.ok) {
             const errorText = await springRes.text();
-            throw new Error(errorText);
+            return NextResponse.json({
+                message: getSpringErrorMessage(errorText, `Spring rejected the pouch: ${springRes.status}`)
+            }, { status: springRes.status });
         }
 
         const result = await springRes.text();
