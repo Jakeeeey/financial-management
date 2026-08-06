@@ -28,6 +28,25 @@ interface PouchDetailResponse {
     }[];
 }
 
+export const getPositiveAmount = (value: string): number | null => {
+    if (!value.trim()) return null;
+
+    const amount = Number(value);
+    return Number.isFinite(amount) && amount > 0 ? amount : null;
+};
+
+const getSubmissionErrorMessage = (error: unknown): string => {
+    const fallback = "Error securing pouch.";
+    if (!(error instanceof Error) || !error.message) return fallback;
+
+    try {
+        const parsed = JSON.parse(error.message) as { message?: string; detail?: string; error?: string };
+        return parsed.detail || parsed.message || parsed.error || fallback;
+    } catch {
+        return error.message;
+    }
+};
+
 export function useCashiering(currentUser: CurrentUser) {
     const [isSheetOpen, setIsSheetOpen] = useState<boolean>(false);
     const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -272,6 +291,9 @@ export function useCashiering(currentUser: CurrentUser) {
         if (!salesmanId) return alert("Please select a Collector.");
         if (grandTotal <= 0) return alert("Cannot save an empty pouch.");
         if (!checks.every(c => c.bankId && c.bankId !== "")) return alert("All non-cash assets require a Target Bank selection.");
+        if (checks.some(c => getPositiveAmount(c.amount) === null)) {
+            return alert("Each non-cash remittance requires an amount greater than ₱0.00.");
+        }
 
         setIsSubmitting(true);
 
@@ -289,7 +311,7 @@ export function useCashiering(currentUser: CurrentUser) {
                     quantity: denominations[d.id],
                     referenceNo: `${d.amount} x ${denominations[d.id]}`
                 })),
-                ...checks.filter(c => parseFloat(c.amount) > 0).map(c => {
+                ...checks.map(c => {
                     const custObj = customers.find(cust => cust.id.toString() === c.customerId);
                     return {
                         tempId: c.tempId,
@@ -299,7 +321,7 @@ export function useCashiering(currentUser: CurrentUser) {
                         customerCode: custObj ? (custObj.customerCode || custObj.code) : null,
                         invoiceId: c.invoiceId ? parseInt(c.invoiceId) || null : null,
                         referenceNo: c.checkNo,
-                        amount: parseFloat(c.amount),
+                        amount: Number(c.amount),
                         chequeDate: c.chequeDate ? `${c.chequeDate}T00:00:00` : null
                     };
                 })
@@ -318,7 +340,7 @@ export function useCashiering(currentUser: CurrentUser) {
             }
         } catch (error) {
             console.error("Submission Error:", error);
-            alert("Error securing pouch.");
+            alert(getSubmissionErrorMessage(error));
         } finally {
             setIsSubmitting(false);
         }
