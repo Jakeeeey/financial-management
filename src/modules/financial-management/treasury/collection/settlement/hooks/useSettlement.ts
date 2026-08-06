@@ -124,6 +124,7 @@ export function useSettlement(pouchId: string | number) {
     const [isLoadingPlans, setIsLoadingPlans] = useState(false);
     const [dispatchDate, setDispatchDate] = useState<string>(new Date().toISOString().split('T')[0]);
     const [isLoadingCredits, setIsLoadingCredits] = useState(false);
+    const [isClearing, setIsClearing] = useState(false);
     const [pendingDeletions, setPendingDeletions] = useState<{ id: string; dbId: number; type: "EWT" | "ADJUSTMENT" }[]>([]);
     const [pendingEdits, setPendingEdits] = useState<Record<string, { type: "EWT" | "ADJUSTMENT"; dbId: number; payload: PendingEditPayload }>>({});
 
@@ -443,20 +444,25 @@ export function useSettlement(pouchId: string | number) {
         setAllocations(prev => prev.filter(a => a.invoiceId !== invoiceId));
     };
 
-    const clearCart = async () => {
-        if (confirm("Are you sure you want to clear all invoices and allocations from this session? Any linked Variances or EWTs will be destroyed.")) {
-            const currentInvoiceIds = cartInvoices.map(inv => inv.id);
-            const linkedItems = wallet.filter(w =>
-                w.invoiceId !== undefined &&
-                currentInvoiceIds.includes(w.invoiceId) &&
-                (w.type === "EWT" || w.type === "ADJUSTMENT")
-            );
+    const clearCart = async (): Promise<boolean> => {
+        if (!confirm("Are you sure you want to clear all invoices and allocations from this session? Any linked Variances or EWTs will be destroyed.")) {
+            return false;
+        }
 
-            for (const item of linkedItems) {
-                await deleteWalletItem(item.id, item.type, true);
-            }
-            setCartInvoices([]);
-            setAllocations([]);
+        setIsClearing(true);
+        try {
+            await fetchProvider.post(`/api/fm/treasury/collections/${pouchId}/allocate/clear`, {});
+            setPendingEdits({});
+            setPendingDeletions([]);
+            await fetchData();
+            toast.success("Cart cleared and staged allocations rolled back.");
+            return true;
+        } catch (err) {
+            toast.error("Failed to clear staged settlement allocations.");
+            console.error("Failed to clear settlement cart:", err);
+            return false;
+        } finally {
+            setIsClearing(false);
         }
     };
 
@@ -694,7 +700,7 @@ export function useSettlement(pouchId: string | number) {
     };
 
     return {
-        isLoading, wallet, credits, cartInvoices, allocations, setAllocations, salesmanName, salesmanId, findings, docNo, isPosted,
+        isLoading, wallet, credits, cartInvoices, allocations, setAllocations, salesmanName, salesmanId, findings, docNo, isPosted, isClearing,
         isLoadingRoute, addToCart, removeFromCart, clearCart, loadRouteInvoices, fetchAndInjectExternalCredit,
         getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement,
         deleteWalletItem, editWalletItem, dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate,

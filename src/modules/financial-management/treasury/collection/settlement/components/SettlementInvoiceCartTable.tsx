@@ -65,6 +65,9 @@ export default function SettlementInvoiceCartTable({
         );
     }, [sortedCartInvoices, cartSearchQuery]);
 
+    const cartBalanceDifference = Math.round((cartTotalBalance - cartTotalAppliedSession) * 100) / 100;
+    const isCartBalanced = Math.abs(cartBalanceDifference) <= 0.01;
+
     return (
         <div className="relative w-full h-full flex flex-col overflow-hidden bg-card">
             {/* Search Bar for Cart */}
@@ -80,6 +83,17 @@ export default function SettlementInvoiceCartTable({
                     />
                 </div>
             </div>
+
+            {cartInvoices.length > 0 && !isPosted && !isCartBalanced && (
+                <div role="alert" className="px-3 py-2 border-b border-orange-200 bg-orange-50 text-orange-800 flex items-center gap-2 shrink-0">
+                    <Info size={13} className="shrink-0" />
+                    <span className="text-[10px] font-bold">
+                        {cartBalanceDifference > 0.01
+                            ? `₱${cartBalanceDifference.toLocaleString(undefined, { minimumFractionDigits: 2 })} remains unapplied in the invoice cart. Apply a remittance, variance, memo, return, or EWT, or remove the invoice before committing.`
+                            : `Allocations exceed the invoice cart balance by ₱${Math.abs(cartBalanceDifference).toLocaleString(undefined, { minimumFractionDigits: 2 })}.`}
+                    </span>
+                </div>
+            )}
 
             <div className="relative w-full flex-1 overflow-y-auto scrollbar-thin [&>div]:!overflow-visible">
                 <Table className="relative min-w-[700px]">

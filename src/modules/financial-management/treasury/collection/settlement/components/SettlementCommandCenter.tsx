@@ -46,12 +46,13 @@ import { printSettlementReceiptA4 } from "../utils/printSettlementReceiptA4";
 export interface SettlementCommandCenterProps {
     id: string | number;
     onClose?: (hasSaved?: boolean) => void;
+    onChanged?: () => void;
     autoAddInvoiceNo?: string;
 }
 
-export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo }: SettlementCommandCenterProps) {
+export default function SettlementCommandCenter({ id, onClose, onChanged, autoAddInvoiceNo }: SettlementCommandCenterProps) {
     const {
-        isLoading, wallet, credits, cartInvoices, allocations, setAllocations, salesmanName, findings, docNo, isPosted,
+        isLoading, wallet, credits, cartInvoices, allocations, setAllocations, salesmanName, findings, docNo, isPosted, isClearing,
         isLoadingRoute, loadRouteInvoices, addToCart, removeFromCart, clearCart, fetchAndInjectExternalCredit,
         getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement,
         deleteWalletItem, editWalletItem, dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate,
@@ -299,8 +300,20 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
     const remainingToAllocate = Math.round(((pouchTotal + ewtTotal + varianceTotal) - totalAllocated) * 100) / 100;
     const cartTotalBalance = Math.round(cartInvoices.reduce((sum, inv) => sum + (inv.remainingBalance || 0), 0) * 100) / 100;
     const cartTotalAppliedSession = Math.round(allocations.reduce((sum, a) => sum + a.amountApplied, 0) * 100) / 100;
+    const cartBalanceDifference = Math.round((cartTotalBalance - cartTotalAppliedSession) * 100) / 100;
+    const isCartBalanced = Math.abs(cartBalanceDifference) <= 0.01;
+    const isPouchBalanced = Math.abs(remainingToAllocate) <= 0.01;
+    const isCommitReady = isPouchBalanced && isCartBalanced;
+    const cartBalanceMessage = cartBalanceDifference > 0.01
+        ? `₱${cartBalanceDifference.toLocaleString(undefined, { minimumFractionDigits: 2 })} remains unapplied in the invoice cart.`
+        : `Invoice allocations exceed the cart balance by ₱${Math.abs(cartBalanceDifference).toLocaleString(undefined, { minimumFractionDigits: 2 })}.`;
 
     const handleMasterSave = async () => {
+        if (!isCommitReady) {
+            toast.error(!isCartBalanced ? `Cannot commit: ${cartBalanceMessage}` : "Cannot commit: the pouch allocation is not balanced.");
+            return;
+        }
+
         setIsSubmitting(true);
         const success = await submitSettlement();
         if (success) {
@@ -309,6 +322,11 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
         } else {
             setIsSubmitting(false);
         }
+    };
+
+    const handleClearCart = async () => {
+        const cleared = await clearCart();
+        if (cleared) onChanged?.();
     };
 
     const handleCreateAdjustment = async () => {
@@ -460,14 +478,13 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
                     {!isPosted && (
                         <Button
                             onClick={handleMasterSave}
-                            disabled={remainingToAllocate < -0.01 || isSubmitting || isSuccess}
+                            disabled={!isCommitReady || isSubmitting || isSuccess}
                             size="sm"
                             className={cn(
                                 "flex-1 lg:flex-none font-black text-[10px] uppercase tracking-widest shadow-sm transition-all duration-300 h-8 overflow-hidden relative",
                                 isSuccess ? "bg-emerald-500 hover:bg-emerald-600 text-white scale-105 shadow-emerald-500/50" :
                                     isSubmitting ? "bg-primary/80 cursor-wait" :
-                                        remainingToAllocate < -0.01 ? 'bg-destructive hover:bg-destructive/90 text-white' :
-                                            (remainingToAllocate > 0.01 ? 'bg-orange-600 hover:bg-orange-700 text-white' : 'bg-primary')
+                                        !isCommitReady ? 'bg-muted text-muted-foreground' : 'bg-primary'
                             )}
                         >
                             {isSuccess ? (
@@ -477,7 +494,7 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
                             ) : (
                                 <span className="flex items-center gap-1.5">
                                     <Save className="w-3.5 h-3.5" />
-                                    {remainingToAllocate < -0.01 ? "Over-Allocated!" : (remainingToAllocate > 0.01 ? "Save Partial" : "Commit")}
+                                    {!isPouchBalanced ? "Balance Pouch" : (!isCartBalanced ? "Balance Cart" : "Commit")}
                                 </span>
                             )}
                         </Button>
@@ -671,7 +688,7 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
                                         </Popover>
                                     </>
                                 )}
-                                {!isPosted && cartInvoices.length > 0 && <Button onClick={clearCart} variant="ghost" size="sm" className="h-6 text-[8px] uppercase font-black tracking-widest text-destructive hover:bg-destructive/10 px-2.5"><Trash2 size={10} className="mr-1"/> Clear Cart</Button>}
+                    {!isPosted && cartInvoices.length > 0 && <Button onClick={handleClearCart} disabled={isClearing || isSubmitting || isSuccess} variant="ghost" size="sm" className="h-6 text-[8px] uppercase font-black tracking-widest text-destructive hover:bg-destructive/10 px-2.5">{isClearing ? <Loader2 size={10} className="mr-1 animate-spin"/> : <Trash2 size={10} className="mr-1"/>}{isClearing ? "Clearing..." : "Clear Cart"}</Button>}
                             </div>
                         </div>
 
