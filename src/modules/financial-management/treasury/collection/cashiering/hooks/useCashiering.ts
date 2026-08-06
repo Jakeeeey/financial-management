@@ -40,6 +40,7 @@ export interface CheckValidationErrors {
     coa: boolean;
     bank: boolean;
     reference: boolean;
+    chequeDate: boolean;
     amount: boolean;
 }
 
@@ -53,6 +54,7 @@ export const getCheckValidationErrors = (check: CheckDetail): CheckValidationErr
         coa: isGenericRemittance && !check.coaId?.trim(),
         bank: isGenericRemittance && !check.bankId?.trim(),
         reference: !isAdjustment && !check.checkNo?.trim(),
+        chequeDate: isGenericRemittance && !check.chequeDate?.trim(),
         amount: getPositiveAmount(check.amount) === null,
     };
 };

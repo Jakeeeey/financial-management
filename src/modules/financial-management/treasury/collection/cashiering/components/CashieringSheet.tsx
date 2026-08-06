@@ -86,6 +86,8 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
             ? "Asset type required"
             : firstInvalidCheck?.bank
                 ? "Target Bank required"
+                : firstInvalidCheck?.chequeDate
+                    ? "Date on check required"
                 : firstInvalidCheck?.reference
                     ? "Reference or check number required"
                     : firstInvalidCheck?.amount
@@ -586,11 +588,17 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                         <div className="space-y-1.5">
                                                             <label
                                                                  className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Date
-                                                                 on Check</label>
+                                                                 on Check <span className="text-destructive">*</span></label>
                                                              <Input type="date"
-                                                                    className="h-8 text-[10px] font-bold text-muted-foreground uppercase bg-background"
+                                                                    aria-invalid={lineErrors.chequeDate}
+                                                                    className={cn("h-8 text-[10px] font-bold text-muted-foreground uppercase bg-background", lineErrors.chequeDate && "border-destructive focus-visible:ring-destructive")}
                                                                     value={check.chequeDate}
                                                                     onChange={(e) => updateCheck(i, "chequeDate", e.target.value)}/>
+                                                             {lineErrors.chequeDate && (
+                                                                 <p className="text-[10px] font-bold text-destructive" role="alert">
+                                                                     Date on check is required.
+                                                                 </p>
+                                                             )}
                                                          </div>
                                                         <div className="space-y-1.5">
                                                             <label
