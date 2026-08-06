@@ -35,6 +35,15 @@ interface DirectusCollectionCheck {
   invoice_id: number | null;
 }
 
+interface DirectusCollectionClaim {
+  invoice_id: number | null;
+  amount: number | null;
+}
+
+interface DirectusCollectionSummary {
+  id: number;
+}
+
 interface DirectusPayment   { invoice_id: number; paid_amount: number | null; }
 interface DirectusReturn    { invoice_no: number; amount: number | null; }
 interface DirectusMemo      {
@@ -228,6 +237,36 @@ export async function GET(request: NextRequest) {
       )
     );
 
+    // An invoice with a positive claim in another unposted, non-cancelled
+    // pouch is not available for this search. The current pouch is excluded
+    // so editing it can still display its existing invoice lines.
+    const activePouches = await fetchAll<DirectusCollectionSummary>(
+      `/items/collection?limit=-1&fields=id&filter[isPosted][_neq]=true&filter[isCancelled][_neq]=true`
+    );
+    const activePouchIds = activePouches
+      .map(collection => collection.id)
+      .filter(id => id !== undefined && String(id) !== pouchId);
+    const activeClaimedInvoiceIds = new Set<number>();
+
+    if (activePouchIds.length > 0) {
+      const activePouchFilter = activePouchIds.join(",");
+      const invoiceFilter = invoiceIds.join(",");
+      const [detailClaims, invoiceClaims] = await Promise.all([
+        fetchAll<DirectusCollectionClaim>(
+          `/items/collection_details?limit=-1&fields=invoice_id,amount&filter[collection_id][_in]=${activePouchFilter}&filter[invoice_id][_in]=${invoiceFilter}`
+        ),
+        fetchAll<DirectusCollectionClaim>(
+          `/items/collection_invoices?limit=-1&fields=invoice_id,amount&filter[collection_id][_in]=${activePouchFilter}&filter[invoice_id][_in]=${invoiceFilter}`
+        ),
+      ]);
+
+      for (const claim of [...detailClaims, ...invoiceClaims]) {
+        if (claim.invoice_id !== null && claim.invoice_id !== undefined && Number(claim.amount) > 0.01) {
+          activeClaimedInvoiceIds.add(claim.invoice_id);
+        }
+      }
+    }
+
     // Parallel lookups
     const [customers, payments, returns, memos, unfulfilled] = await Promise.all([
       fetchAllChunked<DirectusCustomer>(
@@ -358,6 +397,8 @@ export async function GET(request: NextRequest) {
         if (parseBit(row.inv.isPosted)) return false;
         // Skip cancelled invoices
         if (row.inv.transaction_status === 'Cancelled' || row.inv.transaction_status === 'CANCELLED') return false;
+        // Do not expose invoices already claimed by another active pouch.
+        if (activeClaimedInvoiceIds.has(row.inv.invoice_id)) return false;
         // JPA filter: (invoiceNo LIKE %q% OR customer.customerName LIKE %q%)
         if (lowerQuery) {
           const matchesInvoice  = (row.inv.invoice_no || "").toLowerCase().includes(lowerQuery);

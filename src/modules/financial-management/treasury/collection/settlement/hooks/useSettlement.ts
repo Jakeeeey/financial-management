@@ -469,7 +469,7 @@ export function useSettlement(pouchId: string | number) {
     const loadDispatchPlanInvoices = async (planId: number) => {
         setIsLoadingRoute(true);
         try {
-            const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/dispatch-plan-invoices?planId=${planId}`);
+            const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/dispatch-plan-invoices?planId=${planId}&currentPouchId=${encodeURIComponent(String(pouchId))}`);
             if (!data || data.length === 0) {
                 toast.info("No additional pending invoices found for this specific Dispatch Plan.");
                 return;
@@ -503,7 +503,7 @@ export function useSettlement(pouchId: string | number) {
         if (!salesmanId || !collectionDate) return toast.error("Cannot load route: Missing Salesman ID or Date.");
         setIsLoadingRoute(true);
         try {
-            const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/route-invoices?salesmanId=${salesmanId}&date=${collectionDate}`);
+            const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/route-invoices?salesmanId=${encodeURIComponent(String(salesmanId))}&date=${encodeURIComponent(collectionDate)}&currentPouchId=${encodeURIComponent(String(pouchId))}`);
             if (!data || data.length === 0) {
                 toast.info("No additional pending invoices found for this route on or before " + collectionDate);
                 return;

@@ -159,13 +159,15 @@ export function useCashiering(currentUser: CurrentUser) {
 
     useEffect(() => {
         if (salesmanId) {
-            fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/unpaid-invoices?salesmanId=${salesmanId}`)
+            const query = new URLSearchParams({ salesmanId });
+            if (editingId) query.set("currentPouchId", String(editingId));
+            fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/unpaid-invoices?${query.toString()}`)
                 .then(data => setRouteInvoices(data || []))
                 .catch(err => console.error("Failed to load route invoices", err));
         } else {
             setRouteInvoices([]);
         }
-    }, [salesmanId]);
+    }, [salesmanId, editingId]);
 
     const loadPouchForEdit = useCallback(async (id: number) => {
         if (!id || isNaN(id)) return;
@@ -214,7 +216,12 @@ export function useCashiering(currentUser: CurrentUser) {
                 await Promise.all(uniqueCustomerIds.map(async (cId) => {
                     if (cId) {
                         try {
-                            const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/unpaid-invoices?salesmanId=${pouch.salesmanId}&customerId=${cId}`);
+                            const query = new URLSearchParams({
+                                salesmanId: String(pouch.salesmanId),
+                                customerId: String(cId),
+                                currentPouchId: String(id),
+                            });
+                            const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/unpaid-invoices?${query.toString()}`);
                             setCustomerInvoices(prev => ({ ...prev, [cId]: data || [] }));
                         } catch (err) {
                             console.warn("Could not preload invoices for customer", cId);
@@ -268,7 +275,12 @@ export function useCashiering(currentUser: CurrentUser) {
 
         if (salesmanId && customerId && !customerInvoices[customerId]) {
             try {
-                const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/unpaid-invoices?salesmanId=${salesmanId}&customerId=${customerId}`);
+                const query = new URLSearchParams({
+                    salesmanId,
+                    customerId,
+                    ...(editingId ? { currentPouchId: String(editingId) } : {}),
+                });
+                const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/unpaid-invoices?${query.toString()}`);
                 setCustomerInvoices(prev => ({ ...prev, [customerId]: data || [] }));
             } catch (err) {
                 console.error("Failed to load customer invoices", err);
