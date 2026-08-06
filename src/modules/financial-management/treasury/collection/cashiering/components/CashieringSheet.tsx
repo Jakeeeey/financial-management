@@ -15,7 +15,7 @@ import {Input} from "@/components/ui/input";
 import {Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter} from "@/components/ui/sheet";
 import {Popover, PopoverTrigger} from "@/components/ui/popover";
 import {Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList} from "@/components/ui/command";
-import {getPositiveAmount} from "../hooks/useCashiering";
+import {getCheckValidationErrors} from "../hooks/useCashiering";
 import {CashieringPopoverContent} from "./CashieringPopoverContent";
 
 export default function CashieringSheet({state}: { state: CashieringState }) {
@@ -75,18 +75,31 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
     const displayDocNo = currentPouch ? currentPouch.docNo : "AUTO-GENERATED";
 
     // 🚀 STRICT VALIDATION
-    const hasInvalidCheckAmounts = checks.some((c: CheckDetail) => getPositiveAmount(c.amount) === null);
-    const hasMissingBank = checks.some((c: CheckDetail) => !c.bankId || c.bankId === "");
-    const isFormValid = salesmanId !== "" && grandTotal > 0 && !hasInvalidCheckAmounts && !hasMissingBank;
+    const checkValidationErrors = checks.map((check: CheckDetail) => getCheckValidationErrors(check));
+    const hasInvalidCheckLines = checkValidationErrors.some(errors => Object.values(errors).some(Boolean));
+    const firstInvalidCheck = checkValidationErrors.find(errors => Object.values(errors).some(Boolean));
+    const hasInvalidDenominations = Object.values(denominations).some(quantity => !Number.isInteger(quantity) || quantity < 0);
+    const isFormValid = !isSheetLoading && salesmanId !== "" && grandTotal > 0 && !hasInvalidDenominations && !hasInvalidCheckLines;
+    const lineValidationMessage = firstInvalidCheck?.paymentMethod
+        ? "Payment method required"
+        : firstInvalidCheck?.coa
+            ? "Asset type required"
+            : firstInvalidCheck?.bank
+                ? "Target Bank required"
+                : firstInvalidCheck?.chequeDate
+                    ? "Date on check required"
+                : firstInvalidCheck?.reference
+                    ? "Reference or check number required"
+                    : firstInvalidCheck?.amount
+                            ? "Each non-cash amount must be greater than 0.00"
+                            : null;
     const validationMessage = !salesmanId
         ? "Collector required"
+        : hasInvalidDenominations
+            ? "Cash quantities must be non-negative whole numbers"
         : grandTotal <= 0
             ? "Pouch total must be greater than ₱0.00"
-            : hasInvalidCheckAmounts
-                ? "Each non-cash amount must be greater than ₱0.00"
-                : hasMissingBank
-                    ? "Target Bank required"
-                    : null;
+            : lineValidationMessage;
 
     return (
         <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
@@ -299,7 +312,9 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
 
                                         {checks.map((check: CheckDetail, i: number) => {
                                             const availableInvoices = check.customerId ? (customerInvoices[check.customerId] || []) : routeInvoices;
-                                            const amountError = getPositiveAmount(check.amount) === null;
+                                            const lineErrors = getCheckValidationErrors(check);
+                                            const isSpecialLine = check.tempId?.startsWith("adj-") || check.tempId?.startsWith("ewt-");
+                                            const requiresBank = !isSpecialLine;
 
                                             return (
                                                 <div key={check.tempId}
@@ -325,7 +340,8 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                                      onOpenChange={(open) => setOpenPaymentIdx(open ? i : null)}>
                                                                 <PopoverTrigger asChild>
                                                                     <Button variant="outline"
-                                                                            className={cn("w-full h-8 text-[11px] justify-between px-2 font-bold", !check.paymentMethodId && "border-amber-500/50 text-amber-600 bg-amber-50 dark:bg-amber-900/10")}>
+                                                                            aria-invalid={lineErrors.paymentMethod}
+                                                                            className={cn("w-full h-8 text-[11px] justify-between px-2 font-bold", !check.paymentMethodId && "border-amber-500/50 text-amber-600 bg-amber-50 dark:bg-amber-900/10", lineErrors.paymentMethod && "border-destructive focus-visible:ring-destructive")}>
                                                                         <div
                                                                             className="flex items-center gap-1.5 truncate pr-2">
                                                                             <CreditCard size={12}
@@ -369,7 +385,8 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                                      onOpenChange={(open) => setOpenCoaIdx(open ? i : null)}>
                                                                 <PopoverTrigger asChild>
                                                                     <Button variant="outline"
-                                                                            className={cn("w-full h-8 text-[11px] justify-between px-2 font-bold", !check.coaId && "border-amber-500/50 text-amber-600 bg-amber-50 dark:bg-amber-900/10")}>
+                                                                             aria-invalid={lineErrors.coa}
+                                                                             className={cn("w-full h-8 text-[11px] justify-between px-2 font-bold", !check.coaId && "border-amber-500/50 text-amber-600 bg-amber-50 dark:bg-amber-900/10", lineErrors.coa && "border-destructive focus-visible:ring-destructive")}>
                                                                         <div
                                                                             className="flex items-center gap-1.5 truncate pr-2">
                                                                             <Landmark size={12}
@@ -406,13 +423,14 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
 
                                                         <div className="space-y-1.5 min-w-0">
                                                             <label
-                                                                className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Bank <span
-                                                                className="text-destructive">*</span></label>
+                                                                className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Bank {requiresBank && <span
+                                                                className="text-destructive">*</span>}</label>
                                                             <Popover open={openBankIdx === i}
                                                                      onOpenChange={(open) => setOpenBankIdx(open ? i : null)}>
                                                                 <PopoverTrigger asChild>
                                                                     <Button variant="outline"
-                                                                            className={cn("w-full h-8 text-[11px] font-bold justify-between px-2", !check.bankId ? "border-amber-500/50 text-amber-600 bg-amber-50" : "text-muted-foreground")}>
+                                                                             aria-invalid={lineErrors.bank}
+                                                                             className={cn("w-full h-8 text-[11px] font-bold justify-between px-2", !check.bankId ? "border-amber-500/50 text-amber-600 bg-amber-50" : "text-muted-foreground", lineErrors.bank && "border-destructive focus-visible:ring-destructive")}>
                                                                         <span
                                                                             className="truncate pr-2">{check.bankId ? banks.find((b: Bank) => b.id.toString() === check.bankId)?.bankName : "Required"}</span>
                                                                         <ChevronsUpDown
@@ -562,19 +580,26 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                                 / Check No <span
                                                                     className="text-destructive">*</span></label>
                                                             <Input
-                                                                className="h-8 text-xs font-bold placeholder:font-normal bg-background"
+                                                                aria-invalid={lineErrors.reference}
+                                                                className={cn("h-8 text-xs font-bold placeholder:font-normal bg-background", lineErrors.reference && "border-destructive focus-visible:ring-destructive")}
                                                                 placeholder="00001234" value={check.checkNo}
                                                                 onChange={(e) => updateCheck(i, "checkNo", e.target.value)}/>
                                                         </div>
                                                         <div className="space-y-1.5">
                                                             <label
-                                                                className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Date
-                                                                on Check</label>
-                                                            <Input type="date"
-                                                                   className="h-8 text-[10px] font-bold text-muted-foreground uppercase bg-background"
-                                                                   value={check.chequeDate}
-                                                                   onChange={(e) => updateCheck(i, "chequeDate", e.target.value)}/>
-                                                        </div>
+                                                                 className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Date
+                                                                 on Check <span className="text-destructive">*</span></label>
+                                                             <Input type="date"
+                                                                    aria-invalid={lineErrors.chequeDate}
+                                                                    className={cn("h-8 text-[10px] font-bold text-muted-foreground uppercase bg-background", lineErrors.chequeDate && "border-destructive focus-visible:ring-destructive")}
+                                                                    value={check.chequeDate}
+                                                                    onChange={(e) => updateCheck(i, "chequeDate", e.target.value)}/>
+                                                             {lineErrors.chequeDate && (
+                                                                 <p className="text-[10px] font-bold text-destructive" role="alert">
+                                                                     Date on check is required.
+                                                                 </p>
+                                                             )}
+                                                         </div>
                                                         <div className="space-y-1.5">
                                                             <label
                                                                 className="text-[9px] font-black text-primary uppercase tracking-widest block">Amount <span
@@ -584,13 +609,13 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                                     className="absolute left-2.5 top-2 text-[10px] font-black text-muted-foreground">₱</span>
                                                                 <Input
                                                                     type="number" min="0.01" step="0.01"
-                                                                    aria-invalid={amountError}
-                                                                    className={cn("h-8 pl-6 text-xs font-black text-right text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-900/10 border-blue-200/60 shadow-inner", amountError && "border-destructive focus-visible:ring-destructive")}
+                                                                    aria-invalid={lineErrors.amount}
+                                                                    className={cn("h-8 pl-6 text-xs font-black text-right text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-900/10 border-blue-200/60 shadow-inner", lineErrors.amount && "border-destructive focus-visible:ring-destructive")}
                                                                     placeholder="0.00" value={check.amount}
                                                                     onChange={(e) => updateCheck(i, "amount", e.target.value)}
                                                                 />
                                                             </div>
-                                                            {amountError && (
+                                                            {lineErrors.amount && (
                                                                 <p className="text-[10px] font-bold text-destructive" role="alert">
                                                                     {check.amount.trim() ? "Amount must be greater than ₱0.00." : "Amount is required."}
                                                                 </p>
@@ -618,7 +643,7 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                         {!isFormValid && !isSheetLoading && (
                             <span
                                 className="flex items-center justify-center w-full sm:w-auto gap-1.5 text-[11px] font-bold uppercase tracking-widest text-amber-600 dark:text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 rounded-md">
-                                <AlertCircle size={14}/> {validationMessage}
+                                <AlertCircle size={14}/> {lineValidationMessage || validationMessage}
                             </span>
                         )}
                     </div>

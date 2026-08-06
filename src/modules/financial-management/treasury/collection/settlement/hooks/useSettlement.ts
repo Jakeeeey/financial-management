@@ -4,6 +4,14 @@ import { useState, useEffect, useCallback } from "react";
 import { UnpaidInvoice, SettlementAllocation, PaymentHistory, UserDto } from "../../types";
 import { fetchProvider } from "../../providers/fetchProvider";
 import { toast } from "sonner";
+import {
+    findOverAllocatedInvoice,
+    findUnderAllocatedInvoice,
+    getCartBalanceTotals,
+    getInvoiceAppliedForSettlement,
+    getInvoiceRequiredBalance,
+    SETTLEMENT_BALANCE_TOLERANCE,
+} from "../utils/settlement-balance";
 
 export interface RawCashBucket {
     detailId?: number;
@@ -124,6 +132,7 @@ export function useSettlement(pouchId: string | number) {
     const [isLoadingPlans, setIsLoadingPlans] = useState(false);
     const [dispatchDate, setDispatchDate] = useState<string>(new Date().toISOString().split('T')[0]);
     const [isLoadingCredits, setIsLoadingCredits] = useState(false);
+    const [isClearing, setIsClearing] = useState(false);
     const [pendingDeletions, setPendingDeletions] = useState<{ id: string; dbId: number; type: "EWT" | "ADJUSTMENT" }[]>([]);
     const [pendingEdits, setPendingEdits] = useState<Record<string, { type: "EWT" | "ADJUSTMENT"; dbId: number; payload: PendingEditPayload }>>({});
 
@@ -443,27 +452,32 @@ export function useSettlement(pouchId: string | number) {
         setAllocations(prev => prev.filter(a => a.invoiceId !== invoiceId));
     };
 
-    const clearCart = async () => {
-        if (confirm("Are you sure you want to clear all invoices and allocations from this session? Any linked Variances or EWTs will be destroyed.")) {
-            const currentInvoiceIds = cartInvoices.map(inv => inv.id);
-            const linkedItems = wallet.filter(w =>
-                w.invoiceId !== undefined &&
-                currentInvoiceIds.includes(w.invoiceId) &&
-                (w.type === "EWT" || w.type === "ADJUSTMENT")
-            );
+    const clearCart = async (): Promise<boolean> => {
+        if (!confirm("Are you sure you want to clear all invoices and allocations from this session? Any linked Variances or EWTs will be destroyed.")) {
+            return false;
+        }
 
-            for (const item of linkedItems) {
-                await deleteWalletItem(item.id, item.type, true);
-            }
-            setCartInvoices([]);
-            setAllocations([]);
+        setIsClearing(true);
+        try {
+            await fetchProvider.post(`/api/fm/treasury/collections/${pouchId}/allocate/clear`, {});
+            setPendingEdits({});
+            setPendingDeletions([]);
+            await fetchData();
+            toast.success("Cart cleared and staged allocations rolled back.");
+            return true;
+        } catch (err) {
+            toast.error("Failed to clear staged settlement allocations.");
+            console.error("Failed to clear settlement cart:", err);
+            return false;
+        } finally {
+            setIsClearing(false);
         }
     };
 
     const loadDispatchPlanInvoices = async (planId: number) => {
         setIsLoadingRoute(true);
         try {
-            const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/dispatch-plan-invoices?planId=${planId}`);
+            const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/dispatch-plan-invoices?planId=${planId}&currentPouchId=${encodeURIComponent(String(pouchId))}`);
             if (!data || data.length === 0) {
                 toast.info("No additional pending invoices found for this specific Dispatch Plan.");
                 return;
@@ -497,7 +511,7 @@ export function useSettlement(pouchId: string | number) {
         if (!salesmanId || !collectionDate) return toast.error("Cannot load route: Missing Salesman ID or Date.");
         setIsLoadingRoute(true);
         try {
-            const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/route-invoices?salesmanId=${salesmanId}&date=${collectionDate}`);
+            const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/route-invoices?salesmanId=${encodeURIComponent(String(salesmanId))}&date=${encodeURIComponent(collectionDate)}&currentPouchId=${encodeURIComponent(String(pouchId))}`);
             if (!data || data.length === 0) {
                 toast.info("No additional pending invoices found for this route on or before " + collectionDate);
                 return;
@@ -527,7 +541,7 @@ export function useSettlement(pouchId: string | number) {
     };
 
     const getUsedAmount = (sourceId: string) => Math.round(allocations.filter(a => a.sourceTempId === sourceId).reduce((sum, a) => sum + a.amountApplied, 0) * 100) / 100;
-    const getInvoiceApplied = (invoiceId: number) => Math.round(allocations.filter(a => a.invoiceId === invoiceId).reduce((sum, a) => sum + a.amountApplied, 0) * 100) / 100;
+    const getInvoiceApplied = (invoiceId: number) => getInvoiceAppliedForSettlement(allocations, invoiceId);
 
     const handleAllocate = (invoiceId: number, sourceId: string, amountInput: number) => {
         setAllocations(prev => {
@@ -542,7 +556,12 @@ export function useSettlement(pouchId: string | number) {
                 if (wItem && inv) {
                     const walletUsedElsewhere = prev.filter(a => a.sourceTempId === sourceId && a.invoiceId !== invoiceId).reduce((sum, a) => sum + a.amountApplied, 0);
                     const walletAvailable = Math.max(0, Math.abs(wItem.originalAmount) - walletUsedElsewhere);
-                    const finalAmount = Math.min(safeInput, walletAvailable);
+                    const invoiceUsedElsewhere = prev
+                        .filter(a => a.invoiceId === invoiceId && a.sourceTempId !== sourceId)
+                        .reduce((sum, a) => sum + a.amountApplied, 0);
+                    const invoiceBalance = Number(inv.remainingBalance ?? inv.originalAmount ?? 0);
+                    const invoiceAvailable = Math.max(0, invoiceBalance - invoiceUsedElsewhere);
+                    const finalAmount = Math.min(safeInput, walletAvailable, invoiceAvailable);
 
                     if (finalAmount > 0.009) {
                         filtered.push({
@@ -626,6 +645,29 @@ export function useSettlement(pouchId: string | number) {
 
     const submitSettlement = async (): Promise<boolean> => {
         try {
+            const underAllocatedInvoice = findUnderAllocatedInvoice(cartInvoices, allocations);
+            if (underAllocatedInvoice) {
+                const remaining = getInvoiceRequiredBalance(underAllocatedInvoice) - getInvoiceApplied(underAllocatedInvoice.id);
+                toast.error(
+                    `Invoice ${underAllocatedInvoice.invoiceNo} still has ₱${remaining.toLocaleString(undefined, { minimumFractionDigits: 2 })} unallocated. Apply the balance or remove it from the cart.`
+                );
+                return false;
+            }
+
+            const overAllocatedInvoice = findOverAllocatedInvoice(cartInvoices, allocations);
+            if (overAllocatedInvoice) {
+                toast.error(`The allocation for ${overAllocatedInvoice.invoiceNo} exceeds its remaining balance.`);
+                return false;
+            }
+
+            const cartTotals = getCartBalanceTotals(cartInvoices, allocations);
+            if (Math.abs(cartTotals.difference) > SETTLEMENT_BALANCE_TOLERANCE) {
+                toast.error(
+                    `Settlement cart is not balanced. ₱${Math.abs(cartTotals.difference).toLocaleString(undefined, { minimumFractionDigits: 2 })} remains unallocated.`
+                );
+                return false;
+            }
+
             // 1. Process all pending edits in database
             for (const [, editInfo] of Object.entries(pendingEdits)) {
                 const endpoint = editInfo.type === "EWT"
@@ -687,14 +729,14 @@ export function useSettlement(pouchId: string | number) {
             await fetchData();
             return true;
         } catch (err) {
-            toast.error("Failed to secure settlement to ledger.");
+            toast.error(err instanceof Error && err.message ? err.message : "Failed to secure settlement to ledger.");
             console.error(err);
             return false;
         }
     };
 
     return {
-        isLoading, wallet, credits, cartInvoices, allocations, setAllocations, salesmanName, salesmanId, findings, docNo, isPosted,
+        isLoading, wallet, credits, cartInvoices, allocations, setAllocations, salesmanName, salesmanId, findings, docNo, isPosted, isClearing,
         isLoadingRoute, addToCart, removeFromCart, clearCart, loadRouteInvoices, fetchAndInjectExternalCredit,
         getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement,
         deleteWalletItem, editWalletItem, dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate,

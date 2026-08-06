@@ -40,7 +40,14 @@ export const fetchProvider = {
 
             if (!response.ok) {
                 const errorMsg = await response.text();
-                throw new Error(errorMsg || `POST Error: ${response.status}`);
+                let message = errorMsg || `POST Error: ${response.status}`;
+                try {
+                    const parsed = JSON.parse(errorMsg) as { detail?: string; message?: string; error?: string };
+                    message = parsed.detail || parsed.message || parsed.error || message;
+                } catch {
+                    // Preserve plain-text API errors.
+                }
+                throw new Error(message);
             }
 
             // 🚀 PRO TIP: Check Content-Type.

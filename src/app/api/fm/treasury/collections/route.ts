@@ -5,12 +5,11 @@ import { cookies } from "next/headers";
 interface CollectionRawResponse {
     id: number;
     docNo?: string;
-    collectionDate: string;
-    salesman?: {
-        salesmanCode: string;
-        salesmanName: string;
-    };
+    date?: string;
+    salesmanCode?: string;
+    salesmanName?: string;
     totalAmount?: number;
+    appliedAmount?: number;
 }
 
 export const runtime = "nodejs";
@@ -58,11 +57,12 @@ export async function GET() {
         // 🚀 FIXED: Correctly closed the map function and mapped to CollectionSummary interface
         const mappedData = data.map((col: CollectionRawResponse) => ({
             id: col.id,
-            docNo: col.docNo, // Fallback just in case
-            date: col.collectionDate,
-            salesmanCode: col.salesman?.salesmanCode || "N/A",
-            salesmanName: col.salesman?.salesmanName || "Unknown",
+            docNo: col.docNo,
+            date: col.date || "",
+            salesmanCode: col.salesmanCode || "N/A",
+            salesmanName: col.salesmanName || "Unknown",
             amount: col.totalAmount || 0,
+            appliedAmount: col.appliedAmount || 0,
             status: "Draft" // Unposted collections are Drafts
         }));
 
