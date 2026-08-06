@@ -42,6 +42,14 @@ import InvoiceSearchPopover from "./InvoiceSearchPopover";
 import AllocationSidePanel from "./AllocationSidePanel";
 import { generateAdjustmentPDF } from "../utils/adjustment-pdf-generator";
 import { printSettlementReceiptA4 } from "../utils/printSettlementReceiptA4";
+import {
+    findOverAllocatedInvoice,
+    findUnderAllocatedInvoice,
+    getCartBalanceTotals,
+    getInvoiceAppliedForSettlement,
+    getInvoiceRequiredBalance,
+    SETTLEMENT_BALANCE_TOLERANCE,
+} from "../utils/settlement-balance";
 
 export interface SettlementCommandCenterProps {
     id: string | number;
@@ -298,20 +306,24 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
     }, 0), [allocations, wallet]);
 
     const remainingToAllocate = Math.round(((pouchTotal + ewtTotal + varianceTotal) - totalAllocated) * 100) / 100;
-    const cartTotalBalance = Math.round(cartInvoices.reduce((sum, inv) => sum + (inv.remainingBalance || 0), 0) * 100) / 100;
-    const cartTotalAppliedSession = Math.round(allocations.reduce((sum, a) => sum + a.amountApplied, 0) * 100) / 100;
-    const unallocatedInvoice = cartInvoices.find(inv => getInvoiceApplied(inv.id) <= 0.01);
-    const overAllocatedInvoice = cartInvoices.find(inv =>
-        getInvoiceApplied(inv.id) > Number(inv.remainingBalance || inv.originalAmount || 0) + 0.01
-    );
-    const isCartBalanced = !unallocatedInvoice && !overAllocatedInvoice;
+    const cartBalanceTotals = getCartBalanceTotals(cartInvoices, allocations);
+    const cartTotalBalance = cartBalanceTotals.required;
+    const cartTotalAppliedSession = cartBalanceTotals.applied;
+    const underAllocatedInvoice = findUnderAllocatedInvoice(cartInvoices, allocations);
+    const overAllocatedInvoice = findOverAllocatedInvoice(cartInvoices, allocations);
+    const isCartBalanced = !underAllocatedInvoice
+        && !overAllocatedInvoice
+        && Math.abs(cartBalanceTotals.difference) <= SETTLEMENT_BALANCE_TOLERANCE;
     const isPouchBalanced = Math.abs(remainingToAllocate) <= 0.01;
     const isCommitReady = isPouchBalanced && isCartBalanced;
-    const cartBalanceMessage = unallocatedInvoice
-        ? `Apply an amount to ${unallocatedInvoice.invoiceNo} or remove it from the cart.`
+    const cartBalanceMessage = underAllocatedInvoice
+        ? `Invoice ${underAllocatedInvoice.invoiceNo} still has ₱${(
+            getInvoiceRequiredBalance(underAllocatedInvoice)
+            - getInvoiceAppliedForSettlement(allocations, underAllocatedInvoice.id)
+        ).toLocaleString(undefined, { minimumFractionDigits: 2 })} unallocated. Apply the balance or remove it from the cart.`
         : overAllocatedInvoice
             ? `The allocation for ${overAllocatedInvoice.invoiceNo} exceeds its remaining balance.`
-            : "";
+            : `Settlement cart is not balanced. ₱${Math.abs(cartBalanceTotals.difference).toLocaleString(undefined, { minimumFractionDigits: 2 })} remains unallocated.`;
 
     const handleMasterSave = async () => {
         if (!isCommitReady) {

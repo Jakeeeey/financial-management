@@ -10,6 +10,14 @@ import { Input } from "@/components/ui/input";
 import { UnpaidInvoice, SettlementAllocation } from "../../types";
 import { WalletItem } from "../hooks/useSettlement";
 import { cn } from "@/lib/utils";
+import {
+    findOverAllocatedInvoice,
+    findUnderAllocatedInvoice,
+    getCartBalanceTotals,
+    getInvoiceAppliedForSettlement,
+    getInvoiceRequiredBalance,
+    SETTLEMENT_BALANCE_TOLERANCE,
+} from "../utils/settlement-balance";
 
 export interface SettlementInvoiceCartTableProps {
     isPosted: boolean;
@@ -65,10 +73,19 @@ export default function SettlementInvoiceCartTable({
         );
     }, [sortedCartInvoices, cartSearchQuery]);
 
-    const unallocatedInvoice = cartInvoices.find(inv => getInvoiceApplied(inv.id) <= 0.01);
-    const overAllocatedInvoice = cartInvoices.find(inv =>
-        getInvoiceApplied(inv.id) > Number(inv.remainingBalance || inv.originalAmount || 0) + 0.01
-    );
+    const cartBalanceTotals = getCartBalanceTotals(cartInvoices, allocations);
+    const underAllocatedInvoice = findUnderAllocatedInvoice(cartInvoices, allocations);
+    const overAllocatedInvoice = findOverAllocatedInvoice(cartInvoices, allocations);
+    const isCartUnbalanced = Boolean(underAllocatedInvoice || overAllocatedInvoice)
+        || Math.abs(cartBalanceTotals.difference) > SETTLEMENT_BALANCE_TOLERANCE;
+    const cartValidationMessage = underAllocatedInvoice
+        ? `Invoice ${underAllocatedInvoice.invoiceNo} still has ₱${(
+            getInvoiceRequiredBalance(underAllocatedInvoice)
+            - getInvoiceAppliedForSettlement(allocations, underAllocatedInvoice.id)
+        ).toLocaleString(undefined, { minimumFractionDigits: 2 })} unallocated. Apply the balance or remove it before committing.`
+        : overAllocatedInvoice
+            ? `The allocation for ${overAllocatedInvoice.invoiceNo} exceeds its remaining balance.`
+            : `Settlement cart is not balanced. ₱${Math.abs(cartBalanceTotals.difference).toLocaleString(undefined, { minimumFractionDigits: 2 })} remains unallocated.`;
 
     return (
         <div className="relative w-full h-full flex flex-col overflow-hidden bg-card">
@@ -86,13 +103,11 @@ export default function SettlementInvoiceCartTable({
                 </div>
             </div>
 
-            {cartInvoices.length > 0 && !isPosted && (unallocatedInvoice || overAllocatedInvoice) && (
+            {cartInvoices.length > 0 && !isPosted && isCartUnbalanced && (
                 <div role="alert" className="px-3 py-2 border-b border-orange-200 bg-orange-50 text-orange-800 flex items-center gap-2 shrink-0">
                     <Info size={13} className="shrink-0" />
                     <span className="text-[10px] font-bold">
-                        {unallocatedInvoice
-                            ? `Apply an amount to ${unallocatedInvoice.invoiceNo} or remove it from the cart before committing.`
-                            : `The allocation for ${overAllocatedInvoice?.invoiceNo} exceeds its remaining balance.`}
+                        {cartValidationMessage}
                     </span>
                 </div>
             )}

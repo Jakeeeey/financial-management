@@ -4,6 +4,14 @@ import { useState, useEffect, useCallback } from "react";
 import { UnpaidInvoice, SettlementAllocation, PaymentHistory, UserDto } from "../../types";
 import { fetchProvider } from "../../providers/fetchProvider";
 import { toast } from "sonner";
+import {
+    findOverAllocatedInvoice,
+    findUnderAllocatedInvoice,
+    getCartBalanceTotals,
+    getInvoiceAppliedForSettlement,
+    getInvoiceRequiredBalance,
+    SETTLEMENT_BALANCE_TOLERANCE,
+} from "../utils/settlement-balance";
 
 export interface RawCashBucket {
     detailId?: number;
@@ -533,7 +541,7 @@ export function useSettlement(pouchId: string | number) {
     };
 
     const getUsedAmount = (sourceId: string) => Math.round(allocations.filter(a => a.sourceTempId === sourceId).reduce((sum, a) => sum + a.amountApplied, 0) * 100) / 100;
-    const getInvoiceApplied = (invoiceId: number) => Math.round(allocations.filter(a => a.invoiceId === invoiceId).reduce((sum, a) => sum + a.amountApplied, 0) * 100) / 100;
+    const getInvoiceApplied = (invoiceId: number) => getInvoiceAppliedForSettlement(allocations, invoiceId);
 
     const handleAllocate = (invoiceId: number, sourceId: string, amountInput: number) => {
         setAllocations(prev => {
@@ -637,17 +645,26 @@ export function useSettlement(pouchId: string | number) {
 
     const submitSettlement = async (): Promise<boolean> => {
         try {
-            const unallocatedInvoice = cartInvoices.find(invoice => getInvoiceApplied(invoice.id) <= 0.01);
-            if (unallocatedInvoice) {
-                toast.error(`Apply an amount to ${unallocatedInvoice.invoiceNo} or remove it from the cart.`);
+            const underAllocatedInvoice = findUnderAllocatedInvoice(cartInvoices, allocations);
+            if (underAllocatedInvoice) {
+                const remaining = getInvoiceRequiredBalance(underAllocatedInvoice) - getInvoiceApplied(underAllocatedInvoice.id);
+                toast.error(
+                    `Invoice ${underAllocatedInvoice.invoiceNo} still has ₱${remaining.toLocaleString(undefined, { minimumFractionDigits: 2 })} unallocated. Apply the balance or remove it from the cart.`
+                );
                 return false;
             }
 
-            const overAllocatedInvoice = cartInvoices.find(invoice =>
-                getInvoiceApplied(invoice.id) > Number(invoice.remainingBalance ?? invoice.originalAmount ?? 0) + 0.01
-            );
+            const overAllocatedInvoice = findOverAllocatedInvoice(cartInvoices, allocations);
             if (overAllocatedInvoice) {
                 toast.error(`The allocation for ${overAllocatedInvoice.invoiceNo} exceeds its remaining balance.`);
+                return false;
+            }
+
+            const cartTotals = getCartBalanceTotals(cartInvoices, allocations);
+            if (Math.abs(cartTotals.difference) > SETTLEMENT_BALANCE_TOLERANCE) {
+                toast.error(
+                    `Settlement cart is not balanced. ₱${Math.abs(cartTotals.difference).toLocaleString(undefined, { minimumFractionDigits: 2 })} remains unallocated.`
+                );
                 return false;
             }
 
