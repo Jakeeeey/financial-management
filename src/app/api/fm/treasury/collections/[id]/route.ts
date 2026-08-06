@@ -8,6 +8,15 @@ const getSpringBaseUrl = () => {
     return (url || "http://localhost:8080").replace(/\/$/, "");
 };
 
+const getSpringErrorMessage = (errorText: string, fallback: string) => {
+    try {
+        const parsed = JSON.parse(errorText) as { detail?: string; message?: string; error?: string };
+        return parsed.detail || parsed.message || parsed.error || fallback;
+    } catch {
+        return errorText || fallback;
+    }
+};
+
 // 🚀 GET: Fetch a single pouch for Hydration
 export async function GET(
     request: NextRequest,
@@ -67,7 +76,9 @@ export async function PUT(
 
         if (!res.ok) {
             const errorText = await res.text();
-            throw new Error(errorText || `Update failed: ${res.status}`);
+            return NextResponse.json({
+                message: getSpringErrorMessage(errorText, `Update failed: ${res.status}`)
+            }, { status: res.status });
         }
 
         return NextResponse.json({ success: true });
