@@ -29,10 +29,32 @@ interface PouchDetailResponse {
 }
 
 export const getPositiveAmount = (value: string): number | null => {
-    if (!value.trim()) return null;
+    if (!value?.trim()) return null;
 
     const amount = Number(value);
     return Number.isFinite(amount) && amount > 0 ? amount : null;
+};
+
+export interface CheckValidationErrors {
+    paymentMethod: boolean;
+    coa: boolean;
+    bank: boolean;
+    reference: boolean;
+    amount: boolean;
+}
+
+export const getCheckValidationErrors = (check: CheckDetail): CheckValidationErrors => {
+    const isAdjustment = check.tempId?.startsWith("adj-") ?? false;
+    const isEwt = check.tempId?.startsWith("ewt-") ?? false;
+    const isGenericRemittance = !isAdjustment && !isEwt;
+
+    return {
+        paymentMethod: isGenericRemittance && !check.paymentMethodId?.trim(),
+        coa: isGenericRemittance && !check.coaId?.trim(),
+        bank: isGenericRemittance && !check.bankId?.trim(),
+        reference: !isAdjustment && !check.checkNo?.trim(),
+        amount: getPositiveAmount(check.amount) === null,
+    };
 };
 
 const getSubmissionErrorMessage = (error: unknown): string => {
@@ -235,10 +257,6 @@ export function useCashiering(currentUser: CurrentUser) {
     const handlePaymentMethodSelect = (index: number, methodId: string) => {
         const updated = [...checks];
         updated[index].paymentMethodId = methodId;
-        const method = paymentMethods.find(m => m.methodId.toString() === methodId);
-        if (method && method.coaId) {
-            updated[index].coaId = method.coaId.toString();
-        }
         setChecks(updated);
     };
 
@@ -288,11 +306,14 @@ export function useCashiering(currentUser: CurrentUser) {
     };
 
     const handleSubmit = async () => {
+        if (isSheetLoading) return;
         if (!salesmanId) return alert("Please select a Collector.");
+        if (Object.values(denominations).some(quantity => !Number.isInteger(quantity) || quantity < 0)) {
+            return alert("Cash quantities must be non-negative whole numbers.");
+        }
         if (grandTotal <= 0) return alert("Cannot save an empty pouch.");
-        if (!checks.every(c => c.bankId && c.bankId !== "")) return alert("All non-cash assets require a Target Bank selection.");
-        if (checks.some(c => getPositiveAmount(c.amount) === null)) {
-            return alert("Each non-cash remittance requires an amount greater than ₱0.00.");
+        if (checks.some(check => Object.values(getCheckValidationErrors(check)).some(Boolean))) {
+            return alert("Complete all required non-cash remittance fields before saving.");
         }
 
         setIsSubmitting(true);
@@ -315,13 +336,13 @@ export function useCashiering(currentUser: CurrentUser) {
                     const custObj = customers.find(cust => cust.id.toString() === c.customerId);
                     return {
                         tempId: c.tempId,
-                        paymentMethodId: c.paymentMethodId ? parseInt(c.paymentMethodId) : null,
-                        coaId: parseInt(c.coaId) || 2,
-                        bankId: c.bankId ? parseInt(c.bankId) : null,
+                        paymentMethodId: Number(c.paymentMethodId),
+                        coaId: Number(c.coaId),
+                        bankId: Number(c.bankId),
                         customerCode: custObj ? (custObj.customerCode || custObj.code) : null,
                         invoiceId: c.invoiceId ? parseInt(c.invoiceId) || null : null,
-                        referenceNo: c.checkNo,
-                        amount: Number(c.amount),
+                        referenceNo: c.checkNo.trim(),
+                        amount: getPositiveAmount(c.amount) as number,
                         chequeDate: c.chequeDate ? `${c.chequeDate}T00:00:00` : null
                     };
                 })
