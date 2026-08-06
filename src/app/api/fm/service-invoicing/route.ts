@@ -342,6 +342,9 @@ export async function POST(request: NextRequest) {
             gross_amount,
             discount_amount,
             net_amount,
+            sales_type,
+            price_type,
+            payment_terms,
             remarks,
             mappings
         } = payload;
@@ -473,7 +476,7 @@ export async function POST(request: NextRequest) {
         const now = new Date().toISOString();
 
         // Resolve payment_terms FK ID
-        const resolvedPaymentTerms: number | null = payment_terms && Number(payment_terms) !== 0 ? Number(payment_terms) : null;
+        const resolvedPaymentTerms: number | null = (payment_terms && Number(payment_terms) !== 0 ? Number(payment_terms) : null) ?? paymentTermId;
 
         // 3. Create Parent Sales Invoice in Directus
         const parentInvoicePayload = {
