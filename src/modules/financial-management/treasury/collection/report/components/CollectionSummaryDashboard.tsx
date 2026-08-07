@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
-import { FileText, Eye, Search, Filter } from "lucide-react";
+import React, { useState, useMemo } from "react";
+import { ArrowDownUp, ChevronDown, ChevronUp, FileText, Eye, Search, Filter } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,16 +16,25 @@ import { PouchDetailSheet } from "./PouchDetailSheet";
 import { exportCollectionReportToExcel } from "../utils/exportUtils";
 import { generateCollectionPDF } from "../utils/pdf-generator";
 
+type SortKey = "docNo" | "date" | "status" | "totalCash" | "totalCheck" | "netVariance" | "invoiceNetTotal";
+type SortDirection = "asc" | "desc";
+
+type SortConfig = {
+    key: SortKey;
+    direction: SortDirection;
+};
+
 export default function CollectionSummaryDashboard() {
     const { reportData, isLoading, startDate, setStartDate, endDate, setEndDate, fetchReport } = useCollectionReport();
     const [selectedPouch, setSelectedPouch] = useState<PouchReportDto | null>(null);
 
     const [searchQuery, setSearchQuery] = useState("");
     const [statusFilter, setStatusFilter] = useState("ALL");
+    const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "date", direction: "desc" });
 
-    const filteredPouches = useMemo(() => {
+    const visiblePouches = useMemo(() => {
         if (!reportData?.pouches) return [];
-        return reportData.pouches.filter(pouch => {
+        const filtered = reportData.pouches.filter(pouch => {
             const searchLower = searchQuery.toLowerCase();
             const matchesSearch =
                 pouch.docNo.toLowerCase().includes(searchLower) ||
@@ -36,11 +45,71 @@ export default function CollectionSummaryDashboard() {
 
             return matchesSearch && matchesStatus;
         });
-    }, [reportData, searchQuery, statusFilter]);
 
-    useEffect(() => {
-        fetchReport();
-    }, [fetchReport]);
+        return [...filtered].sort((a, b) => {
+            let comparison = 0;
+
+            switch (sortConfig.key) {
+                case "docNo":
+                    comparison = a.docNo.localeCompare(b.docNo, undefined, { numeric: true, sensitivity: "base" });
+                    break;
+                case "date":
+                    comparison = (a.date ? new Date(a.date).getTime() : 0) - (b.date ? new Date(b.date).getTime() : 0);
+                    break;
+                case "status":
+                    comparison = (a.isPosted ? "POSTED" : "DRAFT").localeCompare(b.isPosted ? "POSTED" : "DRAFT");
+                    break;
+                case "totalCash":
+                    comparison = a.totalCash - b.totalCash;
+                    break;
+                case "totalCheck":
+                    comparison = a.totalCheck - b.totalCheck;
+                    break;
+                case "netVariance":
+                    comparison = (a.overage - a.shortage) - (b.overage - b.shortage);
+                    break;
+                case "invoiceNetTotal":
+                    comparison = a.invoiceNetTotal - b.invoiceNetTotal;
+                    break;
+            }
+
+            return sortConfig.direction === "asc" ? comparison : -comparison;
+        });
+    }, [reportData, searchQuery, sortConfig, statusFilter]);
+
+    const handleSort = (key: SortKey) => {
+        setSortConfig((current) => ({
+            key,
+            direction: current.key === key && current.direction === "asc" ? "desc" : "asc",
+        }));
+    };
+
+    const renderSortHeader = (key: SortKey, label: string, className = "") => {
+        const isActive = sortConfig.key === key;
+        const icon = isActive
+            ? sortConfig.direction === "asc" ? <ChevronUp size={13} /> : <ChevronDown size={13} />
+            : <ArrowDownUp size={12} className="opacity-40" />;
+
+        return (
+            <th
+                aria-sort={isActive ? sortConfig.direction === "asc" ? "ascending" : "descending" : "none"}
+                className={`h-11 font-bold uppercase tracking-wider text-[10px] text-muted-foreground ${className}`}
+            >
+                <button
+                    type="button"
+                    className="inline-flex items-center gap-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded-sm"
+                    aria-label={`Sort by ${label}${isActive ? `, currently ${sortConfig.direction}ending` : ""}`}
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        handleSort(key);
+                    }}
+                >
+                    {label}
+                    {icon}
+                </button>
+            </th>
+        );
+    };
 
     return (
         // 🚀 1. Make the outer wrapper fixed height so we can scroll internally
@@ -129,20 +198,20 @@ export default function CollectionSummaryDashboard() {
                                 {/* 🚀 The sticky top-0 ensures this never leaves the view while scrolling */}
                                 <thead className="sticky top-0 z-20 bg-card/95 backdrop-blur-sm shadow-sm">
                                     <tr className="border-b border-border/50">
-                                        <th className="pl-6 h-11 font-bold uppercase tracking-wider text-[10px] text-muted-foreground text-left">Doc No.</th>
-                                        <th className="h-11 font-bold uppercase tracking-wider text-[10px] text-muted-foreground text-left">Date</th>
-                                        <th className="h-11 font-bold uppercase tracking-wider text-[10px] text-muted-foreground text-left">Status</th>
-                                        <th className="text-right h-11 font-bold uppercase tracking-wider text-[10px] text-muted-foreground">Total Cash</th>
-                                        <th className="text-right h-11 font-bold uppercase tracking-wider text-[10px] text-muted-foreground">Total Checks</th>
-                                        <th className="text-right h-11 font-bold uppercase tracking-wider text-[10px] text-muted-foreground">Net Variance</th>
-                                        <th className="text-right bg-primary/5 text-primary h-11 font-bold uppercase tracking-wider text-[10px]">Net Invoices</th>
+                                        {renderSortHeader("docNo", "Doc No.", "pl-6 text-left")}
+                                        {renderSortHeader("date", "Date", "text-left")}
+                                        {renderSortHeader("status", "Status", "text-left")}
+                                        {renderSortHeader("totalCash", "Total Cash", "text-right")}
+                                        {renderSortHeader("totalCheck", "Total Checks", "text-right")}
+                                        {renderSortHeader("netVariance", "Net Variance", "text-right")}
+                                        {renderSortHeader("invoiceNetTotal", "Net Invoices", "text-right bg-primary/5 text-primary")}
                                         <th className="text-center w-[100px] pr-6 h-11 font-bold uppercase tracking-wider text-[10px] text-muted-foreground">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {filteredPouches.length === 0 ? (
+                                    {visiblePouches.length === 0 ? (
                                         <tr><td colSpan={8} className="text-center italic text-muted-foreground py-12 text-sm">No pouches found matching your filters.</td></tr>
-                                    ) : filteredPouches.map((pouch) => {
+                                    ) : visiblePouches.map((pouch) => {
                                         const netVariance = pouch.overage - pouch.shortage;
                                         return (
                                             <tr key={pouch.docNo} className="hover:bg-muted/40 transition-colors group cursor-pointer border-b border-border/50" onClick={() => setSelectedPouch(pouch)}>

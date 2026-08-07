@@ -1,14 +1,16 @@
 import * as XLSX from "xlsx";
 import { CollectionSummaryReportDto } from "../hooks/useCollectionReport";
 
+const displayIdentifier = (value?: string | null) => value?.trim() || "\u2014";
+
 export const exportCollectionReportToExcel = (
     reportData: CollectionSummaryReportDto,
     startDate: string,
     endDate: string
 ) => {
     const wb = XLSX.utils.book_new();
+    const totalAssets = (reportData.globalCash || 0) + (reportData.globalChecks || 0);
 
-    // Sheet 1: KPI Summary
     const summaryWs = XLSX.utils.aoa_to_sheet([
         ["COLLECTION SHIFT SUMMARY"],
         ["Date Range:", `${startDate} to ${endDate}`],
@@ -17,6 +19,7 @@ export const exportCollectionReportToExcel = (
         ["METRIC", "AMOUNT (PHP)"],
         ["Total Physical Cash", reportData.globalCash],
         ["Total Checks", reportData.globalChecks],
+        ["Total Assets / Total Remittance", totalAssets],
         ["Total Shortages (Dr)", reportData.globalShortages],
         ["Total Overages (Cr)", reportData.globalOverages],
         ["Net Variance", (reportData.globalOverages || 0) - (reportData.globalShortages || 0)],
@@ -25,46 +28,47 @@ export const exportCollectionReportToExcel = (
     ]);
     XLSX.utils.book_append_sheet(wb, summaryWs, "Summary");
 
-    // Sheet 2: Invoices Settled
-    const invoicesData = reportData.pouches.flatMap(p =>
-        p.invoices.map(i => ({
-            "Date": p.date,
-            "Pouch Doc No": p.docNo,
-            "Status": p.isPosted ? "POSTED" : "DRAFT",
-            "Invoice No": i.invoiceNo,
-            "Customer": i.customerName,
-            "Gross Amount": i.grossAmount,
-            "Memo Amount": i.memoAmount,
-            "Return Amount": i.returnAmount,
-            "Net Amount": i.netAmount
+    const invoicesData = reportData.pouches.flatMap((pouch) =>
+        pouch.invoices.map((invoice) => ({
+            Date: pouch.date,
+            "Pouch Doc No": pouch.docNo,
+            Status: pouch.isPosted ? "POSTED" : "DRAFT",
+            "Invoice No": invoice.invoiceNo,
+            Customer: invoice.customerName,
+            "Actual Invoice Total": invoice.actualInvoiceTotal ?? invoice.invoiceTotal,
+            "Amount Applied": invoice.grossAmount,
+            "Remaining Balance": invoice.remainingBalance,
+            "Memo Amount": invoice.memoAmount,
+            "Return Amount": invoice.returnAmount,
+            "Net Amount": invoice.netAmount,
         }))
     );
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(invoicesData), "Invoices Settled");
 
-    // Sheet 3: Checks
-    const checksData = reportData.pouches.flatMap(p =>
-        p.checks.map(c => ({
-            "Date": c.date || p.date,
-            "Pouch Doc No": c.docNo || p.docNo,
-            "Status": p.isPosted ? "POSTED" : "DRAFT",
-            "Bank": c.bankName,
-            "Check No": c.checkNo,
-            "Customer / Remarks": c.customerName,
-            "Amount": c.amount
+    const checksData = reportData.pouches.flatMap((pouch) =>
+        pouch.checks.map((check) => ({
+            Date: check.date || pouch.date,
+            "Pouch Doc No": check.docNo || pouch.docNo,
+            Status: pouch.isPosted ? "POSTED" : "DRAFT",
+            Bank: check.bankName,
+            "Check No": check.checkNo,
+            "Customer / Remarks": check.customerName,
+            Amount: check.amount,
         }))
     );
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(checksData), "Checks Deposited");
 
-    // Sheet 4: Variances
-    const varianceData = reportData.pouches.flatMap(p =>
-        p.variances.map(v => ({
-            "Date": p.date,
-            "Pouch Doc No": v.docNo || p.docNo,
-            "Status": p.isPosted ? "POSTED" : "DRAFT",
-            "Type": v.type,
-            "Account Title": v.accountTitle,
-            "Remarks": v.remarks,
-            "Amount": v.amount
+    const varianceData = reportData.pouches.flatMap((pouch) =>
+        pouch.variances.map((variance) => ({
+            Date: pouch.date,
+            "Pouch Doc No": variance.docNo || pouch.docNo,
+            Status: pouch.isPosted ? "POSTED" : "DRAFT",
+            Type: variance.type,
+            Customer: displayIdentifier(variance.customerName),
+            "Invoice No": displayIdentifier(variance.invoiceNo),
+            "Account Title": variance.accountTitle,
+            Remarks: variance.remarks,
+            Amount: variance.amount,
         }))
     );
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(varianceData), "Variances");
