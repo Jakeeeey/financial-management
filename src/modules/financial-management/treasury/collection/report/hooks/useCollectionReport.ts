@@ -2,6 +2,8 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { fetchProvider } from "../../providers/fetchProvider";
+import { fetchCompanyProfile } from "../../company-profile";
+import type { CompanyProfile, CompanyProfileStatus } from "../../company-profile";
 
 export interface CheckDetailDto {
     date: string;
@@ -54,6 +56,8 @@ export interface CollectionSummaryReportDto {
 export function useCollectionReport() {
     const [reportData, setReportData] = useState<CollectionSummaryReportDto | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
+    const [companyProfileStatus, setCompanyProfileStatus] = useState<CompanyProfileStatus>("unavailable");
     const requestSequence = useRef(0);
     const didInitialFetch = useRef(false);
 
@@ -64,15 +68,28 @@ export function useCollectionReport() {
     const fetchReport = useCallback(async () => {
         const requestId = ++requestSequence.current;
         setIsLoading(true);
+        setCompanyProfileStatus("loading");
         try {
-            const data = await fetchProvider.get<CollectionSummaryReportDto>(
-                `/api/fm/treasury/collections/report?startDate=${startDate}&endDate=${endDate}`
-            );
+            const [data, profileResult] = await Promise.all([
+                fetchProvider.get<CollectionSummaryReportDto>(
+                    `/api/fm/treasury/collections/report?startDate=${startDate}&endDate=${endDate}`
+                ),
+                fetchCompanyProfile().catch((error: unknown) => {
+                    console.warn("Company profile is unavailable for Collection Report", error);
+                    return { profile: null, status: "error" as const };
+                }),
+            ]);
             if (requestId === requestSequence.current && data) {
                 setReportData(data);
+                setCompanyProfile(profileResult.profile);
+                setCompanyProfileStatus(profileResult.status);
             }
         } catch (error) {
             console.error("Failed to load collection report:", error);
+            if (requestId === requestSequence.current) {
+                setCompanyProfile(null);
+                setCompanyProfileStatus("error");
+            }
         } finally {
             if (requestId === requestSequence.current) {
                 setIsLoading(false);
@@ -86,5 +103,15 @@ export function useCollectionReport() {
         void fetchReport();
     }, [fetchReport]);
 
-    return { reportData, isLoading, startDate, setStartDate, endDate, setEndDate, fetchReport };
+    return {
+        reportData,
+        isLoading,
+        startDate,
+        setStartDate,
+        endDate,
+        setEndDate,
+        fetchReport,
+        companyProfile,
+        companyProfileStatus,
+    };
 }

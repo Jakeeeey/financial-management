@@ -2,15 +2,10 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { fetchProvider } from "../../providers/fetchProvider";
+import { fetchCompanyProfile } from "../../company-profile";
+import type { CompanyProfile, CompanyProfileStatus } from "../../company-profile";
 
-export interface CompanyProfile {
-    companyName: string | null;
-    address: string | null;
-    tin: string | null;
-    logoDataUrl: string | null;
-}
-
-export type CompanyProfileStatus = "loading" | "ready" | "unavailable" | "error";
+export type { CompanyProfile, CompanyProfileStatus } from "../../company-profile";
 
 export interface PostingQueueItem {
     id: number;
@@ -118,22 +113,9 @@ export function usePosting() {
         setCompanyProfileStatus("loading");
 
         try {
-            const response = await fetch("/api/fm/company-profile", {
-                method: "GET",
-                headers: { "Content-Type": "application/json" },
-                cache: "no-store",
-            });
-
-            if (!response.ok) throw new Error(`Company profile request failed: ${response.status}`);
-
-            const payload = await response.json() as { data?: CompanyProfile | null };
-            const profile = payload.data ?? null;
-            const hasOfficialData = Boolean(
-                profile?.companyName || profile?.address || profile?.tin || profile?.logoDataUrl,
-            );
-
-            setCompanyProfile(profile);
-            setCompanyProfileStatus(hasOfficialData ? "ready" : "unavailable");
+            const result = await fetchCompanyProfile();
+            setCompanyProfile(result.profile);
+            setCompanyProfileStatus(result.status);
         } catch (error) {
             console.warn("Company profile is unavailable for Posting review", error);
             setCompanyProfile(null);

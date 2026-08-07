@@ -2,6 +2,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { format } from "date-fns";
 import { CollectionSummaryReportDto } from "../hooks/useCollectionReport";
+import type { CompanyProfile } from "../../company-profile";
 
 const formatAmount = (value?: number | null) =>
     "P " + Number(value ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 });
@@ -11,17 +12,42 @@ const formatShortDate = (value?: string | null) => value ? format(new Date(value
 export const generateCollectionPDF = (
     reportData: CollectionSummaryReportDto,
     startDate: string,
-    endDate: string
+    endDate: string,
+    companyProfile: CompanyProfile | null,
 ) => {
     const doc = new jsPDF("p", "pt", "a4");
     const pageWidth = doc.internal.pageSize.getWidth();
     let currentY = 40;
 
+    const logoDataUrl = companyProfile?.logoDataUrl;
+    const logoMatch = logoDataUrl?.match(/^data:image\/(png|jpe?g);base64,/i);
+    if (logoDataUrl && logoMatch) {
+        try {
+            doc.addImage(logoDataUrl, logoMatch[1].toUpperCase() === "JPG" ? "JPEG" : logoMatch[1].toUpperCase(), 40, 24, 48, 48);
+        } catch {
+            // Keep the report usable when a configured logo cannot be embedded by jsPDF.
+        }
+    }
+
     doc.setFontSize(16);
     doc.setFont("helvetica", "bold");
-    doc.text("MEN2 MARKETING CORPORATION", pageWidth / 2, currentY, { align: "center" });
+    doc.text(companyProfile?.companyName || "Company profile unavailable", pageWidth / 2, currentY, { align: "center" });
 
-    currentY += 20;
+    currentY += 16;
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "normal");
+    if (companyProfile?.address) {
+        const addressLines = doc.splitTextToSize(companyProfile.address, pageWidth - 160);
+        doc.text(addressLines, pageWidth / 2, currentY, { align: "center" });
+        currentY += addressLines.length * 10;
+    }
+    if (companyProfile?.tin) {
+        doc.setFont("helvetica", "bold");
+        doc.text("TIN: " + companyProfile.tin, pageWidth / 2, currentY, { align: "center" });
+        currentY += 12;
+    }
+
+    currentY += 8;
     doc.setFontSize(12);
     doc.setFont("helvetica", "normal");
     doc.text("Treasury Department - Collection Shift Summary", pageWidth / 2, currentY, { align: "center" });

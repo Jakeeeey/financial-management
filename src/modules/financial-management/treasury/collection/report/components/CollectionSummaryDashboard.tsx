@@ -25,7 +25,16 @@ type SortConfig = {
 };
 
 export default function CollectionSummaryDashboard() {
-    const { reportData, isLoading, startDate, setStartDate, endDate, setEndDate, fetchReport } = useCollectionReport();
+    const {
+        reportData,
+        isLoading,
+        startDate,
+        setStartDate,
+        endDate,
+        setEndDate,
+        fetchReport,
+        companyProfile,
+    } = useCollectionReport();
     const [selectedPouch, setSelectedPouch] = useState<PouchReportDto | null>(null);
 
     const [searchQuery, setSearchQuery] = useState("");
@@ -129,7 +138,7 @@ export default function CollectionSummaryDashboard() {
                     }}
                     onPrint={() => {
                         if (reportData) {
-                            generateCollectionPDF(reportData, startDate, endDate);
+                            generateCollectionPDF(reportData, startDate, endDate, companyProfile);
                         }
                     }}
                 />
