@@ -130,8 +130,6 @@ export function CashIssuanceCreateDialog({
     const [poSearchQuery, setPoSearchQuery] = useState("");
     const [isPayeeRegistrationOpen, setIsPayeeRegistrationOpen] = useState(false);
     
-    const [previewDocNo, setPreviewDocNo] = useState("");
-    const [loadingDocNo, setLoadingDocNo] = useState(false);
     const [localSubmitting, setLocalSubmitting] = useState(false);
     const submitLockRef = useRef(false);
 
@@ -245,22 +243,6 @@ export function CashIssuanceCreateDialog({
                 .finally(() => setLoadingData(false));
         }
     }, [open, transactionTypeId]);
-
-    useEffect(() => {
-        if (open && !editData) {
-            setLoadingDocNo(true);
-            const supplierType = transactionTypeId === 2 ? "Non-Trade" : "Trade";
-            disbursementProvider.getNextDocNo(supplierType)
-                .then(setPreviewDocNo)
-                .catch(err => {
-                    console.warn("Failed to load next doc no preview:", err);
-                    setPreviewDocNo("");
-                })
-                .finally(() => setLoadingDocNo(false));
-        } else {
-            setPreviewDocNo("");
-        }
-    }, [open, transactionTypeId, editData]);
 
     useEffect(() => {
         if (open) {
@@ -725,9 +707,6 @@ export function CashIssuanceCreateDialog({
     const handleSubmit = async () => {
         if (loading || isReadOnly || submitLockRef.current) return;
         const isPartialReleasePaymentEdit = isPaymentEditorEnabled && editData?.status === "Partially Released";
-        if (!editData && !previewDocNo) {
-            return toast.error("Document number is still loading. Please try again.");
-        }
         if (!transactionTypeId) return toast.error("Transaction Type is required.");
         if (!payeeId) return toast.error("Please select a Payee.");
         if (!departmentId && !isPartialReleasePaymentEdit) return toast.error("Department is required.");
@@ -754,7 +733,7 @@ export function CashIssuanceCreateDialog({
                 };
             });
             const payload: DisbursementPayload = {
-                docNo: editData ? editData.docNo : (previewDocNo || undefined),
+                ...(editData ? { docNo: editData.docNo } : {}),
                 transactionTypeId: Number(transactionTypeId),
                 payeeId: Number(payeeId),
                 departmentId: departmentId ? Number(departmentId) : undefined,
@@ -774,14 +753,6 @@ export function CashIssuanceCreateDialog({
             const result = editData && isPaymentOnlyEdit && onPaymentAllocationSubmit
                 ? await onPaymentAllocationSubmit(editData.id, paymentLines)
                 : await onSubmit(payload);
-            if (result.code === "DOC_NO_CONFLICT") {
-                if (result.nextDocNo) {
-                    setPreviewDocNo(result.nextDocNo);
-                    toast.warning(`Document number was already used. A new number, ${result.nextDocNo}, is ready. Review and submit again.`);
-                } else {
-                    toast.warning(result.message || "Document number is already in use. Refresh the voucher number before submitting again.");
-                }
-            }
             if (result.success) {
                 setTransactionTypeId(1);
                 setPayeeId("");
@@ -808,7 +779,7 @@ export function CashIssuanceCreateDialog({
                     <DialogHeader className="px-6 py-4 border-b border-border bg-card shrink-0 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                         <div className="space-y-1">
                             <DialogTitle className="text-lg font-bold text-foreground">
-                                {editData ? `Disbursement Voucher [Doc: ${editData.docNo}]` : `New Disbursement Voucher [Doc: ${loadingDocNo ? "..." : (previewDocNo || "AUTO-GENERATED")}]`}
+                                {editData ? `Disbursement Voucher [Doc: ${editData.docNo}]` : "New Disbursement Voucher"}
                             </DialogTitle>
                             <DialogDescription className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
                                 {editData ? "Update voucher details and line items." : "Draft a new voucher, select a payee, and assign financial entries."}
