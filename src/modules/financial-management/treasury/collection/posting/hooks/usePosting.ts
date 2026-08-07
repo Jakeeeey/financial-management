@@ -55,6 +55,10 @@ export interface TreasuryPouchDetail extends PostingQueueItem {
         customerName?: string;
         invoiceNo?: string;
         invoiceId?: string | number;
+        grossAmount?: number;
+        originalAmount?: number;
+        remainingBalance?: number;
+        referenceNo?: string;
     }[];
 }
 
