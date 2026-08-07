@@ -26,7 +26,7 @@ export default function TreasuryPostingDashboard({}: TreasuryPostingDashboardPro
     const {
         queue, isLoading, isPosting, refreshQueue,
         selectedPouch, isLoadingDetails, isReviewSheetOpen, setIsReviewSheetOpen,
-        openReviewSheet, handlePostPouch
+        openReviewSheet, handlePostPouch, companyProfile, companyProfileStatus
     } = usePosting();
 
     const [activeOperationTab, setActiveOperationTab] = useState<string>("All");
@@ -278,6 +278,8 @@ export default function TreasuryPostingDashboard({}: TreasuryPostingDashboardPro
                 pouch={selectedPouch}
                 isPosting={isPosting}
                 onPost={handlePostPouch}
+                companyProfile={companyProfile}
+                companyProfileStatus={companyProfileStatus}
             />
         </div>
     );

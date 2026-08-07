@@ -3,6 +3,15 @@
 import { useState, useEffect, useCallback } from "react";
 import { fetchProvider } from "../../providers/fetchProvider";
 
+export interface CompanyProfile {
+    companyName: string | null;
+    address: string | null;
+    tin: string | null;
+    logoDataUrl: string | null;
+}
+
+export type CompanyProfileStatus = "loading" | "ready" | "unavailable" | "error";
+
 export interface PostingQueueItem {
     id: number;
     docNo: string;
@@ -70,6 +79,8 @@ export function usePosting() {
     const [isLoadingDetails, setIsLoadingDetails] = useState(false);
     const [isReviewSheetOpen, setIsReviewSheetOpen] = useState(false);
     const [isPosting, setIsPosting] = useState(false);
+    const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
+    const [companyProfileStatus, setCompanyProfileStatus] = useState<CompanyProfileStatus>("unavailable");
 
     const fetchQueue = useCallback(async () => {
         setIsLoading(true);
@@ -102,10 +113,39 @@ export function usePosting() {
         fetchQueue();
     }, [fetchQueue]);
 
+    const loadCompanyProfile = useCallback(async () => {
+        setCompanyProfile(null);
+        setCompanyProfileStatus("loading");
+
+        try {
+            const response = await fetch("/api/fm/company-profile", {
+                method: "GET",
+                headers: { "Content-Type": "application/json" },
+                cache: "no-store",
+            });
+
+            if (!response.ok) throw new Error(`Company profile request failed: ${response.status}`);
+
+            const payload = await response.json() as { data?: CompanyProfile | null };
+            const profile = payload.data ?? null;
+            const hasOfficialData = Boolean(
+                profile?.companyName || profile?.address || profile?.tin || profile?.logoDataUrl,
+            );
+
+            setCompanyProfile(profile);
+            setCompanyProfileStatus(hasOfficialData ? "ready" : "unavailable");
+        } catch (error) {
+            console.warn("Company profile is unavailable for Posting review", error);
+            setCompanyProfile(null);
+            setCompanyProfileStatus("error");
+        }
+    }, []);
+
     const openReviewSheet = async (id: number) => {
         setIsReviewSheetOpen(true);
         setIsLoadingDetails(true);
         setSelectedPouch(null);
+        void loadCompanyProfile();
         try {
             const details = await fetchProvider.get<Partial<TreasuryPouchDetail>>(`/api/fm/treasury/collections/${id}`);
             const queueSummaryData = queue.find(q => q.id === id);
@@ -150,6 +190,7 @@ export function usePosting() {
     return {
         queue, isLoading, isPosting, refreshQueue: fetchQueue,
         selectedPouch, isLoadingDetails, isReviewSheetOpen, setIsReviewSheetOpen,
-        openReviewSheet, handlePostPouch
+        openReviewSheet, handlePostPouch,
+        companyProfile, companyProfileStatus,
     };
 }

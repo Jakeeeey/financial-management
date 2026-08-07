@@ -7,6 +7,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { CompanyProfileHeader } from "./CompanyProfileHeader";
+import type { CompanyProfile, CompanyProfileStatus } from "../hooks/usePosting";
 
 export interface CashBucket {
     detailId?: number;
@@ -81,9 +83,20 @@ interface ReviewSheetProps {
     pouch: TreasuryPouch | null;
     isPosting: boolean;
     onPost: (id: number, docNo: string, shortageAmount: number) => void;
+    companyProfile: CompanyProfile | null;
+    companyProfileStatus: CompanyProfileStatus;
 }
 
-export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting, onPost }: ReviewSheetProps) {
+export function ReviewSheet({
+    isOpen,
+    onOpenChange,
+    isLoading,
+    pouch,
+    isPosting,
+    onPost,
+    companyProfile,
+    companyProfileStatus,
+}: ReviewSheetProps) {
 
     const reviewMath = useMemo(() => {
         if (!pouch) return { physical: 0, applied: 0, variance: 0, isShortage: false, isOverage: false, invoiceRows: [] as InvoiceReviewRow[], totalRemainingOpenBalance: 0, totalCash: 0, totalChecks: 0, nonCashBuckets: [] as CashBucket[], cashDenominations: [] as CashBucket[], totalCredits: 0, expectedPhysicalCash: 0 };
@@ -235,6 +248,8 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                 ) : pouch ? (
                     <>
                         <div className="bg-card border-b p-6 shrink-0 shadow-sm z-10 space-y-6">
+                            <CompanyProfileHeader profile={companyProfile} status={companyProfileStatus} />
+
                             <div className="flex justify-between items-start">
                                 <div>
                                     <h2 className="text-3xl font-black font-mono text-primary flex items-center gap-3">
@@ -242,9 +257,6 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                                         {reviewMath.isShortage && <Badge variant="destructive" className="bg-red-600 text-xs tracking-widest px-2.5 py-1 uppercase shadow-sm"><ShieldAlert size={14} className="mr-1.5"/> AUDIT PENDING</Badge>}
                                         {!reviewMath.isShortage && !reviewMath.isOverage && <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs tracking-widest px-2.5 py-1 uppercase shadow-sm"><CheckCircle2 size={14} className="mr-1.5"/> BALANCED</Badge>}
                                     </h2>
-                                    <p className="font-bold text-xs uppercase tracking-widest mt-1 text-muted-foreground">
-                                        System Generated Treasury Review Document
-                                    </p>
                                 </div>
                                 <div className="text-right">
                                     <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest mb-1">Collection Date</p>
