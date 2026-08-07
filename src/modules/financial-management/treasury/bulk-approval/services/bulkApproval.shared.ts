@@ -2,6 +2,11 @@
 import type { NextRequest } from "next/server";
 import { format, startOfWeek, endOfWeek } from "date-fns";
 import { directusFetch } from "./directus.service";
+import {
+  acquireDocumentNumberLock,
+  findNextAvailableDocumentNumber,
+  isDocumentNumberConflictError,
+} from "@/modules/financial-management/treasury/disbursement/document-number";
 import type {
   ApprovalContextResponse,
   ApprovalVoteRow,
@@ -27,6 +32,16 @@ import type {
 } from "./bulkApproval.types";
 
 const COOKIE_NAME = "vos_access_token";
+
+async function directusRequestOrThrow<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await directusFetch<T>(path, init);
+  if (!response.ok) {
+    const error = new Error(JSON.stringify(response.data)) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
+  }
+  return response.data;
+}
 
 export function decodeJwtSub(token: string): number | null {
   try {
@@ -1277,37 +1292,22 @@ export async function finalizeDisbursementDraft(params: {
       };
     }
 
-    const latestLiveRes = await directusFetch(`/items/disbursement?sort=-id&limit=1&fields=id,doc_no`);
-
-    let nextDocNum = 1000;
-    const last = (latestLiveRes.data as DirectusListResponse<{ doc_no?: string | null }>).data?.[0];
-
-    if (last?.doc_no) {
-      nextDocNum = (parseInt(last.doc_no.match(/\d+/)?.[0] || "0", 10) || 1000) + 1;
+    const transactionTypeId = toNumericId(draft.transaction_type);
+    if (transactionTypeId !== 1 && transactionTypeId !== 2) {
+      return { ok: false, status: 400, data: { error: "The draft has an invalid transaction type." } };
     }
 
-    const liveDocNo = `NT-${nextDocNum}`;
-
-    const livePayablesPayload = payDraftRows
+    const approvedPayableRows = payDraftRows
       .filter((p) => {
         if (!p.expense_id) return true;
         const exp = p.expense_id as { id?: number | string; status?: string | null } | null;
         const s = String(exp?.status || "").toLowerCase();
         return s === "approved";
-      })
-      .map((p) => ({
-        disbursement_id: 0, // Placeholder, updated below
-        division_id: toNumericId(p.division_id),
-        amount: p.amount,
-        coa_id: toNumericId(p.coa_id),
-        reference_no: liveDocNo,
-        date: p.date,
-        remarks: p.remarks ?? null,
-      }));
+      });
 
-    const approvedTotal = livePayablesPayload.reduce((sum, p) => sum + toNumber(p.amount), 0);
+    const approvedTotal = approvedPayableRows.reduce((sum, p) => sum + toNumber(p.amount), 0);
 
-    if (!livePayablesPayload.length) {
+    if (!approvedPayableRows.length) {
       const draftStatus = payDraftRows.every(p => {
         const exp = p.expense_id as { status?: string | null } | null;
         return String(exp?.status || "").toLowerCase() === "rejected";
@@ -1330,25 +1330,60 @@ export async function finalizeDisbursementDraft(params: {
       };
     }
 
-    const liveRes = await directusFetch(`/items/disbursement`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        doc_no: liveDocNo,
-        total_amount: approvedTotal,
-        division_id: toNumericId(draft.division_id),
-        payee: toNumericId(draft.payee),
-        encoder_id: toNumericId(draft.encoder_id),
-        remarks: finalRemarks,
-        status: "Submitted",
-        transaction_type: draft.transaction_type,
-        transaction_date: draft.transaction_date,
-        date_created: nowTs,
-        date_updated: nowTs,
-      }),
-    });
+    const releaseDocumentNumberLock = await acquireDocumentNumberLock(transactionTypeId);
+    let liveDocNo = "";
+    let liveRes: { ok: boolean; status: number; data: unknown } | undefined;
+    try {
+      for (let attempt = 0; attempt < 16; attempt++) {
+        const candidate = await findNextAvailableDocumentNumber(
+          transactionTypeId,
+          directusRequestOrThrow,
+        );
+        const response = await directusFetch(`/items/disbursement`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            doc_no: candidate,
+            total_amount: approvedTotal,
+            division_id: toNumericId(draft.division_id),
+            payee: toNumericId(draft.payee),
+            encoder_id: toNumericId(draft.encoder_id),
+            remarks: finalRemarks,
+            status: "Submitted",
+            transaction_type: transactionTypeId,
+            transaction_date: draft.transaction_date,
+            date_created: nowTs,
+            date_updated: nowTs,
+          }),
+        });
 
-    if (!liveRes.ok) return { ok: false, status: liveRes.status, data: liveRes.data };
+        if (response.ok) {
+          liveDocNo = candidate;
+          liveRes = response;
+          break;
+        }
+
+        const error = new Error(JSON.stringify(response.data)) as Error & { status?: number };
+        error.status = response.status;
+        if (!isDocumentNumberConflictError(error) || attempt === 15) {
+          return { ok: false, status: response.status, data: response.data };
+        }
+      }
+    } finally {
+      releaseDocumentNumberLock();
+    }
+
+    if (!liveRes) return { ok: false, status: 502, data: { error: "Failed to allocate a unique document number." } };
+
+    const livePayablesPayload = approvedPayableRows.map((p) => ({
+      disbursement_id: 0,
+      division_id: toNumericId(p.division_id),
+      amount: p.amount,
+      coa_id: toNumericId(p.coa_id),
+      reference_no: liveDocNo,
+      date: p.date,
+      remarks: p.remarks ?? null,
+    }));
 
     const liveId = toNumericId((liveRes.data as DirectusItemResponse<{ id?: number | string }>).data?.id);
 
