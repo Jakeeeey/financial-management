@@ -40,7 +40,7 @@ export async function fetchSupplierProducts(
   try {
     const filter = { supplier_id: { _eq: supplierId } };
     const fields =
-      "id,supplier_id,product_id,discount_type,product_id.product_id,product_id.product_name,product_id.product_code,product_id.short_description,product_id.unit_of_measurement";
+      "id,supplier_id,product_id,discount_type,product_id.product_id,product_id.product_name,product_id.product_code,product_id.short_description,product_id.description,product_id.unit_of_measurement";
 
     const url = `${API_BASE}/product_per_supplier?limit=-1&fields=${fields}&filter=${encodeURIComponent(
       JSON.stringify(filter),
@@ -96,7 +96,7 @@ export async function fetchSupplierProducts(
             : (item.product_id as number),
           discount_type: item.discount_type,
           product_name:
-             (expanded?.product_name as string) || "Unknown Product",
+             (expanded?.description as string) || (expanded?.product_name as string) || "Unknown Product",
           product_code: (expanded?.product_code as string) || null,
           unit_of_measurement:
             unitsMap[expanded?.unit_of_measurement as number] ||

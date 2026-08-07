@@ -1,6 +1,12 @@
 import { z } from "zod";
 
 /**
+ * Philippine phone number regex patterns
+ * Supports: 09XXXXXXXXX, +639XXXXXXXXX, 639XXXXXXXXX
+ */
+const PHONE_REGEX = /^(\+?63|0)?9\d{9}$/;
+
+/**
  * Supplier Schema - Zod validation for supplier entity
  */
 export const SupplierSchema = z.object({
@@ -28,13 +34,13 @@ export const SupplierSchema = z.object({
     .or(z.literal("")),
   phone_number: z
     .string()
-    .transform((val) => val.replace(/\D/g, "")) // Strip non-digits
-    .refine((val) => val.length <= 11, {
-      message: "Phone number must be at most 11 digits",
-    })
     .optional()
-    .default(""),
-  address: z.string().min(1, "Address is required"),
+    .default("")
+    .transform((val) => (val ? val.replace(/\D/g, "") : "")) // Strip non-digits
+    .refine((val) => !val || PHONE_REGEX.test(val), {
+      message: "Invalid Philippine phone number format (e.g., 09171234567)",
+    }),
+  address: z.string().min(1, "Street Address is required"),
   brgy: z.string().min(1, "Barangay is required"),
   city: z.string().min(1, "City is required"),
   state_province: z.string().min(1, "Province is required"),
@@ -83,13 +89,13 @@ export const SupplierFormSchema = z.object({
     .default(""),
   phone_number: z
     .string()
-    .transform((val) => val.replace(/\D/g, "")) // Strip non-digits
-    .refine((val) => val.length <= 11, {
-      message: "Phone number must be at most 11 digits",
-    })
     .optional()
-    .default(""),
-  address: z.string().min(1, "Address is required"),
+    .default("")
+    .transform((val) => (val ? val.replace(/\D/g, "") : "")) // Strip non-digits
+    .refine((val) => !val || PHONE_REGEX.test(val), {
+      message: "Invalid Philippine phone number format (e.g., 09171234567)",
+    }),
+  address: z.string().min(1, "Street Address is required"),
   brgy: z.string().min(1, "Barangay is required"),
   city: z.string().min(1, "City is required"),
   state_province: z.string().min(1, "Province is required"),

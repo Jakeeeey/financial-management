@@ -59,6 +59,7 @@ export function useRepresentatives(supplierId: number | null) {
       try {
         const payload: RepresentativeFormValues = {
           ...data,
+          contact_number: data.contact_number ? data.contact_number.replace(/\D/g, "") : "",
           supplier_id: supplierId,
         };
 

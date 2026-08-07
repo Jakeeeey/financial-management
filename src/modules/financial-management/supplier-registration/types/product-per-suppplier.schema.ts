@@ -31,6 +31,7 @@ export interface ProductPerSupplierWithDetails {
   product_name: string;
   product_code: string | null;
   short_description: string | null;
+  description?: string | null;
   unit_of_measurement?: string | number | null;
   discount_type_name?: string | null;
 }

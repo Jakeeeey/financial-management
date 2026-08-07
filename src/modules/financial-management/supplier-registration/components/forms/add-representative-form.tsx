@@ -168,7 +168,7 @@ export function AddRepresentativeForm({
             render={({ field }) => (
               <FormItem>
                 <FormLabel>
-                  Contact Number <span className="text-destructive">*</span>
+                  Contact Number
                 </FormLabel>
                 <FormControl>
                   <Input placeholder="09XXXXXXXXX" maxLength={13} {...field} />
