@@ -8,6 +8,11 @@ import {
 import { findMissingPayableDivisionError, findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "./_payable-split-integrity";
 import { acquireMemoCapLock, validateSupplierMemoCaps } from "./_memo-cap-integrity";
 import { isPettyCashBankAccount, validatePaymentLine } from "./_payment-method";
+import {
+    acquireDocumentNumberLock,
+    findNextAvailableDocumentNumber,
+    isDocumentNumberConflictError,
+} from "@/modules/financial-management/treasury/disbursement/document-number";
 
 export const runtime = "nodejs";
 
@@ -142,13 +147,6 @@ export type PaymentRow = {
 type SupplierRow = {
     id?: unknown;
 };
-
-interface DirectusDisbursementNo {
-    id: number;
-    trade_no?: number;
-    "non-trade_no"?: number;
-    [key: string]: unknown;
-}
 
 export interface PayableInput {
     id?: number;
@@ -556,59 +554,6 @@ export async function getLineItems(disbursementIds: number[]) {
     };
 }
 
-type DisbursementSnapshot = {
-    header: DisbursementRow;
-    payables: PayableRow[];
-    payments: PaymentRow[];
-};
-
-async function findDisbursementSnapshotByDocNo(docNo: string): Promise<DisbursementSnapshot | null> {
-    const params = new URLSearchParams();
-    params.set("filter[doc_no][_eq]", docNo);
-    params.set("limit", "1");
-    params.set(
-        "fields",
-        [
-            "id",
-            "doc_no",
-            "transaction_type",
-            "payee",
-            "remarks",
-            "total_amount",
-            "paid_amount",
-            "encoder_id",
-            "submitted_by",
-            "approver_id",
-            "released_by",
-            "posted_by",
-            "isPosted",
-            "transaction_date",
-            "date_created",
-            "date_submitted",
-            "date_approved",
-            "date_released",
-            "date_posted",
-            "division_id",
-            "department_id",
-            "fund_source_id",
-            "supporting_documents_url",
-            "status",
-        ].join(","),
-    );
-
-    const response = await directusFetch<DirectusList<DisbursementRow>>(`/items/disbursement?${params.toString()}`);
-    const header = response.data?.[0];
-    const id = header ? asNumber(header.id) : undefined;
-    if (!header || !id) return null;
-
-    const lineItems = await getLineItems([id]);
-    return {
-        header,
-        payables: lineItems.payables.get(id) || [],
-        payments: lineItems.payments.get(id) || [],
-    };
-}
-
 export async function loadNormalizedDisbursement(row: DisbursementRow, token: string) {
     const id = asNumber(row.id) || 0;
     const lineItems = await getLineItems([id]);
@@ -934,70 +879,6 @@ export async function resolveEncoderId(emailOrSub: string | null): Promise<numbe
     }
 }
 
-async function getPreviewDocumentNumber(supplierType: string): Promise<string> {
-    const isTrade = supplierType.toLowerCase() === "trade";
-    const prefix = isTrade ? "TR" : "NT";
-    const field = isTrade ? "trade_no" : "non-trade_no";
-    let sequenceValue = 0;
-
-    try {
-        // 1. Get current sequence row
-        const getRes = await directusFetch<DirectusList<DirectusDisbursementNo>>("/items/disbursement_no?limit=1");
-        const seqRow = getRes.data?.[0];
-        if (seqRow) {
-            sequenceValue = Number(seqRow[field]) || 0;
-        }
-    } catch {
-        // Continue with the persisted document number fallback.
-    }
-
-    // The sequence row can be stale after a manual import or an older write path.
-    // Compare it with the highest persisted document number before issuing a preview.
-    const params = new URLSearchParams();
-    params.set("filter[doc_no][_starts_with]", `${prefix}-`);
-    params.set("limit", "-1");
-    params.set("fields", "doc_no");
-
-    try {
-        const fallbackRes = await directusFetch<DirectusList<{ doc_no: string }>>(`/items/disbursement?${params.toString()}`);
-        const persistedValue = (fallbackRes.data ?? []).reduce((max, row) => {
-            const numericPart = String(row.doc_no ?? "").split("-").pop() || "";
-            const parsed = Number.parseInt(numericPart, 10);
-            return Number.isFinite(parsed) ? Math.max(max, parsed) : max;
-        }, 0);
-        sequenceValue = Math.max(sequenceValue, persistedValue);
-    } catch {
-        // The sequence value remains usable when the persisted-number lookup is unavailable.
-    }
-
-    const seqStr = String(sequenceValue + 1).padStart(6, "0");
-    return `${prefix}-${seqStr}`;
-}
-
-function isDocumentNumberConflict(error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    return /(duplicate|unique|already exists|conflict)/i.test(message)
-        && /(doc[_\s-]?no|document\s+number)/i.test(message);
-}
-
-async function documentNumberConflictResponse(docNo: string, transactionTypeId: number) {
-    let nextDocNo: string | undefined;
-    try {
-        nextDocNo = await getPreviewDocumentNumber(transactionTypeId === 1 ? "Trade" : "Non-Trade");
-    } catch {
-        // The conflict remains actionable even if a replacement preview is unavailable.
-    }
-
-    return NextResponse.json({
-        code: "DOC_NO_CONFLICT",
-        message: `Document number ${docNo} is already used by another voucher.`,
-        detail: nextDocNo
-            ? `A new document number ${nextDocNo} is available. Review the voucher and submit again.`
-            : "Obtain a new document number before submitting again.",
-        nextDocNo,
-    }, { status: 409 });
-}
-
 export async function GET(request: NextRequest) {
     const cookieStore = await cookies();
     const token = cookieStore.get("vos_access_token")?.value;
@@ -1008,12 +889,16 @@ export async function GET(request: NextRequest) {
 
     if (searchParams.get("nextDocNo") === "true") {
         const supplierType = searchParams.get("supplierType") || "Trade";
+        const transactionTypeId = supplierType.toLowerCase().startsWith("non") ? 2 : 1;
+        const releaseDocumentNumberLock = await acquireDocumentNumberLock(transactionTypeId);
         try {
-            const nextNo = await getPreviewDocumentNumber(supplierType);
+            const nextNo = await findNextAvailableDocumentNumber(transactionTypeId, directusFetch);
             return NextResponse.json({ nextDocNo: nextNo });
         } catch (err: unknown) {
             const message = err instanceof Error ? err.message : "An unknown error occurred";
             return NextResponse.json({ message }, { status: 500 });
+        } finally {
+            releaseDocumentNumberLock();
         }
     }
 
@@ -1097,13 +982,15 @@ export async function POST(request: NextRequest) {
     let createdDocNo = "";
     let creationFinalized = false;
     let releaseMemoCapLock: (() => void) | undefined;
+    let releaseDocumentNumberLock: (() => void) | undefined;
 
     try {
         const body = await request.json();
-        const transactionTypeId = Number(body.transactionTypeId);
-        if (transactionTypeId !== 1 && transactionTypeId !== 2) {
+        const transactionTypeIdValue = Number(body.transactionTypeId);
+        if (transactionTypeIdValue !== 1 && transactionTypeIdValue !== 2) {
             return NextResponse.json({ message: "Transaction Type must be Trade (1) or Non-Trade (2)." }, { status: 400 });
         }
+        const transactionTypeId: 1 | 2 = transactionTypeIdValue;
         const requestedPayables = (body.payables || []) as PayableInput[];
         const requestedPayments = (body.payments || []) as PaymentInput[];
         const missingPrincipalDivisionError = findMissingVatPrincipalDivisionError(requestedPayables);
@@ -1153,41 +1040,6 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ message: "Payee (Supplier ID) is required." }, { status: 400 });
         }
 
-        const docNo = typeof body.docNo === "string" ? body.docNo.trim() : "";
-        if (!docNo) {
-            return NextResponse.json({
-                message: "Document Number is required for safe submission retries.",
-                detail: "Refresh the voucher form to obtain a document number before submitting."
-            }, { status: 400 });
-        }
-
-        const incomingCanonical = canonicalizeDisbursementPayload({
-            transactionTypeId,
-            payeeId: body.payeeId,
-            remarks: body.remarks,
-            totalAmount: body.totalAmount,
-            transactionDate: body.transactionDate,
-            departmentId: body.departmentId,
-            fundSourceId: body.fundSourceId,
-            supportingDocumentsUrl: body.supportingDocumentsUrl,
-            payables: payableLinesInput,
-            payments: normalizedPaymentLines,
-        });
-
-        const existingSnapshot = await findDisbursementSnapshotByDocNo(docNo);
-        if (existingSnapshot) {
-            const persistedCanonical = canonicalizePersistedDisbursement(
-                existingSnapshot.header,
-                existingSnapshot.payables,
-                existingSnapshot.payments,
-            );
-            if (persistedCanonical !== incomingCanonical) {
-                return documentNumberConflictResponse(docNo, transactionTypeId);
-            }
-
-            return NextResponse.json(await loadNormalizedDisbursement(existingSnapshot.header, token));
-        }
-
         const memoCapError = await validateSupplierMemoCaps(Number(body.payeeId), requestedPayables);
         if (memoCapError) {
             return NextResponse.json({
@@ -1231,64 +1083,59 @@ export async function POST(request: NextRequest) {
             }, { status: 409 });
         }
 
-        const docNoForCreation = docNo;
+        const incomingCanonical = canonicalizeDisbursementPayload({
+            transactionTypeId,
+            payeeId: body.payeeId,
+            remarks: body.remarks,
+            totalAmount: body.totalAmount,
+            transactionDate: body.transactionDate,
+            departmentId: body.departmentId,
+            fundSourceId: body.fundSourceId,
+            supportingDocumentsUrl: body.supportingDocumentsUrl,
+            payables: payableLinesInput,
+            payments: normalizedPaymentLines,
+        });
 
-        // 3. Calculate paid amount (sum of payments)
+        // Calculate paid amount (sum of payments)
         const calculatedPaidAmount = normalizedPaymentLines.reduce(
             (sum: number, p: PaymentInput) => sum + (Number(p.amount) || 0),
             0
         );
 
         // 5. Create disbursement header (no nested O2M — Directus doesn't support it)
-        let headerPayload = {
-            doc_no: docNoForCreation,
-            transaction_type: transactionTypeId,
-            payee: Number(body.payeeId),
-            remarks: body.remarks || "",
-            total_amount: Number(body.totalAmount) || 0,
-            paid_amount: calculatedPaidAmount,
-            encoder_id: currentUserId,
-            transaction_date: body.transactionDate,
-            // Header-level Division is deprecated. Payable lines carry Cost Division.
-            division_id: null,
-            department_id: body.departmentId ? Number(body.departmentId) : null,
-            fund_source_id: body.fundSourceId ? Number(body.fundSourceId) : null,
-            supporting_documents_url: cleanSupportingDocsUrl(body.supportingDocumentsUrl),
-            status: "Draft",
-            approver_id: null,
-            date_approved: null,
-        };
-
+        releaseDocumentNumberLock = await acquireDocumentNumberLock(transactionTypeId);
         let createRes: { data: DisbursementRow } | undefined;
-        createdDocNo = docNoForCreation;
-        headerPayload = { ...headerPayload, doc_no: docNoForCreation };
-        try {
-            createRes = await directusFetch<{ data: DisbursementRow }>("/items/disbursement", {
-                method: "POST",
-                body: JSON.stringify(headerPayload)
-            });
-        } catch (error: unknown) {
-            if (!isDocumentNumberConflict(error)) throw error;
+        for (let attempt = 0; attempt < 16; attempt++) {
+            const docNoForCreation = await findNextAvailableDocumentNumber(transactionTypeId, directusFetch);
+            const headerPayload = {
+                doc_no: docNoForCreation,
+                transaction_type: transactionTypeId,
+                payee: Number(body.payeeId),
+                remarks: body.remarks || "",
+                total_amount: Number(body.totalAmount) || 0,
+                paid_amount: calculatedPaidAmount,
+                encoder_id: currentUserId,
+                transaction_date: body.transactionDate,
+                // Header-level Division is deprecated. Payable lines carry Cost Division.
+                division_id: null,
+                department_id: body.departmentId ? Number(body.departmentId) : null,
+                fund_source_id: body.fundSourceId ? Number(body.fundSourceId) : null,
+                supporting_documents_url: cleanSupportingDocsUrl(body.supportingDocumentsUrl),
+                status: "Draft",
+                approver_id: null,
+                date_approved: null,
+            };
 
-            let racedSnapshot: DisbursementSnapshot | null = null;
             try {
-                racedSnapshot = await findDisbursementSnapshotByDocNo(docNo);
-            } catch {
-                // Return the conflict response even if the follow-up lookup is unavailable.
+                createRes = await directusFetch<{ data: DisbursementRow }>("/items/disbursement", {
+                    method: "POST",
+                    body: JSON.stringify(headerPayload)
+                });
+                createdDocNo = docNoForCreation;
+                break;
+            } catch (error: unknown) {
+                if (!isDocumentNumberConflictError(error) || attempt === 15) throw error;
             }
-
-            if (racedSnapshot) {
-                const racedCanonical = canonicalizePersistedDisbursement(
-                    racedSnapshot.header,
-                    racedSnapshot.payables,
-                    racedSnapshot.payments,
-                );
-                if (racedCanonical === incomingCanonical) {
-                    return NextResponse.json(await loadNormalizedDisbursement(racedSnapshot.header, token));
-                }
-            }
-
-            return documentNumberConflictResponse(docNo, transactionTypeId);
         }
 
         if (!createRes) throw new Error("Disbursement could not be created with an available document number.");
@@ -1389,6 +1236,7 @@ export async function POST(request: NextRequest) {
         const message = err instanceof Error ? err.message : "An unknown error occurred";
         return NextResponse.json({ message: "BFF Error", detail: message }, { status: 502 });
     } finally {
+        releaseDocumentNumberLock?.();
         releaseMemoCapLock?.();
     }
 }
