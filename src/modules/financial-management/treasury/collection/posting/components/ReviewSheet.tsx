@@ -32,7 +32,33 @@ export interface PouchAllocation {
     invoiceNo?: string;
     invoiceId?: string | number;
     referenceNo?: string;
+    sourceTempId?: string;
+    grossAmount?: number;
+    originalAmount?: number;
+    remainingBalance?: number;
 }
+
+interface InvoiceReviewRow {
+    invoiceId: string;
+    invoiceNo?: string;
+    customerName: string;
+    grossAmount?: number;
+    originalAmount?: number;
+    prePouchRemainingBalance?: number;
+    appliedAmount: number;
+    remainingOpenBalance: number | null;
+    allocations: PouchAllocation[];
+}
+
+const formatMoney = (value?: number | null) => `₱${Number(value ?? 0).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+})}`;
+
+const formatOptionalMoney = (value?: number) => value == null ? "—" : formatMoney(value);
+
+const finiteNonNegative = (value?: number) =>
+    typeof value === "number" && Number.isFinite(value) ? Math.max(value, 0) : undefined;
 
 export interface TreasuryPouch {
     id: number;
@@ -60,7 +86,7 @@ interface ReviewSheetProps {
 export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting, onPost }: ReviewSheetProps) {
 
     const reviewMath = useMemo(() => {
-        if (!pouch) return { physical: 0, applied: 0, variance: 0, isShortage: false, isOverage: false, groupedAllocations: {} as Record<string, PouchAllocation[]>, totalCash: 0, totalChecks: 0, nonCashBuckets: [] as CashBucket[], cashDenominations: [] as CashBucket[], totalCredits: 0, expectedPhysicalCash: 0 };
+        if (!pouch) return { physical: 0, applied: 0, variance: 0, isShortage: false, isOverage: false, invoiceRows: [] as InvoiceReviewRow[], totalRemainingOpenBalance: 0, totalCash: 0, totalChecks: 0, nonCashBuckets: [] as CashBucket[], cashDenominations: [] as CashBucket[], totalCredits: 0, expectedPhysicalCash: 0 };
 
         let physical = 0;
         let totalCash = 0;
@@ -120,7 +146,7 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
         let totalApplied = 0;
         let expectedPhysicalCash = 0;
         let totalCredits = 0;
-        const groupedAllocations: Record<string, PouchAllocation[]> = {};
+        const invoiceRowsById = new Map<string, InvoiceReviewRow>();
 
         pouch.allocations?.forEach((a) => {
             const amt = Math.abs(a.amountApplied || 0);
@@ -138,10 +164,44 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                 expectedPhysicalCash += amt;
             }
 
-            const customer = a.customerName || "No Assigned Customer";
-            if (!groupedAllocations[customer]) groupedAllocations[customer] = [];
-            groupedAllocations[customer].push(a);
+            const invoiceKey = a.invoiceId != null
+                ? `id:${a.invoiceId}`
+                : `invoice:${a.invoiceNo || a.sourceTempId || a.referenceNo || "unknown"}`;
+            const existing = invoiceRowsById.get(invoiceKey);
+
+            if (existing) {
+                existing.appliedAmount += amt;
+                existing.allocations.push(a);
+                existing.invoiceNo = existing.invoiceNo || a.invoiceNo;
+                existing.customerName = existing.customerName || a.customerName || "No Assigned Customer";
+                existing.grossAmount ??= finiteNonNegative(a.grossAmount);
+                existing.originalAmount ??= finiteNonNegative(a.originalAmount);
+                existing.prePouchRemainingBalance ??= finiteNonNegative(a.remainingBalance);
+            } else {
+                invoiceRowsById.set(invoiceKey, {
+                    invoiceId: String(a.invoiceId ?? a.invoiceNo ?? a.sourceTempId ?? "unknown"),
+                    invoiceNo: a.invoiceNo,
+                    customerName: a.customerName || "No Assigned Customer",
+                    grossAmount: finiteNonNegative(a.grossAmount),
+                    originalAmount: finiteNonNegative(a.originalAmount),
+                    prePouchRemainingBalance: finiteNonNegative(a.remainingBalance),
+                    appliedAmount: amt,
+                    remainingOpenBalance: null,
+                    allocations: [a],
+                });
+            }
         });
+
+        const invoiceRows = Array.from(invoiceRowsById.values()).map((row) => ({
+            ...row,
+            remainingOpenBalance: row.prePouchRemainingBalance == null
+                ? null
+                : Math.max(row.prePouchRemainingBalance - row.appliedAmount, 0),
+        }));
+        const totalRemainingOpenBalance = invoiceRows.reduce(
+            (sum, row) => sum + (row.remainingOpenBalance ?? 0),
+            0
+        );
 
         const variance = expectedPhysicalCash - physical;
 
@@ -150,10 +210,11 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
             applied: totalApplied,
             expectedPhysicalCash,
             totalCredits,
+            invoiceRows,
+            totalRemainingOpenBalance,
             variance: Math.abs(variance),
             isShortage: variance > 0.01,
             isOverage: variance < -0.01,
-            groupedAllocations
         };
     }, [pouch]);
 
@@ -351,24 +412,49 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                                         <Receipt size={16} /> 2. Settled AR Invoices
                                     </h4>
                                     <div className="space-y-3.5">
-                                        {Object.keys(reviewMath.groupedAllocations).length === 0 && (
+                                        {reviewMath.invoiceRows.length === 0 && (
                                             <p className="text-xs text-muted-foreground italic bg-card p-4 rounded-xl border border-dashed text-center font-bold">No AR invoices were settled.</p>
                                         )}
-                                        {Object.entries(reviewMath.groupedAllocations).map(([customerName, allocs]) => {
-                                            const customerTotal = allocs.reduce((sum, a) => sum + Math.abs(a.amountApplied || 0), 0);
+                                        {reviewMath.invoiceRows.map((invoice) => {
+                                            const hasRemainingBalance = invoice.remainingOpenBalance != null && invoice.remainingOpenBalance > 0.01;
                                             return (
-                                                <div key={customerName} className="border border-border rounded-xl overflow-hidden bg-card shadow-sm">
+                                                <div key={invoice.invoiceId} className="border border-border rounded-xl overflow-hidden bg-card shadow-sm">
                                                     <div className="bg-blue-50/80 dark:bg-blue-950/20 px-4 py-2.5 border-b border-border flex justify-between items-center">
-                                                        <span className="text-[10px] font-black uppercase text-foreground flex items-center gap-2">
-                                                            <User size={14} className="text-blue-600 shrink-0"/>
-                                                            <span className="truncate max-w-[200px]" title={customerName}>{customerName}</span>
-                                                        </span>
-                                                        <span className="text-xs font-black font-mono text-blue-700">
-                                                            ₱{customerTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                        <div className="min-w-0">
+                                                            <span className="text-[10px] font-black uppercase text-foreground flex items-center gap-2">
+                                                                <User size={14} className="text-blue-600 shrink-0"/>
+                                                                <span className="truncate max-w-[220px]" title={invoice.customerName}>{invoice.customerName}</span>
+                                                            </span>
+                                                            <p className="mt-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                                                                Invoice {invoice.invoiceNo || invoice.invoiceId}
+                                                            </p>
+                                                        </div>
+                                                        <span className="shrink-0 text-xs font-black font-mono text-blue-700">
+                                                            {formatMoney(invoice.appliedAmount)}
                                                         </span>
                                                     </div>
+                                                    <div className="grid grid-cols-2 gap-x-4 gap-y-2 border-b border-border/60 bg-muted/10 px-4 py-3">
+                                                        <div>
+                                                            <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Gross Invoice Total</p>
+                                                            <p className="mt-1 font-mono text-sm font-black text-foreground">{formatOptionalMoney(invoice.grossAmount)}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Net Receivable</p>
+                                                            <p className="mt-1 font-mono text-sm font-black text-foreground">{formatOptionalMoney(invoice.originalAmount)}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Applied This Pouch</p>
+                                                            <p className="mt-1 font-mono text-sm font-black text-primary">{formatMoney(invoice.appliedAmount)}</p>
+                                                        </div>
+                                                        <div className={hasRemainingBalance ? "rounded-md bg-red-50 px-2 py-1 dark:bg-red-950/30" : ""}>
+                                                            <p className={`text-[9px] font-black uppercase tracking-widest ${hasRemainingBalance ? "text-red-700 dark:text-red-300" : "text-muted-foreground"}`}>Remaining Open Balance</p>
+                                                            <p className={`mt-1 font-mono text-sm font-black ${hasRemainingBalance ? "text-red-600" : "text-emerald-600"}`}>
+                                                                {formatOptionalMoney(invoice.remainingOpenBalance ?? undefined)}
+                                                            </p>
+                                                        </div>
+                                                    </div>
                                                     <div className="p-2 space-y-1 bg-muted/5">
-                                                        {allocs.map((a, i) => {
+                                                        {invoice.allocations.map((a, i) => {
                                                             const typeStr = (a.allocationType || "PAYMENT").toUpperCase();
                                                             let badgeColor = "bg-blue-100 text-blue-700 border-blue-200";
                                                             let TypeIcon = Banknote;
@@ -391,11 +477,8 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                                                             }
 
                                                             return (
-                                                                <div key={i} className="flex justify-between items-center px-3 py-2 hover:bg-muted/50 rounded-lg transition-colors border border-transparent hover:border-border">
+                                                                <div key={a.sourceTempId || a.referenceNo || i} className="flex justify-between items-center px-3 py-2 hover:bg-muted/50 rounded-lg transition-colors border border-transparent hover:border-border">
                                                                     <div className="flex flex-col gap-1.5 items-start">
-                                                                        <span className="text-[10px] font-black uppercase text-foreground tracking-wider leading-none">
-                                                                            Invoice {a.invoiceNo || a.invoiceId}
-                                                                        </span>
                                                                         <div className="flex items-center gap-2">
                                                                             <Badge variant="outline" className={`h-4 px-1.5 text-[8px] font-black tracking-widest uppercase rounded-sm ${badgeColor}`}>
                                                                                 <TypeIcon size={8} className="mr-1" /> {typeLabel}
@@ -408,7 +491,7 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                                                                         </div>
                                                                     </div>
                                                                     <span className="font-mono font-black text-sm text-foreground/80">
-                                                                        ₱{Math.abs(a.amountApplied || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                                        {formatMoney(Math.abs(a.amountApplied || 0))}
                                                                     </span>
                                                                 </div>
                                                             );
@@ -422,8 +505,12 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                                     {/* 🚀 THE EXPLICIT MATH BREAKDOWN FOR THE AUDITOR */}
                                     <div className="flex flex-col px-3 pt-3 border-t-2 border-border gap-1.5">
                                         <div className="flex justify-between items-center text-[10px] font-black uppercase text-muted-foreground">
-                                            <span>Gross AR Invoices Settled:</span>
-                                            <span className="font-mono">₱{reviewMath.applied.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                            <span>Total Allocated This Pouch:</span>
+                                            <span className="font-mono">{formatMoney(reviewMath.applied)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-[10px] font-black uppercase text-red-600">
+                                            <span>Total Remaining Open Balance:</span>
+                                            <span className="font-mono">{formatMoney(reviewMath.totalRemainingOpenBalance)}</span>
                                         </div>
                                         {reviewMath.totalCredits > 0 && (
                                             <div className="flex justify-between items-center text-[10px] font-black uppercase text-amber-600">

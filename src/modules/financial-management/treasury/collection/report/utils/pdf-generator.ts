@@ -80,6 +80,7 @@ export const generateCollectionPDF = (
             invoice.invoiceNo,
             invoice.customerName,
             formatAmount(invoice.actualInvoiceTotal ?? invoice.invoiceTotal),
+            formatAmount(invoice.invoiceTotal),
             formatAmount(invoice.grossAmount),
             formatAmount(invoice.remainingBalance),
         ])
@@ -87,7 +88,7 @@ export const generateCollectionPDF = (
 
     autoTable(doc, {
         startY: currentY,
-        head: [["Date", "Doc No", "Status", "Invoice No", "Customer", "Actual Invoice Total", "Amount Applied", "Remaining Balance"]],
+        head: [["Date", "Doc No", "Status", "Invoice No", "Customer", "Gross Invoice Total", "Net Receivable", "Amount Applied", "Remaining Balance"]],
         body: invoiceRows,
         theme: "grid",
         headStyles: { fillColor: [46, 204, 113] },
@@ -96,6 +97,7 @@ export const generateCollectionPDF = (
             5: { halign: "right", fontStyle: "bold" },
             6: { halign: "right", fontStyle: "bold" },
             7: { halign: "right", fontStyle: "bold" },
+            8: { halign: "right", fontStyle: "bold" },
         },
         margin: { left: 24, right: 24 },
     });
