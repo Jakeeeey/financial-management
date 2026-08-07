@@ -41,7 +41,7 @@ interface CashIssuanceCreateDialogProps {
     onPaymentAllocationSubmit?: (id: number, payments: PaymentLine[]) => Promise<DisbursementSubmitResult>;
     loading: boolean;
     editData?: ExtendedDisbursement | null;
-    allowPaymentEditing?: boolean;
+    paymentEditingMode?: "preparation" | "releasing";
 }
 const isPaymentCOA = (c: COADto) => {
     return !!c.isPayment;
@@ -84,7 +84,7 @@ export function CashIssuanceCreateDialog({
     onPaymentAllocationSubmit,
     loading,
     editData,
-    allowPaymentEditing = false,
+    paymentEditingMode = "preparation",
 }: CashIssuanceCreateDialogProps) {
     const today = new Date().toISOString().split("T")[0];
 
@@ -136,12 +136,16 @@ export function CashIssuanceCreateDialog({
     const submitLockRef = useRef(false);
 
     const isReleasingEdit = !!(editData && (editData.status === "Approved" || editData.status === "Partially Released"));
-    const isPaymentEditorEnabled = allowPaymentEditing && isReleasingEdit;
     const isReadOnly = !!(editData && (
         editData.status === "Released" || 
         editData.status === "Posted" || 
         (editData.status === "Submitted" && !editData.transactionTypeName?.toUpperCase().includes("NON"))
     ));
+    const isPreparationPaymentEdit = paymentEditingMode === "preparation"
+        && (!editData || editData.status === "Draft" || editData.status === "Returned for Revision");
+    const isReleasingPaymentEdit = paymentEditingMode === "releasing" && isReleasingEdit;
+    const isPaymentEditorEnabled = !isReadOnly && (isPreparationPaymentEdit || isReleasingPaymentEdit);
+    const isPaymentOnlyEdit = !isReadOnly && isReleasingPaymentEdit;
 
     const isHeaderLocked = isReleasingEdit || isReadOnly;
     const isPayablesLocked = isReleasingEdit || isReadOnly;
@@ -731,7 +735,7 @@ export function CashIssuanceCreateDialog({
         if (memoSupplierMismatchIndices.size > 0) {
             return toast.error("Remove and reapply memo lines that belong to a different supplier.");
         }
-        if (!isPaymentEditorEnabled && !validatePayables()) return;
+        if (!isPaymentOnlyEdit && !validatePayables()) return;
         const memoAmountError = Object.values(memoAmountErrors)[0];
         if (memoAmountError) return toast.error(memoAmountError);
         if (isPaymentEditorEnabled && !validatePayments()) return;
@@ -767,7 +771,7 @@ export function CashIssuanceCreateDialog({
                     payments: paymentLines,
                 } : {}),
             };
-            const result = editData && isPaymentEditorEnabled && onPaymentAllocationSubmit
+            const result = editData && isPaymentOnlyEdit && onPaymentAllocationSubmit
                 ? await onPaymentAllocationSubmit(editData.id, paymentLines)
                 : await onSubmit(payload);
             if (result.code === "DOC_NO_CONFLICT") {
