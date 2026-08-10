@@ -24,7 +24,7 @@ interface MasterListProps {
 }
 
 export default function CashieringMasterList({ data, isLoading, state }: MasterListProps) {
-    const [sortField, setSortField] = useState<keyof CollectionSummary | null>("date");
+    const [sortField, setSortField] = useState<keyof CollectionSummary | null>("encodedDate");
     const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
     const handleSort = (field: keyof CollectionSummary) => {
@@ -48,6 +48,17 @@ export default function CashieringMasterList({ data, isLoading, state }: MasterL
             if (bVal == null) return -1;
 
             const modifier = sortDirection === "asc" ? 1 : -1;
+
+            if (sortField === "date" || sortField === "encodedDate") {
+                const aTime = Date.parse(String(aVal));
+                const bTime = Date.parse(String(bVal));
+
+                if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) {
+                    return (aTime - bTime) * modifier;
+                }
+            }
+
+            if (aVal === bVal) return (b.id - a.id) * modifier;
             return aVal > bVal ? modifier : -modifier;
         });
     }, [data, sortField, sortDirection]);
@@ -92,8 +103,34 @@ export default function CashieringMasterList({ data, isLoading, state }: MasterL
                             onClick={() => handleSort("date")}
                         >
                             <div className="flex items-center gap-1">
-                                <span>Date Received</span>
+                                <span>Collection Date</span>
                                 {sortField === "date" ? (
+                                    sortDirection === "asc" ? <ArrowUp className="h-3 w-3 text-primary" /> : <ArrowDown className="h-3 w-3 text-primary" />
+                                ) : (
+                                    <ArrowUpDown className="h-3 w-3 text-muted-foreground opacity-50" />
+                                )}
+                            </div>
+                        </TableHead>
+                        <TableHead
+                            className="font-bold text-[11px] uppercase tracking-wider cursor-pointer hover:bg-muted/80 transition-colors"
+                            onClick={() => handleSort("encodedDate")}
+                        >
+                            <div className="flex items-center gap-1">
+                                <span>Date Encoded</span>
+                                {sortField === "encodedDate" ? (
+                                    sortDirection === "asc" ? <ArrowUp className="h-3 w-3 text-primary" /> : <ArrowDown className="h-3 w-3 text-primary" />
+                                ) : (
+                                    <ArrowUpDown className="h-3 w-3 text-muted-foreground opacity-50" />
+                                )}
+                            </div>
+                        </TableHead>
+                        <TableHead
+                            className="font-bold text-[11px] uppercase tracking-wider cursor-pointer hover:bg-muted/80 transition-colors"
+                            onClick={() => handleSort("collectedBy")}
+                        >
+                            <div className="flex items-center gap-1">
+                                <span>Collected By</span>
+                                {sortField === "collectedBy" ? (
                                     sortDirection === "asc" ? <ArrowUp className="h-3 w-3 text-primary" /> : <ArrowDown className="h-3 w-3 text-primary" />
                                 ) : (
                                     <ArrowUpDown className="h-3 w-3 text-muted-foreground opacity-50" />
@@ -146,13 +183,14 @@ export default function CashieringMasterList({ data, isLoading, state }: MasterL
                 <TableBody>
                     {sortedData.length === 0 ? (
                         <TableRow>
-                            <TableCell colSpan={6} className="h-24 text-center text-muted-foreground italic">
+                            <TableCell colSpan={8} className="h-24 text-center text-muted-foreground italic">
                                 No collection pouches found matching the filters.
                             </TableCell>
                         </TableRow>
                     ) : (
                         sortedData.map((col) => {
                             const safeDate = parseAnyDate(col.date);
+                            const safeEncodedDate = parseAnyDate(col.encodedDate);
                             const safeAmount = col.amount || 0;
 
                             return (
@@ -162,6 +200,12 @@ export default function CashieringMasterList({ data, isLoading, state }: MasterL
                                     </TableCell>
                                     <TableCell className="text-sm text-muted-foreground">
                                         {safeDate ? format(safeDate, "MMM dd, yyyy") : "---"}
+                                    </TableCell>
+                                    <TableCell className="text-sm text-muted-foreground">
+                                        {safeEncodedDate ? format(safeEncodedDate, "MMM dd, yyyy h:mm a") : "---"}
+                                    </TableCell>
+                                    <TableCell className="text-sm text-foreground">
+                                        {col.collectedBy || "N/A"}
                                     </TableCell>
                                     <TableCell>
                                         <div className="flex flex-col">

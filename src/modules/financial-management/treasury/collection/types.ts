@@ -63,6 +63,8 @@ export interface CollectionSummary {
     id: number;
     docNo: string;
     date: string;
+    encodedDate: string;
+    collectedBy: string;
     salesmanCode: string;
     salesmanName: string;
     amount: number;
