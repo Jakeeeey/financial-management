@@ -5,7 +5,11 @@ import { cookies } from "next/headers";
 interface CollectionRawResponse {
     id: number;
     docNo?: string;
+    collectionDate?: string;
     date?: string;
+    encodedDate?: string;
+    dateEncoded?: string;
+    collectedByName?: string;
     salesmanCode?: string;
     salesmanName?: string;
     totalAmount?: number;
@@ -58,7 +62,9 @@ export async function GET() {
         const mappedData = data.map((col: CollectionRawResponse) => ({
             id: col.id,
             docNo: col.docNo,
-            date: col.date || "",
+            date: col.collectionDate ?? col.date ?? "",
+            encodedDate: col.encodedDate ?? col.dateEncoded ?? "",
+            collectedBy: col.collectedByName || "N/A",
             salesmanCode: col.salesmanCode || "N/A",
             salesmanName: col.salesmanName || "Unknown",
             amount: col.totalAmount || 0,
