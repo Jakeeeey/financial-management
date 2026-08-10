@@ -45,7 +45,10 @@ export const disbursementProvider = {
         supplier: string = "", startDate: string = "", endDate: string = "",
         status: string = "All", divisionId: string = "", departmentId: string = "", docNo: string = ""
     ): Promise<PaginatedResponse<Disbursement>> => {
-        let url = `${API_BASE}?page=${page}&size=${size}&type=${encodeURIComponent(type)}&status=${encodeURIComponent(status)}`;
+        const isWerFilter = type.trim().toUpperCase() === "WER";
+        const transactionType = isWerFilter ? "All" : type;
+        let url = `${API_BASE}?page=${page}&size=${size}&type=${encodeURIComponent(transactionType)}&status=${encodeURIComponent(status)}`;
+        if (isWerFilter) url += "&source=WER";
         if (supplier) url += `&supplier=${encodeURIComponent(supplier)}`;
         if (startDate) url += `&startDate=${encodeURIComponent(startDate)}`;
         if (endDate) url += `&endDate=${encodeURIComponent(endDate)}`;
