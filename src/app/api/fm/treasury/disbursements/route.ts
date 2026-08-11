@@ -77,6 +77,10 @@ export type DisbursementRow = {
     supporting_documents_url?: unknown;
 };
 
+type DisbursementDraftDocRow = {
+    doc_no?: unknown;
+};
+
 export type DisbursementPaymentState =
     | "UNPAID"
     | "ALLOCATED"
@@ -418,9 +422,22 @@ async function getSupplierIds(search: string) {
         .filter((id): id is number => Boolean(id));
 }
 
+async function getWerDocumentNumbers() {
+    const res = await directusFetch<DirectusList<DisbursementDraftDocRow>>(
+        "/items/disbursement_draft?fields=doc_no&limit=-1",
+    );
+
+    return Array.from(new Set(
+        (res.data ?? [])
+            .map((row) => asString(row.doc_no).trim().toUpperCase())
+            .filter(Boolean),
+    ));
+}
+
 function buildDisbursementParams(
     searchParams: URLSearchParams,
     supplierIds: number[],
+    werDocumentNumbers: string[] = [],
 ) {
     const page = normalizePage(searchParams.get("page"));
     const size = normalizeSize(searchParams.get("size"));
@@ -431,6 +448,7 @@ function buildDisbursementParams(
     const divisionId = searchParams.get("divisionId") || "";
     const departmentId = searchParams.get("departmentId") || "";
     const docNo = searchParams.get("docNo") || "";
+    const source = searchParams.get("source") || "";
     const isPosted = searchParams.get("isPosted") || "";
     const params = new URLSearchParams();
     let filterIndex = 0;
@@ -476,6 +494,9 @@ function buildDisbursementParams(
         filterIndex = appendFilter(params, filterIndex, "transaction_type", "_eq", "1");
     } else if (type === "Non-Trade") {
         filterIndex = appendFilter(params, filterIndex, "transaction_type", "_eq", "2");
+    }
+    if (source.trim().toUpperCase() === "WER") {
+        filterIndex = appendFilter(params, filterIndex, "doc_no", "_in", werDocumentNumbers.join(","));
     }
     if (status && status !== "All") {
         const op = status.includes(",") ? "_in" : "_eq";
@@ -916,7 +937,22 @@ export async function GET(request: NextRequest) {
             });
         }
 
-        const query = buildDisbursementParams(searchParams, supplierIds);
+        const source = searchParams.get("source")?.trim().toUpperCase() || "";
+        const werDocumentNumbers = source === "WER"
+            ? await getWerDocumentNumbers()
+            : [];
+
+        if (source === "WER" && werDocumentNumbers.length === 0) {
+            return NextResponse.json({
+                content: [],
+                totalElements: 0,
+                totalPages: 0,
+                number: normalizePage(searchParams.get("page")),
+                size: normalizeSize(searchParams.get("size")),
+            });
+        }
+
+        const query = buildDisbursementParams(searchParams, supplierIds, werDocumentNumbers);
         const disbursementsRes = await directusFetch<DirectusList<DisbursementRow>>(
             `/items/disbursement?${query.params.toString()}`,
         );
