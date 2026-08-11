@@ -63,11 +63,13 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
         isLoading, wallet, credits, cartInvoices, allocations, setAllocations, salesmanName, findings, docNo, isPosted, isClearing,
         isLoadingRoute, loadRouteInvoices, addToCart, removeFromCart, clearCart, fetchAndInjectExternalCredit,
         getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement,
+        hasPartialChanges, savePartialSettlement,
         deleteWalletItem, editWalletItem, dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate,
         isLoadingCredits, collectionDate
     } = useSettlement(id);
 
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isPartialSaving, setIsPartialSaving] = useState(false);
     const [isSuccess, setIsSuccess] = useState(false);
 
     const [searchOpen, setSearchOpen] = useState(false);
@@ -341,6 +343,17 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
         }
     };
 
+    const handlePartialSave = async () => {
+        setIsPartialSaving(true);
+        const success = await savePartialSettlement();
+        if (success) {
+            setIsSuccess(true);
+            setTimeout(() => { if (onClose) onClose(true); }, 1200);
+        } else {
+            setIsPartialSaving(false);
+        }
+    };
+
     const handleClearCart = async () => {
         const cleared = await clearCart();
         if (cleared) onChanged?.();
@@ -493,9 +506,25 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
                     </Button>
 
                     {!isPosted && (
+                        <>
+                        <Button
+                            onClick={handlePartialSave}
+                            disabled={!hasPartialChanges || isSubmitting || isPartialSaving || isSuccess}
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 lg:flex-none font-black text-[10px] uppercase tracking-widest shadow-sm border-amber-500 text-amber-700 hover:bg-amber-50 h-8"
+                        >
+                            {isSuccess ? (
+                                <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5"/> Saved!</span>
+                            ) : isPartialSaving ? (
+                                <span className="flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin"/> Saving...</span>
+                            ) : (
+                                <span className="flex items-center gap-1.5"><Save className="w-3.5 h-3.5"/> Save Partial</span>
+                            )}
+                        </Button>
                         <Button
                             onClick={handleMasterSave}
-                            disabled={!isCommitReady || isSubmitting || isSuccess}
+                            disabled={!isCommitReady || isSubmitting || isPartialSaving || isSuccess}
                             size="sm"
                             className={cn(
                                 "flex-1 lg:flex-none font-black text-[10px] uppercase tracking-widest shadow-sm transition-all duration-300 h-8 overflow-hidden relative",
@@ -515,6 +544,7 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
                                 </span>
                             )}
                         </Button>
+                        </>
                     )}
                 </div>
             </div>
@@ -522,7 +552,7 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
             {/* MAIN WORKSPACE - NOW 3 COLUMNS */}
             <div className={cn(
                 "flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-3 p-3 lg:p-4 overflow-y-auto lg:overflow-hidden transition-all duration-500",
-                (isSubmitting || isSuccess) ? "opacity-60 blur-[1px] pointer-events-none grayscale-[20%]" : "opacity-100"
+                (isSubmitting || isPartialSaving || isSuccess) ? "opacity-60 blur-[1px] pointer-events-none grayscale-[20%]" : "opacity-100"
             )}>
                 {/* LEFT SIDEBAR: WALLET & CREDITS (col-span-3) */}
                 <div className="col-span-1 lg:col-span-3 flex flex-col gap-3 overflow-hidden lg:h-full">
@@ -705,7 +735,7 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
                                         </Popover>
                                     </>
                                 )}
-                    {!isPosted && cartInvoices.length > 0 && <Button onClick={handleClearCart} disabled={isClearing || isSubmitting || isSuccess} variant="ghost" size="sm" className="h-6 text-[8px] uppercase font-black tracking-widest text-destructive hover:bg-destructive/10 px-2.5">{isClearing ? <Loader2 size={10} className="mr-1 animate-spin"/> : <Trash2 size={10} className="mr-1"/>}{isClearing ? "Clearing..." : "Clear Cart"}</Button>}
+                    {!isPosted && hasPartialChanges && <Button onClick={handleClearCart} disabled={isClearing || isSubmitting || isPartialSaving || isSuccess} variant="ghost" size="sm" className="h-6 text-[8px] uppercase font-black tracking-widest text-destructive hover:bg-destructive/10 px-2.5">{isClearing ? <Loader2 size={10} className="mr-1 animate-spin"/> : <Trash2 size={10} className="mr-1"/>}{isClearing ? "Clearing..." : "Clear Cart"}</Button>}
                             </div>
                         </div>
 

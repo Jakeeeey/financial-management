@@ -643,6 +643,84 @@ export function useSettlement(pouchId: string | number) {
         }
     };
 
+    const hasPartialChanges = cartInvoices.length > 0
+        || allocations.length > 0
+        || wallet.some(item => item.isLocal)
+        || Object.keys(pendingEdits).length > 0
+        || pendingDeletions.length > 0;
+
+    const savePartialSettlement = async (): Promise<boolean> => {
+        if (!hasPartialChanges) {
+            toast.error("Add settlement progress before saving a partial settlement.");
+            return false;
+        }
+
+        const overAllocatedInvoice = findOverAllocatedInvoice(cartInvoices, allocations);
+        if (overAllocatedInvoice) {
+            toast.error(`The allocation for ${overAllocatedInvoice.invoiceNo} exceeds its remaining balance.`);
+            return false;
+        }
+
+        try {
+            for (const [, editInfo] of Object.entries(pendingEdits)) {
+                const endpoint = editInfo.type === "EWT"
+                    ? `/api/fm/treasury/ewts/${editInfo.dbId}`
+                    : `/api/fm/treasury/adjustments/${editInfo.dbId}`;
+                await fetchProvider.put(endpoint, editInfo.payload);
+            }
+
+            for (const delInfo of pendingDeletions) {
+                const endpoint = delInfo.type === "EWT"
+                    ? `/api/fm/treasury/ewts/${delInfo.dbId}`
+                    : `/api/fm/treasury/adjustments/${delInfo.dbId}`;
+                await fetchProvider.delete(endpoint);
+            }
+
+            const newAdjustments = wallet.filter(w => w.type === "ADJUSTMENT" && w.isLocal).map(w => ({
+                findingId: w.findingId || w.dbId, amount: w.originalAmount, balanceTypeId: w.balanceTypeId || 1,
+                remarks: w.customerName || "Session Variance", invoiceId: allocations.find(a => a.sourceTempId === w.id)?.invoiceId || null, tempId: w.id
+            }));
+
+            const newEwts = wallet.filter(w => w.type === "EWT" && w.isLocal).map(w => ({
+                amount: w.originalAmount, referenceNo: w.customerName || "Form 2307", tempId: w.id
+            }));
+
+            if (newAdjustments.some(adjustment => !adjustment.findingId)) {
+                throw new Error("Cannot save: An adjustment is missing a valid Finding Type.");
+            }
+
+            const persistentAllocations: { invoiceId: number; amountApplied: number; allocationType: string; sourceTempId: string; }[] = [];
+            cartInvoices.forEach(inv => {
+                const invAllocs = allocations.filter(a => a.invoiceId === inv.id && a.amountApplied > 0);
+                if (invAllocs.length > 0) {
+                    persistentAllocations.push(...invAllocs.map(a => ({
+                        invoiceId: a.invoiceId, amountApplied: a.amountApplied, allocationType: a.allocationType, sourceTempId: a.sourceTempId
+                    })));
+                } else {
+                    persistentAllocations.push({ invoiceId: inv.id, amountApplied: 0, allocationType: "NONE", sourceTempId: "NONE" });
+                }
+            });
+
+            await fetchProvider.post(`/api/fm/treasury/collections/${pouchId}/allocate/partial`, {
+                collectedBy: collectedBy || undefined,
+                crNo: crNo || undefined,
+                newAdjustments,
+                newEwts,
+                allocations: persistentAllocations
+            });
+
+            setPendingEdits({});
+            setPendingDeletions([]);
+            toast.success("Partial settlement saved. You can resume it from the queue.");
+            await fetchData();
+            return true;
+        } catch (err) {
+            toast.error(err instanceof Error && err.message ? err.message : "Failed to save partial settlement.");
+            console.error(err);
+            return false;
+        }
+    };
+
     const submitSettlement = async (): Promise<boolean> => {
         try {
             const underAllocatedInvoice = findUnderAllocatedInvoice(cartInvoices, allocations);
@@ -739,6 +817,7 @@ export function useSettlement(pouchId: string | number) {
         isLoading, wallet, credits, cartInvoices, allocations, setAllocations, salesmanName, salesmanId, findings, docNo, isPosted, isClearing,
         isLoadingRoute, addToCart, removeFromCart, clearCart, loadRouteInvoices, fetchAndInjectExternalCredit,
         getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement,
+        hasPartialChanges, savePartialSettlement,
         deleteWalletItem, editWalletItem, dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate,
         collectedByName, isLoadingCredits, collectionDate
     };
