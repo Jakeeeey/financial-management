@@ -33,6 +33,7 @@ const PESO = "\u20B1";
 const displayIdentifier = (value?: string | null) => value?.trim() || "\u2014";
 const formatMoney = (value?: number | null) =>
     `${PESO}${Number(value ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+const formatCheckDate = (value?: string | null) => value ? format(parseISO(value), "MM/dd/yyyy") : "—";
 
 export function PouchDetailSheet({ pouch, isOpen, onClose }: PouchDetailSheetProps) {
     const [inlineSearch, setInlineSearch] = useState("");
@@ -162,17 +163,19 @@ export function PouchDetailSheet({ pouch, isOpen, onClose }: PouchDetailSheetPro
                                             <tr>
                                                 <th className="pl-5 text-left font-medium">Bank</th>
                                                 <th className="text-left font-medium">Check No.</th>
+                                                <th className="text-left font-medium">Check Date</th>
                                                 <th className="text-left font-medium">Customer</th>
                                                 <th className="pr-5 text-right font-medium">Amount</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {checks.length === 0 ? (
-                                                <tr><td colSpan={4} className="py-10 text-center italic text-muted-foreground">No checks recorded.</td></tr>
+                                                <tr><td colSpan={5} className="py-10 text-center italic text-muted-foreground">No checks recorded.</td></tr>
                                             ) : checks.map((check, index) => (
                                                 <tr key={index} className="border-b border-border/40 transition-colors hover:bg-muted/40">
                                                     <td className="pl-5 font-bold">{check.bankName}</td>
                                                     <td className="font-mono text-muted-foreground">{check.checkNo}</td>
+                                                    <td className="font-mono text-muted-foreground">{formatCheckDate(check.chequeDate)}</td>
                                                     <td className="text-muted-foreground">{check.customerName}</td>
                                                     <td className="pr-5 text-right font-mono font-bold">{formatMoney(check.amount)}</td>
                                                 </tr>

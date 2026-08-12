@@ -7,6 +7,7 @@ import type { CompanyProfile, CompanyProfileStatus } from "../../company-profile
 
 export interface CheckDetailDto {
     date: string;
+    chequeDate: string | null;
     docNo: string;
     bankName: string;
     checkNo: string;
