@@ -56,6 +56,7 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
         handleSubmit,
         isSheetLoading,
         isSubmitting,
+        submissionError,
         editingId,
         masterList
     } = state;
@@ -640,6 +641,14 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                 <SheetFooter
                     className="p-4 sm:p-5 bg-card border-t border-border shrink-0 flex flex-col sm:flex-row justify-between items-center gap-4 z-10 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
                     <div className="flex items-center w-full sm:w-auto">
+                        {submissionError && (
+                            <span
+                                className="flex items-center justify-center w-full sm:w-auto gap-1.5 text-[11px] font-bold text-destructive bg-destructive/10 border border-destructive/20 px-3 py-2 rounded-md"
+                                role="alert"
+                            >
+                                <AlertCircle size={14}/> {submissionError}
+                            </span>
+                        )}
                         {!isFormValid && !isSheetLoading && (
                             <span
                                 className="flex items-center justify-center w-full sm:w-auto gap-1.5 text-[11px] font-bold uppercase tracking-widest text-amber-600 dark:text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 rounded-md">

@@ -141,6 +141,12 @@ export interface UnpaidInvoice {
     matchedCollectionCustomerName?: string;
 }
 
+export interface UnpaidInvoiceSearchResponse {
+    items: UnpaidInvoice[];
+    hasMore: boolean;
+    nextCursor: number | null;
+}
+
 export interface SettlementAllocation {
     invoiceId: number;
     invoiceNo: string;
@@ -173,6 +179,7 @@ export interface CashieringState {
     isLoading: boolean;
     isSheetLoading: boolean;
     isSubmitting: boolean;
+    submissionError: string | null;
     editingId: number | null;
     masterList: CollectionSummary[];
     salesmen: Salesman[];

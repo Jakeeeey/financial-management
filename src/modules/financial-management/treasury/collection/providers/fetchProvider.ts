@@ -1,115 +1,147 @@
+export interface FetchOptions {
+    signal?: AbortSignal;
+    timeoutMs?: number;
+}
+
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+const getErrorMessage = (body: string, fallback: string) => {
+    if (!body) return fallback;
+
+    try {
+        const parsed = JSON.parse(body) as { detail?: string; message?: string; error?: string };
+        return parsed.detail || parsed.message || parsed.error || fallback;
+    } catch {
+        return body;
+    }
+};
+
+const createRequestContext = (options?: FetchOptions) => {
+    const controller = new AbortController();
+    const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    let timedOut = false;
+    const timeout = window.setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+    }, timeoutMs);
+    const abortExternal = () => controller.abort(options?.signal?.reason);
+
+    options?.signal?.addEventListener("abort", abortExternal, {once: true});
+
+    return {
+        signal: controller.signal,
+        cleanup: () => {
+            window.clearTimeout(timeout);
+            options?.signal?.removeEventListener("abort", abortExternal);
+        },
+        timedOut: () => timedOut,
+    };
+};
+
+const request = async (url: string, init: RequestInit, options?: FetchOptions) => {
+    const context = createRequestContext(options);
+    try {
+        return await fetch(url, {...init, signal: context.signal});
+    } catch (error) {
+        if (context.timedOut()) {
+            const timeoutError = new Error("The request timed out. Please retry.");
+            timeoutError.name = "TimeoutError";
+            throw timeoutError;
+        }
+        throw error;
+    } finally {
+        context.cleanup();
+    }
+};
+
+const parseJsonResponse = async <T>(response: Response): Promise<T | null> => {
+    const body = await response.text();
+    return body ? JSON.parse(body) as T : null;
+};
+
 export const fetchProvider = {
-    /**
-     * GET Request
-     */
-    async get<T>(url: string): Promise<T | null> {
+    async getOrThrow<T>(url: string, options?: FetchOptions): Promise<T | null> {
+        const response = await request(url, {
+            method: "GET",
+            headers: {"Content-Type": "application/json"},
+        }, options);
+
+        if (!response.ok) {
+            const errorBody = await response.text();
+            throw new Error(getErrorMessage(errorBody, `GET Error: ${response.status}`));
+        }
+
+        return parseJsonResponse<T>(response);
+    },
+
+    async get<T>(url: string, options?: FetchOptions): Promise<T | null> {
         try {
-            const response = await fetch(url, {
-                method: "GET",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-            });
-
-            if (!response.ok) {
-                const errorMsg = await response.text();
-                throw new Error(errorMsg || `GET Error: ${response.status}`);
-            }
-
-            return await response.json();
+            return await fetchProvider.getOrThrow<T>(url, options);
         } catch (error) {
             console.error(`[fetchProvider] GET ${url} failed:`, error);
             return null;
         }
     },
 
-    /**
-     * POST Request
-     * Supports both JSON responses and raw text (for system-generated IDs/DocNos)
-     */
-    // 🚀 FIX: Replaced 'any' with 'unknown'
-    async post<T>(url: string, body: unknown): Promise<T | null> {
+    async post<T>(url: string, body: unknown, options?: FetchOptions): Promise<T | null> {
         try {
-            const response = await fetch(url, {
+            const response = await request(url, {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
+                headers: {"Content-Type": "application/json"},
                 body: JSON.stringify(body),
-            });
+            }, options);
 
             if (!response.ok) {
-                const errorMsg = await response.text();
-                let message = errorMsg || `POST Error: ${response.status}`;
-                try {
-                    const parsed = JSON.parse(errorMsg) as { detail?: string; message?: string; error?: string };
-                    message = parsed.detail || parsed.message || parsed.error || message;
-                } catch {
-                    // Preserve plain-text API errors.
-                }
-                throw new Error(message);
+                const errorBody = await response.text();
+                throw new Error(getErrorMessage(errorBody, `POST Error: ${response.status}`));
             }
 
-            // 🚀 PRO TIP: Check Content-Type.
-            // If backend returns a raw string (like CP-0001), .json() will fail.
-            const contentType = response.headers.get("content-type");
-            if (contentType && contentType.includes("application/json")) {
-                return await response.json();
-            } else {
-                // Fallback for raw text responses
-                const textData = await response.text();
-                return textData as unknown as T;
+            const contentType = response.headers.get("content-type") || "";
+            if (contentType.includes("application/json")) {
+                return parseJsonResponse<T>(response);
             }
+
+            const textData = await response.text();
+            return textData as unknown as T;
         } catch (error) {
             console.error(`[fetchProvider] POST ${url} failed:`, error);
-            throw error; // Re-throw so the Hook can catch it for alerts
+            throw error;
         }
     },
 
-    /**
-     * PUT Request
-     */
-    // 🚀 FIX: Replaced 'any' with 'unknown'
-    async put<T>(url: string, body: unknown): Promise<T | null> {
+    async put<T>(url: string, body: unknown, options?: FetchOptions): Promise<T | null> {
         try {
-            const response = await fetch(url, {
+            const response = await request(url, {
                 method: "PUT",
-                headers: {
-                    "Content-Type": "application/json",
-                },
+                headers: {"Content-Type": "application/json"},
                 body: JSON.stringify(body),
-            });
+            }, options);
 
             if (!response.ok) {
-                const errorMsg = await response.text();
-                throw new Error(errorMsg || `PUT Error: ${response.status}`);
+                const errorBody = await response.text();
+                throw new Error(getErrorMessage(errorBody, `PUT Error: ${response.status}`));
             }
 
-            return await response.json();
+            return parseJsonResponse<T>(response);
         } catch (error) {
             console.error(`[fetchProvider] PUT ${url} failed:`, error);
             throw error;
         }
     },
 
-    /**
-     * DELETE Request
-     */
-    async delete<T>(url: string): Promise<T | null> {
+    async delete<T>(url: string, options?: FetchOptions): Promise<T | null> {
         try {
-            const response = await fetch(url, {
+            const response = await request(url, {
                 method: "DELETE",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-            });
+                headers: {"Content-Type": "application/json"},
+            }, options);
 
             if (!response.ok) {
-                const errorMsg = await response.text();
-                throw new Error(errorMsg || `DELETE Error: ${response.status}`);
+                const errorBody = await response.text();
+                throw new Error(getErrorMessage(errorBody, `DELETE Error: ${response.status}`));
             }
 
-            return await response.json();
+            return parseJsonResponse<T>(response);
         } catch (error) {
             console.error(`[fetchProvider] DELETE ${url} failed:`, error);
             return null;

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { useSettlement, WalletItem } from "../hooks/useSettlement";
 import {
     ShieldCheck,
@@ -32,7 +32,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { fetchProvider } from "../../providers/fetchProvider";
-import { UnpaidInvoice } from "../../types";
+import { UnpaidInvoice, UnpaidInvoiceSearchResponse } from "../../types";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -76,6 +76,10 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
     const [searchQuery, setSearchQuery] = useState("");
     const [searchResults, setSearchResults] = useState<UnpaidInvoice[]>([]);
     const [isSearching, setIsSearching] = useState(false);
+    const [searchError, setSearchError] = useState<string | null>(null);
+    const [searchHasMore, setSearchHasMore] = useState(false);
+    const [searchCursor, setSearchCursor] = useState<number | null>(null);
+    const searchAbortRef = useRef<AbortController | null>(null);
 
     const [creditSearch, setCreditSearch] = useState("");
     const [poolSearch, setPoolSearch] = useState("");
@@ -134,28 +138,74 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
     }, [findings, editCoaId]);
 
     useEffect(() => {
+        searchAbortRef.current?.abort();
+        searchAbortRef.current = null;
+        setSearchError(null);
+        setSearchCursor(null);
+        setSearchHasMore(false);
+
         if (!searchQuery || searchQuery.trim().length < 2 || isPosted) {
             setSearchResults([]);
             return;
         }
 
         const delayDebounceFn = setTimeout(async () => {
+            const controller = new AbortController();
+            searchAbortRef.current = controller;
             setIsSearching(true);
             try {
-                const data = await fetchProvider.get<UnpaidInvoice[]>(
-                    `/api/fm/treasury/collections/search-unpaid?query=${encodeURIComponent(searchQuery.trim())}&pouchId=${encodeURIComponent(String(id))}`
+                const data = await fetchProvider.getOrThrow<UnpaidInvoiceSearchResponse>(
+                    `/api/fm/treasury/collections/search-unpaid?query=${encodeURIComponent(searchQuery.trim())}&pouchId=${encodeURIComponent(String(id))}&limit=50`,
+                    {signal: controller.signal, timeoutMs: 12_000}
                 );
-                const cleanResults = (data || []).filter(inv => !cartInvoices.some(cartInv => cartInv.id === inv.id));
+                const cleanResults = (data?.items || []).filter(inv => !cartInvoices.some(cartInv => cartInv.id === inv.id));
                 setSearchResults(cleanResults);
+                setSearchHasMore(Boolean(data?.hasMore));
+                setSearchCursor(data?.nextCursor ?? null);
             } catch (error) {
-                console.error("Search failed:", error);
+                if (!(error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError"))) {
+                    console.error("Search failed:", error);
+                    setSearchError(error instanceof Error ? error.message : "Unable to search unpaid invoices.");
+                    setSearchResults([]);
+                }
             } finally {
-                setIsSearching(false);
+                if (searchAbortRef.current === controller) setIsSearching(false);
             }
         }, 300);
 
-        return () => clearTimeout(delayDebounceFn);
+        return () => {
+            clearTimeout(delayDebounceFn);
+            searchAbortRef.current?.abort();
+        };
     }, [searchQuery, cartInvoices, isPosted, id]);
+
+    const loadMoreSearchResults = async () => {
+        if (!searchHasMore || !searchCursor || isSearching || !searchQuery.trim() || isPosted) return;
+
+        searchAbortRef.current?.abort();
+        const controller = new AbortController();
+        searchAbortRef.current = controller;
+        setIsSearching(true);
+        setSearchError(null);
+
+        try {
+            const data = await fetchProvider.getOrThrow<UnpaidInvoiceSearchResponse>(
+                `/api/fm/treasury/collections/search-unpaid?query=${encodeURIComponent(searchQuery.trim())}&pouchId=${encodeURIComponent(String(id))}&limit=50&cursor=${encodeURIComponent(String(searchCursor))}`,
+                {signal: controller.signal, timeoutMs: 12_000}
+            );
+            const cleanResults = (data?.items || []).filter(inv => !cartInvoices.some(cartInv => cartInv.id === inv.id));
+            setSearchResults(previous => [...previous, ...cleanResults]);
+            setSearchHasMore(Boolean(data?.hasMore));
+            setSearchCursor(data?.nextCursor ?? null);
+        } catch (error) {
+            if (!(error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError"))) {
+                console.error("Loading more search results failed:", error);
+                setSearchError(error instanceof Error ? error.message : "Unable to load more unpaid invoices.");
+            }
+        } finally {
+            if (searchAbortRef.current === controller) setIsSearching(false);
+        }
+    };
 
     useEffect(() => {
         if (cartInvoices.length > 0 && !activeInvoiceId) {
@@ -169,10 +219,11 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
 
     useEffect(() => {
         if (autoAddInvoiceNo && !isPosted && !autoAdded && cartInvoices.length >= 0) {
-            fetchProvider.get<UnpaidInvoice[]>(
-                `/api/fm/treasury/collections/search-unpaid?query=${encodeURIComponent(autoAddInvoiceNo.trim())}&pouchId=${encodeURIComponent(String(id))}`
+            fetchProvider.getOrThrow<UnpaidInvoiceSearchResponse>(
+                `/api/fm/treasury/collections/search-unpaid?query=${encodeURIComponent(autoAddInvoiceNo.trim())}&pouchId=${encodeURIComponent(String(id))}&limit=50`,
+                {timeoutMs: 12_000}
             ).then((res) => {
-                const found = res?.find(inv => inv.invoiceNo === autoAddInvoiceNo);
+                const found = res?.items?.find(inv => inv.invoiceNo === autoAddInvoiceNo);
                 if (found) {
                     addToCart(found);
                     setAutoAdded(true);
@@ -180,6 +231,7 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
                 }
             }).catch(err => {
                 console.error("Auto add invoice failed:", err);
+                toast.error(err instanceof Error ? err.message : "Unable to find the invoice.");
             });
         }
     }, [autoAddInvoiceNo, isPosted, autoAdded, cartInvoices, addToCart, id]);
@@ -741,7 +793,7 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
                         </div>
 
                         {!isPosted && (
-                            <InvoiceSearchPopover searchOpen={searchOpen} setSearchOpen={setSearchOpen} searchQuery={searchQuery} setSearchQuery={setSearchQuery} isSearching={isSearching} searchResults={searchResults} addToCart={addToCart} />
+                            <InvoiceSearchPopover searchOpen={searchOpen} setSearchOpen={setSearchOpen} searchQuery={searchQuery} setSearchQuery={setSearchQuery} isSearching={isSearching} searchResults={searchResults} searchError={searchError} searchHasMore={searchHasMore} addToCart={addToCart} loadMoreSearchResults={loadMoreSearchResults} />
                         )}
                     </div>
 

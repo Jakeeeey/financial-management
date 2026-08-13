@@ -1,67 +1,71 @@
-import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import {NextRequest, NextResponse} from "next/server";
+import {cookies} from "next/headers";
+import {
+    createSpringRequestContext,
+    dependencyErrorResponse,
+    getSpringBaseUrl,
+    isAbortError,
+    readResponseBody,
+    springErrorResponse,
+} from "../_spring";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-// Use the helper that matches your project's naming convention
-const getSpringBaseUrl = () => {
-    // 🚀 Fixed: Using the correct Env Var name from your other routes
-    const url = process.env.SPRING_API_BASE_URL;
-    return (url || "http://localhost:8080").replace(/\/$/, "");
-};
-
-const getSpringErrorMessage = (errorText: string, fallback: string) => {
-    try {
-        const parsed = JSON.parse(errorText) as { detail?: string; message?: string; error?: string };
-        return parsed.detail || parsed.message || parsed.error || fallback;
-    } catch {
-        return errorText || fallback;
-    }
-};
+const SPRING_TIMEOUT_MS = 30_000;
 
 export async function POST(request: NextRequest) {
-    const cookieStore = await cookies();
-    const token = cookieStore.get("vos_access_token")?.value;
+    const token = (await cookies()).get("vos_access_token")?.value;
+    if (!token) return NextResponse.json({message: "Unauthorized"}, {status: 401});
 
-    if (!token) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    const context = createSpringRequestContext(request.headers.get("x-request-id"), SPRING_TIMEOUT_MS);
 
     try {
         const body = await request.json();
-
-        // 🚀 This will now be "http://localhost:8080/api/v1/collections/receive"
-        const targetUrl = `${getSpringBaseUrl()}/api/v1/collections/receive`;
-
-        const springRes = await fetch(targetUrl, {
+        const springRes = await fetch(`${getSpringBaseUrl()}/api/v1/collections/receive`, {
             method: "POST",
             headers: {
-                "Authorization": `Bearer ${token}`,
-                "Content-Type": "application/json" // 🚀 Fixed: Removed the trailing "{" syntax error
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+                "X-Request-Id": context.requestId,
             },
             body: JSON.stringify(body),
+            signal: context.controller.signal,
         });
 
         if (!springRes.ok) {
-            const errorText = await springRes.text();
-            return NextResponse.json({
-                message: getSpringErrorMessage(errorText, `Spring rejected the pouch: ${springRes.status}`)
-            }, { status: springRes.status });
+            return springErrorResponse(
+                springRes.status,
+                await readResponseBody(springRes),
+                `Spring rejected the pouch: ${springRes.status}`,
+                context.requestId
+            );
         }
 
-        const result = await springRes.text();
-
-        // Return as plain text for the fetchProvider
-        return new Response(result, {
+        return new Response(await springRes.text(), {
             status: 200,
-            headers: { 'Content-Type': 'text/plain' }
+            headers: {
+                "Content-Type": "text/plain",
+                "X-Request-Id": context.requestId,
+            },
         });
-
-    } catch (err: unknown) {
-        // 🚀 This logs the error to your VS Code terminal so you can see it!
-        console.error("[BFF] POST /api/fm/treasury/collections/receive failed:", err);
-
-        return NextResponse.json({
-            message: "BFF Error",
-            detail: (err instanceof Error ? err.message : String(err))
-        }, { status: 502 });
+    } catch (error: unknown) {
+        console.error("[BFF] POST /api/fm/treasury/collections/receive failed:", error);
+        if (isAbortError(error)) {
+            return dependencyErrorResponse(
+                504,
+                "UPSTREAM_TIMEOUT",
+                "The collection service timed out. Please retry.",
+                context.requestId
+            );
+        }
+        return dependencyErrorResponse(
+            503,
+            "DEPENDENCY_UNAVAILABLE",
+            "The collection service is temporarily unavailable. Please retry.",
+            context.requestId
+        );
+    } finally {
+        context.cleanup();
     }
 }
