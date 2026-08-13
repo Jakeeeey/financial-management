@@ -297,7 +297,7 @@ export function useSettlement(pouchId: string | number) {
 
             setIsLoadingCredits(true);
             try {
-                const namesQuery = encodeURIComponent(uniqueCustomers.join(','));
+                const namesQuery = encodeURIComponent(uniqueCustomers.join('|'));
                 const [memos, returns] = await Promise.all([
                     fetchProvider.get<RawMemoOrReturn[]>(`/api/fm/treasury/memos/available?customerNames=${namesQuery}`),
                     fetchProvider.get<RawMemoOrReturn[]>(`/api/fm/treasury/returns/available?customerNames=${namesQuery}&currentPouchId=${encodeURIComponent(String(pouchId))}`)
