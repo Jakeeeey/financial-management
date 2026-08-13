@@ -43,6 +43,7 @@ export interface TreasuryPouchDetail extends PostingQueueItem {
         paymentMethodId?: number;
         coaId?: number;
         bankId?: number | null;
+        bankName?: string | null;
         customerCode?: string;
         invoiceId?: number;
         referenceNo?: string;
