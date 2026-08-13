@@ -16,6 +16,7 @@ export interface CashBucket {
     paymentMethodId?: number;
     coaId?: number;
     bankId?: number | null;
+    bankName?: string | null;
     customerCode?: string;
     invoiceId?: number;
     referenceNo?: string;
@@ -387,6 +388,7 @@ export function ReviewSheet({
                                             const isCredit = b.balanceTypeId === 1;
                                             const typeLabel = b.resolvedType || "ADJUSTMENT";
                                             const isCheck = typeLabel === "CHECK";
+                                            const bankLabel = b.bankName || (b.bankId != null ? "Unknown Bank" : null);
 
                                             return (
                                                 <div key={i} className={`flex justify-between items-center p-3.5 rounded-xl border bg-card shadow-sm transition-all hover:shadow-md ${isCredit ? 'border-red-200' : 'border-border'}`}>
@@ -398,7 +400,7 @@ export function ReviewSheet({
                                                             <span className={isCredit ? "text-red-600 font-black" : ""}>Type: {typeLabel}</span>
                                                             {isCheck && (
                                                                 <>
-                                                                    {b.bankId != null && <span>• Bank ID: <span className="text-foreground">{b.bankId}</span></span>}
+                                                                    {bankLabel && <span>• Bank: <span className="text-foreground">{bankLabel}</span></span>}
                                                                     {b.referenceNo && <span>• Ref/Chk#: <span className="text-foreground">{b.referenceNo}</span></span>}
                                                                     {b.chequeDate && <span>• Date: <span className="text-foreground">{b.chequeDate.split('T')[0]}</span></span>}
                                                                 </>
