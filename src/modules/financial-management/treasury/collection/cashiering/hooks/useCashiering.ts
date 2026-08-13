@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { fetchProvider } from "../../providers/fetchProvider";
+import { toast } from "sonner";
 import {
     CurrentUser, CollectionSummary, Salesman, Bank, Denomination,
     COA, PaymentMethod, Customer, UnpaidInvoice, CheckDetail, UserDto
@@ -76,6 +77,7 @@ export function useCashiering(currentUser: CurrentUser) {
     const [isLoading, setIsLoading] = useState<boolean>(true);
     const [isSheetLoading, setIsSheetLoading] = useState<boolean>(false);
     const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+    const [submissionError, setSubmissionError] = useState<string | null>(null);
     const [editingId, setEditingId] = useState<number | null>(null);
 
     const [masterList, setMasterList] = useState<CollectionSummary[]>([]);
@@ -175,6 +177,7 @@ export function useCashiering(currentUser: CurrentUser) {
         if (!id || isNaN(id)) return;
         setIsSheetLoading(true);
         setIsSheetOpen(true);
+        setSubmissionError(null);
 
         try {
             const pouch = await fetchProvider.get<PouchDetailResponse>(`/api/fm/treasury/collections/${id}`);
@@ -234,7 +237,7 @@ export function useCashiering(currentUser: CurrentUser) {
             }
         } catch (err) {
             console.error("Hydration Error:", err);
-            alert("Could not load pouch details.");
+            setSubmissionError("Could not load pouch details. Please retry.");
         } finally {
             setIsSheetLoading(false);
         }
@@ -310,6 +313,7 @@ export function useCashiering(currentUser: CurrentUser) {
 
     const resetForm = () => {
         setEditingId(null);
+        setSubmissionError(null);
         setSalesmanId("");
         setCollectedBy(""); // 🚀 Reset
         setCrNo("");        // 🚀 Reset
@@ -321,13 +325,14 @@ export function useCashiering(currentUser: CurrentUser) {
 
     const handleSubmit = async () => {
         if (isSheetLoading) return;
-        if (!salesmanId) return alert("Please select a Collector.");
+        setSubmissionError(null);
+        if (!salesmanId) return setSubmissionError("Please select a Collector.");
         if (Object.values(denominations).some(quantity => !Number.isInteger(quantity) || quantity < 0)) {
-            return alert("Cash quantities must be non-negative whole numbers.");
+            return setSubmissionError("Cash quantities must be non-negative whole numbers.");
         }
-        if (grandTotal <= 0) return alert("Cannot save an empty pouch.");
+        if (grandTotal <= 0) return setSubmissionError("Cannot save an empty pouch.");
         if (checks.some(check => Object.values(getCheckValidationErrors(check)).some(Boolean))) {
-            return alert("Complete all required non-cash remittance fields before saving.");
+            return setSubmissionError("Complete all required non-cash remittance fields before saving.");
         }
 
         const selectedInvoiceAmounts = new Map<string, number>();
@@ -348,7 +353,7 @@ export function useCashiering(currentUser: CurrentUser) {
             );
             const requestedAmount = selectedInvoiceAmounts.get(String(check.invoiceId)) || 0;
             if (requestedAmount > invoice.remainingBalance + 0.01) {
-                return alert(`Invoice ${invoice.invoiceNo} has only ₱${invoice.remainingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })} remaining.`);
+                return setSubmissionError(`Invoice ${invoice.invoiceNo} has only ₱${invoice.remainingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })} remaining.`);
             }
         }
 
@@ -386,25 +391,26 @@ export function useCashiering(currentUser: CurrentUser) {
         };
 
         try {
-            const method = editingId ? fetchProvider.put : fetchProvider.post;
             const url = editingId ? `/api/fm/treasury/collections/${editingId}` : "/api/fm/treasury/collections/receive";
-            const res = await method<string>(url, payload);
+            const res = editingId
+                ? await fetchProvider.put<string>(url, payload, {timeoutMs: 35_000})
+                : await fetchProvider.post<string>(url, payload, {timeoutMs: 35_000});
             if (res) {
-                alert(editingId ? "Pouch updated!" : "Pouch secured!");
+                toast.success(editingId ? "Pouch updated!" : "Pouch secured!");
                 setIsSheetOpen(false);
                 resetForm();
                 fetchInitialData();
             }
         } catch (error) {
             console.error("Submission Error:", error);
-            alert(getSubmissionErrorMessage(error));
+            setSubmissionError(getSubmissionErrorMessage(error));
         } finally {
             setIsSubmitting(false);
         }
     };
 
     return {
-        isSheetOpen, setIsSheetOpen, isSheetLoading, isSubmitting, masterList, salesmen, isLoading, salesmanId, setSalesmanId,
+        isSheetOpen, setIsSheetOpen, isSheetLoading, isSubmitting, submissionError, masterList, salesmen, isLoading, salesmanId, setSalesmanId,
         users, collectedBy, setCollectedBy, crNo, setCrNo, // 🚀 Expose the new states to the component!
         collectionDate, setCollectionDate, remarks, setRemarks, denominations, handleDenomChange,
         denominationMaster, checks, banks, coas, paymentMethods, customers, customerInvoices, routeInvoices,
