@@ -222,6 +222,7 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
                     sourceTempId: source.id,
                     originalAmount: invoice.originalAmount || 0,
                     remainingBalance: invoice.remainingBalance || 0,
+                    maxSettleableAmount: invoice.maxSettleableAmount,
                     totalPayments: invoice.totalPayments || 0,
                     totalMemos: invoice.totalMemos || 0,
                     totalReturns: invoice.totalReturns || 0,
@@ -238,7 +239,7 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
 
         // 1. EXACT MATCHES FIRST
         for (const inv of cartInvoices) {
-            const invBal = getRemainingInvoiceBal(inv.id, inv.remainingBalance);
+            const invBal = getRemainingInvoiceBal(inv.id, getInvoiceRequiredBalance(inv));
             if (invBal <= 0.01) continue;
 
             const exactSource = combinedSources.find(src => {
@@ -254,7 +255,7 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
 
         // 2. REFERENCE/NAME MATCHING
         for (const inv of cartInvoices) {
-            const invBal = getRemainingInvoiceBal(inv.id, inv.remainingBalance);
+            const invBal = getRemainingInvoiceBal(inv.id, getInvoiceRequiredBalance(inv));
             if (invBal <= 0.01) continue;
 
             const matchingSource = combinedSources.find(src => {
@@ -279,7 +280,7 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
             if (srcAmt <= 0.01) continue;
 
             for (const inv of sortedInvoices) {
-                const invBal = getRemainingInvoiceBal(inv.id, inv.remainingBalance);
+                const invBal = getRemainingInvoiceBal(inv.id, getInvoiceRequiredBalance(inv));
                 if (invBal <= 0.01) continue;
 
                 const allocationAmt = Math.min(invBal, srcAmt);
@@ -387,7 +388,7 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
 
     const handleInvoiceDiscrepancy = (inv: UnpaidInvoice) => {
         const appliedSession = getInvoiceApplied(inv.id);
-        const remaining = Number(inv.remainingBalance ?? inv.originalAmount ?? 0);
+        const remaining = getInvoiceRequiredBalance(inv);
         const discrepancy = remaining - appliedSession;
         if (discrepancy <= 0.01) return toast.error(`Cannot accept a variance adjustment. Variance: ₱${discrepancy.toFixed(2)}`);
         setAdjAmount(Math.abs(discrepancy).toFixed(2));
@@ -397,7 +398,7 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
     };
 
     const handleAutoCalculateEWT = (inv: UnpaidInvoice) => {
-        const netOfVat = inv.remainingBalance / 1.12;
+        const netOfVat = getInvoiceRequiredBalance(inv) / 1.12;
         const refNo = prompt(`Generate Form 2307 for ${inv.invoiceNo}\n\nEnter Reference Number:`, `2307-${inv.invoiceNo}`);
         if (refNo) createEwt(netOfVat * 0.01, refNo, inv.id);
     };

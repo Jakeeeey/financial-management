@@ -39,6 +39,7 @@ export interface RawAllocation {
     sourceTempId?: string;
     originalAmount?: number;
     remainingBalance?: number;
+    maxSettleableAmount?: number;
     totalPayments?: number;
     totalMemos?: number;
     totalReturns?: number;
@@ -236,7 +237,8 @@ export function useSettlement(pouchId: string | number) {
                         invoiceId: alloc.invoiceId || 0, invoiceNo: alloc.invoiceNo || "", customerName: alloc.customerName || "",
                         amountApplied: Math.abs(alloc.amountApplied || 0), allocationType: alloc.allocationType || "CASH",
                         sourceTempId: alloc.sourceTempId || "CASH_SUMMARY", originalAmount: alloc.originalAmount || 0,
-                        remainingBalance: alloc.remainingBalance || 0, totalPayments: alloc.totalPayments || 0, totalMemos: alloc.totalMemos || 0,
+                        remainingBalance: alloc.remainingBalance || 0, maxSettleableAmount: alloc.maxSettleableAmount,
+                        totalPayments: alloc.totalPayments || 0, totalMemos: alloc.totalMemos || 0,
                         totalReturns: alloc.totalReturns || 0, transactionDate: alloc.transactionDate || "", dueDate: alloc.dueDate || "",
                         agingDays: alloc.agingDays || 0, history: alloc.history || []
                     };
@@ -559,7 +561,7 @@ export function useSettlement(pouchId: string | number) {
                     const invoiceUsedElsewhere = prev
                         .filter(a => a.invoiceId === invoiceId && a.sourceTempId !== sourceId)
                         .reduce((sum, a) => sum + a.amountApplied, 0);
-                    const invoiceBalance = Number(inv.remainingBalance ?? inv.originalAmount ?? 0);
+                    const invoiceBalance = getInvoiceRequiredBalance(inv);
                     const invoiceAvailable = Math.max(0, invoiceBalance - invoiceUsedElsewhere);
                     const finalAmount = Math.min(safeInput, walletAvailable, invoiceAvailable);
 
@@ -573,6 +575,7 @@ export function useSettlement(pouchId: string | number) {
                             sourceTempId: sourceId,
                             originalAmount: inv.originalAmount || 0,
                             remainingBalance: inv.remainingBalance || 0,
+                            maxSettleableAmount: inv.maxSettleableAmount,
                             totalPayments: inv.totalPayments || 0,
                             totalMemos: inv.totalMemos || 0,
                             totalReturns: inv.totalReturns || 0,
@@ -604,6 +607,7 @@ export function useSettlement(pouchId: string | number) {
                         invoiceId: invoiceId, invoiceNo: inv.invoiceNo || "", customerName: inv.customerName || "",
                         amountApplied: amount, allocationType: "EWT", sourceTempId: tempEwtId, originalAmount: inv.originalAmount || 0,
                         remainingBalance: inv.remainingBalance || 0, totalPayments: inv.totalPayments || 0, totalMemos: inv.totalMemos || 0,
+                        maxSettleableAmount: inv.maxSettleableAmount,
                         totalReturns: inv.totalReturns || 0, transactionDate: inv.transactionDate ? String(inv.transactionDate) : "",
                         dueDate: inv.dueDate ? String(inv.dueDate) : "", agingDays: inv.agingDays || 0, history: inv.history || []
                     }];
@@ -633,6 +637,7 @@ export function useSettlement(pouchId: string | number) {
                         invoiceId: invoiceId, invoiceNo: inv.invoiceNo || "", customerName: inv.customerName || "",
                         amountApplied: Math.abs(amount), allocationType: "ADJUSTMENT", sourceTempId: tempAdjId, originalAmount: inv.originalAmount || 0,
                         remainingBalance: inv.remainingBalance || 0, totalPayments: inv.totalPayments || 0, totalMemos: inv.totalMemos || 0,
+                        maxSettleableAmount: inv.maxSettleableAmount,
                         totalReturns: inv.totalReturns || 0, transactionDate: inv.transactionDate ? String(inv.transactionDate) : "",
                         dueDate: inv.dueDate ? String(inv.dueDate) : "", agingDays: inv.agingDays || 0, history: inv.history || []
                     }];
