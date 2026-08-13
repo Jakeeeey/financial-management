@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { UnpaidInvoice } from "../../types";
+import { getInvoiceRequiredBalance } from "../utils/settlement-balance";
 
 interface InvoiceSearchPopoverProps {
     searchOpen: boolean;
@@ -51,7 +52,7 @@ export default function InvoiceSearchPopover({
                                             </span>
                                         )}
                                     </div>
-                                    <span className="font-mono font-black text-emerald-600 text-sm">₱{inv.remainingBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                                    <span className="font-mono font-black text-emerald-600 text-sm">₱{getInvoiceRequiredBalance(inv).toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
                                 </CommandItem>
                             ))}
                         </CommandGroup>

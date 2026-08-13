@@ -149,7 +149,7 @@ export default function SettlementInvoiceCartTable({
                             const appliedAdj = invoiceAllocations.filter(a => a.allocationType === "ADJUSTMENT").reduce((sum, a) => sum + a.amountApplied, 0);
                             const appliedCredits = invoiceAllocations.filter(a => a.allocationType === "MEMO" || a.allocationType === "RETURN").reduce((sum, a) => sum + a.amountApplied, 0);
                             const hasEWTApplied = invoiceAllocations.some(a => a.allocationType === "EWT");
-                            const isFullySettled = appliedSession >= (inv.remainingBalance - 0.01);
+                            const isFullySettled = appliedSession >= (getInvoiceRequiredBalance(inv) - 0.01);
                             const isPartiallySettled = appliedSession > 0 && !isFullySettled;
 
                             let rowStatus = ""; let badgeColor = ""; let rowBg = "bg-background"; let IconComponent: React.ReactNode = null;

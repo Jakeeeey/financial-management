@@ -129,6 +129,7 @@ export interface UnpaidInvoice {
     totalMemos: number;
     totalReturns: number;
     remainingBalance: number;
+    maxSettleableAmount?: number;
 
     // AUDIT TRAIL
     history?: PaymentHistory[];
@@ -154,6 +155,7 @@ export interface SettlementAllocation {
     totalMemos: number;
     totalReturns: number;
     remainingBalance: number;
+    maxSettleableAmount?: number;
 
     // HISTORY POPUP
     history?: PaymentHistory[];
