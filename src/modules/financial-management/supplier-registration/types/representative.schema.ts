@@ -33,12 +33,10 @@ export const RepresentativeSchema = z.object({
     .max(255, "Email is too long"),
   contact_number: z
     .string()
-    .regex(
-      PHONE_REGEX,
-      "Invalid Philippine phone number format (e.g., 09171234567)",
-    )
-    .min(10, "Contact number is required")
-    .max(13, "Contact number is too long"),
+    .optional()
+    .refine((val) => !val || PHONE_REGEX.test(val.replace(/\D/g, "")), {
+      message: "Invalid Philippine phone number format (e.g., 09171234567)",
+    }),
   created_at: z.string().or(z.date()).optional(),
   updated_at: z.string().or(z.date()).optional(),
 });
