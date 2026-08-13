@@ -142,6 +142,7 @@ export const generateCollectionPDF = (
             pouch.isPosted ? "POSTED" : "DRAFT",
             check.bankName,
             check.checkNo,
+            formatShortDate(check.chequeDate),
             check.customerName,
             formatAmount(check.amount),
         ])
@@ -149,12 +150,12 @@ export const generateCollectionPDF = (
 
     autoTable(doc, {
         startY: currentY,
-        head: [["Date", "Doc No", "Status", "Bank", "Check No", "Customer / Remarks", "Amount"]],
+        head: [["Date", "Doc No", "Status", "Bank", "Check No", "Check Date", "Customer / Remarks", "Amount"]],
         body: checkRows,
         theme: "grid",
         headStyles: { fillColor: [52, 152, 219] },
         styles: { fontSize: 8 },
-        columnStyles: { 6: { halign: "right", fontStyle: "bold" } },
+        columnStyles: { 7: { halign: "right", fontStyle: "bold" } },
         margin: { left: 40, right: 40 },
     });
 

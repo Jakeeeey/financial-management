@@ -52,6 +52,7 @@ export const exportCollectionReportToExcel = (
             Status: pouch.isPosted ? "POSTED" : "DRAFT",
             Bank: check.bankName,
             "Check No": check.checkNo,
+            "Check Date": check.chequeDate || "N/A",
             "Customer / Remarks": check.customerName,
             Amount: check.amount,
         }))
