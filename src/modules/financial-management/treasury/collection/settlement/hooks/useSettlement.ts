@@ -5,11 +5,14 @@ import { UnpaidInvoice, SettlementAllocation, PaymentHistory, UserDto } from "..
 import { fetchProvider } from "../../providers/fetchProvider";
 import { toast } from "sonner";
 import {
+    capSettlementAllocation,
     findOverAllocatedInvoice,
     findUnderAllocatedInvoice,
     getCartBalanceTotals,
+    getInvoiceAllocationCapacity,
     getInvoiceAppliedForSettlement,
     getInvoiceRequiredBalance,
+    getSourceAllocationCapacity,
     SETTLEMENT_BALANCE_TOLERANCE,
 } from "../utils/settlement-balance";
 
@@ -73,8 +76,18 @@ export interface RawMemoOrReturn {
     customerName?: string;
     isApplied?: boolean;
     totalAmount?: number;
+    availableAmount?: number;
     returnNumber?: string;
 }
+
+const getAvailableReturnAmount = (salesReturn: RawMemoOrReturn) => {
+    if (salesReturn.availableAmount !== undefined) {
+        return Math.max(0, Number(salesReturn.availableAmount) || 0);
+    }
+    return salesReturn.isApplied
+        ? 0
+        : Math.max(0, Number(salesReturn.totalAmount) || 0);
+};
 
 export interface WalletItem {
     id: string;
@@ -287,7 +300,7 @@ export function useSettlement(pouchId: string | number) {
                 const namesQuery = encodeURIComponent(uniqueCustomers.join(','));
                 const [memos, returns] = await Promise.all([
                     fetchProvider.get<RawMemoOrReturn[]>(`/api/fm/treasury/memos/available?customerNames=${namesQuery}`),
-                    fetchProvider.get<RawMemoOrReturn[]>(`/api/fm/treasury/returns/available?customerNames=${namesQuery}`)
+                    fetchProvider.get<RawMemoOrReturn[]>(`/api/fm/treasury/returns/available?customerNames=${namesQuery}&currentPouchId=${encodeURIComponent(String(pouchId))}`)
                 ]);
 
                 setCredits(prev => {
@@ -301,8 +314,9 @@ export function useSettlement(pouchId: string | number) {
                     });
                     returns?.forEach(r => {
                         const id = `return-${r.id}`;
-                        if (!r.isApplied && !newCredits.some(c => c.id === id)) {
-                            newCredits.push({ id, dbId: r.id, type: "RETURN", label: `Return: ${r.returnNumber}`, originalAmount: r.totalAmount || 0, customerName: r.customerName });
+                        const availableReturnAmount = getAvailableReturnAmount(r);
+                        if (availableReturnAmount > SETTLEMENT_BALANCE_TOLERANCE && !newCredits.some(c => c.id === id)) {
+                            newCredits.push({ id, dbId: r.id, type: "RETURN", label: `Return: ${r.returnNumber}`, originalAmount: availableReturnAmount, customerName: r.customerName });
                         }
                     });
                     return newCredits;
@@ -314,7 +328,7 @@ export function useSettlement(pouchId: string | number) {
             }
         };
         fetchCreditsByCustomers();
-    }, [cartInvoices]);
+    }, [cartInvoices, pouchId]);
 
     useEffect(() => {
         if (!salesmanId || !dispatchDate) return;
@@ -330,7 +344,7 @@ export function useSettlement(pouchId: string | number) {
             const safeDocNo = encodeURIComponent(documentNo.trim());
             const endpoint = type === "MEMO"
                 ? `/api/fm/treasury/memos/search?documentNo=${safeDocNo}`
-                : `/api/fm/treasury/returns/search?documentNo=${safeDocNo}`;
+                : `/api/fm/treasury/returns/search?documentNo=${safeDocNo}&currentPouchId=${encodeURIComponent(String(pouchId))}`;
 
             const data = await fetchProvider.get<RawMemoOrReturn>(endpoint);
             if (!data) return false;
@@ -346,8 +360,9 @@ export function useSettlement(pouchId: string | number) {
                             newCredits.unshift({ id, dbId: data.id, type: "MEMO", label: `Memo: ${data.memoNumber}`, originalAmount: remaining, customerName: data.customerName });
                         }
                     } else {
-                        if (!data.isApplied) {
-                            newCredits.unshift({ id, dbId: data.id, type: "RETURN", label: `Return: ${data.returnNumber}`, originalAmount: data.totalAmount || 0, customerName: data.customerName });
+                        const availableReturnAmount = getAvailableReturnAmount(data);
+                        if (availableReturnAmount > SETTLEMENT_BALANCE_TOLERANCE) {
+                            newCredits.unshift({ id, dbId: data.id, type: "RETURN", label: `Return: ${data.returnNumber}`, originalAmount: availableReturnAmount, customerName: data.customerName });
                         }
                     }
                 }
@@ -556,14 +571,18 @@ export function useSettlement(pouchId: string | number) {
                 const inv = cartInvoices.find(i => i.id === invoiceId);
 
                 if (wItem && inv) {
-                    const walletUsedElsewhere = prev.filter(a => a.sourceTempId === sourceId && a.invoiceId !== invoiceId).reduce((sum, a) => sum + a.amountApplied, 0);
-                    const walletAvailable = Math.max(0, Math.abs(wItem.originalAmount) - walletUsedElsewhere);
+                    const walletUsedElsewhere = prev
+                        .filter(a => a.sourceTempId === sourceId && a.invoiceId !== invoiceId)
+                        .reduce((sum, a) => sum + a.amountApplied, 0);
+                    const walletAvailable = getSourceAllocationCapacity(wItem.originalAmount, walletUsedElsewhere);
                     const invoiceUsedElsewhere = prev
                         .filter(a => a.invoiceId === invoiceId && a.sourceTempId !== sourceId)
                         .reduce((sum, a) => sum + a.amountApplied, 0);
-                    const invoiceBalance = getInvoiceRequiredBalance(inv);
-                    const invoiceAvailable = Math.max(0, invoiceBalance - invoiceUsedElsewhere);
-                    const finalAmount = Math.min(safeInput, walletAvailable, invoiceAvailable);
+                    const invoiceAvailable = getInvoiceAllocationCapacity(
+                        getInvoiceRequiredBalance(inv),
+                        invoiceUsedElsewhere
+                    );
+                    const finalAmount = capSettlementAllocation(safeInput, walletAvailable, invoiceAvailable);
 
                     if (finalAmount > 0.009) {
                         filtered.push({
