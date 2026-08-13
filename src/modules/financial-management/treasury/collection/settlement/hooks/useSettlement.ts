@@ -39,6 +39,7 @@ export interface RawAllocation {
     sourceTempId?: string;
     originalAmount?: number;
     remainingBalance?: number;
+    maxSettleableAmount?: number;
     totalPayments?: number;
     totalMemos?: number;
     totalReturns?: number;
@@ -236,7 +237,8 @@ export function useSettlement(pouchId: string | number) {
                         invoiceId: alloc.invoiceId || 0, invoiceNo: alloc.invoiceNo || "", customerName: alloc.customerName || "",
                         amountApplied: Math.abs(alloc.amountApplied || 0), allocationType: alloc.allocationType || "CASH",
                         sourceTempId: alloc.sourceTempId || "CASH_SUMMARY", originalAmount: alloc.originalAmount || 0,
-                        remainingBalance: alloc.remainingBalance || 0, totalPayments: alloc.totalPayments || 0, totalMemos: alloc.totalMemos || 0,
+                        remainingBalance: alloc.remainingBalance || 0, maxSettleableAmount: alloc.maxSettleableAmount,
+                        totalPayments: alloc.totalPayments || 0, totalMemos: alloc.totalMemos || 0,
                         totalReturns: alloc.totalReturns || 0, transactionDate: alloc.transactionDate || "", dueDate: alloc.dueDate || "",
                         agingDays: alloc.agingDays || 0, history: alloc.history || []
                     };
@@ -559,7 +561,7 @@ export function useSettlement(pouchId: string | number) {
                     const invoiceUsedElsewhere = prev
                         .filter(a => a.invoiceId === invoiceId && a.sourceTempId !== sourceId)
                         .reduce((sum, a) => sum + a.amountApplied, 0);
-                    const invoiceBalance = Number(inv.remainingBalance ?? inv.originalAmount ?? 0);
+                    const invoiceBalance = getInvoiceRequiredBalance(inv);
                     const invoiceAvailable = Math.max(0, invoiceBalance - invoiceUsedElsewhere);
                     const finalAmount = Math.min(safeInput, walletAvailable, invoiceAvailable);
 
@@ -573,6 +575,7 @@ export function useSettlement(pouchId: string | number) {
                             sourceTempId: sourceId,
                             originalAmount: inv.originalAmount || 0,
                             remainingBalance: inv.remainingBalance || 0,
+                            maxSettleableAmount: inv.maxSettleableAmount,
                             totalPayments: inv.totalPayments || 0,
                             totalMemos: inv.totalMemos || 0,
                             totalReturns: inv.totalReturns || 0,
@@ -604,6 +607,7 @@ export function useSettlement(pouchId: string | number) {
                         invoiceId: invoiceId, invoiceNo: inv.invoiceNo || "", customerName: inv.customerName || "",
                         amountApplied: amount, allocationType: "EWT", sourceTempId: tempEwtId, originalAmount: inv.originalAmount || 0,
                         remainingBalance: inv.remainingBalance || 0, totalPayments: inv.totalPayments || 0, totalMemos: inv.totalMemos || 0,
+                        maxSettleableAmount: inv.maxSettleableAmount,
                         totalReturns: inv.totalReturns || 0, transactionDate: inv.transactionDate ? String(inv.transactionDate) : "",
                         dueDate: inv.dueDate ? String(inv.dueDate) : "", agingDays: inv.agingDays || 0, history: inv.history || []
                     }];
@@ -633,6 +637,7 @@ export function useSettlement(pouchId: string | number) {
                         invoiceId: invoiceId, invoiceNo: inv.invoiceNo || "", customerName: inv.customerName || "",
                         amountApplied: Math.abs(amount), allocationType: "ADJUSTMENT", sourceTempId: tempAdjId, originalAmount: inv.originalAmount || 0,
                         remainingBalance: inv.remainingBalance || 0, totalPayments: inv.totalPayments || 0, totalMemos: inv.totalMemos || 0,
+                        maxSettleableAmount: inv.maxSettleableAmount,
                         totalReturns: inv.totalReturns || 0, transactionDate: inv.transactionDate ? String(inv.transactionDate) : "",
                         dueDate: inv.dueDate ? String(inv.dueDate) : "", agingDays: inv.agingDays || 0, history: inv.history || []
                     }];
@@ -640,6 +645,84 @@ export function useSettlement(pouchId: string | number) {
             }
         } catch (err) {
             console.error("Failed to create temporary adjustment in UI.", err);
+        }
+    };
+
+    const hasPartialChanges = cartInvoices.length > 0
+        || allocations.length > 0
+        || wallet.some(item => item.isLocal)
+        || Object.keys(pendingEdits).length > 0
+        || pendingDeletions.length > 0;
+
+    const savePartialSettlement = async (): Promise<boolean> => {
+        if (!hasPartialChanges) {
+            toast.error("Add settlement progress before saving a partial settlement.");
+            return false;
+        }
+
+        const overAllocatedInvoice = findOverAllocatedInvoice(cartInvoices, allocations);
+        if (overAllocatedInvoice) {
+            toast.error(`The allocation for ${overAllocatedInvoice.invoiceNo} exceeds its remaining balance.`);
+            return false;
+        }
+
+        try {
+            for (const [, editInfo] of Object.entries(pendingEdits)) {
+                const endpoint = editInfo.type === "EWT"
+                    ? `/api/fm/treasury/ewts/${editInfo.dbId}`
+                    : `/api/fm/treasury/adjustments/${editInfo.dbId}`;
+                await fetchProvider.put(endpoint, editInfo.payload);
+            }
+
+            for (const delInfo of pendingDeletions) {
+                const endpoint = delInfo.type === "EWT"
+                    ? `/api/fm/treasury/ewts/${delInfo.dbId}`
+                    : `/api/fm/treasury/adjustments/${delInfo.dbId}`;
+                await fetchProvider.delete(endpoint);
+            }
+
+            const newAdjustments = wallet.filter(w => w.type === "ADJUSTMENT" && w.isLocal).map(w => ({
+                findingId: w.findingId || w.dbId, amount: w.originalAmount, balanceTypeId: w.balanceTypeId || 1,
+                remarks: w.customerName || "Session Variance", invoiceId: allocations.find(a => a.sourceTempId === w.id)?.invoiceId || null, tempId: w.id
+            }));
+
+            const newEwts = wallet.filter(w => w.type === "EWT" && w.isLocal).map(w => ({
+                amount: w.originalAmount, referenceNo: w.customerName || "Form 2307", tempId: w.id
+            }));
+
+            if (newAdjustments.some(adjustment => !adjustment.findingId)) {
+                throw new Error("Cannot save: An adjustment is missing a valid Finding Type.");
+            }
+
+            const persistentAllocations: { invoiceId: number; amountApplied: number; allocationType: string; sourceTempId: string; }[] = [];
+            cartInvoices.forEach(inv => {
+                const invAllocs = allocations.filter(a => a.invoiceId === inv.id && a.amountApplied > 0);
+                if (invAllocs.length > 0) {
+                    persistentAllocations.push(...invAllocs.map(a => ({
+                        invoiceId: a.invoiceId, amountApplied: a.amountApplied, allocationType: a.allocationType, sourceTempId: a.sourceTempId
+                    })));
+                } else {
+                    persistentAllocations.push({ invoiceId: inv.id, amountApplied: 0, allocationType: "NONE", sourceTempId: "NONE" });
+                }
+            });
+
+            await fetchProvider.post(`/api/fm/treasury/collections/${pouchId}/allocate/partial`, {
+                collectedBy: collectedBy || undefined,
+                crNo: crNo || undefined,
+                newAdjustments,
+                newEwts,
+                allocations: persistentAllocations
+            });
+
+            setPendingEdits({});
+            setPendingDeletions([]);
+            toast.success("Partial settlement saved. You can resume it from the queue.");
+            await fetchData();
+            return true;
+        } catch (err) {
+            toast.error(err instanceof Error && err.message ? err.message : "Failed to save partial settlement.");
+            console.error(err);
+            return false;
         }
     };
 
@@ -739,6 +822,7 @@ export function useSettlement(pouchId: string | number) {
         isLoading, wallet, credits, cartInvoices, allocations, setAllocations, salesmanName, salesmanId, findings, docNo, isPosted, isClearing,
         isLoadingRoute, addToCart, removeFromCart, clearCart, loadRouteInvoices, fetchAndInjectExternalCredit,
         getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement,
+        hasPartialChanges, savePartialSettlement,
         deleteWalletItem, editWalletItem, dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate,
         collectedByName, isLoadingCredits, collectionDate
     };

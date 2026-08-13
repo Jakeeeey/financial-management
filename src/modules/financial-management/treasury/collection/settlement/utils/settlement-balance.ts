@@ -4,9 +4,14 @@ export const SETTLEMENT_BALANCE_TOLERANCE = 0.01;
 
 const roundCurrency = (value: number) => Math.round(value * 100) / 100;
 
+export const getInvoiceSettlementCap = (invoice: UnpaidInvoice) => Math.max(
+    0,
+    Number(invoice.maxSettleableAmount ?? invoice.remainingBalance ?? invoice.originalAmount ?? 0)
+);
+
 export const getInvoiceRequiredBalance = (invoice: UnpaidInvoice) => Math.max(
     0,
-    Number(invoice.remainingBalance ?? invoice.originalAmount ?? 0)
+    getInvoiceSettlementCap(invoice)
 );
 
 export const getInvoiceAppliedForSettlement = (
