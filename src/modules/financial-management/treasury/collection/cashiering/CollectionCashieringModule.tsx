@@ -2,7 +2,7 @@
 
 import React, {useCallback, useState} from "react";
 import {useDebounce} from "use-debounce";
-import {Plus, Search, Filter, RefreshCcw, ChevronsUpDown, Check as CheckIcon, FilterX} from "lucide-react";
+import {Plus, Search, Filter, RefreshCcw, ChevronsUpDown, Check as CheckIcon, FilterX, AlertTriangle} from "lucide-react";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {Label} from "@/components/ui/label";
@@ -157,9 +157,29 @@ export default function CollectionCashieringModule({currentUser}: ModuleProps) {
                 </div>
             </div>
 
+            {state.listError && (
+                <div role="alert" className="flex items-center justify-between gap-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+                    <div className="flex items-start gap-3 text-sm font-semibold">
+                        <AlertTriangle size={18} className="mt-0.5 shrink-0"/>
+                        <div className="space-y-1">
+                            <p>{state.listError}</p>
+                            {state.masterList.length > 0 && (
+                                <p className="text-xs font-normal text-red-700/80 dark:text-red-300/80">
+                                    The displayed results are from the last successful load and may not match the current filters.
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" disabled={state.isLoading} onClick={() => void state.refreshList()} className="shrink-0">
+                        Retry
+                    </Button>
+                </div>
+            )}
+
             <CashieringMasterList
                 data={state.masterList}
                 isLoading={state.isLoading}
+                listError={state.listError}
                 state={state}
                 sortField={sortField}
                 sortDirection={sortDirection}

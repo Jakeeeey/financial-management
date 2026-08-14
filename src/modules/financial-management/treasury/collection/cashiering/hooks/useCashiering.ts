@@ -94,6 +94,15 @@ const getSubmissionErrorMessage = (error: unknown): string => {
     }
 };
 
+const getListErrorMessage = (error: unknown): string => {
+    const fallback = "Unable to load collection pouches. Please retry.";
+    if (!(error instanceof Error) || !error.message) return fallback;
+
+    const message = error.message.trim();
+    if (!message || /^<(!doctype|html)/i.test(message)) return fallback;
+    return message.length > 240 ? `${message.slice(0, 237)}...` : message;
+};
+
 export function useCashiering(
     currentUser: CurrentUser,
     listQuery: CashieringListQuery,
@@ -105,6 +114,7 @@ export function useCashiering(
     const [isSheetLoading, setIsSheetLoading] = useState<boolean>(false);
     const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
     const [submissionError, setSubmissionError] = useState<string | null>(null);
+    const [listError, setListError] = useState<string | null>(null);
     const [editingId, setEditingId] = useState<number | null>(null);
 
     const [masterList, setMasterList] = useState<CollectionSummary[]>([]);
@@ -142,6 +152,7 @@ export function useCashiering(
 
     const fetchCollections = useCallback(async () => {
         setIsLoading(true);
+        setListError(null);
         try {
             const query = new URLSearchParams({
                 search: listQuery.search,
@@ -154,18 +165,20 @@ export function useCashiering(
             if (listQuery.dateFrom) query.set("dateFrom", listQuery.dateFrom);
             if (listQuery.dateTo) query.set("dateTo", listQuery.dateTo);
 
-            const collectionsData = await fetchProvider.get<PaginatedCollectionResponse>(
+            const collectionsData = await fetchProvider.getOrThrow<PaginatedCollectionResponse>(
                 `/api/fm/treasury/collections/unposted?${query.toString()}`
             );
-            if (collectionsData) {
-                setMasterList(collectionsData.content || []);
-                setTotalElements(collectionsData.totalElements || 0);
-                setTotalPages(collectionsData.totalPages || 0);
-                setCurrentPage(collectionsData.currentPage || listQuery.page);
-            }
+            if (!collectionsData) throw new Error("The collection pouch list returned no data. Please retry.");
+
+            setMasterList(collectionsData.content || []);
+            setTotalElements(collectionsData.totalElements || 0);
+            setTotalPages(collectionsData.totalPages || 0);
+            setCurrentPage(collectionsData.currentPage || listQuery.page);
+            setListError(null);
 
         } catch (error) {
             console.error("Failed to fetch cashiering collections:", error);
+            setListError(getListErrorMessage(error));
         } finally {
             setIsLoading(false);
         }
@@ -259,6 +272,7 @@ export function useCashiering(
     useEffect(() => {
         if (!salesmanId) {
             setRouteInvoices([]);
+            setSubmissionError(null);
             return;
         }
 
@@ -268,11 +282,15 @@ export function useCashiering(
         if (editingId) query.set("currentPouchId", String(editingId));
 
         setRouteInvoices([]);
+        setSubmissionError(null);
         void fetchProvider.getOrThrow<UnpaidInvoice[]>(
             `/api/fm/treasury/collections/unpaid-invoices?${query.toString()}`,
             {signal: controller.signal, timeoutMs: 15_000},
         ).then(data => {
-            if (!cancelled) setRouteInvoices(data || []);
+            if (!cancelled) {
+                setRouteInvoices(data || []);
+                setSubmissionError(null);
+            }
         }).catch(error => {
             if (cancelled || controller.signal.aborted) return;
             console.error("Failed to load route invoices", error);
@@ -411,6 +429,7 @@ export function useCashiering(
         updated[index].customerId = customerId;
         updated[index].invoiceId = "";
         setChecks(updated);
+        setSubmissionError(null);
 
         if (salesmanId && customerId && !customerInvoices[customerId]) {
             try {
@@ -424,6 +443,7 @@ export function useCashiering(
                     {timeoutMs: 15_000},
                 );
                 setCustomerInvoices(prev => ({ ...prev, [customerId]: data || [] }));
+                setSubmissionError(null);
             } catch (err) {
                 console.error("Failed to load customer invoices", err);
                 setSubmissionError("Could not load unpaid invoices for the selected customer. Please retry.");
@@ -556,7 +576,7 @@ export function useCashiering(
     };
 
     return {
-        isSheetOpen, setIsSheetOpen, isSheetLoading, isLookupsLoading, isSubmitting, submissionError,
+        isSheetOpen, setIsSheetOpen, isSheetLoading, isLookupsLoading, isSubmitting, submissionError, listError,
         masterList, totalElements, totalPages, currentPage, salesmen, isLoading, salesmanId, setSalesmanId,
         users, collectedBy, setCollectedBy, crNo, setCrNo, // 🚀 Expose the new states to the component!
         collectionDate, setCollectionDate, remarks, setRemarks, denominations, handleDenomChange,
