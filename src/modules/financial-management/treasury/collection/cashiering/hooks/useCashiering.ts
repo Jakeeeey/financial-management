@@ -1,12 +1,34 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { fetchProvider } from "../../providers/fetchProvider";
 import { toast } from "sonner";
 import {
     CurrentUser, CollectionSummary, Salesman, Bank, Denomination,
-    COA, PaymentMethod, Customer, UnpaidInvoice, CheckDetail, UserDto
+    COA, PaymentMethod, Customer, UnpaidInvoice, CheckDetail, UserDto,
+    PaginatedCollectionResponse
 } from "../../types";
+
+export interface CashieringListQuery {
+    search: string;
+    salesmanCode: string;
+    dateFrom: string;
+    dateTo: string;
+    page: number;
+    size: number;
+    sortField: keyof CollectionSummary;
+    sortDirection: "asc" | "desc";
+    refreshKey: number;
+}
+
+interface ModalLookupData {
+    banks: Bank[];
+    denominationMaster: Denomination[];
+    coas: COA[];
+    paymentMethods: PaymentMethod[];
+    customers: Customer[];
+    users: UserDto[];
+}
 
 interface PouchDetailResponse {
     id: number;
@@ -72,15 +94,23 @@ const getSubmissionErrorMessage = (error: unknown): string => {
     }
 };
 
-export function useCashiering(currentUser: CurrentUser) {
+export function useCashiering(
+    currentUser: CurrentUser,
+    listQuery: CashieringListQuery,
+    onCreated?: () => void
+) {
     const [isSheetOpen, setIsSheetOpen] = useState<boolean>(false);
     const [isLoading, setIsLoading] = useState<boolean>(true);
+    const [isLookupsLoading, setIsLookupsLoading] = useState<boolean>(false);
     const [isSheetLoading, setIsSheetLoading] = useState<boolean>(false);
     const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
     const [submissionError, setSubmissionError] = useState<string | null>(null);
     const [editingId, setEditingId] = useState<number | null>(null);
 
     const [masterList, setMasterList] = useState<CollectionSummary[]>([]);
+    const [totalElements, setTotalElements] = useState(0);
+    const [totalPages, setTotalPages] = useState(0);
+    const [currentPage, setCurrentPage] = useState(1);
     const [salesmen, setSalesmen] = useState<Salesman[]>([]);
     const [users, setUsers] = useState<UserDto[]>([]); // 🚀 NEW: Users state
     const [banks, setBanks] = useState<Bank[]>([]);
@@ -101,87 +131,184 @@ export function useCashiering(currentUser: CurrentUser) {
 
     const [denominations, setDenominations] = useState<Record<number, number>>({});
     const [checks, setChecks] = useState<CheckDetail[]>([]);
+    const modalLookupsCache = useRef<ModalLookupData | null>(null);
+    const modalLookupsPromise = useRef<Promise<ModalLookupData> | null>(null);
+    const invoiceRequestController = useRef<AbortController | null>(null);
+    const invoiceRequestVersion = useRef(0);
 
     const totalCash = denominationMaster.reduce((sum, d) => sum + (d.amount * (denominations[d.id] || 0)), 0);
     const totalChecks = checks.reduce((sum, check) => sum + (parseFloat(check.amount) || 0), 0);
     const grandTotal = totalCash + totalChecks;
 
-    const fetchInitialData = useCallback(async () => {
+    const fetchCollections = useCallback(async () => {
         setIsLoading(true);
         try {
-            // 🚀 ADDED the users fetch right here!
-            const [collectionsData, salesmenData, banksData, denomData, coasData, pmData, custData, usersData] = await Promise.all([
-                fetchProvider.get<CollectionSummary[]>("/api/fm/treasury/collections"),
-                fetchProvider.get<Salesman[]>("/api/fm/treasury/salesmen"),
-                fetchProvider.get<Bank[]>("/api/fm/treasury/bank-names"),
-                fetchProvider.get<Denomination[]>("/api/fm/treasury/denominations"),
-                fetchProvider.get<COA[]>("/api/fm/treasury/coas"),
-                fetchProvider.get<PaymentMethod[]>("/api/fm/treasury/payment-methods").catch(() => [] as PaymentMethod[]),
-                fetchProvider.get<Customer[]>("/api/fm/treasury/customers").catch(() => [] as Customer[]),
-                fetchProvider.get<UserDto[]>("/api/fm/treasury/users").catch(() => []) // 🚀 Calling your new BFF route
-            ]);
+            const query = new URLSearchParams({
+                search: listQuery.search,
+                salesmanCode: listQuery.salesmanCode,
+                page: String(listQuery.page),
+                size: String(listQuery.size),
+                sortField: String(listQuery.sortField),
+                sortDir: listQuery.sortDirection,
+            });
+            if (listQuery.dateFrom) query.set("dateFrom", listQuery.dateFrom);
+            if (listQuery.dateTo) query.set("dateTo", listQuery.dateTo);
 
-            if (collectionsData) setMasterList(collectionsData);
-            if (salesmenData) setSalesmen(salesmenData);
-            if (banksData) setBanks(banksData);
-            if (custData) setCustomers(custData);
-
-            // 🚀 Map the raw Java DTO to our frontend UserDto interface
-            if (usersData && usersData.length > 0) {
-                const mappedUsers = usersData.map(u => ({
-                    id: u.id,
-                    firstName: u.firstName,
-                    lastName: u.lastName,
-                    name: `${u.firstName || ''} ${u.lastName || ''}`.trim() // Combine name for UI
-                }));
-                setUsers(mappedUsers);
+            const collectionsData = await fetchProvider.get<PaginatedCollectionResponse>(
+                `/api/fm/treasury/collections/unposted?${query.toString()}`
+            );
+            if (collectionsData) {
+                setMasterList(collectionsData.content || []);
+                setTotalElements(collectionsData.totalElements || 0);
+                setTotalPages(collectionsData.totalPages || 0);
+                setCurrentPage(collectionsData.currentPage || listQuery.page);
             }
 
-            if (pmData) {
-                setPaymentMethods(pmData.filter((pm: PaymentMethod) => pm.methodId !== 1 && pm.methodName.toLowerCase() !== "cash"));
-            }
-
-            if (coasData) {
-                setCoas(coasData.filter(c => c.isPayment === 1 || c.isPayment === true || c.isPaymentDuplicate));
-            }
-
-            if (denomData) {
-                setDenominationMaster(denomData);
-                const initialCounts = denomData.reduce<Record<number, number>>((acc, d) => ({ ...acc, [d.id]: 0 }), {});
-                setDenominations(initialCounts);
-            }
         } catch (error) {
-            console.error("Failed to fetch live data:", error);
+            console.error("Failed to fetch cashiering collections:", error);
         } finally {
             setIsLoading(false);
         }
+    }, [
+        listQuery.search,
+        listQuery.salesmanCode,
+        listQuery.dateFrom,
+        listQuery.dateTo,
+        listQuery.page,
+        listQuery.size,
+        listQuery.sortField,
+        listQuery.sortDirection,
+    ]);
+
+    useEffect(() => {
+        void fetchCollections();
+    }, [fetchCollections, listQuery.refreshKey]);
+
+    useEffect(() => {
+        let cancelled = false;
+        void fetchProvider.get<Salesman[]>("/api/fm/treasury/salesmen").then(data => {
+            if (!cancelled && data) setSalesmen(data);
+        });
+        return () => {
+            cancelled = true;
+        };
     }, []);
 
-    useEffect(() => {
-        fetchInitialData();
-    }, [fetchInitialData]);
+    const loadModalLookups = useCallback(async (): Promise<ModalLookupData> => {
+        if (modalLookupsCache.current) return modalLookupsCache.current;
+        if (modalLookupsPromise.current) return modalLookupsPromise.current;
+
+        const request = (async (): Promise<ModalLookupData> => {
+            setIsLookupsLoading(true);
+            try {
+                const [banksData, denomData, coasData, pmData, custData, usersData] = await Promise.all([
+                    fetchProvider.get<Bank[]>("/api/fm/treasury/bank-names"),
+                    fetchProvider.get<Denomination[]>("/api/fm/treasury/denominations"),
+                    fetchProvider.get<COA[]>("/api/fm/treasury/coas"),
+                    fetchProvider.get<PaymentMethod[]>("/api/fm/treasury/payment-methods"),
+                    fetchProvider.get<Customer[]>("/api/fm/treasury/customers"),
+                    fetchProvider.get<UserDto[]>("/api/fm/treasury/users"),
+                ]);
+
+                const data: ModalLookupData = {
+                    banks: banksData || [],
+                    denominationMaster: denomData || [],
+                    coas: (coasData || []).filter(c =>
+                        c.isPayment === 1 || c.isPayment === true || c.isPaymentDuplicate
+                    ),
+                    paymentMethods: (pmData || []).filter(pm =>
+                        pm.methodId !== 1 && pm.methodName.toLowerCase() !== "cash"
+                    ),
+                    customers: custData || [],
+                    users: (usersData || []).map(u => ({
+                        id: u.id,
+                        firstName: u.firstName,
+                        lastName: u.lastName,
+                        name: `${u.firstName || ""} ${u.lastName || ""}`.trim(),
+                    })),
+                };
+
+                setBanks(data.banks);
+                setDenominationMaster(data.denominationMaster);
+                setCoas(data.coas);
+                setPaymentMethods(data.paymentMethods);
+                setCustomers(data.customers);
+                setUsers(data.users);
+                setDenominations(data.denominationMaster.reduce<Record<number, number>>(
+                    (acc, denomination) => ({...acc, [denomination.id]: 0}), {}
+                ));
+                modalLookupsCache.current = data;
+                return data;
+            } finally {
+                setIsLookupsLoading(false);
+            }
+        })();
+
+        modalLookupsPromise.current = request;
+        try {
+            return await request;
+        } finally {
+            if (modalLookupsPromise.current === request) modalLookupsPromise.current = null;
+        }
+    }, []);
+
+    const refreshList = useCallback(async () => {
+        await fetchCollections();
+    }, [fetchCollections]);
 
     useEffect(() => {
-        if (salesmanId) {
-            const query = new URLSearchParams({ salesmanId });
-            if (editingId) query.set("currentPouchId", String(editingId));
-            fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/unpaid-invoices?${query.toString()}`)
-                .then(data => setRouteInvoices(data || []))
-                .catch(err => console.error("Failed to load route invoices", err));
-        } else {
+        if (!salesmanId) {
             setRouteInvoices([]);
+            return;
         }
+
+        let cancelled = false;
+        const controller = new AbortController();
+        const query = new URLSearchParams({salesmanId});
+        if (editingId) query.set("currentPouchId", String(editingId));
+
+        setRouteInvoices([]);
+        void fetchProvider.getOrThrow<UnpaidInvoice[]>(
+            `/api/fm/treasury/collections/unpaid-invoices?${query.toString()}`,
+            {signal: controller.signal, timeoutMs: 15_000},
+        ).then(data => {
+            if (!cancelled) setRouteInvoices(data || []);
+        }).catch(error => {
+            if (cancelled || controller.signal.aborted) return;
+            console.error("Failed to load route invoices", error);
+            setRouteInvoices([]);
+            setSubmissionError("Could not load unpaid invoices. Please retry.");
+        });
+
+        return () => {
+            cancelled = true;
+            controller.abort();
+        };
     }, [salesmanId, editingId]);
 
     const loadPouchForEdit = useCallback(async (id: number) => {
         if (!id || isNaN(id)) return;
+
+        const requestVersion = ++invoiceRequestVersion.current;
+        invoiceRequestController.current?.abort();
+        const controller = new AbortController();
+        invoiceRequestController.current = controller;
+
         setIsSheetLoading(true);
         setIsSheetOpen(true);
         setSubmissionError(null);
+        setCustomerInvoices({});
 
         try {
-            const pouch = await fetchProvider.get<PouchDetailResponse>(`/api/fm/treasury/collections/${id}`);
-            if (pouch) {
+            const [lookupData, pouch] = await Promise.all([
+                loadModalLookups(),
+                fetchProvider.getOrThrow<PouchDetailResponse>(
+                    `/api/fm/treasury/collections/${id}`,
+                    {signal: controller.signal, timeoutMs: 15_000},
+                ),
+            ]);
+            if (!pouch) throw new Error("Collection details were empty.");
+            {
                 setEditingId(id);
                 setSalesmanId(pouch.salesmanId.toString());
 
@@ -192,7 +319,7 @@ export function useCashiering(currentUser: CurrentUser) {
                 setCollectionDate(pouch.collectionDate.split('T')[0]);
                 setRemarks(pouch.remarks || "");
 
-                const newDenoms: Record<number, number> = denominationMaster.reduce<Record<number, number>>((acc, d) => ({ ...acc, [d.id]: 0 }), {});
+                const newDenoms: Record<number, number> = lookupData.denominationMaster.reduce<Record<number, number>>((acc, d) => ({ ...acc, [d.id]: 0 }), {});
 
                 pouch.cashBuckets?.filter((b) => b.coaId === 1).forEach((bucket) => {
                     const denomId = parseInt(bucket.tempId.replace("cash-", ""));
@@ -202,7 +329,7 @@ export function useCashiering(currentUser: CurrentUser) {
                 setDenominations(newDenoms);
 
                 const mappedChecks = pouch.cashBuckets?.filter((b) => b.coaId !== 1).map((b) => {
-                    const custObj = customers.find(c => (c.customerCode || c.code) === b.customerCode);
+                    const custObj = lookupData.customers.find(c => (c.customerCode || c.code) === b.customerCode);
                     return {
                         tempId: b.tempId,
                         paymentMethodId: b.paymentMethodId?.toString() || "",
@@ -218,30 +345,37 @@ export function useCashiering(currentUser: CurrentUser) {
                 setChecks(mappedChecks);
 
                 const uniqueCustomerIds = Array.from(new Set(mappedChecks.map(c => c.customerId).filter(Boolean)));
-                await Promise.all(uniqueCustomerIds.map(async (cId) => {
-                    if (cId) {
-                        try {
-                            const query = new URLSearchParams({
-                                salesmanId: String(pouch.salesmanId),
-                                customerId: String(cId),
-                                currentPouchId: String(id),
-                            });
-                            const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/unpaid-invoices?${query.toString()}`);
-                            setCustomerInvoices(prev => ({ ...prev, [cId]: data || [] }));
-                        } catch (err) {
-                            console.warn("Could not preload invoices for customer", cId);
-                            console.error(err);
+                // Do not keep the edit sheet blocked while invoice ledgers warm.
+                void Promise.all(uniqueCustomerIds.map(async cId => {
+                    try {
+                        const query = new URLSearchParams({
+                            salesmanId: String(pouch.salesmanId),
+                            customerId: String(cId),
+                            currentPouchId: String(id),
+                        });
+                        const data = await fetchProvider.getOrThrow<UnpaidInvoice[]>(
+                            `/api/fm/treasury/collections/unpaid-invoices?${query.toString()}`,
+                            {signal: controller.signal, timeoutMs: 15_000},
+                        );
+                        if (!controller.signal.aborted && invoiceRequestVersion.current === requestVersion) {
+                            setCustomerInvoices(prev => ({...prev, [cId]: data || []}));
                         }
+                    } catch (error) {
+                        if (controller.signal.aborted || invoiceRequestVersion.current !== requestVersion) return;
+                        console.error("Could not preload invoices for customer", {customerId: cId, error});
+                        setSubmissionError("Some customer invoices could not be loaded. Please retry the customer selection.");
                     }
                 }));
             }
         } catch (err) {
-            console.error("Hydration Error:", err);
-            setSubmissionError("Could not load pouch details. Please retry.");
+            if (!controller.signal.aborted && invoiceRequestVersion.current === requestVersion) {
+                console.error("Hydration Error:", err);
+                setSubmissionError("Could not load pouch details. Please retry.");
+            }
         } finally {
-            setIsSheetLoading(false);
+            if (invoiceRequestVersion.current === requestVersion) setIsSheetLoading(false);
         }
-    }, [denominationMaster, customers]);
+    }, [loadModalLookups]);
 
     const handleDenomChange = (id: number, qty: string) => setDenominations(prev => ({
         ...prev,
@@ -285,10 +419,14 @@ export function useCashiering(currentUser: CurrentUser) {
                     customerId,
                     ...(editingId ? { currentPouchId: String(editingId) } : {}),
                 });
-                const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/unpaid-invoices?${query.toString()}`);
+                const data = await fetchProvider.getOrThrow<UnpaidInvoice[]>(
+                    `/api/fm/treasury/collections/unpaid-invoices?${query.toString()}`,
+                    {timeoutMs: 15_000},
+                );
                 setCustomerInvoices(prev => ({ ...prev, [customerId]: data || [] }));
             } catch (err) {
                 console.error("Failed to load customer invoices", err);
+                setSubmissionError("Could not load unpaid invoices for the selected customer. Please retry.");
             }
         }
     };
@@ -312,6 +450,8 @@ export function useCashiering(currentUser: CurrentUser) {
     const removeCheck = (index: number) => setChecks(checks.filter((_, i) => i !== index));
 
     const resetForm = () => {
+        invoiceRequestVersion.current += 1;
+        invoiceRequestController.current?.abort();
         setEditingId(null);
         setSubmissionError(null);
         setSalesmanId("");
@@ -324,7 +464,7 @@ export function useCashiering(currentUser: CurrentUser) {
     };
 
     const handleSubmit = async () => {
-        if (isSheetLoading) return;
+        if (isSheetLoading || isLookupsLoading) return;
         setSubmissionError(null);
         if (!salesmanId) return setSubmissionError("Please select a Collector.");
         if (Object.values(denominations).some(quantity => !Number.isInteger(quantity) || quantity < 0)) {
@@ -399,7 +539,13 @@ export function useCashiering(currentUser: CurrentUser) {
                 toast.success(editingId ? "Pouch updated!" : "Pouch secured!");
                 setIsSheetOpen(false);
                 resetForm();
-                fetchInitialData();
+                if (editingId) {
+                    await refreshList();
+                } else if (onCreated) {
+                    onCreated();
+                } else {
+                    await refreshList();
+                }
             }
         } catch (error) {
             console.error("Submission Error:", error);
@@ -410,11 +556,13 @@ export function useCashiering(currentUser: CurrentUser) {
     };
 
     return {
-        isSheetOpen, setIsSheetOpen, isSheetLoading, isSubmitting, submissionError, masterList, salesmen, isLoading, salesmanId, setSalesmanId,
+        isSheetOpen, setIsSheetOpen, isSheetLoading, isLookupsLoading, isSubmitting, submissionError,
+        masterList, totalElements, totalPages, currentPage, salesmen, isLoading, salesmanId, setSalesmanId,
         users, collectedBy, setCollectedBy, crNo, setCrNo, // 🚀 Expose the new states to the component!
         collectionDate, setCollectionDate, remarks, setRemarks, denominations, handleDenomChange,
         denominationMaster, checks, banks, coas, paymentMethods, customers, customerInvoices, routeInvoices,
         addCheck, updateCheck, handlePaymentMethodSelect, handleCustomerSelect, handleInvoiceSelect, removeCheck, totalCash,
-        totalChecks, grandTotal, handleSubmit, loadPouchForEdit, resetForm, editingId
+        totalChecks, grandTotal, handleSubmit, loadPouchForEdit, resetForm, editingId,
+        refreshList, loadModalLookups: async () => { await loadModalLookups(); }
     };
 }

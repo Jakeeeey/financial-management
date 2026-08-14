@@ -19,6 +19,58 @@ export const createSpringRequestContext = (incomingRequestId: string | null, tim
 export const isAbortError = (error: unknown) =>
     error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
 
+const RETRYABLE_GET_STATUSES = new Set([500, 502, 503, 504]);
+
+const delay = (milliseconds: number) => new Promise<void>(resolve => setTimeout(resolve, milliseconds));
+
+/**
+ * Collection reads are safe to retry once when Spring is warming up or returns
+ * a transient upstream failure. A fresh timeout controller is created for each
+ * attempt so an expired first request cannot cancel the retry.
+ */
+export const fetchSpringGetWithRetry = async (
+    targetUrl: string,
+    token: string,
+    incomingRequestId: string | null,
+    timeoutMs: number
+) => {
+    const requestId = incomingRequestId?.trim() || randomUUID();
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= 2; attempt++) {
+        const context = createSpringRequestContext(requestId, timeoutMs);
+
+        try {
+            const response = await fetch(targetUrl, {
+                method: "GET",
+                headers: {
+                    "Authorization": `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                    "X-Request-Id": requestId,
+                },
+                cache: "no-store",
+                signal: context.controller.signal,
+            });
+
+            if (attempt === 1 && RETRYABLE_GET_STATUSES.has(response.status)) {
+                await response.text();
+                await delay(150);
+                continue;
+            }
+
+            return {response, requestId};
+        } catch (error) {
+            lastError = error;
+            if (attempt === 2 || isAbortError(error)) throw error;
+            await delay(150);
+        } finally {
+            context.cleanup();
+        }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error("Spring GET failed.");
+};
+
 const asRecord = (value: unknown): Record<string, unknown> =>
     value !== null && typeof value === "object" ? value as Record<string, unknown> : {};
 
