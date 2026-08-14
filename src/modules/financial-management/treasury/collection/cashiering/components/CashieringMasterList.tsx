@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 interface MasterListProps {
     data: CollectionSummary[];
     isLoading: boolean;
+    listError: string | null;
     state: CashieringState;
     sortField: keyof CollectionSummary;
     sortDirection: "asc" | "desc";
@@ -35,6 +36,7 @@ interface MasterListProps {
 export default function CashieringMasterList({
     data,
     isLoading,
+    listError,
     state,
     sortField,
     sortDirection,
@@ -168,7 +170,9 @@ export default function CashieringMasterList({
                     {data.length === 0 ? (
                         <TableRow>
                             <TableCell colSpan={8} className="h-24 text-center text-muted-foreground italic">
-                                No collection pouches found matching the filters.
+                                {listError
+                                    ? "Collection pouches could not be loaded. Use Retry to try again."
+                                    : "No collection pouches found matching the filters."}
                             </TableCell>
                         </TableRow>
                     ) : (

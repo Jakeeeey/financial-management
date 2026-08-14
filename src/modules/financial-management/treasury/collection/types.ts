@@ -188,6 +188,7 @@ export interface CashieringState {
     isSheetLoading: boolean;
     isSubmitting: boolean;
     submissionError: string | null;
+    listError: string | null;
     editingId: number | null;
     masterList: CollectionSummary[];
     totalElements: number;
