@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { ArrowDownUp, ChevronDown, ChevronUp, FileText, Eye, Search, Filter } from "lucide-react";
+import { ArrowDownUp, ChevronDown, ChevronUp, FileText, Eye, Search, Filter, FilterX } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 
 import { useCollectionReport, PouchReportDto } from "../hooks/useCollectionReport";
 import { ReportHeader } from "./ReportHeader";
@@ -24,6 +25,16 @@ type SortConfig = {
     direction: SortDirection;
 };
 
+type VarianceFilter = "ALL" | "BALANCED" | "OVERAGE" | "SHORTAGE";
+type PresenceFilter = "ALL" | "WITH" | "WITHOUT";
+
+const REPORT_VARIANCE_EPSILON = 0.01;
+
+function matchesPresenceFilter(filter: PresenceFilter, count: number) {
+    if (filter === "ALL") return true;
+    return filter === "WITH" ? count > 0 : count === 0;
+}
+
 export default function CollectionSummaryDashboard() {
     const {
         reportData,
@@ -39,20 +50,34 @@ export default function CollectionSummaryDashboard() {
 
     const [searchQuery, setSearchQuery] = useState("");
     const [statusFilter, setStatusFilter] = useState("ALL");
+    const [varianceFilter, setVarianceFilter] = useState<VarianceFilter>("ALL");
+    const [checksFilter, setChecksFilter] = useState<PresenceFilter>("ALL");
+    const [invoicesFilter, setInvoicesFilter] = useState<PresenceFilter>("ALL");
     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "date", direction: "desc" });
 
     const visiblePouches = useMemo(() => {
         if (!reportData?.pouches) return [];
         const filtered = reportData.pouches.filter(pouch => {
-            const searchLower = searchQuery.toLowerCase();
-            const matchesSearch =
-                pouch.docNo.toLowerCase().includes(searchLower) ||
-                pouch.invoices.some(inv => inv.customerName.toLowerCase().includes(searchLower)) ||
-                pouch.checks.some(chk => chk.customerName.toLowerCase().includes(searchLower));
+            const searchLower = searchQuery.trim().toLowerCase();
+            const searchableValues = [
+                pouch.docNo,
+                ...pouch.invoices.flatMap(inv => [inv.invoiceNo, inv.customerName]),
+                ...pouch.checks.flatMap(chk => [chk.checkNo, chk.customerName, chk.bankName]),
+                ...pouch.variances.flatMap(variance => [variance.docNo, variance.invoiceNo, variance.customerName]),
+            ].map(value => String(value ?? "").toLowerCase());
+            const matchesSearch = searchLower === "" || searchableValues.some(value => value.includes(searchLower));
 
             const matchesStatus = statusFilter === "ALL" || (statusFilter === "POSTED" ? pouch.isPosted : !pouch.isPosted);
+            const netVariance = pouch.overage - pouch.shortage;
+            const matchesVariance =
+                varianceFilter === "ALL" ||
+                (varianceFilter === "BALANCED" && Math.abs(netVariance) <= REPORT_VARIANCE_EPSILON) ||
+                (varianceFilter === "OVERAGE" && netVariance > REPORT_VARIANCE_EPSILON) ||
+                (varianceFilter === "SHORTAGE" && netVariance < -REPORT_VARIANCE_EPSILON);
+            const matchesChecks = matchesPresenceFilter(checksFilter, pouch.checks.length);
+            const matchesInvoices = matchesPresenceFilter(invoicesFilter, pouch.invoices.length);
 
-            return matchesSearch && matchesStatus;
+            return matchesSearch && matchesStatus && matchesVariance && matchesChecks && matchesInvoices;
         });
 
         return [...filtered].sort((a, b) => {
@@ -84,7 +109,25 @@ export default function CollectionSummaryDashboard() {
 
             return sortConfig.direction === "asc" ? comparison : -comparison;
         });
-    }, [reportData, searchQuery, sortConfig, statusFilter]);
+    }, [reportData, searchQuery, sortConfig, statusFilter, varianceFilter, checksFilter, invoicesFilter]);
+
+    const activeAdvancedFilterCount = [
+        varianceFilter !== "ALL",
+        checksFilter !== "ALL",
+        invoicesFilter !== "ALL",
+    ].filter(Boolean).length;
+    const activeFilterCount = activeAdvancedFilterCount + [
+        searchQuery.trim() !== "",
+        statusFilter !== "ALL",
+    ].filter(Boolean).length;
+
+    const clearFilters = () => {
+        setSearchQuery("");
+        setStatusFilter("ALL");
+        setVarianceFilter("ALL");
+        setChecksFilter("ALL");
+        setInvoicesFilter("ALL");
+    };
 
     const handleSort = (key: SortKey) => {
         setSortConfig((current) => ({
@@ -172,20 +215,21 @@ export default function CollectionSummaryDashboard() {
                     <Card className="flex-1 flex flex-col shadow-sm border-border/60 rounded-2xl overflow-hidden bg-background">
 
                         {/* 🚀 4. NEW HORIZONTAL FILTER TOOLBAR */}
-                        <div className="shrink-0 p-3 bg-muted/10 border-b border-border/50 flex items-center justify-between gap-4">
-                            <div className="flex items-center gap-3 flex-1">
-                                <div className="relative w-[300px]">
+                        <div className="shrink-0 p-3 bg-muted/10 border-b border-border/50 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center">
+                                <div className="relative w-full sm:max-w-[300px]">
                                     <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                                     <Input
-                                        placeholder="Search PP# / CP# / Customer..."
+                                        aria-label="Search collection report"
+                                        placeholder="Search CP# / Invoice / Customer / Check / Bank..."
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
                                         className="pl-9 h-9 text-xs rounded-lg bg-background border-border/60 shadow-sm"
                                     />
                                 </div>
-                                <div className="w-[150px]">
+                                <div className="w-full sm:w-[150px]">
                                     <Select value={statusFilter} onValueChange={setStatusFilter}>
-                                        <SelectTrigger className="h-9 text-xs rounded-lg font-bold bg-background shadow-sm border-border/60">
+                                        <SelectTrigger id="collection-report-status-filter" aria-label="Status filter" className="h-9 text-xs rounded-lg font-bold bg-background shadow-sm border-border/60">
                                             <SelectValue placeholder="All Status" />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -196,9 +240,84 @@ export default function CollectionSummaryDashboard() {
                                     </Select>
                                 </div>
                             </div>
-                            <Button variant="outline" size="sm" className="h-9 rounded-lg text-xs font-bold gap-2 text-muted-foreground border-border/60 shadow-sm bg-background">
-                                <Filter size={14} /> Advanced Filters
-                            </Button>
+                            <div className="flex flex-wrap items-center justify-between gap-2 sm:justify-end">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground" aria-live="polite">
+                                    Showing {visiblePouches.length} of {reportData.pouches.length}
+                                </span>
+                                <Popover>
+                                    <PopoverTrigger asChild>
+                                        <Button type="button" variant="outline" size="sm" className="h-9 rounded-lg text-xs font-bold gap-2 text-muted-foreground border-border/60 shadow-sm bg-background">
+                                            <Filter size={14} /> Advanced Filters
+                                            {activeAdvancedFilterCount > 0 && (
+                                                <Badge variant="secondary" className="h-5 min-w-5 justify-center rounded-full px-1 text-[10px]">
+                                                    {activeAdvancedFilterCount}
+                                                </Badge>
+                                            )}
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent align="end" className="w-[min(22rem,calc(100vw-2rem))] p-4">
+                                        <div className="space-y-4">
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div>
+                                                    <PopoverTitle className="text-sm font-black">Advanced Filters</PopoverTitle>
+                                                    <PopoverDescription className="mt-1 text-xs">Refine the loaded report records.</PopoverDescription>
+                                                </div>
+                                                <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={clearFilters}>
+                                                    Clear all
+                                                </Button>
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <label htmlFor="report-variance-filter" className="text-xs font-bold">Variance</label>
+                                                <Select value={varianceFilter} onValueChange={(value) => setVarianceFilter(value as VarianceFilter)}>
+                                                    <SelectTrigger id="report-variance-filter" aria-label="Variance filter" className="h-9 w-full text-xs">
+                                                        <SelectValue />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="ALL" className="text-xs">All variances</SelectItem>
+                                                        <SelectItem value="BALANCED" className="text-xs">Balanced</SelectItem>
+                                                        <SelectItem value="OVERAGE" className="text-xs">Overage</SelectItem>
+                                                        <SelectItem value="SHORTAGE" className="text-xs">Shortage</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <label htmlFor="report-checks-filter" className="text-xs font-bold">Checks</label>
+                                                <Select value={checksFilter} onValueChange={(value) => setChecksFilter(value as PresenceFilter)}>
+                                                    <SelectTrigger id="report-checks-filter" aria-label="Checks filter" className="h-9 w-full text-xs">
+                                                        <SelectValue />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="ALL" className="text-xs">Any checks</SelectItem>
+                                                        <SelectItem value="WITH" className="text-xs">With checks</SelectItem>
+                                                        <SelectItem value="WITHOUT" className="text-xs">Without checks</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <label htmlFor="report-invoices-filter" className="text-xs font-bold">Settled invoices</label>
+                                                <Select value={invoicesFilter} onValueChange={(value) => setInvoicesFilter(value as PresenceFilter)}>
+                                                    <SelectTrigger id="report-invoices-filter" aria-label="Settled invoices filter" className="h-9 w-full text-xs">
+                                                        <SelectValue />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="ALL" className="text-xs">Any invoices</SelectItem>
+                                                        <SelectItem value="WITH" className="text-xs">With settled invoices</SelectItem>
+                                                        <SelectItem value="WITHOUT" className="text-xs">Without settled invoices</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                        </div>
+                                    </PopoverContent>
+                                </Popover>
+                                {activeFilterCount > 0 && (
+                                    <Button type="button" variant="ghost" size="sm" className="h-9 gap-1.5 px-2 text-xs font-bold" onClick={clearFilters}>
+                                        <FilterX size={14} /> Clear
+                                    </Button>
+                                )}
+                            </div>
                         </div>
 
                         {/* 🚀 5. THE SCROLLABLE TABLE AREA WITH STICKY HEADER */}

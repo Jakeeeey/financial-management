@@ -245,7 +245,7 @@ export function ReviewSheet({
 
     return (
         <Sheet open={isOpen} onOpenChange={onOpenChange}>
-            <SheetContent className="w-full sm:max-w-[800px] xl:max-w-[1000px] overflow-y-auto border-l-border shadow-2xl flex flex-col p-0">
+            <SheetContent className="w-full sm:max-w-[800px] xl:max-w-[1000px] overflow-hidden border-l-border shadow-2xl flex flex-col p-0">
 
                 <SheetHeader className="sr-only">
                     <SheetTitle>Treasury Pouch Review</SheetTitle>
@@ -265,6 +265,7 @@ export function ReviewSheet({
                     </div>
                 ) : pouch ? (
                     <>
+                        <div className="min-h-0 flex-1 overflow-y-auto">
                         <div className="bg-card border-b p-6 shrink-0 shadow-sm z-10 space-y-6">
                             <CompanyProfileHeader profile={companyProfile} status={companyProfileStatus} />
 
@@ -311,7 +312,7 @@ export function ReviewSheet({
                             )}
                         </div>
 
-                        <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-muted/10">
+                        <div className="p-6 space-y-8 bg-muted/10">
 
                             <div className={`p-6 rounded-xl border-2 shadow-md flex justify-between items-center ${reviewMath.isShortage ? 'bg-red-50/80 border-red-200' : (reviewMath.isOverage ? 'bg-orange-50/80 border-orange-200' : 'bg-emerald-50/80 border-emerald-200')}`}>
                                 <div className="flex items-center gap-5">
@@ -558,6 +559,7 @@ export function ReviewSheet({
                                 </div>
                             </div>
                         </div>
+                        </div>
 
                         <div className="bg-card border-t p-6 shrink-0 shadow-[0_-10px_40px_rgba(0,0,0,0.08)] z-10 flex flex-col gap-3">
                             {reviewMath.unallocatedInvoices.length > 0 && (
@@ -566,13 +568,22 @@ export function ReviewSheet({
                                     className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200"
                                 >
                                     <Info size={18} className="mt-0.5 shrink-0" />
-                                    <div className="space-y-1 text-xs font-semibold">
+                                    <div className="min-w-0 flex-1 text-xs font-semibold">
                                         <p className="font-black uppercase tracking-widest">Commit &amp; Post is blocked</p>
-                                        {reviewMath.unallocatedInvoices.map((invoice) => (
-                                            <p key={invoice.invoiceId}>
-                                                Cannot commit settlement for {invoice.invoiceNo || invoice.invoiceId}: {formatMoney(invoice.remainingOpenBalance)} remains unallocated. Apply the remaining balance, remove the invoice, or link a variance/Form 2307 allocation.
-                                            </p>
-                                        ))}
+                                        <p className="mt-1 text-[11px] font-bold">
+                                            {reviewMath.unallocatedInvoices.length} invoice{reviewMath.unallocatedInvoices.length === 1 ? "" : "s"} remain{reviewMath.unallocatedInvoices.length === 1 ? "s" : ""} unallocated.
+                                        </p>
+                                        <div
+                                            tabIndex={0}
+                                            aria-label="Commit and Post blocking reasons"
+                                            className="mt-2 max-h-[min(30vh,12rem)] space-y-1.5 overflow-y-auto pr-2 scrollbar-thin"
+                                        >
+                                            {reviewMath.unallocatedInvoices.map((invoice) => (
+                                                <p key={invoice.invoiceId} className="break-words">
+                                                    Cannot commit settlement for {invoice.invoiceNo || invoice.invoiceId}: {formatMoney(invoice.remainingOpenBalance)} remains unallocated. Apply the remaining balance, remove the invoice, or link a variance/Form 2307 allocation.
+                                                </p>
+                                            ))}
+                                        </div>
                                     </div>
                                 </div>
                             )}
