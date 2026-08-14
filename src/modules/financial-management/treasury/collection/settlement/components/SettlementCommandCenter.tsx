@@ -43,11 +43,15 @@ import AllocationSidePanel from "./AllocationSidePanel";
 import { generateAdjustmentPDF } from "../utils/adjustment-pdf-generator";
 import { printSettlementReceiptA4 } from "../utils/printSettlementReceiptA4";
 import {
+    capSettlementAllocation,
     findOverAllocatedInvoice,
     findUnderAllocatedInvoice,
     getCartBalanceTotals,
+    getInvoiceAllocationCapacity,
     getInvoiceAppliedForSettlement,
     getInvoiceRequiredBalance,
+    getSourceAllocationCapacity,
+    roundCurrency,
     SETTLEMENT_BALANCE_TOLERANCE,
 } from "../utils/settlement-balance";
 
@@ -249,27 +253,40 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
             const applied = tempAllocations
                 .filter(a => a.invoiceId === invoiceId)
                 .reduce((s, a) => s + a.amountApplied, 0);
-            return baseBal - applied;
+            return getInvoiceAllocationCapacity(baseBal, applied);
         };
 
         const getRemainingWalletAmt = (sourceId: string, baseAmt: number) => {
             const used = tempAllocations
                 .filter(a => a.sourceTempId === sourceId)
                 .reduce((s, a) => s + a.amountApplied, 0);
-            return baseAmt - used;
+            return getSourceAllocationCapacity(baseAmt, used);
         };
 
         const allocateSim = (invoice: UnpaidInvoice, source: WalletItem, amount: number) => {
-            if (amount <= 0.009) return;
+            const sourceUsedElsewhere = tempAllocations
+                .filter(a => a.sourceTempId === source.id && a.invoiceId !== invoice.id)
+                .reduce((sum, allocation) => sum + allocation.amountApplied, 0);
+            const invoiceUsedElsewhere = tempAllocations
+                .filter(a => a.invoiceId === invoice.id && a.sourceTempId !== source.id)
+                .reduce((sum, allocation) => sum + allocation.amountApplied, 0);
+            const finalAmount = capSettlementAllocation(
+                amount,
+                getSourceAllocationCapacity(source.originalAmount, sourceUsedElsewhere),
+                getInvoiceAllocationCapacity(getInvoiceRequiredBalance(invoice), invoiceUsedElsewhere)
+            );
+            if (finalAmount <= SETTLEMENT_BALANCE_TOLERANCE) return;
             const index = tempAllocations.findIndex(a => a.invoiceId === invoice.id && a.sourceTempId === source.id);
             if (index > -1) {
-                tempAllocations[index].amountApplied += amount;
+                tempAllocations[index].amountApplied = roundCurrency(
+                    tempAllocations[index].amountApplied + finalAmount
+                );
             } else {
                 tempAllocations.push({
                     invoiceId: invoice.id,
                     invoiceNo: invoice.invoiceNo || "",
                     customerName: invoice.customerName || "",
-                    amountApplied: amount,
+                    amountApplied: finalAmount,
                     allocationType: source.type || "CASH",
                     sourceTempId: source.id,
                     originalAmount: invoice.originalAmount || 0,
@@ -722,7 +739,7 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
                             ) : (
                                 filteredCredits.map(c => {
                                     const used = c.originalAmount > 0 ? getUsedAmount(c.id) : 0;
-                                    const remaining = c.originalAmount - used;
+                                    const remaining = getSourceAllocationCapacity(c.originalAmount, used);
                                     const isExhausted = c.originalAmount > 0 && remaining <= 0;
                                     return (
                                         <div key={`source-${c.id}`} className={`p-2 rounded-md border shadow-sm transition-all group ${isExhausted ? 'bg-muted/30 border-dashed opacity-60' : 'bg-background border-border border-l-[3px] border-l-purple-500'}`}>

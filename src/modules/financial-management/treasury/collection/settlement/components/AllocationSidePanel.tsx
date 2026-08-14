@@ -7,7 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { UnpaidInvoice, SettlementAllocation } from "../../types";
 import { WalletItem } from "../hooks/useSettlement";
-import { getInvoiceRequiredBalance } from "../utils/settlement-balance";
+import {
+    capSettlementAllocation,
+    getInvoiceAllocationCapacity,
+    getInvoiceRequiredBalance,
+    getSourceAllocationCapacity,
+} from "../utils/settlement-balance";
 import { cn } from "@/lib/utils";
 
 interface AllocationSidePanelProps {
@@ -78,10 +83,12 @@ export default function AllocationSidePanel({
                     ) : wallet.map(w => {
                         const existingAlloc = allocations.find(a => a.invoiceId === inv.id && a.sourceTempId === w.id);
                         const usedElsewhere = getUsedAmount(w.id) - (existingAlloc?.amountApplied || 0);
-                        const remaining = w.originalAmount - usedElsewhere;
-                        const unmetBalance = requiredBalance - appliedSession + (existingAlloc?.amountApplied || 0);
-                        let targetMax = unmetBalance > 0 ? unmetBalance : requiredBalance;
-                        targetMax = Math.min(targetMax, remaining);
+                        const remaining = getSourceAllocationCapacity(w.originalAmount, usedElsewhere);
+                        const invoiceAvailable = getInvoiceAllocationCapacity(
+                            requiredBalance,
+                            appliedSession - (existingAlloc?.amountApplied || 0)
+                        );
+                        const targetMax = capSettlementAllocation(invoiceAvailable, remaining, invoiceAvailable);
 
                         const isExactMatch = w.invoiceId === inv.id;
                         // Fixed strict null-check linting error here by using ?? 0
@@ -132,9 +139,12 @@ export default function AllocationSidePanel({
 
                         const existingAlloc = allocations.find(a => a.invoiceId === inv.id && a.sourceTempId === c.id);
                         const usedElsewhere = getUsedAmount(c.id) - (existingAlloc?.amountApplied || 0);
-                        const remaining = c.originalAmount - usedElsewhere;
-                        const unmetBalance = requiredBalance - appliedSession + (existingAlloc?.amountApplied || 0);
-                        const targetMax = Math.min(unmetBalance > 0 ? unmetBalance : requiredBalance, remaining);
+                        const remaining = getSourceAllocationCapacity(c.originalAmount, usedElsewhere);
+                        const invoiceAvailable = getInvoiceAllocationCapacity(
+                            requiredBalance,
+                            appliedSession - (existingAlloc?.amountApplied || 0)
+                        );
+                        const targetMax = capSettlementAllocation(invoiceAvailable, remaining, invoiceAvailable);
 
                         return (
                             <div key={`apply-${inv.id}-${c.id}`} className="flex flex-col gap-1.5 py-2 border-b border-border/50 last:border-0">

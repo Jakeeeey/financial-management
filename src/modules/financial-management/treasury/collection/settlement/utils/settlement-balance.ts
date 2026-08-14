@@ -2,12 +2,37 @@ import { SettlementAllocation, UnpaidInvoice } from "../../types";
 
 export const SETTLEMENT_BALANCE_TOLERANCE = 0.01;
 
-const roundCurrency = (value: number) => Math.round(value * 100) / 100;
+export const roundCurrency = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
 
-export const getInvoiceSettlementCap = (invoice: UnpaidInvoice) => Math.max(
+const toCurrencyCents = (value: number) => Math.round((Number(value) || 0) * 100);
+
+export const getSourceAllocationCapacity = (sourceAmount: number, usedElsewhere = 0) => roundCurrency(
+    Math.max(0, Math.abs(Number(sourceAmount) || 0) - Math.max(0, Number(usedElsewhere) || 0))
+);
+
+export const getInvoiceAllocationCapacity = (invoiceBalance: number, appliedElsewhere = 0) => roundCurrency(
+    Math.max(0, Number(invoiceBalance) - Math.max(0, Number(appliedElsewhere) || 0))
+);
+
+/**
+ * Returns the largest currency amount that can be applied to both sides of an
+ * allocation. Integer cents keep manual input and auto-match arithmetic in sync.
+ */
+export const capSettlementAllocation = (
+    requestedAmount: number,
+    sourceAvailable: number,
+    invoiceAvailable: number
+) => {
+    const requestedCents = Math.max(0, toCurrencyCents(Math.abs(requestedAmount)));
+    const sourceCents = Math.max(0, toCurrencyCents(sourceAvailable));
+    const invoiceCents = Math.max(0, toCurrencyCents(invoiceAvailable));
+    return Math.min(requestedCents, sourceCents, invoiceCents) / 100;
+};
+
+export const getInvoiceSettlementCap = (invoice: UnpaidInvoice) => roundCurrency(Math.max(
     0,
     Number(invoice.maxSettleableAmount ?? invoice.remainingBalance ?? invoice.originalAmount ?? 0)
-);
+));
 
 export const getInvoiceRequiredBalance = (invoice: UnpaidInvoice) => Math.max(
     0,
