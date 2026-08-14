@@ -133,6 +133,8 @@ export function useCashiering(
     const [checks, setChecks] = useState<CheckDetail[]>([]);
     const modalLookupsCache = useRef<ModalLookupData | null>(null);
     const modalLookupsPromise = useRef<Promise<ModalLookupData> | null>(null);
+    const invoiceRequestController = useRef<AbortController | null>(null);
+    const invoiceRequestVersion = useRef(0);
 
     const totalCash = denominationMaster.reduce((sum, d) => sum + (d.amount * (denominations[d.id] || 0)), 0);
     const totalChecks = checks.reduce((sum, check) => sum + (parseFloat(check.amount) || 0), 0);
@@ -255,27 +257,58 @@ export function useCashiering(
     }, [fetchCollections]);
 
     useEffect(() => {
-        if (salesmanId) {
-            const query = new URLSearchParams({ salesmanId });
-            if (editingId) query.set("currentPouchId", String(editingId));
-            fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/unpaid-invoices?${query.toString()}`)
-                .then(data => setRouteInvoices(data || []))
-                .catch(err => console.error("Failed to load route invoices", err));
-        } else {
+        if (!salesmanId) {
             setRouteInvoices([]);
+            return;
         }
+
+        let cancelled = false;
+        const controller = new AbortController();
+        const query = new URLSearchParams({salesmanId});
+        if (editingId) query.set("currentPouchId", String(editingId));
+
+        setRouteInvoices([]);
+        void fetchProvider.getOrThrow<UnpaidInvoice[]>(
+            `/api/fm/treasury/collections/unpaid-invoices?${query.toString()}`,
+            {signal: controller.signal, timeoutMs: 15_000},
+        ).then(data => {
+            if (!cancelled) setRouteInvoices(data || []);
+        }).catch(error => {
+            if (cancelled || controller.signal.aborted) return;
+            console.error("Failed to load route invoices", error);
+            setRouteInvoices([]);
+            setSubmissionError("Could not load unpaid invoices. Please retry.");
+        });
+
+        return () => {
+            cancelled = true;
+            controller.abort();
+        };
     }, [salesmanId, editingId]);
 
     const loadPouchForEdit = useCallback(async (id: number) => {
         if (!id || isNaN(id)) return;
+
+        const requestVersion = ++invoiceRequestVersion.current;
+        invoiceRequestController.current?.abort();
+        const controller = new AbortController();
+        invoiceRequestController.current = controller;
+
         setIsSheetLoading(true);
         setIsSheetOpen(true);
         setSubmissionError(null);
+        setCustomerInvoices({});
 
         try {
-            const lookupData = await loadModalLookups();
-            const pouch = await fetchProvider.get<PouchDetailResponse>(`/api/fm/treasury/collections/${id}`);
-            if (pouch) {
+            const [lookupData, pouch] = await Promise.all([
+                loadModalLookups(),
+                fetchProvider.getOrThrow<PouchDetailResponse>(
+                    `/api/fm/treasury/collections/${id}`,
+                    {signal: controller.signal, timeoutMs: 15_000},
+                ),
+            ]);
+            if (!pouch) throw new Error("Collection details were empty.");
+            {
                 setEditingId(id);
                 setSalesmanId(pouch.salesmanId.toString());
 
@@ -312,28 +345,35 @@ export function useCashiering(
                 setChecks(mappedChecks);
 
                 const uniqueCustomerIds = Array.from(new Set(mappedChecks.map(c => c.customerId).filter(Boolean)));
-                await Promise.all(uniqueCustomerIds.map(async (cId) => {
-                    if (cId) {
-                        try {
-                            const query = new URLSearchParams({
-                                salesmanId: String(pouch.salesmanId),
-                                customerId: String(cId),
-                                currentPouchId: String(id),
-                            });
-                            const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/unpaid-invoices?${query.toString()}`);
-                            setCustomerInvoices(prev => ({ ...prev, [cId]: data || [] }));
-                        } catch (err) {
-                            console.warn("Could not preload invoices for customer", cId);
-                            console.error(err);
+                // Do not keep the edit sheet blocked while invoice ledgers warm.
+                void Promise.all(uniqueCustomerIds.map(async cId => {
+                    try {
+                        const query = new URLSearchParams({
+                            salesmanId: String(pouch.salesmanId),
+                            customerId: String(cId),
+                            currentPouchId: String(id),
+                        });
+                        const data = await fetchProvider.getOrThrow<UnpaidInvoice[]>(
+                            `/api/fm/treasury/collections/unpaid-invoices?${query.toString()}`,
+                            {signal: controller.signal, timeoutMs: 15_000},
+                        );
+                        if (!controller.signal.aborted && invoiceRequestVersion.current === requestVersion) {
+                            setCustomerInvoices(prev => ({...prev, [cId]: data || []}));
                         }
+                    } catch (error) {
+                        if (controller.signal.aborted || invoiceRequestVersion.current !== requestVersion) return;
+                        console.error("Could not preload invoices for customer", {customerId: cId, error});
+                        setSubmissionError("Some customer invoices could not be loaded. Please retry the customer selection.");
                     }
                 }));
             }
         } catch (err) {
-            console.error("Hydration Error:", err);
-            setSubmissionError("Could not load pouch details. Please retry.");
+            if (!controller.signal.aborted && invoiceRequestVersion.current === requestVersion) {
+                console.error("Hydration Error:", err);
+                setSubmissionError("Could not load pouch details. Please retry.");
+            }
         } finally {
-            setIsSheetLoading(false);
+            if (invoiceRequestVersion.current === requestVersion) setIsSheetLoading(false);
         }
     }, [loadModalLookups]);
 
@@ -379,10 +419,14 @@ export function useCashiering(
                     customerId,
                     ...(editingId ? { currentPouchId: String(editingId) } : {}),
                 });
-                const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/unpaid-invoices?${query.toString()}`);
+                const data = await fetchProvider.getOrThrow<UnpaidInvoice[]>(
+                    `/api/fm/treasury/collections/unpaid-invoices?${query.toString()}`,
+                    {timeoutMs: 15_000},
+                );
                 setCustomerInvoices(prev => ({ ...prev, [customerId]: data || [] }));
             } catch (err) {
                 console.error("Failed to load customer invoices", err);
+                setSubmissionError("Could not load unpaid invoices for the selected customer. Please retry.");
             }
         }
     };
@@ -406,6 +450,8 @@ export function useCashiering(
     const removeCheck = (index: number) => setChecks(checks.filter((_, i) => i !== index));
 
     const resetForm = () => {
+        invoiceRequestVersion.current += 1;
+        invoiceRequestController.current?.abort();
         setEditingId(null);
         setSubmissionError(null);
         setSalesmanId("");
