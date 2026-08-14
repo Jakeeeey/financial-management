@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React from "react";
 import {
     Table,
     TableBody,
@@ -12,7 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Edit2, Eye, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { Edit2, Eye, ArrowUp, ArrowDown, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { CollectionSummary, CashieringState } from "../../types";
 import { format, isValid } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -21,47 +21,31 @@ interface MasterListProps {
     data: CollectionSummary[];
     isLoading: boolean;
     state: CashieringState;
+    sortField: keyof CollectionSummary;
+    sortDirection: "asc" | "desc";
+    onSort: (field: keyof CollectionSummary) => void;
+    currentPage: number;
+    totalElements: number;
+    totalPages: number;
+    pageSize: number;
+    onPageChange: (page: number) => void;
+    onPageSizeChange: (size: number) => void;
 }
 
-export default function CashieringMasterList({ data, isLoading, state }: MasterListProps) {
-    const [sortField, setSortField] = useState<keyof CollectionSummary | null>("encodedDate");
-    const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
-
-    const handleSort = (field: keyof CollectionSummary) => {
-        if (sortField === field) {
-            setSortDirection(sortDirection === "asc" ? "desc" : "asc");
-        } else {
-            setSortField(field);
-            setSortDirection("asc");
-        }
-    };
-
-    const sortedData = useMemo(() => {
-        if (!sortField) return data;
-
-        return [...data].sort((a, b) => {
-            const aVal = a[sortField];
-            const bVal = b[sortField];
-
-            if (aVal == null && bVal == null) return 0;
-            if (aVal == null) return 1;
-            if (bVal == null) return -1;
-
-            const modifier = sortDirection === "asc" ? 1 : -1;
-
-            if (sortField === "date" || sortField === "encodedDate") {
-                const aTime = Date.parse(String(aVal));
-                const bTime = Date.parse(String(bVal));
-
-                if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) {
-                    return (aTime - bTime) * modifier;
-                }
-            }
-
-            if (aVal === bVal) return (b.id - a.id) * modifier;
-            return aVal > bVal ? modifier : -modifier;
-        });
-    }, [data, sortField, sortDirection]);
+export default function CashieringMasterList({
+    data,
+    isLoading,
+    state,
+    sortField,
+    sortDirection,
+    onSort,
+    currentPage,
+    totalElements,
+    totalPages,
+    pageSize,
+    onPageChange,
+    onPageSizeChange,
+}: MasterListProps) {
 
     const parseAnyDate = (val: string | number | Date | [number, number, number, number?, number?]): Date | null => {
         if (!val) return null;
@@ -87,7 +71,7 @@ export default function CashieringMasterList({ data, isLoading, state }: MasterL
                     <TableRow>
                         <TableHead
                             className="w-[150px] font-bold text-[11px] uppercase tracking-wider cursor-pointer hover:bg-muted/80 transition-colors"
-                            onClick={() => handleSort("docNo")}
+                            onClick={() => onSort("docNo")}
                         >
                             <div className="flex items-center gap-1">
                                 <span>Doc / CP No.</span>
@@ -100,7 +84,7 @@ export default function CashieringMasterList({ data, isLoading, state }: MasterL
                         </TableHead>
                         <TableHead
                             className="font-bold text-[11px] uppercase tracking-wider cursor-pointer hover:bg-muted/80 transition-colors"
-                            onClick={() => handleSort("date")}
+                            onClick={() => onSort("date")}
                         >
                             <div className="flex items-center gap-1">
                                 <span>Collection Date</span>
@@ -113,7 +97,7 @@ export default function CashieringMasterList({ data, isLoading, state }: MasterL
                         </TableHead>
                         <TableHead
                             className="font-bold text-[11px] uppercase tracking-wider cursor-pointer hover:bg-muted/80 transition-colors"
-                            onClick={() => handleSort("encodedDate")}
+                            onClick={() => onSort("encodedDate")}
                         >
                             <div className="flex items-center gap-1">
                                 <span>Date Encoded</span>
@@ -126,7 +110,7 @@ export default function CashieringMasterList({ data, isLoading, state }: MasterL
                         </TableHead>
                         <TableHead
                             className="font-bold text-[11px] uppercase tracking-wider cursor-pointer hover:bg-muted/80 transition-colors"
-                            onClick={() => handleSort("collectedBy")}
+                            onClick={() => onSort("collectedBy")}
                         >
                             <div className="flex items-center gap-1">
                                 <span>Collected By</span>
@@ -140,7 +124,7 @@ export default function CashieringMasterList({ data, isLoading, state }: MasterL
                         {/* 🚀 RENAMED TO COLLECTOR */}
                         <TableHead
                             className="font-bold text-[11px] uppercase tracking-wider cursor-pointer hover:bg-muted/80 transition-colors"
-                            onClick={() => handleSort("salesmanName")}
+                            onClick={() => onSort("salesmanName")}
                         >
                             <div className="flex items-center gap-1">
                                 <span>Collector</span>
@@ -153,7 +137,7 @@ export default function CashieringMasterList({ data, isLoading, state }: MasterL
                         </TableHead>
                         <TableHead
                             className="font-bold text-[11px] uppercase tracking-wider cursor-pointer hover:bg-muted/80 transition-colors"
-                            onClick={() => handleSort("status")}
+                            onClick={() => onSort("status")}
                         >
                             <div className="flex items-center gap-1">
                                 <span>Status</span>
@@ -166,7 +150,7 @@ export default function CashieringMasterList({ data, isLoading, state }: MasterL
                         </TableHead>
                         <TableHead
                             className="text-right font-bold text-[11px] uppercase tracking-wider cursor-pointer hover:bg-muted/80 transition-colors"
-                            onClick={() => handleSort("amount")}
+                            onClick={() => onSort("amount")}
                         >
                             <div className="flex items-center gap-1 justify-end">
                                 <span>Total Counted</span>
@@ -181,14 +165,14 @@ export default function CashieringMasterList({ data, isLoading, state }: MasterL
                     </TableRow>
                 </TableHeader>
                 <TableBody>
-                    {sortedData.length === 0 ? (
+                    {data.length === 0 ? (
                         <TableRow>
                             <TableCell colSpan={8} className="h-24 text-center text-muted-foreground italic">
                                 No collection pouches found matching the filters.
                             </TableCell>
                         </TableRow>
                     ) : (
-                        sortedData.map((col) => {
+                        data.map((col) => {
                             const safeDate = parseAnyDate(col.date);
                             const safeEncodedDate = parseAnyDate(col.encodedDate);
                             const safeAmount = col.amount || 0;
@@ -255,6 +239,33 @@ export default function CashieringMasterList({ data, isLoading, state }: MasterL
                     )}
                 </TableBody>
             </Table>
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-border px-4 py-3 text-xs text-muted-foreground">
+                <span>
+                    {totalElements === 0
+                        ? "No records"
+                        : `Showing ${(currentPage - 1) * pageSize + 1}-${Math.min(currentPage * pageSize, totalElements)} of ${totalElements}`}
+                </span>
+                <div className="flex items-center gap-2">
+                    <label htmlFor="cashiering-page-size" className="whitespace-nowrap">Rows</label>
+                    <select
+                        id="cashiering-page-size"
+                        value={pageSize}
+                        onChange={event => onPageSizeChange(Number(event.target.value))}
+                        className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                    >
+                        {[25, 50, 100].map(size => <option key={size} value={size}>{size}</option>)}
+                    </select>
+                    <Button type="button" variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => onPageChange(currentPage - 1)}>
+                        <ChevronLeft className="h-4 w-4"/>
+                        <span className="sr-only">Previous page</span>
+                    </Button>
+                    <span className="min-w-20 text-center">Page {currentPage} of {Math.max(totalPages, 1)}</span>
+                    <Button type="button" variant="outline" size="sm" disabled={currentPage >= totalPages || totalPages === 0} onClick={() => onPageChange(currentPage + 1)}>
+                        <ChevronRight className="h-4 w-4"/>
+                        <span className="sr-only">Next page</span>
+                    </Button>
+                </div>
+            </div>
         </div>
     );
 }

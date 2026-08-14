@@ -10,6 +10,8 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import { CompanyProfileHeader } from "./CompanyProfileHeader";
 import type { CompanyProfile, CompanyProfileStatus } from "../hooks/usePosting";
 
+const POSTING_BALANCE_TOLERANCE = 0.01;
+
 export interface CashBucket {
     detailId?: number;
     tempId?: string;
@@ -100,7 +102,7 @@ export function ReviewSheet({
 }: ReviewSheetProps) {
 
     const reviewMath = useMemo(() => {
-        if (!pouch) return { physical: 0, applied: 0, variance: 0, isShortage: false, isOverage: false, invoiceRows: [] as InvoiceReviewRow[], totalRemainingOpenBalance: 0, totalCash: 0, totalChecks: 0, nonCashBuckets: [] as CashBucket[], cashDenominations: [] as CashBucket[], totalCredits: 0, expectedPhysicalCash: 0 };
+        if (!pouch) return { physical: 0, applied: 0, variance: 0, isShortage: false, isOverage: false, invoiceRows: [] as InvoiceReviewRow[], unallocatedInvoices: [] as InvoiceReviewRow[], totalRemainingOpenBalance: 0, totalCash: 0, totalChecks: 0, nonCashBuckets: [] as CashBucket[], cashDenominations: [] as CashBucket[], totalCredits: 0, expectedPhysicalCash: 0 };
 
         let physical = 0;
         let totalCash = 0;
@@ -216,6 +218,9 @@ export function ReviewSheet({
             (sum, row) => sum + (row.remainingOpenBalance ?? 0),
             0
         );
+        const unallocatedInvoices = invoiceRows.filter(
+            (row) => (row.remainingOpenBalance ?? 0) > POSTING_BALANCE_TOLERANCE
+        );
 
         const variance = expectedPhysicalCash - physical;
 
@@ -225,12 +230,16 @@ export function ReviewSheet({
             expectedPhysicalCash,
             totalCredits,
             invoiceRows,
+            unallocatedInvoices,
             totalRemainingOpenBalance,
             variance: Math.abs(variance),
-            isShortage: variance > 0.01,
-            isOverage: variance < -0.01,
+            isShortage: variance > POSTING_BALANCE_TOLERANCE,
+            isOverage: variance < -POSTING_BALANCE_TOLERANCE,
         };
     }, [pouch]);
+
+    const hasAllocations = (pouch?.allocations?.length ?? 0) > 0;
+    const canPost = !isPosting && hasAllocations && reviewMath.unallocatedInvoices.length === 0;
 
     return (
         <Sheet open={isOpen} onOpenChange={onOpenChange}>
@@ -542,11 +551,27 @@ export function ReviewSheet({
                             </div>
                         </div>
 
-                        <div className="bg-card border-t p-6 shrink-0 shadow-[0_-10px_40px_rgba(0,0,0,0.08)] z-10 flex gap-3">
+                        <div className="bg-card border-t p-6 shrink-0 shadow-[0_-10px_40px_rgba(0,0,0,0.08)] z-10 flex flex-col gap-3">
+                            {reviewMath.unallocatedInvoices.length > 0 && (
+                                <div
+                                    role="alert"
+                                    className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200"
+                                >
+                                    <Info size={18} className="mt-0.5 shrink-0" />
+                                    <div className="space-y-1 text-xs font-semibold">
+                                        <p className="font-black uppercase tracking-widest">Commit &amp; Post is blocked</p>
+                                        {reviewMath.unallocatedInvoices.map((invoice) => (
+                                            <p key={invoice.invoiceId}>
+                                                Cannot commit settlement for {invoice.invoiceNo || invoice.invoiceId}: {formatMoney(invoice.remainingOpenBalance)} remains unallocated. Apply the remaining balance, remove the invoice, or link a variance/Form 2307 allocation.
+                                            </p>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                             <Button
                                 onClick={() => onPost(pouch.id, pouch.docNo || "", reviewMath.isShortage ? reviewMath.variance : 0)}
-                                disabled={isPosting || pouch.allocations?.length === 0}
-                                className={`flex-1 h-14 font-black uppercase tracking-widest text-sm shadow-xl transition-all active:scale-[0.99] ${reviewMath.isShortage ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-primary'}`}
+                                disabled={!canPost}
+                                className={`w-full h-14 font-black uppercase tracking-widest text-sm shadow-xl transition-all active:scale-[0.99] ${reviewMath.isShortage ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-primary'}`}
                             >
                                 {isPosting ? <Loader2 size={20} className="animate-spin mr-2" /> : <Lock size={20} className="mr-2" />}
                                 Commit & Post to General Ledger

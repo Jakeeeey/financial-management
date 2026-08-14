@@ -55,6 +55,7 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
         grandTotal,
         handleSubmit,
         isSheetLoading,
+        isLookupsLoading,
         isSubmitting,
         submissionError,
         editingId,
@@ -80,7 +81,7 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
     const hasInvalidCheckLines = checkValidationErrors.some(errors => Object.values(errors).some(Boolean));
     const firstInvalidCheck = checkValidationErrors.find(errors => Object.values(errors).some(Boolean));
     const hasInvalidDenominations = Object.values(denominations).some(quantity => !Number.isInteger(quantity) || quantity < 0);
-    const isFormValid = !isSheetLoading && salesmanId !== "" && grandTotal > 0 && !hasInvalidDenominations && !hasInvalidCheckLines;
+    const isFormValid = !isSheetLoading && !isLookupsLoading && salesmanId !== "" && grandTotal > 0 && !hasInvalidDenominations && !hasInvalidCheckLines;
     const lineValidationMessage = firstInvalidCheck?.paymentMethod
         ? "Payment method required"
         : firstInvalidCheck?.coa

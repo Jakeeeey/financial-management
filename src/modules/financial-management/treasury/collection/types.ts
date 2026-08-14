@@ -72,6 +72,13 @@ export interface CollectionSummary {
     status: string;
 }
 
+export interface PaginatedCollectionResponse {
+    content: CollectionSummary[];
+    totalElements: number;
+    totalPages: number;
+    currentPage: number;
+}
+
 export interface CheckDetail {
     tempId: string;
     coaId: string;
@@ -177,11 +184,15 @@ export interface CashieringState {
     isSheetOpen: boolean;
     setIsSheetOpen: (open: boolean) => void;
     isLoading: boolean;
+    isLookupsLoading: boolean;
     isSheetLoading: boolean;
     isSubmitting: boolean;
     submissionError: string | null;
     editingId: number | null;
     masterList: CollectionSummary[];
+    totalElements: number;
+    totalPages: number;
+    currentPage: number;
     salesmen: Salesman[];
     users: UserDto[];                // 🚀 Added: List of users for the dropdown
     banks: Bank[];
@@ -220,6 +231,8 @@ export interface CashieringState {
     handleSubmit: () => Promise<void>;
     loadPouchForEdit: (id: number) => Promise<void>;
     resetForm: () => void;
+    refreshList: () => Promise<void>;
+    loadModalLookups: () => Promise<void>;
 }
 
 export interface NewAdjustmentDto {
