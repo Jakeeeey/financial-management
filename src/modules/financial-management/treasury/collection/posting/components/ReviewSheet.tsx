@@ -86,6 +86,7 @@ interface ReviewSheetProps {
     pouch: TreasuryPouch | null;
     isPosting: boolean;
     onPost: (id: number, docNo: string, shortageAmount: number) => void;
+    error?: string | null;
     companyProfile: CompanyProfile | null;
     companyProfileStatus: CompanyProfileStatus;
 }
@@ -97,6 +98,7 @@ export function ReviewSheet({
     pouch,
     isPosting,
     onPost,
+    error,
     companyProfile,
     companyProfileStatus,
 }: ReviewSheetProps) {
@@ -254,6 +256,12 @@ export function ReviewSheet({
                     <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-4">
                         <Loader2 size={32} className="animate-spin text-primary/50" />
                         <p className="font-black uppercase tracking-widest text-xs">Extracting Complete Pouch Audit...</p>
+                    </div>
+                ) : error ? (
+                    <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center">
+                        <ShieldAlert size={36} className="text-destructive" />
+                        <p className="font-black uppercase tracking-widest text-xs text-destructive">Pouch details unavailable</p>
+                        <p className="max-w-md text-sm text-muted-foreground">{error}</p>
                     </div>
                 ) : pouch ? (
                     <>
