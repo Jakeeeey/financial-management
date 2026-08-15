@@ -16,6 +16,7 @@ import { KpiCards } from "./KpiCards";
 import { PouchDetailSheet } from "./PouchDetailSheet";
 import { exportCollectionReportToExcel } from "../utils/exportUtils";
 import { generateCollectionPDF } from "../utils/pdf-generator";
+import { generateCollectionRecordPDF } from "../utils/record-pdf-generator";
 
 type SortKey = "docNo" | "date" | "status" | "totalCash" | "totalCheck" | "netVariance" | "invoiceNetTotal";
 type SortDirection = "asc" | "desc";
@@ -120,6 +121,10 @@ export default function CollectionSummaryDashboard() {
         searchQuery.trim() !== "",
         statusFilter !== "ALL",
     ].filter(Boolean).length;
+
+    const handlePrintRecord = (pouch: PouchReportDto) => {
+        generateCollectionRecordPDF(pouch, companyProfile);
+    };
 
     const clearFilters = () => {
         setSearchQuery("");
@@ -377,7 +382,12 @@ export default function CollectionSummaryDashboard() {
                 </div>
             )}
 
-            <PouchDetailSheet pouch={selectedPouch} isOpen={!!selectedPouch} onClose={() => setSelectedPouch(null)} />
+            <PouchDetailSheet
+                pouch={selectedPouch}
+                isOpen={!!selectedPouch}
+                onClose={() => setSelectedPouch(null)}
+                onPrint={handlePrintRecord}
+            />
         </div>
     );
 }
