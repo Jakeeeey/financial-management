@@ -10,6 +10,7 @@ import {
     CornerDownRight,
     FileText,
     Landmark,
+    Printer,
     Scale,
     Search,
     Wallet,
@@ -18,6 +19,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PouchReportDto } from "../hooks/useCollectionReport";
 
@@ -25,6 +27,7 @@ interface PouchDetailSheetProps {
     pouch: PouchReportDto | null;
     isOpen: boolean;
     onClose: () => void;
+    onPrint: (pouch: PouchReportDto) => void;
 }
 
 type SortKey = "invoiceNo" | "actualInvoiceTotal" | "grossAmount" | "remainingBalance";
@@ -35,7 +38,7 @@ const formatMoney = (value?: number | null) =>
     `${PESO}${Number(value ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 const formatCheckDate = (value?: string | null) => value ? format(parseISO(value), "MM/dd/yyyy") : "—";
 
-export function PouchDetailSheet({ pouch, isOpen, onClose }: PouchDetailSheetProps) {
+export function PouchDetailSheet({ pouch, isOpen, onClose, onPrint }: PouchDetailSheetProps) {
     const [inlineSearch, setInlineSearch] = useState("");
     const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: "asc" | "desc" }>({
         key: "invoiceNo",
@@ -107,7 +110,17 @@ export function PouchDetailSheet({ pouch, isOpen, onClose }: PouchDetailSheetPro
                                     </strong>
                                 </SheetDescription>
                             </div>
-                            <div className="pt-2">
+                            <div className="flex items-center gap-2 pt-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 gap-1.5 px-3 text-[10px] font-black uppercase tracking-widest"
+                                    onClick={() => onPrint(pouch)}
+                                >
+                                    <Printer size={13} />
+                                    Print Record
+                                </Button>
                                 {pouch.isPosted ? (
                                     <Badge className="border-none bg-emerald-500/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-emerald-700">
                                         <CheckCircle2 size={14} className="mr-1.5" /> Posted
