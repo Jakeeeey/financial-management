@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-    FilterX, CheckCircle2, Loader2, Hourglass, Search, Activity, ChevronRight, ChevronLeft,
+    AlertTriangle, FilterX, CheckCircle2, Loader2, Hourglass, Search, Activity, ChevronRight, ChevronLeft,
     CircleDashed, ArrowUp, ArrowDown, ArrowUpDown, User, CalendarDays, Database, ChevronsUpDown, Check
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -48,7 +48,7 @@ export default function SettlementMasterList() {
     const [selectedPouchId, setSelectedPouchId] = useState<number | null>(null);
 
     // 🚀 Server-Side Execution Hook
-    const { data, isLoading, users, fetchQueue } = useSettlementQueue(
+    const { data, isLoading, queueError, users, fetchQueue } = useSettlementQueue(
         debounceSearch, statusFilter, collectorFilter, page, size, sortField, sortDirection
     );
 
@@ -149,6 +149,25 @@ export default function SettlementMasterList() {
                 <Button variant="ghost" size="icon" onClick={() => { setSearchTerm(""); setDebounceSearch(""); setStatusFilter("all"); setCollectorFilter("all"); setPage(1); }} className="h-9 w-9 text-muted-foreground hover:text-destructive hover:bg-destructive/10" title="Clear Filters"><FilterX size={16}/></Button>
             </div>
 
+            {queueError && (
+                <div role="alert" aria-live="polite" className="flex items-center justify-between gap-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+                    <div className="flex items-start gap-3 text-sm font-semibold">
+                        <AlertTriangle size={18} className="mt-0.5 shrink-0"/>
+                        <div className="space-y-1">
+                            <p>{queueError}</p>
+                            {data.content.length > 0 && (
+                                <p className="text-xs font-normal text-red-700/80 dark:text-red-300/80">
+                                    Showing the last successful results; they may be stale.
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" disabled={isLoading} onClick={() => void fetchQueue()} className="shrink-0">
+                        Retry
+                    </Button>
+                </div>
+            )}
+
             {/* SERVER LIST TABLE */}
             <div className="flex-1 bg-card rounded-xl border border-border shadow-md overflow-hidden flex flex-col min-h-0">
                 <div className="flex-1 overflow-y-auto scrollbar-thin relative">
@@ -178,7 +197,7 @@ export default function SettlementMasterList() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {isLoading ? (
+                            {isLoading && data.content.length === 0 ? (
                                 <TableRow><TableCell colSpan={8} className="h-[40vh] text-center"><div className="flex flex-col items-center justify-center text-muted-foreground gap-2"><Loader2 className="animate-spin text-primary" size={24} /><p className="font-bold tracking-widest uppercase text-[10px] animate-pulse">Syncing Database...</p></div></TableCell></TableRow>
                             ) : data.content.length === 0 ? (
                                 <TableRow><TableCell colSpan={8} className="h-[40vh] text-center"><div className="flex flex-col items-center justify-center text-muted-foreground gap-2 opacity-60"><CircleDashed size={32} /><p className="font-bold tracking-widest uppercase text-xs text-foreground">No records found</p></div></TableCell></TableRow>
@@ -227,6 +246,13 @@ export default function SettlementMasterList() {
                             })}
                         </TableBody>
                     </Table>
+                    {isLoading && data.content.length > 0 && (
+                        <div aria-live="polite" className="pointer-events-none absolute inset-x-0 top-2 z-10 flex justify-center">
+                            <div className="flex items-center gap-2 rounded-full border border-border bg-card/95 px-3 py-2 text-xs font-bold text-muted-foreground shadow-sm">
+                                <Loader2 size={14} className="animate-spin"/> Updating queue...
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* 🚀 SERVER-DRIVEN PAGINATION FOOTER */}
