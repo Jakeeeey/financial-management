@@ -1,9 +1,15 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { UnpaidInvoice, SettlementAllocation, PaymentHistory, UserDto } from "../../types";
+import { UnpaidInvoice, SettlementAllocation, UserDto } from "../../types";
 import { fetchProvider } from "../../providers/fetchProvider";
+import { fetchCompanyProfile } from "../../company-profile";
+import type { CompanyProfile } from "../../company-profile";
 import { toast } from "sonner";
+import {
+    mapRawPouchToSettlementPrintableData,
+} from "../utils/settlement-printable-data";
+import type { RawTreasuryPouch, SettlementPrintableWalletItem } from "../utils/settlement-printable-data";
 import {
     capSettlementAllocation,
     findOverAllocatedInvoice,
@@ -16,53 +22,7 @@ import {
     SETTLEMENT_BALANCE_TOLERANCE,
 } from "../utils/settlement-balance";
 
-export interface RawCashBucket {
-    detailId?: number;
-    findingId?: number;
-    amount?: number;
-    paymentMethodId?: number;
-    coaId?: number;
-    balanceTypeId?: number;
-    referenceNo?: string;
-    bankName?: string;
-    checkNo?: string;
-    checkDate?: string;
-    tempId?: string;
-    customerCode?: string;
-    customerName? : string;
-    invoiceId?: number;
-}
-
-export interface RawAllocation {
-    amountApplied?: number;
-    allocationType?: string;
-    customerCode?: string;
-    customerName?: string;
-    invoiceNo?: string;
-    invoiceId?: number;
-    sourceTempId?: string;
-    originalAmount?: number;
-    remainingBalance?: number;
-    maxSettleableAmount?: number;
-    totalPayments?: number;
-    totalMemos?: number;
-    totalReturns?: number;
-    transactionDate?: string;
-    dueDate?: string;
-    agingDays?: number;
-    history?: PaymentHistory[];
-}
-
-export interface RawTreasuryPouch {
-    docNo?: string;
-    isPosted?: boolean;
-    collectedBy?: number;
-    crNo?: string;
-    collectionDate?: string;
-    salesmanId?: number;
-    cashBuckets?: RawCashBucket[];
-    allocations?: RawAllocation[];
-}
+export type { RawAllocation, RawCashBucket, RawTreasuryPouch } from "../utils/settlement-printable-data";
 
 export interface RawSalesman {
     id: number;
@@ -111,14 +71,9 @@ const isSameCustomer = (
     return Boolean(targetName) && normalizeCustomerValue(source.customerName) === targetName;
 };
 
-export interface WalletItem {
-    id: string;
-    type: "CASH" | "CHECK" | "MEMO" | "RETURN" | "ADJUSTMENT" | "EWT";
-    label: string;
-    originalAmount: number;
+export interface WalletItem extends SettlementPrintableWalletItem {
     dbId?: number;
     findingId?: number;
-    customerName?: string;
     customerCode?: string;
     balanceTypeId?: number;
     isLocal?: boolean;
@@ -152,6 +107,7 @@ export function useSettlement(pouchId: string | number, activeInvoiceId: number 
     const [credits, setCredits] = useState<WalletItem[]>([]);
     const [salesmanName, setSalesmanName] = useState("Loading...");
     const [salesmanId, setSalesmanId] = useState<number | null>(null);
+    const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
 
     const [collectedBy, setCollectedBy] = useState<number | null>(null);
     const [collectedByName, setCollectedByName] = useState<string>("Encoder/System");
@@ -193,11 +149,12 @@ export function useSettlement(pouchId: string | number, activeInvoiceId: number 
             setHasMoreCredits(false);
 
             // 🚀 Strictly typing the users array
-            const [pouch, salesmen, fetchedFindings, fetchedUsers] = await Promise.all([
+            const [pouch, salesmen, fetchedFindings, fetchedUsers, profileResult] = await Promise.all([
                 fetchProvider.get<RawTreasuryPouch>(`/api/fm/treasury/collections/${pouchId}`),
                 fetchProvider.get<RawSalesman[]>("/api/fm/treasury/salesmen"),
                 fetchProvider.get<GeneralFinding[]>("/api/fm/treasury/collections/findings").catch(() => []),
-                fetchProvider.get<UserDto[]>("/api/fm/treasury/users").catch(() => [])
+                fetchProvider.get<UserDto[]>("/api/fm/treasury/users").catch(() => []),
+                fetchCompanyProfile().catch(() => ({ profile: null, status: "error" as const })),
             ]);
 
             if (!pouch) return;
@@ -216,6 +173,7 @@ export function useSettlement(pouchId: string | number, activeInvoiceId: number 
             const currentSalesmanId = pouch.salesmanId || null;
             setSalesmanId(currentSalesmanId);
             setSalesmanName(salesmen?.find(s => s.id === currentSalesmanId)?.salesmanName || `Owner ID: ${currentSalesmanId}`);
+            setCompanyProfile(profileResult.profile);
             setFindings(fetchedFindings || []);
 
             // 🚀 Strictly typing the user iteration
@@ -224,71 +182,15 @@ export function useSettlement(pouchId: string | number, activeInvoiceId: number 
                 if (u) setCollectedByName(`${u.firstName || ''} ${u.lastName || ''}`.trim());
             }
 
-            let totalCash = 0;
-            const newWallet: WalletItem[] = [];
-
-            pouch.cashBuckets?.forEach((b: RawCashBucket, idx: number) => {
-                const safeAmount = Math.abs(b.amount || 0);
-                const tempIdStr = String(b.tempId || "").toLowerCase();
-                const refNo = String(b.referenceNo || "").toLowerCase();
-
-                let wType: WalletItem["type"] = "ADJUSTMENT";
-                const isCash = Number(b.coaId) === 1 || Number(b.paymentMethodId) === 1 || tempIdStr.startsWith("cash") || refNo.includes(" x ") || refNo === "cash_summary" || refNo === "physical cash";
-
-                if (isCash) wType = "CASH";
-                else if (tempIdStr.startsWith("chk") || b.paymentMethodId === 2) wType = "CHECK";
-                else if (tempIdStr.startsWith("ewt") || b.paymentMethodId === 10 || b.coaId === 11) wType = "EWT";
-                else if (b.paymentMethodId == null && b.coaId != null) wType = "ADJUSTMENT";
-                else wType = "CHECK";
-
-                let uniqueId = b.tempId || `${wType.toLowerCase()}-fallback-${idx}`;
-                if (newWallet.some(w => w.id === uniqueId)) {
-                    uniqueId = `${uniqueId}-dup-${idx}`;
-                }
-
-                if (wType === "CASH") {
-                    totalCash += safeAmount;
-                } else if (wType === "EWT") {
-                    newWallet.push({
-                        id: uniqueId, type: "EWT", label: b.referenceNo ? `Form 2307: ${b.referenceNo}` : 'Form 2307',
-                        originalAmount: safeAmount, customerName: b.customerName || b.referenceNo, balanceTypeId: 2, dbId: b.detailId, invoiceId: b.invoiceId
-                    });
-                } else if (wType === "ADJUSTMENT") {
-                    newWallet.push({
-                        id: uniqueId, type: "ADJUSTMENT", label: b.referenceNo || 'Adjustment', originalAmount: safeAmount,
-                        customerName: b.customerName, balanceTypeId: b.balanceTypeId || 1, dbId: b.detailId, findingId: b.findingId, invoiceId: b.invoiceId
-                    });
-                } else {
-                    newWallet.push({
-                        id: uniqueId, type: "CHECK", label: b.referenceNo ? `Check/Remittance: ${b.referenceNo}` : 'No Ref',
-                        originalAmount: safeAmount, balanceTypeId: 2, customerName: b.customerName || b.customerCode, invoiceId: b.invoiceId, dbId: b.detailId
-                    });
-                }
-            });
-
-            if (totalCash > 0) newWallet.unshift({
-                id: "CASH_SUMMARY", type: "CASH", label: "Physical Cash Pool", originalAmount: totalCash, balanceTypeId: 2
-            });
-
+            const { wallet: newWallet, allocations: existingAllocations } = mapRawPouchToSettlementPrintableData(pouch);
             setWallet(newWallet);
 
-            if (pouch.allocations && pouch.allocations.length > 0) {
-                const existingAllocations: SettlementAllocation[] = [];
+            if (existingAllocations.length > 0) {
                 const existingCartMap: Map<number, UnpaidInvoice> = new Map();
 
-                pouch.allocations.forEach((alloc: RawAllocation) => {
-                    const mappedAlloc: SettlementAllocation = {
-                        invoiceId: alloc.invoiceId || 0, invoiceNo: alloc.invoiceNo || "", customerCode: alloc.customerCode, customerName: alloc.customerName || "",
-                        amountApplied: Math.abs(alloc.amountApplied || 0), allocationType: alloc.allocationType || "CASH",
-                        sourceTempId: alloc.sourceTempId || "CASH_SUMMARY", originalAmount: alloc.originalAmount || 0,
-                        remainingBalance: alloc.remainingBalance || 0, maxSettleableAmount: alloc.maxSettleableAmount,
-                        totalPayments: alloc.totalPayments || 0, totalMemos: alloc.totalMemos || 0,
-                        totalReturns: alloc.totalReturns || 0, transactionDate: alloc.transactionDate || "", dueDate: alloc.dueDate || "",
-                        agingDays: alloc.agingDays || 0, history: alloc.history || []
-                    };
-                    existingAllocations.push(mappedAlloc);
-                    if (alloc.invoiceId && !existingCartMap.has(alloc.invoiceId)) existingCartMap.set(alloc.invoiceId, {
-                        ...mappedAlloc, originalAmount: alloc.originalAmount || 0, id: alloc.invoiceId
+                existingAllocations.forEach((mappedAlloc) => {
+                    if (mappedAlloc.invoiceId && !existingCartMap.has(mappedAlloc.invoiceId)) existingCartMap.set(mappedAlloc.invoiceId, {
+                        ...mappedAlloc, id: mappedAlloc.invoiceId
                     } as unknown as UnpaidInvoice);
                 });
 
@@ -963,7 +865,7 @@ export function useSettlement(pouchId: string | number, activeInvoiceId: number 
     };
 
     return {
-        isLoading, wallet, credits, cartInvoices, allocations, setAllocations, salesmanName, salesmanId, findings, docNo, isPosted, isClearing,
+        isLoading, wallet, credits, cartInvoices, allocations, setAllocations, salesmanName, salesmanId, findings, docNo, isPosted, isClearing, companyProfile,
         isLoadingRoute, addToCart, removeFromCart, clearCart, loadRouteInvoices, fetchAndInjectExternalCredit,
         getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement,
         hasPartialChanges, hasClearableCart, savePartialSettlement,

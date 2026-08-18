@@ -16,7 +16,11 @@ import { KpiCards } from "./KpiCards";
 import { PouchDetailSheet } from "./PouchDetailSheet";
 import { exportCollectionReportToExcel } from "../utils/exportUtils";
 import { generateCollectionPDF } from "../utils/pdf-generator";
-import { generateCollectionRecordPDF } from "../utils/record-pdf-generator";
+import { fetchProvider } from "../../providers/fetchProvider";
+import { toast } from "sonner";
+import { mapRawPouchToSettlementPrintableData } from "../../settlement/utils/settlement-printable-data";
+import type { RawTreasuryPouch } from "../../settlement/utils/settlement-printable-data";
+import { printSettlementReceiptA4 } from "../../settlement/utils/printSettlementReceiptA4";
 
 type SortKey = "docNo" | "date" | "status" | "totalCash" | "totalCheck" | "netVariance" | "invoiceNetTotal";
 type SortDirection = "asc" | "desc";
@@ -46,8 +50,10 @@ export default function CollectionSummaryDashboard() {
         setEndDate,
         fetchReport,
         companyProfile,
+        salesmen,
     } = useCollectionReport();
     const [selectedPouch, setSelectedPouch] = useState<PouchReportDto | null>(null);
+    const [printingPouchId, setPrintingPouchId] = useState<number | null>(null);
 
     const [searchQuery, setSearchQuery] = useState("");
     const [statusFilter, setStatusFilter] = useState("ALL");
@@ -122,8 +128,43 @@ export default function CollectionSummaryDashboard() {
         statusFilter !== "ALL",
     ].filter(Boolean).length;
 
-    const handlePrintRecord = (pouch: PouchReportDto) => {
-        generateCollectionRecordPDF(pouch, companyProfile);
+    const handlePrintRecord = async (pouch: PouchReportDto) => {
+        if (printingPouchId !== null) return;
+
+        const printWindow = window.open("", "_blank");
+        if (!printWindow) {
+            toast.error("The printable window was blocked. Allow pop-ups and retry.");
+            return;
+        }
+
+        setPrintingPouchId(pouch.id);
+        try {
+            const rawPouch = await fetchProvider.get<RawTreasuryPouch>(
+                `/api/fm/treasury/collections/${pouch.id}`,
+            );
+            if (!rawPouch) {
+                throw new Error("Collection details could not be loaded.");
+            }
+            const printableData = mapRawPouchToSettlementPrintableData(rawPouch);
+            const salesman = salesmen.find((item) => item.id === rawPouch.salesmanId);
+            const salesmanName = salesman?.salesmanName || `Owner ID: ${rawPouch.salesmanId ?? "N/A"}`;
+
+            printSettlementReceiptA4(
+                printableData.wallet,
+                printableData.allocations,
+                rawPouch.docNo || pouch.docNo,
+                salesmanName,
+                rawPouch.collectionDate || pouch.date,
+                rawPouch.isPosted ?? pouch.isPosted,
+                companyProfile,
+                printWindow,
+            );
+        } catch (error) {
+            printWindow.close();
+            toast.error(error instanceof Error && error.message ? error.message : "Unable to prepare the collection printable.");
+        } finally {
+            setPrintingPouchId(null);
+        }
     };
 
     const clearFilters = () => {
@@ -387,6 +428,7 @@ export default function CollectionSummaryDashboard() {
                 isOpen={!!selectedPouch}
                 onClose={() => setSelectedPouch(null)}
                 onPrint={handlePrintRecord}
+                isPrinting={printingPouchId === selectedPouch?.id}
             />
         </div>
     );
