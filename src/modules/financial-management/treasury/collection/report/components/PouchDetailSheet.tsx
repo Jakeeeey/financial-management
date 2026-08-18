@@ -34,6 +34,10 @@ type SortKey = "invoiceNo" | "actualInvoiceTotal" | "grossAmount" | "remainingBa
 
 const PESO = "\u20B1";
 const displayIdentifier = (value?: string | null) => value?.trim() || "\u2014";
+const displayCustomer = (value?: string | null) => {
+    const customer = value?.trim();
+    return customer && !/^chk-/i.test(customer) ? customer : "N/A";
+};
 const formatMoney = (value?: number | null) =>
     `${PESO}${Number(value ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 const formatCheckDate = (value?: string | null) => value ? format(parseISO(value), "MM/dd/yyyy") : "—";
@@ -189,7 +193,7 @@ export function PouchDetailSheet({ pouch, isOpen, onClose, onPrint }: PouchDetai
                                                     <td className="pl-5 font-bold">{check.bankName}</td>
                                                     <td className="font-mono text-muted-foreground">{check.checkNo}</td>
                                                     <td className="font-mono text-muted-foreground">{formatCheckDate(check.chequeDate)}</td>
-                                                    <td className="text-muted-foreground">{check.customerName}</td>
+                                                    <td className="text-muted-foreground">{displayCustomer(check.customerName)}</td>
                                                     <td className="pr-5 text-right font-mono font-bold">{formatMoney(check.amount)}</td>
                                                 </tr>
                                             ))}

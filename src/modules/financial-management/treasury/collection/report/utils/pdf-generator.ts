@@ -12,6 +12,10 @@ import {
 const formatAmount = (value?: number | null) =>
     "P " + Number(value ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 });
 const displayIdentifier = (value?: string | null) => value?.trim() || "\u2014";
+const displayCustomer = (value?: string | null) => {
+    const customer = value?.trim();
+    return customer && !/^chk-/i.test(customer) ? customer : "N/A";
+};
 const formatShortDate = (value?: string | null) => value ? format(new Date(value), "MM/dd") : "\u2014";
 
 export const generateCollectionPDF = (
@@ -119,14 +123,14 @@ export const generateCollectionPDF = (
             check.bankName,
             check.checkNo,
             formatShortDate(check.chequeDate),
-            check.customerName,
+            displayCustomer(check.customerName),
             formatAmount(check.amount),
         ])
     );
 
     autoTable(doc, {
         startY: currentY,
-        head: [["Date", "Doc No", "Status", "Bank", "Check No", "Check Date", "Customer / Remarks", "Amount"]],
+        head: [["Date", "Doc No", "Status", "Bank", "Check No", "Check Date", "Customer", "Amount"]],
         body: checkRows,
         theme: "grid",
         headStyles: { fillColor: [52, 152, 219] },

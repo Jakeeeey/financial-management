@@ -25,6 +25,10 @@ const formatSignedAmount = (value?: number | null) => {
 };
 
 const displayIdentifier = (value?: string | null) => value?.trim() || "\u2014";
+const displayCustomer = (value?: string | null) => {
+    const customer = value?.trim();
+    return customer && !/^chk-/i.test(customer) ? customer : "N/A";
+};
 
 const formatDate = (value?: string | null) => {
     if (!value) return "\u2014";
@@ -134,7 +138,7 @@ export function generateCollectionRecordPDF(
             displayIdentifier(check.bankName),
             displayIdentifier(check.checkNo),
             formatDate(check.chequeDate),
-            displayIdentifier(check.customerName),
+            displayCustomer(check.customerName),
             formatAmount(check.amount),
         ])
         : [emptyTableRow("No checks recorded.", 5)];
