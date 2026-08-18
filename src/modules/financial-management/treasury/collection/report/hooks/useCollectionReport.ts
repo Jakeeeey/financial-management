@@ -11,7 +11,7 @@ export interface CheckDetailDto {
     docNo: string;
     bankName: string;
     checkNo: string;
-    customerName: string;
+    customerName: string | null;
     amount: number;
 }
 

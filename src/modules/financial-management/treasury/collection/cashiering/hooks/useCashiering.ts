@@ -143,6 +143,8 @@ export function useCashiering(
     const [checks, setChecks] = useState<CheckDetail[]>([]);
     const modalLookupsCache = useRef<ModalLookupData | null>(null);
     const modalLookupsPromise = useRef<Promise<ModalLookupData> | null>(null);
+    const listRequestController = useRef<AbortController | null>(null);
+    const listRequestVersion = useRef(0);
     const invoiceRequestController = useRef<AbortController | null>(null);
     const invoiceRequestVersion = useRef(0);
 
@@ -151,6 +153,10 @@ export function useCashiering(
     const grandTotal = totalCash + totalChecks;
 
     const fetchCollections = useCallback(async () => {
+        listRequestController.current?.abort();
+        const controller = new AbortController();
+        listRequestController.current = controller;
+        const version = ++listRequestVersion.current;
         setIsLoading(true);
         setListError(null);
         try {
@@ -166,8 +172,10 @@ export function useCashiering(
             if (listQuery.dateTo) query.set("dateTo", listQuery.dateTo);
 
             const collectionsData = await fetchProvider.getOrThrow<PaginatedCollectionResponse>(
-                `/api/fm/treasury/collections/unposted?${query.toString()}`
+                `/api/fm/treasury/collections/unposted?${query.toString()}`,
+                {signal: controller.signal},
             );
+            if (controller.signal.aborted || listRequestVersion.current !== version) return;
             if (!collectionsData) throw new Error("The collection pouch list returned no data. Please retry.");
 
             setMasterList(collectionsData.content || []);
@@ -177,10 +185,11 @@ export function useCashiering(
             setListError(null);
 
         } catch (error) {
+            if (controller.signal.aborted || listRequestVersion.current !== version) return;
             console.error("Failed to fetch cashiering collections:", error);
             setListError(getListErrorMessage(error));
         } finally {
-            setIsLoading(false);
+            if (listRequestVersion.current === version) setIsLoading(false);
         }
     }, [
         listQuery.search,
@@ -195,6 +204,7 @@ export function useCashiering(
 
     useEffect(() => {
         void fetchCollections();
+        return () => listRequestController.current?.abort();
     }, [fetchCollections, listQuery.refreshKey]);
 
     useEffect(() => {

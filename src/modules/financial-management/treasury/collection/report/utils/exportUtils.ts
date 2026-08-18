@@ -2,6 +2,10 @@ import * as XLSX from "xlsx";
 import { CollectionSummaryReportDto } from "../hooks/useCollectionReport";
 
 const displayIdentifier = (value?: string | null) => value?.trim() || "\u2014";
+const displayCustomer = (value?: string | null) => {
+    const customer = value?.trim();
+    return customer && !/^chk-/i.test(customer) ? customer : "N/A";
+};
 
 export const exportCollectionReportToExcel = (
     reportData: CollectionSummaryReportDto,
@@ -53,7 +57,7 @@ export const exportCollectionReportToExcel = (
             Bank: check.bankName,
             "Check No": check.checkNo,
             "Check Date": check.chequeDate || "N/A",
-            "Customer / Remarks": check.customerName,
+            Customer: displayCustomer(check.customerName),
             Amount: check.amount,
         }))
     );
