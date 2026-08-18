@@ -27,7 +27,8 @@ interface PouchDetailSheetProps {
     pouch: PouchReportDto | null;
     isOpen: boolean;
     onClose: () => void;
-    onPrint: (pouch: PouchReportDto) => void;
+    onPrint: (pouch: PouchReportDto) => void | Promise<void>;
+    isPrinting?: boolean;
 }
 
 type SortKey = "invoiceNo" | "actualInvoiceTotal" | "grossAmount" | "remainingBalance";
@@ -42,7 +43,7 @@ const formatMoney = (value?: number | null) =>
     `${PESO}${Number(value ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 const formatCheckDate = (value?: string | null) => value ? format(parseISO(value), "MM/dd/yyyy") : "—";
 
-export function PouchDetailSheet({ pouch, isOpen, onClose, onPrint }: PouchDetailSheetProps) {
+export function PouchDetailSheet({ pouch, isOpen, onClose, onPrint, isPrinting = false }: PouchDetailSheetProps) {
     const [inlineSearch, setInlineSearch] = useState("");
     const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: "asc" | "desc" }>({
         key: "invoiceNo",
@@ -120,10 +121,11 @@ export function PouchDetailSheet({ pouch, isOpen, onClose, onPrint }: PouchDetai
                                     variant="outline"
                                     size="sm"
                                     className="h-8 gap-1.5 px-3 text-[10px] font-black uppercase tracking-widest"
-                                    onClick={() => onPrint(pouch)}
+                                    onClick={() => void onPrint(pouch)}
+                                    disabled={isPrinting}
                                 >
                                     <Printer size={13} />
-                                    Print Record
+                                    {isPrinting ? "Preparing..." : "Print Record"}
                                 </Button>
                                 {pouch.isPosted ? (
                                     <Badge className="border-none bg-emerald-500/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-emerald-700">

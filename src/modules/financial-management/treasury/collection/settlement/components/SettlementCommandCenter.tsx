@@ -66,7 +66,7 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
     const [activeInvoiceId, setActiveInvoiceId] = useState<number | null>(null);
 
     const {
-        isLoading, wallet, credits, cartInvoices, allocations, setAllocations, salesmanName, findings, docNo, isPosted, isClearing,
+        isLoading, wallet, credits, cartInvoices, allocations, setAllocations, salesmanName, findings, docNo, isPosted, isClearing, companyProfile,
         isLoadingRoute, loadRouteInvoices, addToCart, removeFromCart, clearCart, fetchAndInjectExternalCredit,
         getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement,
         hasPartialChanges, hasClearableCart, savePartialSettlement,
@@ -493,7 +493,7 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
     };
 
     const handlePrintReceipt = () => {
-        printSettlementReceiptA4(wallet, allocations, docNo, salesmanName, collectionDate, isPosted);
+        printSettlementReceiptA4(wallet, allocations, docNo, salesmanName, collectionDate, isPosted, companyProfile);
     };
 
     const filteredWallet = useMemo(() => {

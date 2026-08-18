@@ -1,6 +1,7 @@
 import { format } from "date-fns";
-import { SettlementAllocation } from "../../types";
-import { WalletItem } from "../hooks/useSettlement";
+import type { SettlementAllocation } from "../../types";
+import type { CompanyProfile } from "../../company-profile";
+import type { SettlementPrintableWalletItem } from "./settlement-printable-data";
 
 function esc(v: unknown): string {
     return String(v ?? "")
@@ -25,15 +26,33 @@ function fmtDate(dateStr: string | null | undefined): string {
     }
 }
 
+function displayCustomer(value: string | null | undefined): string {
+    const customer = value?.trim();
+    return customer && !/^chk-/i.test(customer) ? customer : "N/A";
+}
+
 export function printSettlementReceiptA4(
-    wallet: WalletItem[],
-    allocations: SettlementAllocation[],
+    wallet: readonly SettlementPrintableWalletItem[],
+    allocations: readonly SettlementAllocation[],
     docNo: string,
     salesmanName: string,
     collectionDate: string,
-    isPosted: boolean
+    isPosted: boolean,
+    companyProfile?: CompanyProfile | null,
+    targetWindow?: Window | null,
 ): void {
     const printedAt = format(new Date(), "yyyy-MM-dd HH:mm");
+    const companyName = companyProfile?.companyName?.trim() || "MEN2 MARKETING CORPORATION";
+    const companyDetails = [
+        companyProfile?.address?.trim(),
+        companyProfile?.tin?.trim() ? `TIN: ${companyProfile.tin.trim()}` : null,
+    ].filter(Boolean) as string[];
+    const logoHtml = companyProfile?.logoDataUrl
+        ? `<img class="companyLogo" src="${esc(companyProfile.logoDataUrl)}" alt="Company logo" />`
+        : "";
+    const companyDetailsHtml = companyDetails.length > 0
+        ? `<div class="companyDetails">${companyDetails.map((detail) => esc(detail)).join(" &bull; ")}</div>`
+        : "";
 
     // 1. Linked Invoices list
     // Get unique list of invoices that have allocations
@@ -54,7 +73,7 @@ export function printSettlementReceiptA4(
     const invoiceRowsHtml = Array.from(invoiceMap.entries()).map(([, inv]) => `
         <tr>
             <td class="bold font-mono">${esc(inv.invoiceNo)}</td>
-            <td>${esc(inv.customerName)}</td>
+            <td>${esc(displayCustomer(inv.customerName))}</td>
             <td class="num">${esc(fmtNum(inv.openBalance))}</td>
             <td class="num bold text-emerald-600">${esc(fmtNum(inv.applied))}</td>
         </tr>
@@ -83,7 +102,7 @@ export function printSettlementReceiptA4(
                 <td class="bold">${esc(alloc.allocationType)}</td>
                 <td class="font-mono">${esc(alloc.sourceTempId)}</td>
                 <td class="font-mono">${esc(alloc.invoiceNo)}</td>
-                <td>${esc(alloc.customerName)}</td>
+                <td>${esc(displayCustomer(alloc.customerName))}</td>
                 <td class="num bold">${esc(fmtNum(alloc.amountApplied))}</td>
             </tr>
         `;
@@ -98,7 +117,7 @@ export function printSettlementReceiptA4(
         return `
             <tr>
                 <td class="bold">${esc(adj.type === "EWT" ? "EWT Adjustment" : adj.label)}</td>
-                <td>${esc(adj.customerName || "—")}</td>
+                <td>${esc(displayCustomer(adj.customerName))}</td>
                 <td class="font-mono">${esc(refNo)}</td>
                 <td class="num bold">${esc(fmtNum(adj.originalAmount))}</td>
             </tr>
@@ -117,8 +136,11 @@ export function printSettlementReceiptA4(
   .page { max-width: 800px; margin: 0 auto; }
   
   .companyBar { display: flex; justify-content: space-between; border-bottom: 2px solid #1a1a2e; padding-bottom: 12px; margin-bottom: 20px; }
+  .companyIdentity { display: flex; align-items: flex-start; gap: 10px; }
+  .companyLogo { width: 34px; height: 34px; object-fit: contain; }
   .companyName { font-size: 16px; font-weight: 800; color: #1a1a2e; text-transform: uppercase; letter-spacing: .05em; }
   .companySub { font-size: 10px; color: #666; margin-top: 2px; }
+  .companyDetails { font-size: 9px; color: #64748b; margin-top: 3px; }
   
   .docInfo { text-align: right; }
   .docTitle { font-size: 14px; font-weight: 800; color: #1a1a2e; text-transform: uppercase; letter-spacing: .05em; }
@@ -158,9 +180,13 @@ export function printSettlementReceiptA4(
 
   <!-- COMPANY HEADER -->
   <div class="companyBar">
-    <div>
-      <div class="companyName">MEN2 MARKETING CORPORATION</div>
+    <div class="companyIdentity">
+      ${logoHtml}
+      <div>
+      <div class="companyName">${esc(companyName)}</div>
       <div class="companySub">Treasury Department &bull; Collection Settlement printable</div>
+      ${companyDetailsHtml}
+      </div>
     </div>
     <div class="docInfo">
       <div class="docTitle">Settlement Receipt</div>
@@ -293,9 +319,9 @@ export function printSettlementReceiptA4(
 </html>
     `;
 
-    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const w = window.open(url, "_blank");
+    const w = targetWindow ?? window.open("", "_blank");
     if (!w) return;
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
 }

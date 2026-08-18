@@ -39,12 +39,18 @@ export interface SettledInvoiceDto {
 }
 
 export interface PouchReportDto {
+    id: number;
     docNo: string; date: string; isPosted: boolean;
     totalCash: number; totalCheck: number;
     shortage: number; overage: number;
     totalInvoices: number; totalMemos: number; totalReturns: number;
     invoiceNetTotal: number;
     checks: CheckDetailDto[]; variances: VarianceDetailDto[]; invoices: SettledInvoiceDto[];
+}
+
+export interface CollectionReportSalesman {
+    id: number;
+    salesmanName: string;
 }
 
 export interface CollectionSummaryReportDto {
@@ -59,6 +65,7 @@ export function useCollectionReport() {
     const [isLoading, setIsLoading] = useState(false);
     const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
     const [companyProfileStatus, setCompanyProfileStatus] = useState<CompanyProfileStatus>("unavailable");
+    const [salesmen, setSalesmen] = useState<CollectionReportSalesman[]>([]);
     const requestSequence = useRef(0);
     const didInitialFetch = useRef(false);
 
@@ -71,7 +78,7 @@ export function useCollectionReport() {
         setIsLoading(true);
         setCompanyProfileStatus("loading");
         try {
-            const [data, profileResult] = await Promise.all([
+            const [data, profileResult, salesmenResult] = await Promise.all([
                 fetchProvider.get<CollectionSummaryReportDto>(
                     `/api/fm/treasury/collections/report?startDate=${startDate}&endDate=${endDate}`
                 ),
@@ -79,17 +86,23 @@ export function useCollectionReport() {
                     console.warn("Company profile is unavailable for Collection Report", error);
                     return { profile: null, status: "error" as const };
                 }),
+                fetchProvider.get<CollectionReportSalesman[]>("/api/fm/treasury/salesmen").catch((error: unknown) => {
+                    console.warn("Salesman lookup is unavailable for Collection Report", error);
+                    return [];
+                }),
             ]);
             if (requestId === requestSequence.current && data) {
                 setReportData(data);
                 setCompanyProfile(profileResult.profile);
                 setCompanyProfileStatus(profileResult.status);
+                setSalesmen(salesmenResult ?? []);
             }
         } catch (error) {
             console.error("Failed to load collection report:", error);
             if (requestId === requestSequence.current) {
                 setCompanyProfile(null);
                 setCompanyProfileStatus("error");
+                setSalesmen([]);
             }
         } finally {
             if (requestId === requestSequence.current) {
@@ -114,5 +127,6 @@ export function useCollectionReport() {
         fetchReport,
         companyProfile,
         companyProfileStatus,
+        salesmen,
     };
 }
