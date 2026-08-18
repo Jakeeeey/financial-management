@@ -3,6 +3,17 @@ export interface FetchOptions {
     timeoutMs?: number;
 }
 
+export class FetchProviderError extends Error {
+    constructor(
+        message: string,
+        public readonly status: number,
+        public readonly requestId?: string,
+    ) {
+        super(message);
+        this.name = "FetchProviderError";
+    }
+}
+
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 const getErrorMessage = (body: string, fallback: string) => {
@@ -15,6 +26,13 @@ const getErrorMessage = (body: string, fallback: string) => {
         return body;
     }
 };
+
+const createFetchProviderError = (response: Response, body: string, fallback: string) =>
+    new FetchProviderError(
+        getErrorMessage(body, fallback),
+        response.status,
+        response.headers.get("x-request-id") || undefined,
+    );
 
 const createRequestContext = (options?: FetchOptions) => {
     const controller = new AbortController();
@@ -68,7 +86,7 @@ export const fetchProvider = {
 
         if (!response.ok) {
             const errorBody = await response.text();
-            throw new Error(getErrorMessage(errorBody, `GET Error: ${response.status}`));
+            throw createFetchProviderError(response, errorBody, `GET Error: ${response.status}`);
         }
 
         return parseJsonResponse<T>(response);
@@ -93,7 +111,7 @@ export const fetchProvider = {
 
             if (!response.ok) {
                 const errorBody = await response.text();
-                throw new Error(getErrorMessage(errorBody, `POST Error: ${response.status}`));
+                throw createFetchProviderError(response, errorBody, `POST Error: ${response.status}`);
             }
 
             const contentType = response.headers.get("content-type") || "";
@@ -119,7 +137,7 @@ export const fetchProvider = {
 
             if (!response.ok) {
                 const errorBody = await response.text();
-                throw new Error(getErrorMessage(errorBody, `PUT Error: ${response.status}`));
+                throw createFetchProviderError(response, errorBody, `PUT Error: ${response.status}`);
             }
 
             return parseJsonResponse<T>(response);
@@ -138,7 +156,7 @@ export const fetchProvider = {
 
             if (!response.ok) {
                 const errorBody = await response.text();
-                throw new Error(getErrorMessage(errorBody, `DELETE Error: ${response.status}`));
+                throw createFetchProviderError(response, errorBody, `DELETE Error: ${response.status}`);
             }
 
             return parseJsonResponse<T>(response);

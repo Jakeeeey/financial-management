@@ -125,6 +125,7 @@ export interface UnpaidInvoice {
     id: number;
     invoiceId?: number; // Added for backwards compatibility in UI
     invoiceNo: string;
+    customerCode?: string;
     customerName: string;
     transactionDate: string;
     dueDate: string;
@@ -157,6 +158,7 @@ export interface UnpaidInvoiceSearchResponse {
 export interface SettlementAllocation {
     invoiceId: number;
     invoiceNo: string;
+    customerCode?: string;
     customerName: string;
     transactionDate: string;
     dueDate: string;
