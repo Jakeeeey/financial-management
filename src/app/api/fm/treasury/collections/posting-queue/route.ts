@@ -116,6 +116,7 @@ export async function GET(request: NextRequest) {
             token,
             requestId,
             SPRING_TIMEOUT_MS,
+            request.signal,
         );
         const payload = await readResponseBody(response);
 

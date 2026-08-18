@@ -67,9 +67,9 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
         isLoading, wallet, credits, cartInvoices, allocations, setAllocations, salesmanName, findings, docNo, isPosted, isClearing,
         isLoadingRoute, loadRouteInvoices, addToCart, removeFromCart, clearCart, fetchAndInjectExternalCredit,
         getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement,
-        hasPartialChanges, savePartialSettlement,
+        hasPartialChanges, hasClearableCart, savePartialSettlement,
         deleteWalletItem, editWalletItem, dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate,
-        isLoadingCredits, collectionDate
+        isLoadingCredits, hasMoreCredits, loadMoreCredits, collectionDate
     } = useSettlement(id);
 
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -737,7 +737,8 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
                             ) : filteredCredits.length === 0 ? (
                                 <p className="text-[10px] text-center text-muted-foreground font-bold uppercase pt-6 italic">No matching credits</p>
                             ) : (
-                                filteredCredits.map(c => {
+                                <>
+                                {filteredCredits.map(c => {
                                     const used = c.originalAmount > 0 ? getUsedAmount(c.id) : 0;
                                     const remaining = getSourceAllocationCapacity(c.originalAmount, used);
                                     const isExhausted = c.originalAmount > 0 && remaining <= 0;
@@ -754,7 +755,21 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
                                             </div>
                                         </div>
                                     );
-                                })
+                                })}
+                                {hasMoreCredits && (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="w-full h-7 text-[9px] font-black uppercase tracking-widest text-purple-700 border-purple-200"
+                                        disabled={isLoadingCredits}
+                                        onClick={loadMoreCredits}
+                                    >
+                                        {isLoadingCredits ? <Loader2 size={12} className="mr-1 animate-spin"/> : null}
+                                        Load More Returns
+                                    </Button>
+                                )}
+                                </>
                             )}
                         </div>
                     </div>
@@ -805,7 +820,7 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
                                         </Popover>
                                     </>
                                 )}
-                    {!isPosted && hasPartialChanges && <Button onClick={handleClearCart} disabled={isClearing || isSubmitting || isPartialSaving || isSuccess} variant="ghost" size="sm" className="h-6 text-[8px] uppercase font-black tracking-widest text-destructive hover:bg-destructive/10 px-2.5">{isClearing ? <Loader2 size={10} className="mr-1 animate-spin"/> : <Trash2 size={10} className="mr-1"/>}{isClearing ? "Clearing..." : "Clear Cart"}</Button>}
+                    {!isPosted && hasClearableCart && <Button onClick={handleClearCart} disabled={isClearing || isSubmitting || isPartialSaving || isSuccess} variant="ghost" size="sm" className="h-6 text-[8px] uppercase font-black tracking-widest text-destructive hover:bg-destructive/10 px-2.5">{isClearing ? <Loader2 size={10} className="mr-1 animate-spin"/> : <Trash2 size={10} className="mr-1"/>}{isClearing ? "Clearing..." : "Clear Cart"}</Button>}
                             </div>
                         </div>
 

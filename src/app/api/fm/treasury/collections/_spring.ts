@@ -4,15 +4,29 @@ import {randomUUID} from "node:crypto";
 export const getSpringBaseUrl = () =>
     (process.env.SPRING_API_BASE_URL || "http://localhost:8080").replace(/\/$/, "");
 
-export const createSpringRequestContext = (incomingRequestId: string | null, timeoutMs: number) => {
+export const createSpringRequestContext = (
+    incomingRequestId: string | null,
+    timeoutMs: number,
+    parentSignal?: AbortSignal,
+) => {
     const controller = new AbortController();
     const requestId = incomingRequestId?.trim() || randomUUID();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const abortParent = () => controller.abort(parentSignal?.reason);
+
+    if (parentSignal?.aborted) {
+        abortParent();
+    } else {
+        parentSignal?.addEventListener("abort", abortParent, {once: true});
+    }
 
     return {
         controller,
         requestId,
-        cleanup: () => clearTimeout(timeout),
+        cleanup: () => {
+            clearTimeout(timeout);
+            parentSignal?.removeEventListener("abort", abortParent);
+        },
     };
 };
 
@@ -21,7 +35,23 @@ export const isAbortError = (error: unknown) =>
 
 const RETRYABLE_GET_STATUSES = new Set([500, 502, 503, 504]);
 
-const delay = (milliseconds: number) => new Promise<void>(resolve => setTimeout(resolve, milliseconds));
+const delay = (milliseconds: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+        reject(signal.reason ?? new DOMException("The request was aborted.", "AbortError"));
+        return;
+    }
+
+    const timeout = setTimeout(() => {
+        signal?.removeEventListener("abort", abort);
+        resolve();
+    }, milliseconds);
+    const abort = () => {
+        clearTimeout(timeout);
+        signal?.removeEventListener("abort", abort);
+        reject(signal?.reason ?? new DOMException("The request was aborted.", "AbortError"));
+    };
+    signal?.addEventListener("abort", abort, {once: true});
+});
 
 /**
  * Collection reads are safe to retry once when Spring is warming up or returns
@@ -32,13 +62,14 @@ export const fetchSpringGetWithRetry = async (
     targetUrl: string,
     token: string,
     incomingRequestId: string | null,
-    timeoutMs: number
+    timeoutMs: number,
+    parentSignal?: AbortSignal,
 ) => {
     const requestId = incomingRequestId?.trim() || randomUUID();
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= 2; attempt++) {
-        const context = createSpringRequestContext(requestId, timeoutMs);
+        const context = createSpringRequestContext(requestId, timeoutMs, parentSignal);
 
         try {
             const response = await fetch(targetUrl, {
@@ -54,7 +85,7 @@ export const fetchSpringGetWithRetry = async (
 
             if (attempt === 1 && RETRYABLE_GET_STATUSES.has(response.status)) {
                 await response.text();
-                await delay(150);
+                await delay(150, parentSignal);
                 continue;
             }
 
@@ -62,7 +93,7 @@ export const fetchSpringGetWithRetry = async (
         } catch (error) {
             lastError = error;
             if (attempt === 2 || isAbortError(error)) throw error;
-            await delay(150);
+            await delay(150, parentSignal);
         } finally {
             context.cleanup();
         }
