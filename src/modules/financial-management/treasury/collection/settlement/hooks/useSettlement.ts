@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { UnpaidInvoice, SettlementAllocation, PaymentHistory, UserDto } from "../../types";
 import { fetchProvider } from "../../providers/fetchProvider";
 import { toast } from "sonner";
@@ -80,6 +80,12 @@ export interface RawMemoOrReturn {
     returnNumber?: string;
 }
 
+interface PaginatedRawReturnResponse {
+    content?: RawMemoOrReturn[];
+    totalPages?: number;
+    currentPage?: number;
+}
+
 const getAvailableReturnAmount = (salesReturn: RawMemoOrReturn) => {
     if (salesReturn.availableAmount !== undefined) {
         return Math.max(0, Number(salesReturn.availableAmount) || 0);
@@ -146,7 +152,12 @@ export function useSettlement(pouchId: string | number) {
     const [isLoadingPlans, setIsLoadingPlans] = useState(false);
     const [dispatchDate, setDispatchDate] = useState<string>(new Date().toISOString().split('T')[0]);
     const [isLoadingCredits, setIsLoadingCredits] = useState(false);
+    const [creditsPage, setCreditsPage] = useState(0);
+    const [hasMoreCredits, setHasMoreCredits] = useState(false);
+    const creditRequestController = useRef<AbortController | null>(null);
+    const creditRequestVersion = useRef(0);
     const [isClearing, setIsClearing] = useState(false);
+    const [hasPendingCartClear, setHasPendingCartClear] = useState(false);
     const [pendingDeletions, setPendingDeletions] = useState<{ id: string; dbId: number; type: "EWT" | "ADJUSTMENT" }[]>([]);
     const [pendingEdits, setPendingEdits] = useState<Record<string, { type: "EWT" | "ADJUSTMENT"; dbId: number; payload: PendingEditPayload }>>({});
 
@@ -160,6 +171,8 @@ export function useSettlement(pouchId: string | number) {
             setCartInvoices([]);
             setWallet([]);
             setCredits([]);
+            setCreditsPage(0);
+            setHasMoreCredits(false);
 
             // 🚀 Strictly typing the users array
             const [pouch, salesmen, fetchedFindings, fetchedUsers] = await Promise.all([
@@ -290,45 +303,88 @@ export function useSettlement(pouchId: string | number) {
         fetchData();
     }, [fetchData]);
 
-    useEffect(() => {
-        const fetchCreditsByCustomers = async () => {
-            const uniqueCustomers = Array.from(new Set(cartInvoices.map(inv => inv.customerName).filter(Boolean)));
-            if (uniqueCustomers.length === 0) return;
+    const creditCustomers = useMemo(
+        () => Array.from(new Set(cartInvoices.map(inv => inv.customerName).filter(Boolean))).sort(),
+        [cartInvoices]
+    );
 
-            setIsLoadingCredits(true);
-            try {
-                const namesQuery = encodeURIComponent(uniqueCustomers.join('|'));
-                const [memos, returns] = await Promise.all([
-                    fetchProvider.get<RawMemoOrReturn[]>(`/api/fm/treasury/memos/available?customerNames=${namesQuery}`),
-                    fetchProvider.get<RawMemoOrReturn[]>(`/api/fm/treasury/returns/available?customerNames=${namesQuery}&currentPouchId=${encodeURIComponent(String(pouchId))}`)
-                ]);
+    const loadCreditsPage = useCallback(async (page: number, append: boolean) => {
+        creditRequestController.current?.abort();
+        const controller = new AbortController();
+        creditRequestController.current = controller;
+        const version = ++creditRequestVersion.current;
 
-                setCredits(prev => {
-                    const newCredits = [...prev];
-                    memos?.forEach(m => {
-                        const remainingMemoAmount = (m.amount || 0) - (m.appliedAmount || 0);
-                        const id = `memo-${m.id}`;
-                        if (remainingMemoAmount > 0 && !newCredits.some(c => c.id === id)) {
-                            newCredits.push({ id, dbId: m.id, type: "MEMO", label: `Memo: ${m.memoNumber}`, originalAmount: remainingMemoAmount, customerName: m.customerName });
-                        }
-                    });
-                    returns?.forEach(r => {
-                        const id = `return-${r.id}`;
-                        const availableReturnAmount = getAvailableReturnAmount(r);
-                        if (availableReturnAmount > SETTLEMENT_BALANCE_TOLERANCE && !newCredits.some(c => c.id === id)) {
-                            newCredits.push({ id, dbId: r.id, type: "RETURN", label: `Return: ${r.returnNumber}`, originalAmount: availableReturnAmount, customerName: r.customerName });
-                        }
-                    });
-                    return newCredits;
+        setIsLoadingCredits(true);
+        try {
+            const namesQuery = encodeURIComponent(creditCustomers.join('|'));
+            const [memos, returnsResponse] = await Promise.all([
+                page === 1
+                    ? fetchProvider.get<RawMemoOrReturn[]>(
+                        `/api/fm/treasury/memos/available?customerNames=${namesQuery}`,
+                        {signal: controller.signal},
+                    )
+                    : Promise.resolve<RawMemoOrReturn[] | null>([]),
+                fetchProvider.getOrThrow<PaginatedRawReturnResponse>(
+                    `/api/fm/treasury/returns/available?customerNames=${namesQuery}&currentPouchId=${encodeURIComponent(String(pouchId))}&page=${page}&size=25`,
+                    {signal: controller.signal},
+                ),
+            ]);
+
+            if (controller.signal.aborted || creditRequestVersion.current !== version) return;
+
+            const returnsPage = (returnsResponse || {}) as PaginatedRawReturnResponse;
+            const returnItems = returnsPage.content || [];
+            setCredits(prev => {
+                const newCredits = [...prev];
+                memos?.forEach(m => {
+                    const remainingMemoAmount = (m.amount || 0) - (m.appliedAmount || 0);
+                    const id = `memo-${m.id}`;
+                    if (remainingMemoAmount > 0 && !newCredits.some(c => c.id === id)) {
+                        newCredits.push({id, dbId: m.id, type: "MEMO", label: `Memo: ${m.memoNumber}`, originalAmount: remainingMemoAmount, customerName: m.customerName});
+                    }
                 });
-            } catch (err) {
-                console.error("Failed to fetch credits dynamically for linked customers", err);
-            } finally {
-                setIsLoadingCredits(false);
+                returnItems.forEach(r => {
+                    const id = `return-${r.id}`;
+                    const availableReturnAmount = getAvailableReturnAmount(r);
+                    if (availableReturnAmount > SETTLEMENT_BALANCE_TOLERANCE && !newCredits.some(c => c.id === id)) {
+                        newCredits.push({id, dbId: r.id, type: "RETURN", label: `Return: ${r.returnNumber}`, originalAmount: availableReturnAmount, customerName: r.customerName});
+                    }
+                });
+                return newCredits;
+            });
+            const currentPage = returnsPage.currentPage || page;
+            setCreditsPage(currentPage);
+            setHasMoreCredits(currentPage < (returnsPage.totalPages || 0));
+        } catch (error) {
+            if (!controller.signal.aborted && creditRequestVersion.current === version) {
+                console.error("Failed to fetch credits dynamically for linked customers", error);
+                if (!append) setHasMoreCredits(false);
             }
-        };
-        fetchCreditsByCustomers();
-    }, [cartInvoices, pouchId]);
+        } finally {
+            if (creditRequestVersion.current === version) setIsLoadingCredits(false);
+        }
+    }, [creditCustomers, pouchId]);
+
+    useEffect(() => {
+        creditRequestController.current?.abort();
+        ++creditRequestVersion.current;
+
+        if (creditCustomers.length === 0) {
+            setCredits([]);
+            setCreditsPage(0);
+            setHasMoreCredits(false);
+            setIsLoadingCredits(false);
+            return;
+        }
+
+        void loadCreditsPage(1, false);
+        return () => creditRequestController.current?.abort();
+    }, [creditCustomers, loadCreditsPage]);
+
+    const loadMoreCredits = useCallback(() => {
+        if (!hasMoreCredits || isLoadingCredits || creditsPage === 0) return;
+        void loadCreditsPage(creditsPage + 1, true);
+    }, [creditsPage, hasMoreCredits, isLoadingCredits, loadCreditsPage]);
 
     useEffect(() => {
         if (!salesmanId || !dispatchDate) return;
@@ -480,6 +536,7 @@ export function useSettlement(pouchId: string | number) {
             setPendingEdits({});
             setPendingDeletions([]);
             await fetchData();
+            setHasPendingCartClear(true);
             toast.success("Cart cleared and staged allocations rolled back.");
             return true;
         } catch (err) {
@@ -667,11 +724,13 @@ export function useSettlement(pouchId: string | number) {
         }
     };
 
-    const hasPartialChanges = cartInvoices.length > 0
+    const hasClearableCart = cartInvoices.length > 0
         || allocations.length > 0
         || wallet.some(item => item.isLocal)
         || Object.keys(pendingEdits).length > 0
         || pendingDeletions.length > 0;
+
+    const hasPartialChanges = hasClearableCart || hasPendingCartClear;
 
     const savePartialSettlement = async (): Promise<boolean> => {
         if (!hasPartialChanges) {
@@ -736,6 +795,7 @@ export function useSettlement(pouchId: string | number) {
             setPendingEdits({});
             setPendingDeletions([]);
             toast.success("Partial settlement saved. You can resume it from the queue.");
+            setHasPendingCartClear(false);
             await fetchData();
             return true;
         } catch (err) {
@@ -841,8 +901,8 @@ export function useSettlement(pouchId: string | number) {
         isLoading, wallet, credits, cartInvoices, allocations, setAllocations, salesmanName, salesmanId, findings, docNo, isPosted, isClearing,
         isLoadingRoute, addToCart, removeFromCart, clearCart, loadRouteInvoices, fetchAndInjectExternalCredit,
         getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement,
-        hasPartialChanges, savePartialSettlement,
+        hasPartialChanges, hasClearableCart, savePartialSettlement,
         deleteWalletItem, editWalletItem, dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate,
-        collectedByName, isLoadingCredits, collectionDate
+        collectedByName, isLoadingCredits, hasMoreCredits, loadMoreCredits, collectionDate
     };
 }
