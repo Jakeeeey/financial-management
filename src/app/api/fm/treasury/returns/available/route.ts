@@ -16,6 +16,8 @@ export const dynamic = "force-dynamic";
 const SPRING_TIMEOUT_MS = 15_000;
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 100;
+const MAX_CUSTOMER_CODES = 50;
+const MAX_CUSTOMER_CODE_LENGTH = 50;
 const MAX_CUSTOMER_NAMES = 50;
 const MAX_CUSTOMER_NAME_LENGTH = 120;
 
@@ -25,6 +27,7 @@ interface RawReturnItem {
     totalAmount?: number;
     availableAmount?: number;
     isApplied?: boolean;
+    customerCode?: string;
     customerName?: string;
 }
 
@@ -34,6 +37,7 @@ interface PaginatedRawReturnResponse {
     totalPages?: number;
     currentPage?: number;
     size?: number;
+    hasMore?: boolean;
 }
 
 const asPositiveInteger = (value: string | null, fallback: number) => {
@@ -41,14 +45,31 @@ const asPositiveInteger = (value: string | null, fallback: number) => {
     return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+const isPositiveInteger = (value: string | null) =>
+    Boolean(value && /^\d+$/.test(value) && Number(value) > 0);
+
 const buildSpringQuery = (request: NextRequest) => {
     const source = request.nextUrl.searchParams;
     const query = new URLSearchParams();
     const rawSalesmanId = source.get("salesmanId")?.trim();
+    const rawCustomerCodes = source.get("customerCodes")?.trim();
     const rawCustomerNames = source.get("customerNames")?.trim();
 
     if (rawSalesmanId && /^\d+$/.test(rawSalesmanId) && Number(rawSalesmanId) > 0) {
         query.set("salesmanId", rawSalesmanId);
+    }
+
+    if (rawCustomerCodes) {
+        const codes = rawCustomerCodes
+            .split(/[|,]/)
+            .map(code => code.trim().toUpperCase())
+            .filter(Boolean);
+
+        if (codes.length > MAX_CUSTOMER_CODES || codes.some(code => code.length > MAX_CUSTOMER_CODE_LENGTH)) {
+            throw new Error("Too many customer codes were supplied.");
+        }
+
+        query.set("customerCodes", codes.join("|"));
     }
 
     if (rawCustomerNames) {
@@ -64,10 +85,11 @@ const buildSpringQuery = (request: NextRequest) => {
         query.set("customerNames", names.join("|"));
     }
 
-    const rawPouchId = source.get("currentPouchId")?.trim();
-    if (rawPouchId && /^\d+$/.test(rawPouchId) && Number(rawPouchId) > 0) {
-        query.set("currentPouchId", rawPouchId);
+    const rawPouchId = source.get("currentPouchId")?.trim() || null;
+    if (!rawPouchId || !isPositiveInteger(rawPouchId)) {
+        throw new Error("A valid currentPouchId is required.");
     }
+    query.set("currentPouchId", rawPouchId);
 
     query.set("page", String(asPositiveInteger(source.get("page"), 1)));
     query.set("size", String(Math.min(asPositiveInteger(source.get("size"), DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE)));
@@ -83,10 +105,16 @@ export async function GET(request: NextRequest) {
     const requestId = request.headers.get("x-request-id")?.trim() || randomUUID();
     const source = request.nextUrl.searchParams;
     const salesmanId = source.get("salesmanId")?.trim();
+    const customerCodes = source.get("customerCodes")?.trim();
     const customerNames = source.get("customerNames")?.trim();
+    const currentPouchId = source.get("currentPouchId")?.trim() || null;
 
-    if (!salesmanId && !customerNames) {
-        return NextResponse.json({ message: "Missing salesmanId or customerNames" }, { status: 400 });
+    if (!salesmanId && !customerCodes && !customerNames) {
+        return NextResponse.json({ message: "Missing salesmanId, customerCodes, or customerNames" }, { status: 400 });
+    }
+
+    if (!isPositiveInteger(currentPouchId)) {
+        return NextResponse.json({ message: "A valid currentPouchId is required." }, { status: 400 });
     }
 
     try {
@@ -118,6 +146,9 @@ export async function GET(request: NextRequest) {
             totalPages: legacyContent ? (legacyContent.length > 0 ? 1 : 0) : data.totalPages || 0,
             currentPage: legacyContent ? 1 : data.currentPage || 1,
             size: legacyContent ? legacyContent.length : data.size || DEFAULT_PAGE_SIZE,
+            hasMore: legacyContent
+                ? false
+                : data.hasMore ?? ((data.currentPage || 1) < (data.totalPages || 0)),
         }, {headers: {"X-Request-Id": upstreamRequestId}});
     } catch (error: unknown) {
         if (isAbortError(error)) {
@@ -129,7 +160,9 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        if (error instanceof Error && error.message === "Too many customer names were supplied.") {
+        if (error instanceof Error && (error.message === "Too many customer codes were supplied."
+            || error.message === "Too many customer names were supplied."
+            || error.message === "A valid currentPouchId is required.")) {
             return NextResponse.json({message: error.message}, {status: 400});
         }
 

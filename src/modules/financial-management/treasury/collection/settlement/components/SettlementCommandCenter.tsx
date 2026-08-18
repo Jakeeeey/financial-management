@@ -63,14 +63,16 @@ export interface SettlementCommandCenterProps {
 }
 
 export default function SettlementCommandCenter({ id, onClose, onChanged, autoAddInvoiceNo }: SettlementCommandCenterProps) {
+    const [activeInvoiceId, setActiveInvoiceId] = useState<number | null>(null);
+
     const {
         isLoading, wallet, credits, cartInvoices, allocations, setAllocations, salesmanName, findings, docNo, isPosted, isClearing,
         isLoadingRoute, loadRouteInvoices, addToCart, removeFromCart, clearCart, fetchAndInjectExternalCredit,
         getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement,
         hasPartialChanges, hasClearableCart, savePartialSettlement,
         deleteWalletItem, editWalletItem, dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate,
-        isLoadingCredits, hasMoreCredits, loadMoreCredits, collectionDate
-    } = useSettlement(id);
+        isLoadingCredits, creditsError, retryCredits, hasMoreCredits, loadMoreCredits, collectionDate
+    } = useSettlement(id, activeInvoiceId);
 
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isPartialSaving, setIsPartialSaving] = useState(false);
@@ -117,8 +119,6 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
     const [globalEwtRef, setGlobalEwtRef] = useState("");
 
     const [routePopoverOpen, setRoutePopoverOpen] = useState(false);
-
-    const [activeInvoiceId, setActiveInvoiceId] = useState<number | null>(null);
 
     const uniqueCategories = useMemo(() => {
         const coaMap = new Map<number, {id: number, title: string}>();
@@ -212,10 +212,10 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
     };
 
     useEffect(() => {
-        if (cartInvoices.length > 0 && !activeInvoiceId) {
-            setActiveInvoiceId(cartInvoices[0].id);
-        } else if (cartInvoices.length === 0) {
+        if (cartInvoices.length === 0) {
             setActiveInvoiceId(null);
+        } else if (!cartInvoices.some(invoice => invoice.id === activeInvoiceId)) {
+            setActiveInvoiceId(cartInvoices[0].id);
         }
     }, [cartInvoices, activeInvoiceId]);
  
@@ -729,6 +729,14 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
                             <Input placeholder="Search local pool..." value={creditSearch} onChange={(e) => setCreditSearch(e.target.value)} className="h-6 text-[10px] font-bold shadow-inner bg-background border-purple-200 focus-visible:ring-purple-500 px-2"/>
                         </div>
                         <div className="p-2 flex-1 overflow-y-auto space-y-1.5 scrollbar-thin">
+                            {creditsError && !isLoadingCredits && (
+                                <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-center dark:border-amber-900/50 dark:bg-amber-950/20">
+                                    <p className="text-[9px] font-bold text-amber-700 dark:text-amber-300">{creditsError}</p>
+                                    <Button type="button" variant="outline" size="sm" className="mt-1 h-6 text-[9px] font-black uppercase tracking-widest text-amber-700 border-amber-300" onClick={retryCredits}>
+                                        Retry
+                                    </Button>
+                                </div>
+                            )}
                             {isLoadingCredits ? (
                                 <div className="flex flex-col items-center justify-center h-full py-8">
                                     <Loader2 size={20} className="animate-spin text-purple-500 mb-2"/>

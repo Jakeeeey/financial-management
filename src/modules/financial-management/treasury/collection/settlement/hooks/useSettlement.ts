@@ -36,6 +36,7 @@ export interface RawCashBucket {
 export interface RawAllocation {
     amountApplied?: number;
     allocationType?: string;
+    customerCode?: string;
     customerName?: string;
     invoiceNo?: string;
     invoiceId?: number;
@@ -73,6 +74,7 @@ export interface RawMemoOrReturn {
     amount?: number;
     appliedAmount?: number;
     memoNumber?: string;
+    customerCode?: string;
     customerName?: string;
     isApplied?: boolean;
     totalAmount?: number;
@@ -84,6 +86,7 @@ interface PaginatedRawReturnResponse {
     content?: RawMemoOrReturn[];
     totalPages?: number;
     currentPage?: number;
+    hasMore?: boolean;
 }
 
 const getAvailableReturnAmount = (salesReturn: RawMemoOrReturn) => {
@@ -95,6 +98,19 @@ const getAvailableReturnAmount = (salesReturn: RawMemoOrReturn) => {
         : Math.max(0, Number(salesReturn.totalAmount) || 0);
 };
 
+const normalizeCustomerValue = (value?: string) => value?.trim().toUpperCase() || "";
+
+const isSameCustomer = (
+    source: { customerCode?: string; customerName?: string },
+    target: { customerCode?: string; customerName?: string },
+) => {
+    const targetCode = normalizeCustomerValue(target.customerCode);
+    if (targetCode) return normalizeCustomerValue(source.customerCode) === targetCode;
+
+    const targetName = normalizeCustomerValue(target.customerName);
+    return Boolean(targetName) && normalizeCustomerValue(source.customerName) === targetName;
+};
+
 export interface WalletItem {
     id: string;
     type: "CASH" | "CHECK" | "MEMO" | "RETURN" | "ADJUSTMENT" | "EWT";
@@ -103,6 +119,7 @@ export interface WalletItem {
     dbId?: number;
     findingId?: number;
     customerName?: string;
+    customerCode?: string;
     balanceTypeId?: number;
     isLocal?: boolean;
     invoiceId?: number;
@@ -129,7 +146,7 @@ export interface PendingEditPayload {
     remarks?: string;
 }
 
-export function useSettlement(pouchId: string | number) {
+export function useSettlement(pouchId: string | number, activeInvoiceId: number | null) {
     const [isLoading, setIsLoading] = useState(true);
     const [wallet, setWallet] = useState<WalletItem[]>([]);
     const [credits, setCredits] = useState<WalletItem[]>([]);
@@ -152,6 +169,7 @@ export function useSettlement(pouchId: string | number) {
     const [isLoadingPlans, setIsLoadingPlans] = useState(false);
     const [dispatchDate, setDispatchDate] = useState<string>(new Date().toISOString().split('T')[0]);
     const [isLoadingCredits, setIsLoadingCredits] = useState(false);
+    const [creditsError, setCreditsError] = useState<string | null>(null);
     const [creditsPage, setCreditsPage] = useState(0);
     const [hasMoreCredits, setHasMoreCredits] = useState(false);
     const creditRequestController = useRef<AbortController | null>(null);
@@ -260,7 +278,7 @@ export function useSettlement(pouchId: string | number) {
 
                 pouch.allocations.forEach((alloc: RawAllocation) => {
                     const mappedAlloc: SettlementAllocation = {
-                        invoiceId: alloc.invoiceId || 0, invoiceNo: alloc.invoiceNo || "", customerName: alloc.customerName || "",
+                        invoiceId: alloc.invoiceId || 0, invoiceNo: alloc.invoiceNo || "", customerCode: alloc.customerCode, customerName: alloc.customerName || "",
                         amountApplied: Math.abs(alloc.amountApplied || 0), allocationType: alloc.allocationType || "CASH",
                         sourceTempId: alloc.sourceTempId || "CASH_SUMMARY", originalAmount: alloc.originalAmount || 0,
                         remainingBalance: alloc.remainingBalance || 0, maxSettleableAmount: alloc.maxSettleableAmount,
@@ -303,9 +321,19 @@ export function useSettlement(pouchId: string | number) {
         fetchData();
     }, [fetchData]);
 
-    const creditCustomers = useMemo(
-        () => Array.from(new Set(cartInvoices.map(inv => inv.customerName).filter(Boolean))).sort(),
-        [cartInvoices]
+    const activeInvoice = useMemo(
+        () => cartInvoices.find(invoice => invoice.id === activeInvoiceId) || null,
+        [activeInvoiceId, cartInvoices]
+    );
+
+    const creditCustomerCodes = useMemo(
+        () => activeInvoice?.customerCode ? [activeInvoice.customerCode.trim().toUpperCase()] : [],
+        [activeInvoice]
+    );
+
+    const creditCustomerNames = useMemo(
+        () => !activeInvoice?.customerCode && activeInvoice?.customerName ? [activeInvoice.customerName] : [],
+        [activeInvoice]
     );
 
     const loadCreditsPage = useCallback(async (page: number, append: boolean) => {
@@ -315,76 +343,104 @@ export function useSettlement(pouchId: string | number) {
         const version = ++creditRequestVersion.current;
 
         setIsLoadingCredits(true);
+        setCreditsError(null);
         try {
-            const namesQuery = encodeURIComponent(creditCustomers.join('|'));
-            const [memos, returnsResponse] = await Promise.all([
+            const customerFilter = new URLSearchParams();
+            if (creditCustomerCodes.length > 0) customerFilter.set("customerCodes", creditCustomerCodes.join("|"));
+            if (creditCustomerNames.length > 0) customerFilter.set("customerNames", creditCustomerNames.join("|"));
+            const customerQuery = customerFilter.toString();
+            const [memosResult, returnsResult] = await Promise.allSettled([
                 page === 1
-                    ? fetchProvider.get<RawMemoOrReturn[]>(
-                        `/api/fm/treasury/memos/available?customerNames=${namesQuery}`,
+                    ? fetchProvider.getOrThrow<RawMemoOrReturn[]>(
+                        `/api/fm/treasury/memos/available?${customerQuery}`,
                         {signal: controller.signal},
                     )
                     : Promise.resolve<RawMemoOrReturn[] | null>([]),
                 fetchProvider.getOrThrow<PaginatedRawReturnResponse>(
-                    `/api/fm/treasury/returns/available?customerNames=${namesQuery}&currentPouchId=${encodeURIComponent(String(pouchId))}&page=${page}&size=25`,
+                    `/api/fm/treasury/returns/available?${customerQuery}&currentPouchId=${encodeURIComponent(String(pouchId))}&page=${page}&size=25`,
                     {signal: controller.signal},
                 ),
             ]);
 
             if (controller.signal.aborted || creditRequestVersion.current !== version) return;
 
+            const memos = memosResult.status === "fulfilled" ? memosResult.value : null;
+            const returnsResponse = returnsResult.status === "fulfilled" ? returnsResult.value : null;
+            const failedSources = [
+                memosResult.status === "rejected" && page === 1 ? "memos" : null,
+                returnsResult.status === "rejected" ? "returns" : null,
+            ].filter(Boolean);
+            if (failedSources.length > 0) {
+                setCreditsError(`Available ${failedSources.join(" and ")} could not be loaded. Please retry.`);
+            }
+
             const returnsPage = (returnsResponse || {}) as PaginatedRawReturnResponse;
             const returnItems = returnsPage.content || [];
             setCredits(prev => {
-                const newCredits = [...prev];
+                const newCredits = append ? [...prev] : [];
                 memos?.forEach(m => {
                     const remainingMemoAmount = (m.amount || 0) - (m.appliedAmount || 0);
                     const id = `memo-${m.id}`;
                     if (remainingMemoAmount > 0 && !newCredits.some(c => c.id === id)) {
-                        newCredits.push({id, dbId: m.id, type: "MEMO", label: `Memo: ${m.memoNumber}`, originalAmount: remainingMemoAmount, customerName: m.customerName});
+                        newCredits.push({id, dbId: m.id, type: "MEMO", label: `Memo: ${m.memoNumber}`, originalAmount: remainingMemoAmount, customerCode: m.customerCode, customerName: m.customerName});
                     }
                 });
                 returnItems.forEach(r => {
                     const id = `return-${r.id}`;
                     const availableReturnAmount = getAvailableReturnAmount(r);
                     if (availableReturnAmount > SETTLEMENT_BALANCE_TOLERANCE && !newCredits.some(c => c.id === id)) {
-                        newCredits.push({id, dbId: r.id, type: "RETURN", label: `Return: ${r.returnNumber}`, originalAmount: availableReturnAmount, customerName: r.customerName});
+                        newCredits.push({id, dbId: r.id, type: "RETURN", label: `Return: ${r.returnNumber}`, originalAmount: availableReturnAmount, customerCode: r.customerCode, customerName: r.customerName});
                     }
                 });
                 return newCredits;
             });
-            const currentPage = returnsPage.currentPage || page;
-            setCreditsPage(currentPage);
-            setHasMoreCredits(currentPage < (returnsPage.totalPages || 0));
+            if (returnsResult.status === "fulfilled") {
+                const currentPage = returnsPage.currentPage || page;
+                setCreditsPage(currentPage);
+                setHasMoreCredits(returnsPage.hasMore ?? (currentPage < (returnsPage.totalPages || 0)));
+            } else if (!append) {
+                setCreditsPage(0);
+                setHasMoreCredits(false);
+            }
         } catch (error) {
             if (!controller.signal.aborted && creditRequestVersion.current === version) {
                 console.error("Failed to fetch credits dynamically for linked customers", error);
+                setCreditsError("Available credits could not be loaded. Please retry.");
                 if (!append) setHasMoreCredits(false);
             }
         } finally {
             if (creditRequestVersion.current === version) setIsLoadingCredits(false);
         }
-    }, [creditCustomers, pouchId]);
+    }, [creditCustomerCodes, creditCustomerNames, pouchId]);
 
     useEffect(() => {
         creditRequestController.current?.abort();
         ++creditRequestVersion.current;
 
-        if (creditCustomers.length === 0) {
+        if (creditCustomerCodes.length === 0 && creditCustomerNames.length === 0) {
             setCredits([]);
             setCreditsPage(0);
             setHasMoreCredits(false);
+            setCreditsError(null);
             setIsLoadingCredits(false);
             return;
         }
 
+        setCredits([]);
+        setCreditsPage(0);
+        setHasMoreCredits(false);
         void loadCreditsPage(1, false);
         return () => creditRequestController.current?.abort();
-    }, [creditCustomers, loadCreditsPage]);
+    }, [creditCustomerCodes, creditCustomerNames, loadCreditsPage]);
 
     const loadMoreCredits = useCallback(() => {
         if (!hasMoreCredits || isLoadingCredits || creditsPage === 0) return;
         void loadCreditsPage(creditsPage + 1, true);
     }, [creditsPage, hasMoreCredits, isLoadingCredits, loadCreditsPage]);
+
+    const retryCredits = useCallback(() => {
+        void loadCreditsPage(1, false);
+    }, [loadCreditsPage]);
 
     useEffect(() => {
         if (!salesmanId || !dispatchDate) return;
@@ -397,13 +453,18 @@ export function useSettlement(pouchId: string | number) {
 
     const fetchAndInjectExternalCredit = async (documentNo: string, type: "MEMO" | "RETURN") => {
         try {
+            if (!activeInvoice) return false;
+
             const safeDocNo = encodeURIComponent(documentNo.trim());
+            const customerQuery = activeInvoice.customerCode
+                ? `&customerCode=${encodeURIComponent(activeInvoice.customerCode)}`
+                : "";
             const endpoint = type === "MEMO"
-                ? `/api/fm/treasury/memos/search?documentNo=${safeDocNo}`
-                : `/api/fm/treasury/returns/search?documentNo=${safeDocNo}&currentPouchId=${encodeURIComponent(String(pouchId))}`;
+                ? `/api/fm/treasury/memos/search?documentNo=${safeDocNo}${customerQuery}`
+                : `/api/fm/treasury/returns/search?documentNo=${safeDocNo}&currentPouchId=${encodeURIComponent(String(pouchId))}${customerQuery}`;
 
             const data = await fetchProvider.get<RawMemoOrReturn>(endpoint);
-            if (!data) return false;
+            if (!data || !isSameCustomer(data, activeInvoice)) return false;
 
             setCredits(prev => {
                 const newCredits = [...prev];
@@ -413,12 +474,12 @@ export function useSettlement(pouchId: string | number) {
                     if (type === "MEMO") {
                         const remaining = (data.amount || 0) - (data.appliedAmount || 0);
                         if (remaining > 0) {
-                            newCredits.unshift({ id, dbId: data.id, type: "MEMO", label: `Memo: ${data.memoNumber}`, originalAmount: remaining, customerName: data.customerName });
+                        newCredits.unshift({ id, dbId: data.id, type: "MEMO", label: `Memo: ${data.memoNumber}`, originalAmount: remaining, customerCode: data.customerCode, customerName: data.customerName });
                         }
                     } else {
                         const availableReturnAmount = getAvailableReturnAmount(data);
                         if (availableReturnAmount > SETTLEMENT_BALANCE_TOLERANCE) {
-                            newCredits.unshift({ id, dbId: data.id, type: "RETURN", label: `Return: ${data.returnNumber}`, originalAmount: availableReturnAmount, customerName: data.customerName });
+                            newCredits.unshift({ id, dbId: data.id, type: "RETURN", label: `Return: ${data.returnNumber}`, originalAmount: availableReturnAmount, customerCode: data.customerCode, customerName: data.customerName });
                         }
                     }
                 }
@@ -628,6 +689,9 @@ export function useSettlement(pouchId: string | number) {
                 const inv = cartInvoices.find(i => i.id === invoiceId);
 
                 if (wItem && inv) {
+                    const isCredit = wItem.type === "MEMO" || wItem.type === "RETURN";
+                    if (isCredit && !isSameCustomer(wItem, inv)) return filtered;
+
                     const walletUsedElsewhere = prev
                         .filter(a => a.sourceTempId === sourceId && a.invoiceId !== invoiceId)
                         .reduce((sum, a) => sum + a.amountApplied, 0);
@@ -645,6 +709,7 @@ export function useSettlement(pouchId: string | number) {
                         filtered.push({
                             invoiceId: invoiceId,
                             invoiceNo: inv.invoiceNo || "",
+                            customerCode: inv.customerCode,
                             customerName: inv.customerName || "",
                             amountApplied: finalAmount,
                             allocationType: wItem.type || "CASH",
@@ -903,6 +968,6 @@ export function useSettlement(pouchId: string | number) {
         getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement,
         hasPartialChanges, hasClearableCart, savePartialSettlement,
         deleteWalletItem, editWalletItem, dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate,
-        collectedByName, isLoadingCredits, hasMoreCredits, loadMoreCredits, collectionDate
+        collectedByName, isLoadingCredits, creditsError, retryCredits, hasMoreCredits, loadMoreCredits, collectionDate
     };
 }

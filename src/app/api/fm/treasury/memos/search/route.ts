@@ -13,9 +13,10 @@ export async function GET(request: NextRequest) {
 
     // 🚀 THE FIX: We check for documentNo here, NOT salesmanId!
     if (!documentNo) return NextResponse.json({ message: "Missing documentNo" }, { status: 400 });
+    const customerCode = searchParams.get("customerCode");
 
     const baseUrl = (process.env.SPRING_API_BASE_URL || "http://localhost:8080").replace(/\/$/, "");
-    const targetUrl = `${baseUrl}/api/v1/collections/memos/search?documentNo=${encodeURIComponent(documentNo)}`;
+    const targetUrl = `${baseUrl}/api/v1/collections/memos/search?documentNo=${encodeURIComponent(documentNo)}${customerCode ? `&customerCode=${encodeURIComponent(customerCode)}` : ""}`;
 
     try {
         const springRes = await fetch(targetUrl, {
