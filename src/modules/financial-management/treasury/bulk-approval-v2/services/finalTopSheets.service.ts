@@ -29,7 +29,6 @@ import {
   getApprovalContextsForUser,
   getExpenseEmployeeId,
   isFinalHeaderDecisionBody,
-  makeFinalGroupKey,
   normalizeFinalDecisionStatus,
   nowManila,
   recalcDraftTotal,
@@ -526,16 +525,6 @@ export async function getExpenseHeaderGroups(params: {
 
     const creatorIds = [...new Set(linked.headers.map((h) => toNumericId(h.created_by)).filter((id): id is number => Boolean(id)))];
     const creatorMap = await fetchUserMap(creatorIds);
-
-    const headerById = new Map(
-      linked.headers
-        .map((header) => {
-          const id = toNumericId(header.id);
-          return id ? [id, header] as const : null;
-        })
-        .filter((entry): entry is readonly [number, ExpenseDraftHeaderRow] => Boolean(entry))
-    );
-
     for (const header of linked.headers) {
       const headerId = toNumericId(header.id) ?? 0;
       const periodFrom = toStringOrNull(header.period_from) ?? "";
@@ -595,7 +584,7 @@ export async function getExpenseHeaderGroups(params: {
         all_draft_rows: draftSummaryRows,
         creator_name: creatorName,
         creator_id: creatorId,
-        date_submitted: (header as any).created_at ?? (header as any).date_created ?? null,
+        date_submitted: header.created_at ?? header.date_created ?? null,
       });
     }
   }
