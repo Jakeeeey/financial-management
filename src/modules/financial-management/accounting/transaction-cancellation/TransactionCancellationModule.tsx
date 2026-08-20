@@ -97,6 +97,7 @@ export default function TransactionCancellationModule() {
   const [reason, setReason] = useState("");
   const [confirmRetrieval, setConfirmRetrieval] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [attachmentsDialogOpen, setAttachmentsDialogOpen] = useState(false);
 
   const [approveDialogOpen, setApproveDialogOpen] = useState(false);
@@ -241,6 +242,12 @@ export default function TransactionCancellationModule() {
     event.target.value = "";
   };
 
+  const handleUploadClick = (invoice: Invoice) => {
+    setSelectedInvoice(invoice);
+    setSelectedFiles([]);
+    setUploadDialogOpen(true);
+  };
+
   const handleApproveClick = (invoice: Invoice) => {
     setSelectedInvoice(invoice);
     setApproveDialogOpen(true);
@@ -252,7 +259,7 @@ export default function TransactionCancellationModule() {
     setRejectDialogOpen(true);
   };
 
-  const submitAction = async (action: "request" | "approve" | "reject") => {
+  const submitAction = async (action: "request" | "approve" | "reject" | "upload_attachments") => {
     if (!selectedInvoice) return;
     
     const body: Record<string, unknown> = {
@@ -279,15 +286,20 @@ export default function TransactionCancellationModule() {
       }
       body.rejectReason = rejectReason.trim();
       body.previousStatus = selectedInvoice.previousStatus;
+    } else if (action === "upload_attachments") {
+      if (selectedFiles.length === 0) {
+        toast.error("Please select at least one file to upload");
+        return;
+      }
     }
 
     setSubmitting(true);
     const toastId = toast.loading("Processing transaction status update...");
     try {
-      const isRequestAction = action === "request";
+      const isFormDataAction = action === "request" || action === "upload_attachments";
       let requestBody: BodyInit;
       const headers: HeadersInit = {};
-      if (isRequestAction) {
+      if (isFormDataAction) {
         const formData = new FormData();
         Object.entries(body).forEach(([key, value]) => {
           if (value !== null && value !== undefined) formData.append(key, String(value));
@@ -313,7 +325,9 @@ export default function TransactionCancellationModule() {
           ? "Cancellation request submitted for approval." 
           : action === "approve"
             ? "Invoice cancellation approved successfully."
-            : "Cancellation request rejected.", 
+            : action === "reject"
+              ? "Cancellation request rejected."
+              : "Attachments uploaded successfully.", 
         { id: toastId }
       );
 
@@ -322,6 +336,7 @@ export default function TransactionCancellationModule() {
       setApproveDialogOpen(false);
       setRejectDialogOpen(false);
       setAttachmentsDialogOpen(false);
+      setUploadDialogOpen(false);
       setSelectedInvoice(null);
       setSelectedFiles([]);
 
@@ -632,30 +647,56 @@ export default function TransactionCancellationModule() {
                         <td className="p-4 text-center">
                           {activeTab === "pending" ? (
                             isAdmin ? (
-                              <div className="flex items-center justify-center gap-1.5">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleApproveClick(inv)}
-                                  className="h-7 text-[10px] font-bold gap-1 px-2 border-emerald-500/30 text-emerald-600 hover:bg-emerald-500 hover:text-white dark:hover:bg-emerald-600 transition-all shadow-sm"
-                                >
-                                  <ThumbsUp className="h-3 w-3" />
-                                  Approve
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleRejectClick(inv)}
-                                  className="h-7 text-[10px] font-bold gap-1 px-2 border-rose-500/30 text-rose-600 hover:bg-rose-500 hover:text-white dark:hover:bg-rose-600 transition-all shadow-sm"
-                                >
-                                  <ThumbsDown className="h-3 w-3" />
-                                  Reject
-                                </Button>
+                              <div className="flex flex-col items-center justify-center gap-1.5">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleApproveClick(inv)}
+                                    className="h-7 text-[10px] font-bold gap-1 px-2 border-emerald-500/30 text-emerald-600 hover:bg-emerald-500 hover:text-white dark:hover:bg-emerald-600 transition-all shadow-sm"
+                                  >
+                                    <ThumbsUp className="h-3 w-3" />
+                                    Approve
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleRejectClick(inv)}
+                                    className="h-7 text-[10px] font-bold gap-1 px-2 border-rose-500/30 text-rose-600 hover:bg-rose-500 hover:text-white dark:hover:bg-rose-600 transition-all shadow-sm"
+                                  >
+                                    <ThumbsDown className="h-3 w-3" />
+                                    Reject
+                                  </Button>
+                                </div>
+                                {reqDetails?.requester === username && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleUploadClick(inv)}
+                                    className="h-6 w-full text-[9px] font-bold gap-1 px-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+                                  >
+                                    <Paperclip className="h-2.5 w-2.5" />
+                                    Add Document
+                                  </Button>
+                                )}
                               </div>
                             ) : (
-                              <div className="text-[10px] text-muted-foreground flex items-center justify-center gap-1 font-semibold italic">
-                                <Info className="h-3 w-3 text-muted-foreground/75" />
-                                <span>Waiting for Admin</span>
+                              <div className="flex flex-col items-center justify-center gap-1.5">
+                                <div className="text-[10px] text-muted-foreground flex items-center justify-center gap-1 font-semibold italic">
+                                  <Info className="h-3 w-3 text-muted-foreground/75" />
+                                  <span>Waiting for Admin</span>
+                                </div>
+                                {reqDetails?.requester === username && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleUploadClick(inv)}
+                                    className="h-6 w-full text-[9px] font-bold gap-1 px-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+                                  >
+                                    <Paperclip className="h-2.5 w-2.5" />
+                                    Add Document
+                                  </Button>
+                                )}
                               </div>
                             )
                           ) : (() => {
@@ -1037,6 +1078,91 @@ export default function TransactionCancellationModule() {
                 <>
                   <ThumbsDown className="h-3.5 w-3.5" />
                   Confirm Reject
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
+        <DialogContent className="max-w-md p-6 rounded-2xl border border-border bg-popover text-popover-foreground shadow-2xl">
+          <DialogHeader className="space-y-2">
+            <div className="h-10 w-10 bg-blue-500/10 text-blue-600 rounded-full flex items-center justify-center shrink-0">
+              <Paperclip className="h-5 w-5" />
+            </div>
+            <DialogTitle className="text-sm font-black uppercase tracking-tight text-foreground">
+              Upload Additional Documents
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground leading-normal">
+              You are attaching additional files to the pending cancellation request for Invoice <span className="font-bold text-foreground">{selectedInvoice?.invoiceNo}</span>.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/85">
+                Supporting Attachments
+              </label>
+              <label
+                htmlFor="additional-attachments"
+                className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-[10px] font-bold text-foreground shadow-xs transition-colors hover:bg-accent"
+              >
+                <Paperclip className="h-3 w-3" />
+                Add files
+              </label>
+              <input
+                id="additional-attachments"
+                type="file"
+                multiple
+                accept="image/*,application/pdf"
+                onChange={handleFileSelection}
+                className="sr-only"
+              />
+            </div>
+            {selectedFiles.length > 0 ? (
+              <div className="space-y-1 rounded-lg border border-border/60 bg-muted/20 p-2">
+                {selectedFiles.map((file, index) => (
+                  <div key={`${file.name}-${file.lastModified}-${index}`} className="flex items-center justify-between gap-2 text-[10px]">
+                    <span className="min-w-0 truncate font-medium text-foreground" title={file.name}>{file.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))}
+                      className="shrink-0 rounded p-1 text-muted-foreground hover:bg-background hover:text-destructive"
+                      aria-label={`Remove ${file.name}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[10px] text-muted-foreground/70">Attach supporting images or PDF documents for the administrator.</p>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setUploadDialogOpen(false)}
+              className="h-9 text-xs font-semibold"
+              disabled={submitting}
+            >
+              Back
+            </Button>
+            <Button
+              onClick={() => submitAction("upload_attachments")}
+              className="h-9 text-xs font-bold gap-1 px-4 bg-blue-600 hover:bg-blue-700 text-white"
+              disabled={submitting}
+            >
+              {submitting ? (
+                <>
+                  <div className="h-3.5 w-3.5 rounded-full border border-current border-t-transparent animate-spin mr-1" />
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <Paperclip className="h-3.5 w-3.5" />
+                  Upload Documents
                 </>
               )}
             </Button>
