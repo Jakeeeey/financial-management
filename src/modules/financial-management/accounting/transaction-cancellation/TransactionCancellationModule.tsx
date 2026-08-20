@@ -934,6 +934,28 @@ export default function TransactionCancellationModule() {
             </DialogDescription>
           </DialogHeader>
 
+          {selectedInvoice?.cancellationRequest?.attachments && selectedInvoice.cancellationRequest.attachments.length > 0 ? (
+            <div className="py-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => handleAttachmentsClick(selectedInvoice)}
+                className="w-full h-8 text-[10px] font-bold gap-1.5 border-amber-500/20 text-amber-700 hover:bg-amber-500/10 dark:text-amber-400"
+              >
+                <Paperclip className="h-3 w-3" />
+                View attachments ({selectedInvoice.cancellationRequest.attachments.length})
+              </Button>
+            </div>
+          ) : (
+            <div className="py-2">
+              <div className="w-full h-8 flex items-center justify-center text-[10px] font-bold gap-1.5 border border-dashed border-border rounded-md text-muted-foreground bg-muted/20">
+                <Paperclip className="h-3 w-3 opacity-50" />
+                No attachments uploaded
+              </div>
+            </div>
+          )}
+
           <DialogFooter className="gap-2 sm:gap-0 pt-4">
             <Button
               variant="outline"
