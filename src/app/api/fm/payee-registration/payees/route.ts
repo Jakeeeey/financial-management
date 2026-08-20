@@ -54,7 +54,6 @@ export async function POST(request: NextRequest) {
     const payeeWithMetadata = {
       ...validatedData,
       date_added: new Date().toISOString(),
-      supplier_type: "NON-TRADE" as const, // Force non-trade type
     };
 
     // Create payee

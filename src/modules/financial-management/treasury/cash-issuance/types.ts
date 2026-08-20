@@ -3,6 +3,8 @@ export interface PayableLine {
     isMemo?: boolean;
     memoId?: number;
     memoType?: number;
+    /** UI-only supplier snapshot used to flag memo lines after a payee change. */
+    memoSupplierId?: number;
     memoNumber?: string;
     /** UI-only snapshot used to validate edits to an existing memo line. */
     memoOriginalAmount?: number;
@@ -162,12 +164,17 @@ export interface UnpaidPoDto {
 export interface MemoDto {
     id: number;
     memo_number: string;
+    supplier_id?: number;
     type: number;
     memo_type_name: string;
     date: string;
     amount: number;
     applied_amount?: number;
     remaining_amount?: number;
+    is_locked?: boolean;
+    locking_tr_doc_no?: string | null;
+    locking_tr_status?: string | null;
+    locking_tr_count?: number;
     reason: string | null;
     coa_id: number;
     account_title: string;

@@ -9,6 +9,7 @@ import { CashIssuanceViewDialog } from "./components/CashIssuanceViewDialog";
 import { CashIssuanceDashboardTab } from "./components/CashIssuanceDashboardTab";
 import { Disbursement } from "./types";
 import { disbursementProvider } from "./providers/fetchProvider";
+import { SearchableDropdown } from "./components/SearchableDropdown";
 import { AddPayeeModal } from "@/modules/financial-management/payee-registration/components/modals/add-payee-modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -344,14 +345,20 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
                                     {/* Division */}
                                     <div className="space-y-2">
                                         <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">Cost Division</Label>
-                                        <select className="h-9 w-full rounded-lg border border-border/50 bg-background px-3 text-xs font-bold uppercase text-foreground shadow-sm focus:ring-1 focus:ring-primary/30 transition-all outline-none" value={divisionFilter} onChange={e => setDivisionFilter(e.target.value)}>
-                                            <option value="">All Divisions</option>
-                                            {divisions.map((d, idx) => (
-                                                <option key={`f-div-${d.divisionId|| idx}`} value={d.divisionId}>
-                                                    {d.divisionName}
-                                                </option>
-                                            ))}
-                                        </select>
+                                        <SearchableDropdown<string>
+                                            options={[
+                                                { value: "", label: "All Divisions" },
+                                                ...divisions.map((d, idx) => ({
+                                                    value: String(d.divisionId),
+                                                    label: d.divisionName || `Division-${d.divisionId || idx}`,
+                                                })),
+                                            ]}
+                                            value={divisionFilter}
+                                            onSelect={setDivisionFilter}
+                                            placeholder="All Divisions"
+                                            className="h-9 w-full rounded-lg border border-border/50 bg-background px-3 text-xs font-bold uppercase text-foreground shadow-sm focus:ring-1 focus:ring-primary/30 transition-all outline-none"
+                                            popoverWidth="w-[280px]"
+                                        />
                                     </div>
 
                                     {/* Department */}
@@ -377,6 +384,7 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
                                             <TabsTrigger value="All" className="rounded-lg text-[10px] font-black uppercase tracking-widest data-[state=active]:bg-background data-[state=active]:shadow-sm px-4">All Types</TabsTrigger>
                                             <TabsTrigger value="Trade" className="rounded-lg text-[10px] font-black uppercase tracking-widest data-[state=active]:bg-background data-[state=active]:shadow-sm px-4">Trade</TabsTrigger>
                                             <TabsTrigger value="Non-Trade" className="rounded-lg text-[10px] font-black uppercase tracking-widest data-[state=active]:bg-background data-[state=active]:shadow-sm px-4">Non-Trade</TabsTrigger>
+                                            <TabsTrigger value="WER" className="rounded-lg text-[10px] font-black uppercase tracking-widest data-[state=active]:bg-background data-[state=active]:shadow-sm px-4">WER</TabsTrigger>
                                         </TabsList>
                                     </div>
 
@@ -455,7 +463,7 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
                 onSubmit={(payload) => formMode === "edit" ? update(selectedDisbursement!.id, payload) : create(payload)}
                 onPaymentAllocationSubmit={updatePaymentAllocation}
                 editData={formMode === "edit" ? selectedDisbursement : null}
-                allowPaymentEditing={subModule === "releasing"}
+                paymentEditingMode={subModule === "releasing" ? "releasing" : "preparation"}
                 loading={actionLoading}
             />
 

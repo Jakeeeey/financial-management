@@ -7,6 +7,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { CompanyProfileHeader } from "./CompanyProfileHeader";
+import type { CompanyProfile, CompanyProfileStatus } from "../hooks/usePosting";
+
+const POSTING_BALANCE_TOLERANCE = 0.01;
 
 export interface CashBucket {
     detailId?: number;
@@ -14,6 +18,7 @@ export interface CashBucket {
     paymentMethodId?: number;
     coaId?: number;
     bankId?: number | null;
+    bankName?: string | null;
     customerCode?: string;
     invoiceId?: number;
     referenceNo?: string;
@@ -32,7 +37,33 @@ export interface PouchAllocation {
     invoiceNo?: string;
     invoiceId?: string | number;
     referenceNo?: string;
+    sourceTempId?: string;
+    grossAmount?: number;
+    originalAmount?: number;
+    remainingBalance?: number;
 }
+
+interface InvoiceReviewRow {
+    invoiceId: string;
+    invoiceNo?: string;
+    customerName: string;
+    grossAmount?: number;
+    originalAmount?: number;
+    prePouchRemainingBalance?: number;
+    appliedAmount: number;
+    remainingOpenBalance: number | null;
+    allocations: PouchAllocation[];
+}
+
+const formatMoney = (value?: number | null) => `₱${Number(value ?? 0).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+})}`;
+
+const formatOptionalMoney = (value?: number) => value == null ? "—" : formatMoney(value);
+
+const finiteNonNegative = (value?: number) =>
+    typeof value === "number" && Number.isFinite(value) ? Math.max(value, 0) : undefined;
 
 export interface TreasuryPouch {
     id: number;
@@ -55,12 +86,25 @@ interface ReviewSheetProps {
     pouch: TreasuryPouch | null;
     isPosting: boolean;
     onPost: (id: number, docNo: string, shortageAmount: number) => void;
+    error?: string | null;
+    companyProfile: CompanyProfile | null;
+    companyProfileStatus: CompanyProfileStatus;
 }
 
-export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting, onPost }: ReviewSheetProps) {
+export function ReviewSheet({
+    isOpen,
+    onOpenChange,
+    isLoading,
+    pouch,
+    isPosting,
+    onPost,
+    error,
+    companyProfile,
+    companyProfileStatus,
+}: ReviewSheetProps) {
 
     const reviewMath = useMemo(() => {
-        if (!pouch) return { physical: 0, applied: 0, variance: 0, isShortage: false, isOverage: false, groupedAllocations: {} as Record<string, PouchAllocation[]>, totalCash: 0, totalChecks: 0, nonCashBuckets: [] as CashBucket[], cashDenominations: [] as CashBucket[], totalCredits: 0, expectedPhysicalCash: 0 };
+        if (!pouch) return { physical: 0, applied: 0, variance: 0, isShortage: false, isOverage: false, invoiceRows: [] as InvoiceReviewRow[], unallocatedInvoices: [] as InvoiceReviewRow[], totalRemainingOpenBalance: 0, totalCash: 0, totalChecks: 0, nonCashBuckets: [] as CashBucket[], cashDenominations: [] as CashBucket[], totalCredits: 0, expectedPhysicalCash: 0 };
 
         let physical = 0;
         let totalCash = 0;
@@ -120,7 +164,7 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
         let totalApplied = 0;
         let expectedPhysicalCash = 0;
         let totalCredits = 0;
-        const groupedAllocations: Record<string, PouchAllocation[]> = {};
+        const invoiceRowsById = new Map<string, InvoiceReviewRow>();
 
         pouch.allocations?.forEach((a) => {
             const amt = Math.abs(a.amountApplied || 0);
@@ -138,10 +182,47 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                 expectedPhysicalCash += amt;
             }
 
-            const customer = a.customerName || "No Assigned Customer";
-            if (!groupedAllocations[customer]) groupedAllocations[customer] = [];
-            groupedAllocations[customer].push(a);
+            const invoiceKey = a.invoiceId != null
+                ? `id:${a.invoiceId}`
+                : `invoice:${a.invoiceNo || a.sourceTempId || a.referenceNo || "unknown"}`;
+            const existing = invoiceRowsById.get(invoiceKey);
+
+            if (existing) {
+                existing.appliedAmount += amt;
+                existing.allocations.push(a);
+                existing.invoiceNo = existing.invoiceNo || a.invoiceNo;
+                existing.customerName = existing.customerName || a.customerName || "No Assigned Customer";
+                existing.grossAmount ??= finiteNonNegative(a.grossAmount);
+                existing.originalAmount ??= finiteNonNegative(a.originalAmount);
+                existing.prePouchRemainingBalance ??= finiteNonNegative(a.remainingBalance);
+            } else {
+                invoiceRowsById.set(invoiceKey, {
+                    invoiceId: String(a.invoiceId ?? a.invoiceNo ?? a.sourceTempId ?? "unknown"),
+                    invoiceNo: a.invoiceNo,
+                    customerName: a.customerName || "No Assigned Customer",
+                    grossAmount: finiteNonNegative(a.grossAmount),
+                    originalAmount: finiteNonNegative(a.originalAmount),
+                    prePouchRemainingBalance: finiteNonNegative(a.remainingBalance),
+                    appliedAmount: amt,
+                    remainingOpenBalance: null,
+                    allocations: [a],
+                });
+            }
         });
+
+        const invoiceRows = Array.from(invoiceRowsById.values()).map((row) => ({
+            ...row,
+            remainingOpenBalance: row.prePouchRemainingBalance == null
+                ? null
+                : Math.max(row.prePouchRemainingBalance - row.appliedAmount, 0),
+        }));
+        const totalRemainingOpenBalance = invoiceRows.reduce(
+            (sum, row) => sum + (row.remainingOpenBalance ?? 0),
+            0
+        );
+        const unallocatedInvoices = invoiceRows.filter(
+            (row) => (row.remainingOpenBalance ?? 0) > POSTING_BALANCE_TOLERANCE
+        );
 
         const variance = expectedPhysicalCash - physical;
 
@@ -150,16 +231,21 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
             applied: totalApplied,
             expectedPhysicalCash,
             totalCredits,
+            invoiceRows,
+            unallocatedInvoices,
+            totalRemainingOpenBalance,
             variance: Math.abs(variance),
-            isShortage: variance > 0.01,
-            isOverage: variance < -0.01,
-            groupedAllocations
+            isShortage: variance > POSTING_BALANCE_TOLERANCE,
+            isOverage: variance < -POSTING_BALANCE_TOLERANCE,
         };
     }, [pouch]);
 
+    const hasAllocations = (pouch?.allocations?.length ?? 0) > 0;
+    const canPost = !isPosting && hasAllocations && reviewMath.unallocatedInvoices.length === 0;
+
     return (
         <Sheet open={isOpen} onOpenChange={onOpenChange}>
-            <SheetContent className="w-full sm:max-w-[800px] xl:max-w-[1000px] overflow-y-auto border-l-border shadow-2xl flex flex-col p-0">
+            <SheetContent className="w-full sm:max-w-[800px] xl:max-w-[1000px] overflow-hidden border-l-border shadow-2xl flex flex-col p-0">
 
                 <SheetHeader className="sr-only">
                     <SheetTitle>Treasury Pouch Review</SheetTitle>
@@ -171,9 +257,18 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                         <Loader2 size={32} className="animate-spin text-primary/50" />
                         <p className="font-black uppercase tracking-widest text-xs">Extracting Complete Pouch Audit...</p>
                     </div>
+                ) : error ? (
+                    <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center">
+                        <ShieldAlert size={36} className="text-destructive" />
+                        <p className="font-black uppercase tracking-widest text-xs text-destructive">Pouch details unavailable</p>
+                        <p className="max-w-md text-sm text-muted-foreground">{error}</p>
+                    </div>
                 ) : pouch ? (
                     <>
+                        <div className="min-h-0 flex-1 overflow-y-auto">
                         <div className="bg-card border-b p-6 shrink-0 shadow-sm z-10 space-y-6">
+                            <CompanyProfileHeader profile={companyProfile} status={companyProfileStatus} />
+
                             <div className="flex justify-between items-start">
                                 <div>
                                     <h2 className="text-3xl font-black font-mono text-primary flex items-center gap-3">
@@ -181,9 +276,6 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                                         {reviewMath.isShortage && <Badge variant="destructive" className="bg-red-600 text-xs tracking-widest px-2.5 py-1 uppercase shadow-sm"><ShieldAlert size={14} className="mr-1.5"/> AUDIT PENDING</Badge>}
                                         {!reviewMath.isShortage && !reviewMath.isOverage && <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs tracking-widest px-2.5 py-1 uppercase shadow-sm"><CheckCircle2 size={14} className="mr-1.5"/> BALANCED</Badge>}
                                     </h2>
-                                    <p className="font-bold text-xs uppercase tracking-widest mt-1 text-muted-foreground">
-                                        System Generated Treasury Review Document
-                                    </p>
                                 </div>
                                 <div className="text-right">
                                     <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest mb-1">Collection Date</p>
@@ -220,7 +312,7 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                             )}
                         </div>
 
-                        <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-muted/10">
+                        <div className="p-6 space-y-8 bg-muted/10">
 
                             <div className={`p-6 rounded-xl border-2 shadow-md flex justify-between items-center ${reviewMath.isShortage ? 'bg-red-50/80 border-red-200' : (reviewMath.isOverage ? 'bg-orange-50/80 border-orange-200' : 'bg-emerald-50/80 border-emerald-200')}`}>
                                 <div className="flex items-center gap-5">
@@ -314,6 +406,7 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                                             const isCredit = b.balanceTypeId === 1;
                                             const typeLabel = b.resolvedType || "ADJUSTMENT";
                                             const isCheck = typeLabel === "CHECK";
+                                            const bankLabel = b.bankName || (b.bankId != null ? "Unknown Bank" : null);
 
                                             return (
                                                 <div key={i} className={`flex justify-between items-center p-3.5 rounded-xl border bg-card shadow-sm transition-all hover:shadow-md ${isCredit ? 'border-red-200' : 'border-border'}`}>
@@ -325,7 +418,7 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                                                             <span className={isCredit ? "text-red-600 font-black" : ""}>Type: {typeLabel}</span>
                                                             {isCheck && (
                                                                 <>
-                                                                    {b.bankId != null && <span>• Bank ID: <span className="text-foreground">{b.bankId}</span></span>}
+                                                                    {bankLabel && <span>• Bank: <span className="text-foreground">{bankLabel}</span></span>}
                                                                     {b.referenceNo && <span>• Ref/Chk#: <span className="text-foreground">{b.referenceNo}</span></span>}
                                                                     {b.chequeDate && <span>• Date: <span className="text-foreground">{b.chequeDate.split('T')[0]}</span></span>}
                                                                 </>
@@ -351,24 +444,49 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                                         <Receipt size={16} /> 2. Settled AR Invoices
                                     </h4>
                                     <div className="space-y-3.5">
-                                        {Object.keys(reviewMath.groupedAllocations).length === 0 && (
+                                        {reviewMath.invoiceRows.length === 0 && (
                                             <p className="text-xs text-muted-foreground italic bg-card p-4 rounded-xl border border-dashed text-center font-bold">No AR invoices were settled.</p>
                                         )}
-                                        {Object.entries(reviewMath.groupedAllocations).map(([customerName, allocs]) => {
-                                            const customerTotal = allocs.reduce((sum, a) => sum + Math.abs(a.amountApplied || 0), 0);
+                                        {reviewMath.invoiceRows.map((invoice) => {
+                                            const hasRemainingBalance = invoice.remainingOpenBalance != null && invoice.remainingOpenBalance > 0.01;
                                             return (
-                                                <div key={customerName} className="border border-border rounded-xl overflow-hidden bg-card shadow-sm">
+                                                <div key={invoice.invoiceId} className="border border-border rounded-xl overflow-hidden bg-card shadow-sm">
                                                     <div className="bg-blue-50/80 dark:bg-blue-950/20 px-4 py-2.5 border-b border-border flex justify-between items-center">
-                                                        <span className="text-[10px] font-black uppercase text-foreground flex items-center gap-2">
-                                                            <User size={14} className="text-blue-600 shrink-0"/>
-                                                            <span className="truncate max-w-[200px]" title={customerName}>{customerName}</span>
-                                                        </span>
-                                                        <span className="text-xs font-black font-mono text-blue-700">
-                                                            ₱{customerTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                        <div className="min-w-0">
+                                                            <span className="text-[10px] font-black uppercase text-foreground flex items-center gap-2">
+                                                                <User size={14} className="text-blue-600 shrink-0"/>
+                                                                <span className="truncate max-w-[220px]" title={invoice.customerName}>{invoice.customerName}</span>
+                                                            </span>
+                                                            <p className="mt-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                                                                Invoice {invoice.invoiceNo || invoice.invoiceId}
+                                                            </p>
+                                                        </div>
+                                                        <span className="shrink-0 text-xs font-black font-mono text-blue-700">
+                                                            {formatMoney(invoice.appliedAmount)}
                                                         </span>
                                                     </div>
+                                                    <div className="grid grid-cols-2 gap-x-4 gap-y-2 border-b border-border/60 bg-muted/10 px-4 py-3">
+                                                        <div>
+                                                            <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Gross Invoice Total</p>
+                                                            <p className="mt-1 font-mono text-sm font-black text-foreground">{formatOptionalMoney(invoice.grossAmount)}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Net Receivable</p>
+                                                            <p className="mt-1 font-mono text-sm font-black text-foreground">{formatOptionalMoney(invoice.originalAmount)}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Applied This Pouch</p>
+                                                            <p className="mt-1 font-mono text-sm font-black text-primary">{formatMoney(invoice.appliedAmount)}</p>
+                                                        </div>
+                                                        <div className={hasRemainingBalance ? "rounded-md bg-red-50 px-2 py-1 dark:bg-red-950/30" : ""}>
+                                                            <p className={`text-[9px] font-black uppercase tracking-widest ${hasRemainingBalance ? "text-red-700 dark:text-red-300" : "text-muted-foreground"}`}>Remaining Open Balance</p>
+                                                            <p className={`mt-1 font-mono text-sm font-black ${hasRemainingBalance ? "text-red-600" : "text-emerald-600"}`}>
+                                                                {formatOptionalMoney(invoice.remainingOpenBalance ?? undefined)}
+                                                            </p>
+                                                        </div>
+                                                    </div>
                                                     <div className="p-2 space-y-1 bg-muted/5">
-                                                        {allocs.map((a, i) => {
+                                                        {invoice.allocations.map((a, i) => {
                                                             const typeStr = (a.allocationType || "PAYMENT").toUpperCase();
                                                             let badgeColor = "bg-blue-100 text-blue-700 border-blue-200";
                                                             let TypeIcon = Banknote;
@@ -391,11 +509,8 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                                                             }
 
                                                             return (
-                                                                <div key={i} className="flex justify-between items-center px-3 py-2 hover:bg-muted/50 rounded-lg transition-colors border border-transparent hover:border-border">
+                                                                <div key={a.sourceTempId || a.referenceNo || i} className="flex justify-between items-center px-3 py-2 hover:bg-muted/50 rounded-lg transition-colors border border-transparent hover:border-border">
                                                                     <div className="flex flex-col gap-1.5 items-start">
-                                                                        <span className="text-[10px] font-black uppercase text-foreground tracking-wider leading-none">
-                                                                            Invoice {a.invoiceNo || a.invoiceId}
-                                                                        </span>
                                                                         <div className="flex items-center gap-2">
                                                                             <Badge variant="outline" className={`h-4 px-1.5 text-[8px] font-black tracking-widest uppercase rounded-sm ${badgeColor}`}>
                                                                                 <TypeIcon size={8} className="mr-1" /> {typeLabel}
@@ -408,7 +523,7 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                                                                         </div>
                                                                     </div>
                                                                     <span className="font-mono font-black text-sm text-foreground/80">
-                                                                        ₱{Math.abs(a.amountApplied || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                                        {formatMoney(Math.abs(a.amountApplied || 0))}
                                                                     </span>
                                                                 </div>
                                                             );
@@ -422,8 +537,12 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                                     {/* 🚀 THE EXPLICIT MATH BREAKDOWN FOR THE AUDITOR */}
                                     <div className="flex flex-col px-3 pt-3 border-t-2 border-border gap-1.5">
                                         <div className="flex justify-between items-center text-[10px] font-black uppercase text-muted-foreground">
-                                            <span>Gross AR Invoices Settled:</span>
-                                            <span className="font-mono">₱{reviewMath.applied.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                            <span>Total Allocated This Pouch:</span>
+                                            <span className="font-mono">{formatMoney(reviewMath.applied)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-[10px] font-black uppercase text-red-600">
+                                            <span>Total Remaining Open Balance:</span>
+                                            <span className="font-mono">{formatMoney(reviewMath.totalRemainingOpenBalance)}</span>
                                         </div>
                                         {reviewMath.totalCredits > 0 && (
                                             <div className="flex justify-between items-center text-[10px] font-black uppercase text-amber-600">
@@ -440,12 +559,38 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                                 </div>
                             </div>
                         </div>
+                        </div>
 
-                        <div className="bg-card border-t p-6 shrink-0 shadow-[0_-10px_40px_rgba(0,0,0,0.08)] z-10 flex gap-3">
+                        <div className="bg-card border-t p-6 shrink-0 shadow-[0_-10px_40px_rgba(0,0,0,0.08)] z-10 flex flex-col gap-3">
+                            {reviewMath.unallocatedInvoices.length > 0 && (
+                                <div
+                                    role="alert"
+                                    className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200"
+                                >
+                                    <Info size={18} className="mt-0.5 shrink-0" />
+                                    <div className="min-w-0 flex-1 text-xs font-semibold">
+                                        <p className="font-black uppercase tracking-widest">Commit &amp; Post is blocked</p>
+                                        <p className="mt-1 text-[11px] font-bold">
+                                            {reviewMath.unallocatedInvoices.length} invoice{reviewMath.unallocatedInvoices.length === 1 ? "" : "s"} remain{reviewMath.unallocatedInvoices.length === 1 ? "s" : ""} unallocated.
+                                        </p>
+                                        <div
+                                            tabIndex={0}
+                                            aria-label="Commit and Post blocking reasons"
+                                            className="mt-2 max-h-[min(30vh,12rem)] space-y-1.5 overflow-y-auto pr-2 scrollbar-thin"
+                                        >
+                                            {reviewMath.unallocatedInvoices.map((invoice) => (
+                                                <p key={invoice.invoiceId} className="break-words">
+                                                    Cannot commit settlement for {invoice.invoiceNo || invoice.invoiceId}: {formatMoney(invoice.remainingOpenBalance)} remains unallocated. Apply the remaining balance, remove the invoice, or link a variance/Form 2307 allocation.
+                                                </p>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                             <Button
                                 onClick={() => onPost(pouch.id, pouch.docNo || "", reviewMath.isShortage ? reviewMath.variance : 0)}
-                                disabled={isPosting || pouch.allocations?.length === 0}
-                                className={`flex-1 h-14 font-black uppercase tracking-widest text-sm shadow-xl transition-all active:scale-[0.99] ${reviewMath.isShortage ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-primary'}`}
+                                disabled={!canPost}
+                                className={`w-full h-14 font-black uppercase tracking-widest text-sm shadow-xl transition-all active:scale-[0.99] ${reviewMath.isShortage ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-primary'}`}
                             >
                                 {isPosting ? <Loader2 size={20} className="animate-spin mr-2" /> : <Lock size={20} className="mr-2" />}
                                 Commit & Post to General Ledger

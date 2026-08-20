@@ -189,6 +189,7 @@ export async function GET(req: NextRequest) {
                 "id",
                 "doc_no",
                 "transaction_date",
+                "date_created",
                 "status",
                 "payee.id",
                 "payee.supplier_name",
@@ -207,7 +208,8 @@ export async function GET(req: NextRequest) {
                 "payments.check_no",
                 "payments.bank_id",
                 "supporting_documents_url"
-            ].join(",")
+            ].join(","),
+            sort: "-date_created,-id"
         });
 
         if (filterAnd.length > 0) {
@@ -223,6 +225,16 @@ export async function GET(req: NextRequest) {
 
         if (!directusRes.ok) throw new Error(await directusRes.text());
         const disbursements = ((await directusRes.json()).data || []) as DashboardDisbursement[];
+
+        // Keep the register order deterministic even if the Directus adapter does not honor sort.
+        disbursements.sort((a, b) => {
+            const createdA = a.date_created ? Date.parse(a.date_created) : Number.NEGATIVE_INFINITY;
+            const createdB = b.date_created ? Date.parse(b.date_created) : Number.NEGATIVE_INFINITY;
+            const createdDiff = (Number.isNaN(createdB) ? Number.NEGATIVE_INFINITY : createdB)
+                - (Number.isNaN(createdA) ? Number.NEGATIVE_INFINITY : createdA);
+
+            return createdDiff || Number(b.id) - Number(a.id);
+        });
 
         // Extract voucher IDs
         const ids = disbursements.map(d => d.id).filter(Boolean);

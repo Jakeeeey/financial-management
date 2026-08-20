@@ -1,23 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
-// Interface for raw API response from Spring Boot
-interface CollectionRawResponse {
-    id: number;
-    docNo?: string;
-    collectionDate: string;
-    salesman?: {
-        salesmanCode: string;
-        salesmanName: string;
-    };
-    totalAmount?: number;
-}
-
 export const runtime = "nodejs";
 
 const getSpringBaseUrl = () => {
     const url = process.env.SPRING_API_BASE_URL;
     return (url || "http://localhost:8080").replace(/\/$/, "");
+};
+
+const getSpringErrorMessage = (errorText: string, fallback: string) => {
+    try {
+        const parsed = JSON.parse(errorText) as { detail?: string; message?: string; error?: string };
+        return parsed.detail || parsed.message || parsed.error || fallback;
+    } catch {
+        return errorText || fallback;
+    }
 };
 
 export async function GET() {
@@ -26,44 +23,11 @@ export async function GET() {
 
     if (!token) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
 
-    // 🚀 Points to your Spring Boot CollectionController
-    const targetUrl = `${getSpringBaseUrl()}/api/v1/collections/unposted`;
-
-    try {
-        const springRes = await fetch(targetUrl, {
-            method: "GET",
-            headers: {
-                "Authorization": `Bearer ${token}`,
-                "Content-Type": "application/json"
-            },
-            cache: "no-store",
-        });
-
-        if (!springRes.ok) {
-            const errorText = await springRes.text();
-            throw new Error(errorText || `Spring GET Error: ${springRes.status}`);
-        }
-
-        const data = await springRes.json();
-
-        // 🚀 FIXED: Correctly closed the map function and mapped to CollectionSummary interface
-        const mappedData = data.map((col: CollectionRawResponse) => ({
-            id: col.id,
-            docNo: col.docNo, // Fallback just in case
-            date: col.collectionDate,
-            salesmanCode: col.salesman?.salesmanCode || "N/A",
-            salesmanName: col.salesman?.salesmanName || "Unknown",
-            amount: col.totalAmount || 0,
-            status: "Draft" // Unposted collections are Drafts
-        }));
-
-        return NextResponse.json(mappedData);
-    } catch (err: unknown) {
-        return NextResponse.json({
-            message: "BFF Error",
-            detail: (err instanceof Error ? err.message : String(err))
-        }, { status: 502 });
-    }
+    return NextResponse.json({
+        error: "UNPOSTED_COLLECTIONS_DEPRECATED",
+        message: "Use /api/fm/treasury/collections/unposted instead.",
+        replacement: "/api/fm/treasury/collections/unposted",
+    }, { status: 410 });
 }
 
 export async function POST(request: NextRequest) {
@@ -89,7 +53,9 @@ export async function POST(request: NextRequest) {
         if (!springRes.ok) {
             const errorText = await springRes.text();
             console.error(`[Spring Boot POST Error] Status: ${springRes.status}, Body:`, errorText);
-            throw new Error(errorText || `Spring Boot rejected with status: ${springRes.status}`);
+            return NextResponse.json({
+                message: getSpringErrorMessage(errorText, `Spring Boot rejected with status: ${springRes.status}`)
+            }, { status: springRes.status });
         }
 
         // Backend returns raw string DocNo (e.g., "CP-000001")

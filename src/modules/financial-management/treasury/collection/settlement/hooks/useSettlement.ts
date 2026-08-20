@@ -1,55 +1,28 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { UnpaidInvoice, SettlementAllocation, PaymentHistory, UserDto } from "../../types";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { UnpaidInvoice, SettlementAllocation, UserDto } from "../../types";
 import { fetchProvider } from "../../providers/fetchProvider";
+import { fetchCompanyProfile } from "../../company-profile";
+import type { CompanyProfile } from "../../company-profile";
 import { toast } from "sonner";
+import {
+    mapRawPouchToSettlementPrintableData,
+} from "../utils/settlement-printable-data";
+import type { RawTreasuryPouch, SettlementPrintableWalletItem } from "../utils/settlement-printable-data";
+import {
+    capSettlementAllocation,
+    findOverAllocatedInvoice,
+    findUnderAllocatedInvoice,
+    getCartBalanceTotals,
+    getInvoiceAllocationCapacity,
+    getInvoiceAppliedForSettlement,
+    getInvoiceRequiredBalance,
+    getSourceAllocationCapacity,
+    SETTLEMENT_BALANCE_TOLERANCE,
+} from "../utils/settlement-balance";
 
-export interface RawCashBucket {
-    detailId?: number;
-    findingId?: number;
-    amount?: number;
-    paymentMethodId?: number;
-    coaId?: number;
-    balanceTypeId?: number;
-    referenceNo?: string;
-    bankName?: string;
-    checkNo?: string;
-    checkDate?: string;
-    tempId?: string;
-    customerCode?: string;
-    customerName? : string;
-    invoiceId?: number;
-}
-
-export interface RawAllocation {
-    amountApplied?: number;
-    allocationType?: string;
-    customerName?: string;
-    invoiceNo?: string;
-    invoiceId?: number;
-    sourceTempId?: string;
-    originalAmount?: number;
-    remainingBalance?: number;
-    totalPayments?: number;
-    totalMemos?: number;
-    totalReturns?: number;
-    transactionDate?: string;
-    dueDate?: string;
-    agingDays?: number;
-    history?: PaymentHistory[];
-}
-
-export interface RawTreasuryPouch {
-    docNo?: string;
-    isPosted?: boolean;
-    collectedBy?: number;
-    crNo?: string;
-    collectionDate?: string;
-    salesmanId?: number;
-    cashBuckets?: RawCashBucket[];
-    allocations?: RawAllocation[];
-}
+export type { RawAllocation, RawCashBucket, RawTreasuryPouch } from "../utils/settlement-printable-data";
 
 export interface RawSalesman {
     id: number;
@@ -61,20 +34,47 @@ export interface RawMemoOrReturn {
     amount?: number;
     appliedAmount?: number;
     memoNumber?: string;
+    customerCode?: string;
     customerName?: string;
     isApplied?: boolean;
     totalAmount?: number;
+    availableAmount?: number;
     returnNumber?: string;
 }
 
-export interface WalletItem {
-    id: string;
-    type: "CASH" | "CHECK" | "MEMO" | "RETURN" | "ADJUSTMENT" | "EWT";
-    label: string;
-    originalAmount: number;
+interface PaginatedRawReturnResponse {
+    content?: RawMemoOrReturn[];
+    totalPages?: number;
+    currentPage?: number;
+    hasMore?: boolean;
+}
+
+const getAvailableReturnAmount = (salesReturn: RawMemoOrReturn) => {
+    if (salesReturn.availableAmount !== undefined) {
+        return Math.max(0, Number(salesReturn.availableAmount) || 0);
+    }
+    return salesReturn.isApplied
+        ? 0
+        : Math.max(0, Number(salesReturn.totalAmount) || 0);
+};
+
+const normalizeCustomerValue = (value?: string) => value?.trim().toUpperCase() || "";
+
+const isSameCustomer = (
+    source: { customerCode?: string; customerName?: string },
+    target: { customerCode?: string; customerName?: string },
+) => {
+    const targetCode = normalizeCustomerValue(target.customerCode);
+    if (targetCode) return normalizeCustomerValue(source.customerCode) === targetCode;
+
+    const targetName = normalizeCustomerValue(target.customerName);
+    return Boolean(targetName) && normalizeCustomerValue(source.customerName) === targetName;
+};
+
+export interface WalletItem extends SettlementPrintableWalletItem {
     dbId?: number;
     findingId?: number;
-    customerName?: string;
+    customerCode?: string;
     balanceTypeId?: number;
     isLocal?: boolean;
     invoiceId?: number;
@@ -101,12 +101,13 @@ export interface PendingEditPayload {
     remarks?: string;
 }
 
-export function useSettlement(pouchId: string | number) {
+export function useSettlement(pouchId: string | number, activeInvoiceId: number | null) {
     const [isLoading, setIsLoading] = useState(true);
     const [wallet, setWallet] = useState<WalletItem[]>([]);
     const [credits, setCredits] = useState<WalletItem[]>([]);
     const [salesmanName, setSalesmanName] = useState("Loading...");
     const [salesmanId, setSalesmanId] = useState<number | null>(null);
+    const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
 
     const [collectedBy, setCollectedBy] = useState<number | null>(null);
     const [collectedByName, setCollectedByName] = useState<string>("Encoder/System");
@@ -124,6 +125,13 @@ export function useSettlement(pouchId: string | number) {
     const [isLoadingPlans, setIsLoadingPlans] = useState(false);
     const [dispatchDate, setDispatchDate] = useState<string>(new Date().toISOString().split('T')[0]);
     const [isLoadingCredits, setIsLoadingCredits] = useState(false);
+    const [creditsError, setCreditsError] = useState<string | null>(null);
+    const [creditsPage, setCreditsPage] = useState(0);
+    const [hasMoreCredits, setHasMoreCredits] = useState(false);
+    const creditRequestController = useRef<AbortController | null>(null);
+    const creditRequestVersion = useRef(0);
+    const [isClearing, setIsClearing] = useState(false);
+    const [hasPendingCartClear, setHasPendingCartClear] = useState(false);
     const [pendingDeletions, setPendingDeletions] = useState<{ id: string; dbId: number; type: "EWT" | "ADJUSTMENT" }[]>([]);
     const [pendingEdits, setPendingEdits] = useState<Record<string, { type: "EWT" | "ADJUSTMENT"; dbId: number; payload: PendingEditPayload }>>({});
 
@@ -137,13 +145,16 @@ export function useSettlement(pouchId: string | number) {
             setCartInvoices([]);
             setWallet([]);
             setCredits([]);
+            setCreditsPage(0);
+            setHasMoreCredits(false);
 
             // 🚀 Strictly typing the users array
-            const [pouch, salesmen, fetchedFindings, fetchedUsers] = await Promise.all([
+            const [pouch, salesmen, fetchedFindings, fetchedUsers, profileResult] = await Promise.all([
                 fetchProvider.get<RawTreasuryPouch>(`/api/fm/treasury/collections/${pouchId}`),
                 fetchProvider.get<RawSalesman[]>("/api/fm/treasury/salesmen"),
                 fetchProvider.get<GeneralFinding[]>("/api/fm/treasury/collections/findings").catch(() => []),
-                fetchProvider.get<UserDto[]>("/api/fm/treasury/users").catch(() => [])
+                fetchProvider.get<UserDto[]>("/api/fm/treasury/users").catch(() => []),
+                fetchCompanyProfile().catch(() => ({ profile: null, status: "error" as const })),
             ]);
 
             if (!pouch) return;
@@ -162,6 +173,7 @@ export function useSettlement(pouchId: string | number) {
             const currentSalesmanId = pouch.salesmanId || null;
             setSalesmanId(currentSalesmanId);
             setSalesmanName(salesmen?.find(s => s.id === currentSalesmanId)?.salesmanName || `Owner ID: ${currentSalesmanId}`);
+            setCompanyProfile(profileResult.profile);
             setFindings(fetchedFindings || []);
 
             // 🚀 Strictly typing the user iteration
@@ -170,70 +182,15 @@ export function useSettlement(pouchId: string | number) {
                 if (u) setCollectedByName(`${u.firstName || ''} ${u.lastName || ''}`.trim());
             }
 
-            let totalCash = 0;
-            const newWallet: WalletItem[] = [];
-
-            pouch.cashBuckets?.forEach((b: RawCashBucket, idx: number) => {
-                const safeAmount = Math.abs(b.amount || 0);
-                const tempIdStr = String(b.tempId || "").toLowerCase();
-                const refNo = String(b.referenceNo || "").toLowerCase();
-
-                let wType: WalletItem["type"] = "ADJUSTMENT";
-                const isCash = Number(b.coaId) === 1 || Number(b.paymentMethodId) === 1 || tempIdStr.startsWith("cash") || refNo.includes(" x ") || refNo === "cash_summary" || refNo === "physical cash";
-
-                if (isCash) wType = "CASH";
-                else if (tempIdStr.startsWith("chk") || b.paymentMethodId === 2) wType = "CHECK";
-                else if (tempIdStr.startsWith("ewt") || b.paymentMethodId === 10 || b.coaId === 11) wType = "EWT";
-                else if (b.paymentMethodId == null && b.coaId != null) wType = "ADJUSTMENT";
-                else wType = "CHECK";
-
-                let uniqueId = b.tempId || `${wType.toLowerCase()}-fallback-${idx}`;
-                if (newWallet.some(w => w.id === uniqueId)) {
-                    uniqueId = `${uniqueId}-dup-${idx}`;
-                }
-
-                if (wType === "CASH") {
-                    totalCash += safeAmount;
-                } else if (wType === "EWT") {
-                    newWallet.push({
-                        id: uniqueId, type: "EWT", label: b.referenceNo ? `Form 2307: ${b.referenceNo}` : 'Form 2307',
-                        originalAmount: safeAmount, customerName: b.customerName || b.referenceNo, balanceTypeId: 2, dbId: b.detailId, invoiceId: b.invoiceId
-                    });
-                } else if (wType === "ADJUSTMENT") {
-                    newWallet.push({
-                        id: uniqueId, type: "ADJUSTMENT", label: b.referenceNo || 'Adjustment', originalAmount: safeAmount,
-                        customerName: b.customerName, balanceTypeId: b.balanceTypeId || 1, dbId: b.detailId, findingId: b.findingId, invoiceId: b.invoiceId
-                    });
-                } else {
-                    newWallet.push({
-                        id: uniqueId, type: "CHECK", label: b.referenceNo ? `Check/Remittance: ${b.referenceNo}` : 'No Ref',
-                        originalAmount: safeAmount, balanceTypeId: 2, customerName: b.customerName || b.customerCode, invoiceId: b.invoiceId, dbId: b.detailId
-                    });
-                }
-            });
-
-            if (totalCash > 0) newWallet.unshift({
-                id: "CASH_SUMMARY", type: "CASH", label: "Physical Cash Pool", originalAmount: totalCash, balanceTypeId: 2
-            });
-
+            const { wallet: newWallet, allocations: existingAllocations } = mapRawPouchToSettlementPrintableData(pouch);
             setWallet(newWallet);
 
-            if (pouch.allocations && pouch.allocations.length > 0) {
-                const existingAllocations: SettlementAllocation[] = [];
+            if (existingAllocations.length > 0) {
                 const existingCartMap: Map<number, UnpaidInvoice> = new Map();
 
-                pouch.allocations.forEach((alloc: RawAllocation) => {
-                    const mappedAlloc: SettlementAllocation = {
-                        invoiceId: alloc.invoiceId || 0, invoiceNo: alloc.invoiceNo || "", customerName: alloc.customerName || "",
-                        amountApplied: Math.abs(alloc.amountApplied || 0), allocationType: alloc.allocationType || "CASH",
-                        sourceTempId: alloc.sourceTempId || "CASH_SUMMARY", originalAmount: alloc.originalAmount || 0,
-                        remainingBalance: alloc.remainingBalance || 0, totalPayments: alloc.totalPayments || 0, totalMemos: alloc.totalMemos || 0,
-                        totalReturns: alloc.totalReturns || 0, transactionDate: alloc.transactionDate || "", dueDate: alloc.dueDate || "",
-                        agingDays: alloc.agingDays || 0, history: alloc.history || []
-                    };
-                    existingAllocations.push(mappedAlloc);
-                    if (alloc.invoiceId && !existingCartMap.has(alloc.invoiceId)) existingCartMap.set(alloc.invoiceId, {
-                        ...mappedAlloc, originalAmount: alloc.originalAmount || 0, id: alloc.invoiceId
+                existingAllocations.forEach((mappedAlloc) => {
+                    if (mappedAlloc.invoiceId && !existingCartMap.has(mappedAlloc.invoiceId)) existingCartMap.set(mappedAlloc.invoiceId, {
+                        ...mappedAlloc, id: mappedAlloc.invoiceId
                     } as unknown as UnpaidInvoice);
                 });
 
@@ -266,44 +223,126 @@ export function useSettlement(pouchId: string | number) {
         fetchData();
     }, [fetchData]);
 
-    useEffect(() => {
-        const fetchCreditsByCustomers = async () => {
-            const uniqueCustomers = Array.from(new Set(cartInvoices.map(inv => inv.customerName).filter(Boolean)));
-            if (uniqueCustomers.length === 0) return;
+    const activeInvoice = useMemo(
+        () => cartInvoices.find(invoice => invoice.id === activeInvoiceId) || null,
+        [activeInvoiceId, cartInvoices]
+    );
 
-            setIsLoadingCredits(true);
-            try {
-                const namesQuery = encodeURIComponent(uniqueCustomers.join(','));
-                const [memos, returns] = await Promise.all([
-                    fetchProvider.get<RawMemoOrReturn[]>(`/api/fm/treasury/memos/available?customerNames=${namesQuery}`),
-                    fetchProvider.get<RawMemoOrReturn[]>(`/api/fm/treasury/returns/available?customerNames=${namesQuery}`)
-                ]);
+    const creditCustomerCodes = useMemo(
+        () => activeInvoice?.customerCode ? [activeInvoice.customerCode.trim().toUpperCase()] : [],
+        [activeInvoice]
+    );
 
-                setCredits(prev => {
-                    const newCredits = [...prev];
-                    memos?.forEach(m => {
-                        const remainingMemoAmount = (m.amount || 0) - (m.appliedAmount || 0);
-                        const id = `memo-${m.id}`;
-                        if (remainingMemoAmount > 0 && !newCredits.some(c => c.id === id)) {
-                            newCredits.push({ id, dbId: m.id, type: "MEMO", label: `Memo: ${m.memoNumber}`, originalAmount: remainingMemoAmount, customerName: m.customerName });
-                        }
-                    });
-                    returns?.forEach(r => {
-                        const id = `return-${r.id}`;
-                        if (!r.isApplied && !newCredits.some(c => c.id === id)) {
-                            newCredits.push({ id, dbId: r.id, type: "RETURN", label: `Return: ${r.returnNumber}`, originalAmount: r.totalAmount || 0, customerName: r.customerName });
-                        }
-                    });
-                    return newCredits;
-                });
-            } catch (err) {
-                console.error("Failed to fetch credits dynamically for linked customers", err);
-            } finally {
-                setIsLoadingCredits(false);
+    const creditCustomerNames = useMemo(
+        () => !activeInvoice?.customerCode && activeInvoice?.customerName ? [activeInvoice.customerName] : [],
+        [activeInvoice]
+    );
+
+    const loadCreditsPage = useCallback(async (page: number, append: boolean) => {
+        creditRequestController.current?.abort();
+        const controller = new AbortController();
+        creditRequestController.current = controller;
+        const version = ++creditRequestVersion.current;
+
+        setIsLoadingCredits(true);
+        setCreditsError(null);
+        try {
+            const customerFilter = new URLSearchParams();
+            if (creditCustomerCodes.length > 0) customerFilter.set("customerCodes", creditCustomerCodes.join("|"));
+            if (creditCustomerNames.length > 0) customerFilter.set("customerNames", creditCustomerNames.join("|"));
+            const customerQuery = customerFilter.toString();
+            const [memosResult, returnsResult] = await Promise.allSettled([
+                page === 1
+                    ? fetchProvider.getOrThrow<RawMemoOrReturn[]>(
+                        `/api/fm/treasury/memos/available?${customerQuery}`,
+                        {signal: controller.signal},
+                    )
+                    : Promise.resolve<RawMemoOrReturn[] | null>([]),
+                fetchProvider.getOrThrow<PaginatedRawReturnResponse>(
+                    `/api/fm/treasury/returns/available?${customerQuery}&currentPouchId=${encodeURIComponent(String(pouchId))}&page=${page}&size=25`,
+                    {signal: controller.signal},
+                ),
+            ]);
+
+            if (controller.signal.aborted || creditRequestVersion.current !== version) return;
+
+            const memos = memosResult.status === "fulfilled" ? memosResult.value : null;
+            const returnsResponse = returnsResult.status === "fulfilled" ? returnsResult.value : null;
+            const failedSources = [
+                memosResult.status === "rejected" && page === 1 ? "memos" : null,
+                returnsResult.status === "rejected" ? "returns" : null,
+            ].filter(Boolean);
+            if (failedSources.length > 0) {
+                setCreditsError(`Available ${failedSources.join(" and ")} could not be loaded. Please retry.`);
             }
-        };
-        fetchCreditsByCustomers();
-    }, [cartInvoices]);
+
+            const returnsPage = (returnsResponse || {}) as PaginatedRawReturnResponse;
+            const returnItems = returnsPage.content || [];
+            setCredits(prev => {
+                const newCredits = append ? [...prev] : [];
+                memos?.forEach(m => {
+                    const remainingMemoAmount = (m.amount || 0) - (m.appliedAmount || 0);
+                    const id = `memo-${m.id}`;
+                    if (remainingMemoAmount > 0 && !newCredits.some(c => c.id === id)) {
+                        newCredits.push({id, dbId: m.id, type: "MEMO", label: `Memo: ${m.memoNumber}`, originalAmount: remainingMemoAmount, customerCode: m.customerCode, customerName: m.customerName});
+                    }
+                });
+                returnItems.forEach(r => {
+                    const id = `return-${r.id}`;
+                    const availableReturnAmount = getAvailableReturnAmount(r);
+                    if (availableReturnAmount > SETTLEMENT_BALANCE_TOLERANCE && !newCredits.some(c => c.id === id)) {
+                        newCredits.push({id, dbId: r.id, type: "RETURN", label: `Return: ${r.returnNumber}`, originalAmount: availableReturnAmount, customerCode: r.customerCode, customerName: r.customerName});
+                    }
+                });
+                return newCredits;
+            });
+            if (returnsResult.status === "fulfilled") {
+                const currentPage = returnsPage.currentPage || page;
+                setCreditsPage(currentPage);
+                setHasMoreCredits(returnsPage.hasMore ?? (currentPage < (returnsPage.totalPages || 0)));
+            } else if (!append) {
+                setCreditsPage(0);
+                setHasMoreCredits(false);
+            }
+        } catch (error) {
+            if (!controller.signal.aborted && creditRequestVersion.current === version) {
+                console.error("Failed to fetch credits dynamically for linked customers", error);
+                setCreditsError("Available credits could not be loaded. Please retry.");
+                if (!append) setHasMoreCredits(false);
+            }
+        } finally {
+            if (creditRequestVersion.current === version) setIsLoadingCredits(false);
+        }
+    }, [creditCustomerCodes, creditCustomerNames, pouchId]);
+
+    useEffect(() => {
+        creditRequestController.current?.abort();
+        ++creditRequestVersion.current;
+
+        if (creditCustomerCodes.length === 0 && creditCustomerNames.length === 0) {
+            setCredits([]);
+            setCreditsPage(0);
+            setHasMoreCredits(false);
+            setCreditsError(null);
+            setIsLoadingCredits(false);
+            return;
+        }
+
+        setCredits([]);
+        setCreditsPage(0);
+        setHasMoreCredits(false);
+        void loadCreditsPage(1, false);
+        return () => creditRequestController.current?.abort();
+    }, [creditCustomerCodes, creditCustomerNames, loadCreditsPage]);
+
+    const loadMoreCredits = useCallback(() => {
+        if (!hasMoreCredits || isLoadingCredits || creditsPage === 0) return;
+        void loadCreditsPage(creditsPage + 1, true);
+    }, [creditsPage, hasMoreCredits, isLoadingCredits, loadCreditsPage]);
+
+    const retryCredits = useCallback(() => {
+        void loadCreditsPage(1, false);
+    }, [loadCreditsPage]);
 
     useEffect(() => {
         if (!salesmanId || !dispatchDate) return;
@@ -316,13 +355,18 @@ export function useSettlement(pouchId: string | number) {
 
     const fetchAndInjectExternalCredit = async (documentNo: string, type: "MEMO" | "RETURN") => {
         try {
+            if (!activeInvoice) return false;
+
             const safeDocNo = encodeURIComponent(documentNo.trim());
+            const customerQuery = activeInvoice.customerCode
+                ? `&customerCode=${encodeURIComponent(activeInvoice.customerCode)}`
+                : "";
             const endpoint = type === "MEMO"
-                ? `/api/fm/treasury/memos/search?documentNo=${safeDocNo}`
-                : `/api/fm/treasury/returns/search?documentNo=${safeDocNo}`;
+                ? `/api/fm/treasury/memos/search?documentNo=${safeDocNo}${customerQuery}`
+                : `/api/fm/treasury/returns/search?documentNo=${safeDocNo}&currentPouchId=${encodeURIComponent(String(pouchId))}${customerQuery}`;
 
             const data = await fetchProvider.get<RawMemoOrReturn>(endpoint);
-            if (!data) return false;
+            if (!data || !isSameCustomer(data, activeInvoice)) return false;
 
             setCredits(prev => {
                 const newCredits = [...prev];
@@ -332,11 +376,12 @@ export function useSettlement(pouchId: string | number) {
                     if (type === "MEMO") {
                         const remaining = (data.amount || 0) - (data.appliedAmount || 0);
                         if (remaining > 0) {
-                            newCredits.unshift({ id, dbId: data.id, type: "MEMO", label: `Memo: ${data.memoNumber}`, originalAmount: remaining, customerName: data.customerName });
+                        newCredits.unshift({ id, dbId: data.id, type: "MEMO", label: `Memo: ${data.memoNumber}`, originalAmount: remaining, customerCode: data.customerCode, customerName: data.customerName });
                         }
                     } else {
-                        if (!data.isApplied) {
-                            newCredits.unshift({ id, dbId: data.id, type: "RETURN", label: `Return: ${data.returnNumber}`, originalAmount: data.totalAmount || 0, customerName: data.customerName });
+                        const availableReturnAmount = getAvailableReturnAmount(data);
+                        if (availableReturnAmount > SETTLEMENT_BALANCE_TOLERANCE) {
+                            newCredits.unshift({ id, dbId: data.id, type: "RETURN", label: `Return: ${data.returnNumber}`, originalAmount: availableReturnAmount, customerCode: data.customerCode, customerName: data.customerName });
                         }
                     }
                 }
@@ -443,27 +488,33 @@ export function useSettlement(pouchId: string | number) {
         setAllocations(prev => prev.filter(a => a.invoiceId !== invoiceId));
     };
 
-    const clearCart = async () => {
-        if (confirm("Are you sure you want to clear all invoices and allocations from this session? Any linked Variances or EWTs will be destroyed.")) {
-            const currentInvoiceIds = cartInvoices.map(inv => inv.id);
-            const linkedItems = wallet.filter(w =>
-                w.invoiceId !== undefined &&
-                currentInvoiceIds.includes(w.invoiceId) &&
-                (w.type === "EWT" || w.type === "ADJUSTMENT")
-            );
+    const clearCart = async (): Promise<boolean> => {
+        if (!confirm("Are you sure you want to clear all invoices and allocations from this session? Any linked Variances or EWTs will be destroyed.")) {
+            return false;
+        }
 
-            for (const item of linkedItems) {
-                await deleteWalletItem(item.id, item.type, true);
-            }
-            setCartInvoices([]);
-            setAllocations([]);
+        setIsClearing(true);
+        try {
+            await fetchProvider.post(`/api/fm/treasury/collections/${pouchId}/allocate/clear`, {});
+            setPendingEdits({});
+            setPendingDeletions([]);
+            await fetchData();
+            setHasPendingCartClear(true);
+            toast.success("Cart cleared and staged allocations rolled back.");
+            return true;
+        } catch (err) {
+            toast.error("Failed to clear staged settlement allocations.");
+            console.error("Failed to clear settlement cart:", err);
+            return false;
+        } finally {
+            setIsClearing(false);
         }
     };
 
     const loadDispatchPlanInvoices = async (planId: number) => {
         setIsLoadingRoute(true);
         try {
-            const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/dispatch-plan-invoices?planId=${planId}`);
+            const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/dispatch-plan-invoices?planId=${planId}&currentPouchId=${encodeURIComponent(String(pouchId))}`);
             if (!data || data.length === 0) {
                 toast.info("No additional pending invoices found for this specific Dispatch Plan.");
                 return;
@@ -497,7 +548,7 @@ export function useSettlement(pouchId: string | number) {
         if (!salesmanId || !collectionDate) return toast.error("Cannot load route: Missing Salesman ID or Date.");
         setIsLoadingRoute(true);
         try {
-            const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/route-invoices?salesmanId=${salesmanId}&date=${collectionDate}`);
+            const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/route-invoices?salesmanId=${encodeURIComponent(String(salesmanId))}&date=${encodeURIComponent(collectionDate)}&currentPouchId=${encodeURIComponent(String(pouchId))}`);
             if (!data || data.length === 0) {
                 toast.info("No additional pending invoices found for this route on or before " + collectionDate);
                 return;
@@ -527,7 +578,7 @@ export function useSettlement(pouchId: string | number) {
     };
 
     const getUsedAmount = (sourceId: string) => Math.round(allocations.filter(a => a.sourceTempId === sourceId).reduce((sum, a) => sum + a.amountApplied, 0) * 100) / 100;
-    const getInvoiceApplied = (invoiceId: number) => Math.round(allocations.filter(a => a.invoiceId === invoiceId).reduce((sum, a) => sum + a.amountApplied, 0) * 100) / 100;
+    const getInvoiceApplied = (invoiceId: number) => getInvoiceAppliedForSettlement(allocations, invoiceId);
 
     const handleAllocate = (invoiceId: number, sourceId: string, amountInput: number) => {
         setAllocations(prev => {
@@ -540,20 +591,34 @@ export function useSettlement(pouchId: string | number) {
                 const inv = cartInvoices.find(i => i.id === invoiceId);
 
                 if (wItem && inv) {
-                    const walletUsedElsewhere = prev.filter(a => a.sourceTempId === sourceId && a.invoiceId !== invoiceId).reduce((sum, a) => sum + a.amountApplied, 0);
-                    const walletAvailable = Math.max(0, Math.abs(wItem.originalAmount) - walletUsedElsewhere);
-                    const finalAmount = Math.min(safeInput, walletAvailable);
+                    const isCredit = wItem.type === "MEMO" || wItem.type === "RETURN";
+                    if (isCredit && !isSameCustomer(wItem, inv)) return filtered;
+
+                    const walletUsedElsewhere = prev
+                        .filter(a => a.sourceTempId === sourceId && a.invoiceId !== invoiceId)
+                        .reduce((sum, a) => sum + a.amountApplied, 0);
+                    const walletAvailable = getSourceAllocationCapacity(wItem.originalAmount, walletUsedElsewhere);
+                    const invoiceUsedElsewhere = prev
+                        .filter(a => a.invoiceId === invoiceId && a.sourceTempId !== sourceId)
+                        .reduce((sum, a) => sum + a.amountApplied, 0);
+                    const invoiceAvailable = getInvoiceAllocationCapacity(
+                        getInvoiceRequiredBalance(inv),
+                        invoiceUsedElsewhere
+                    );
+                    const finalAmount = capSettlementAllocation(safeInput, walletAvailable, invoiceAvailable);
 
                     if (finalAmount > 0.009) {
                         filtered.push({
                             invoiceId: invoiceId,
                             invoiceNo: inv.invoiceNo || "",
+                            customerCode: inv.customerCode,
                             customerName: inv.customerName || "",
                             amountApplied: finalAmount,
                             allocationType: wItem.type || "CASH",
                             sourceTempId: sourceId,
                             originalAmount: inv.originalAmount || 0,
                             remainingBalance: inv.remainingBalance || 0,
+                            maxSettleableAmount: inv.maxSettleableAmount,
                             totalPayments: inv.totalPayments || 0,
                             totalMemos: inv.totalMemos || 0,
                             totalReturns: inv.totalReturns || 0,
@@ -585,6 +650,7 @@ export function useSettlement(pouchId: string | number) {
                         invoiceId: invoiceId, invoiceNo: inv.invoiceNo || "", customerName: inv.customerName || "",
                         amountApplied: amount, allocationType: "EWT", sourceTempId: tempEwtId, originalAmount: inv.originalAmount || 0,
                         remainingBalance: inv.remainingBalance || 0, totalPayments: inv.totalPayments || 0, totalMemos: inv.totalMemos || 0,
+                        maxSettleableAmount: inv.maxSettleableAmount,
                         totalReturns: inv.totalReturns || 0, transactionDate: inv.transactionDate ? String(inv.transactionDate) : "",
                         dueDate: inv.dueDate ? String(inv.dueDate) : "", agingDays: inv.agingDays || 0, history: inv.history || []
                     }];
@@ -614,6 +680,7 @@ export function useSettlement(pouchId: string | number) {
                         invoiceId: invoiceId, invoiceNo: inv.invoiceNo || "", customerName: inv.customerName || "",
                         amountApplied: Math.abs(amount), allocationType: "ADJUSTMENT", sourceTempId: tempAdjId, originalAmount: inv.originalAmount || 0,
                         remainingBalance: inv.remainingBalance || 0, totalPayments: inv.totalPayments || 0, totalMemos: inv.totalMemos || 0,
+                        maxSettleableAmount: inv.maxSettleableAmount,
                         totalReturns: inv.totalReturns || 0, transactionDate: inv.transactionDate ? String(inv.transactionDate) : "",
                         dueDate: inv.dueDate ? String(inv.dueDate) : "", agingDays: inv.agingDays || 0, history: inv.history || []
                     }];
@@ -624,8 +691,112 @@ export function useSettlement(pouchId: string | number) {
         }
     };
 
+    const hasClearableCart = cartInvoices.length > 0
+        || allocations.length > 0
+        || wallet.some(item => item.isLocal)
+        || Object.keys(pendingEdits).length > 0
+        || pendingDeletions.length > 0;
+
+    const hasPartialChanges = hasClearableCart || hasPendingCartClear;
+
+    const savePartialSettlement = async (): Promise<boolean> => {
+        if (!hasPartialChanges) {
+            toast.error("Add settlement progress before saving a partial settlement.");
+            return false;
+        }
+
+        const overAllocatedInvoice = findOverAllocatedInvoice(cartInvoices, allocations);
+        if (overAllocatedInvoice) {
+            toast.error(`The allocation for ${overAllocatedInvoice.invoiceNo} exceeds its remaining balance.`);
+            return false;
+        }
+
+        try {
+            for (const [, editInfo] of Object.entries(pendingEdits)) {
+                const endpoint = editInfo.type === "EWT"
+                    ? `/api/fm/treasury/ewts/${editInfo.dbId}`
+                    : `/api/fm/treasury/adjustments/${editInfo.dbId}`;
+                await fetchProvider.put(endpoint, editInfo.payload);
+            }
+
+            for (const delInfo of pendingDeletions) {
+                const endpoint = delInfo.type === "EWT"
+                    ? `/api/fm/treasury/ewts/${delInfo.dbId}`
+                    : `/api/fm/treasury/adjustments/${delInfo.dbId}`;
+                await fetchProvider.delete(endpoint);
+            }
+
+            const newAdjustments = wallet.filter(w => w.type === "ADJUSTMENT" && w.isLocal).map(w => ({
+                findingId: w.findingId || w.dbId, amount: w.originalAmount, balanceTypeId: w.balanceTypeId || 1,
+                remarks: w.customerName || "Session Variance", invoiceId: allocations.find(a => a.sourceTempId === w.id)?.invoiceId || null, tempId: w.id
+            }));
+
+            const newEwts = wallet.filter(w => w.type === "EWT" && w.isLocal).map(w => ({
+                amount: w.originalAmount, referenceNo: w.customerName || "Form 2307", tempId: w.id
+            }));
+
+            if (newAdjustments.some(adjustment => !adjustment.findingId)) {
+                throw new Error("Cannot save: An adjustment is missing a valid Finding Type.");
+            }
+
+            const persistentAllocations: { invoiceId: number; amountApplied: number; allocationType: string; sourceTempId: string; }[] = [];
+            cartInvoices.forEach(inv => {
+                const invAllocs = allocations.filter(a => a.invoiceId === inv.id && a.amountApplied > 0);
+                if (invAllocs.length > 0) {
+                    persistentAllocations.push(...invAllocs.map(a => ({
+                        invoiceId: a.invoiceId, amountApplied: a.amountApplied, allocationType: a.allocationType, sourceTempId: a.sourceTempId
+                    })));
+                } else {
+                    persistentAllocations.push({ invoiceId: inv.id, amountApplied: 0, allocationType: "NONE", sourceTempId: "NONE" });
+                }
+            });
+
+            await fetchProvider.post(`/api/fm/treasury/collections/${pouchId}/allocate/partial`, {
+                collectedBy: collectedBy || undefined,
+                crNo: crNo || undefined,
+                newAdjustments,
+                newEwts,
+                allocations: persistentAllocations
+            });
+
+            setPendingEdits({});
+            setPendingDeletions([]);
+            toast.success("Partial settlement saved. You can resume it from the queue.");
+            setHasPendingCartClear(false);
+            await fetchData();
+            return true;
+        } catch (err) {
+            toast.error(err instanceof Error && err.message ? err.message : "Failed to save partial settlement.");
+            console.error(err);
+            return false;
+        }
+    };
+
     const submitSettlement = async (): Promise<boolean> => {
         try {
+            const underAllocatedInvoice = findUnderAllocatedInvoice(cartInvoices, allocations);
+            if (underAllocatedInvoice) {
+                const remaining = getInvoiceRequiredBalance(underAllocatedInvoice) - getInvoiceApplied(underAllocatedInvoice.id);
+                toast.error(
+                    `Invoice ${underAllocatedInvoice.invoiceNo} still has ₱${remaining.toLocaleString(undefined, { minimumFractionDigits: 2 })} unallocated. Apply the balance or remove it from the cart.`
+                );
+                return false;
+            }
+
+            const overAllocatedInvoice = findOverAllocatedInvoice(cartInvoices, allocations);
+            if (overAllocatedInvoice) {
+                toast.error(`The allocation for ${overAllocatedInvoice.invoiceNo} exceeds its remaining balance.`);
+                return false;
+            }
+
+            const cartTotals = getCartBalanceTotals(cartInvoices, allocations);
+            if (Math.abs(cartTotals.difference) > SETTLEMENT_BALANCE_TOLERANCE) {
+                toast.error(
+                    `Settlement cart is not balanced. ₱${Math.abs(cartTotals.difference).toLocaleString(undefined, { minimumFractionDigits: 2 })} remains unallocated.`
+                );
+                return false;
+            }
+
             // 1. Process all pending edits in database
             for (const [, editInfo] of Object.entries(pendingEdits)) {
                 const endpoint = editInfo.type === "EWT"
@@ -687,17 +858,18 @@ export function useSettlement(pouchId: string | number) {
             await fetchData();
             return true;
         } catch (err) {
-            toast.error("Failed to secure settlement to ledger.");
+            toast.error(err instanceof Error && err.message ? err.message : "Failed to secure settlement to ledger.");
             console.error(err);
             return false;
         }
     };
 
     return {
-        isLoading, wallet, credits, cartInvoices, allocations, setAllocations, salesmanName, salesmanId, findings, docNo, isPosted,
+        isLoading, wallet, credits, cartInvoices, allocations, setAllocations, salesmanName, salesmanId, findings, docNo, isPosted, isClearing, companyProfile,
         isLoadingRoute, addToCart, removeFromCart, clearCart, loadRouteInvoices, fetchAndInjectExternalCredit,
         getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement,
+        hasPartialChanges, hasClearableCart, savePartialSettlement,
         deleteWalletItem, editWalletItem, dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate,
-        collectedByName, isLoadingCredits, collectionDate
+        collectedByName, isLoadingCredits, creditsError, retryCredits, hasMoreCredits, loadMoreCredits, collectionDate
     };
 }

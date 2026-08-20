@@ -219,13 +219,19 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             : null;
         if (memoCapError) {
             return NextResponse.json({
-                message: "Supplier memo amount exceeds its authorized cap.",
+                message: memoCapError.isLocked
+                    ? "Supplier memo is currently locked by an unposted TR."
+                    : "Supplier memo amount exceeds its authorized cap.",
                 detail: memoCapError.message,
                 memoNumber: memoCapError.memoNumber,
                 authorizedAmount: memoCapError.authorizedAmount,
                 appliedAmount: memoCapError.appliedAmount,
                 requestedAmount: memoCapError.requestedAmount,
                 remainingAmount: memoCapError.remainingAmount,
+                isLocked: memoCapError.isLocked || false,
+                lockingTrDocNo: memoCapError.lockingTrDocNo || null,
+                lockingTrStatus: memoCapError.lockingTrStatus || null,
+                lockingTrCount: memoCapError.lockingTrCount || 0,
             }, { status: 409 });
         }
 
@@ -410,8 +416,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                 isPosted = 1;
                 postedBy = currentUserId;
                 datePosted = new Date().toISOString();
-                // Lock applied memos
-                await lockAppliedMemos(payables, currentPayeeId);
                 // Sync PO statuses
                 await syncPurchaseOrderStatuses(currentDis, payables);
                 break;
@@ -456,7 +460,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         if (!patchRes.ok) throw new Error(await patchRes.text());
         const updatedDis = (await patchRes.json()).data;
 
-        if (status === "Returned for Revision") {
+        if (status === "Posted" || status === "Returned for Revision") {
             await lockAppliedMemos(payables, currentPayeeId);
         }
 

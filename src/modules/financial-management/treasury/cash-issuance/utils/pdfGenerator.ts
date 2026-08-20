@@ -49,8 +49,7 @@ export const generateDisbursementPDF = (disbursement: Disbursement, paperSize: "
         printLine("Date:", disbursement.transactionDate ? format(new Date(disbursement.transactionDate), "MMM dd, yyyy") : "N/A", marginX, startY, 25);
         printLine("Trans Type:", disbursement.transactionTypeName || "N/A", 120, startY, 20);
         startY += 6;
-        printLine("Division:", disbursement.divisionName || "N/A", marginX, startY, 25);
-        printLine("Department:", disbursement.departmentName || "N/A", 120, startY, 20);
+        printLine("Department:", disbursement.departmentName || "N/A", marginX, startY, 25);
         startY += 6;
         const linesUsed = printLine("Payee:", disbursement.payeeName || "N/A", marginX, startY, 25);
         startY += (linesUsed * 5) + 1;
@@ -61,7 +60,6 @@ export const generateDisbursementPDF = (disbursement: Disbursement, paperSize: "
         printLine("No:", disbursement.docNo, marginX, startY, 8); startY += 4;
         printLine("Date:", disbursement.transactionDate ? format(new Date(disbursement.transactionDate), "MMM dd, yy") : "N/A", marginX, startY, 8); startY += 4;
         const lines = printLine("Payee:", disbursement.payeeName || "N/A", marginX, startY, 11); startY += (lines * 3) + 1;
-        printLine("Div:", disbursement.divisionName || "N/A", marginX, startY, 8); startY += 5;
     }
 
     // --- 3. PAYABLES TABLE (Debits) ---

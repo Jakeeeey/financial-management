@@ -49,7 +49,7 @@ export function getVisibleMatrixPriceTypes(
     selectedPriceTypeIds: string[] = [],
 ): PriceType[] {
     if (selectedPriceTypeIds.length === 0) {
-        return priceTypes.filter((priceType) => priceType.sort != null && priceType.sort <= 5);
+        return priceTypes.filter((priceType) => priceType.sort != null);
     }
 
     const selectedIds = new Set(selectedPriceTypeIds);

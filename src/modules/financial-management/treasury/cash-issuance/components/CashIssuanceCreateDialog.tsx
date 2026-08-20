@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Save, Search, FileText, DownloadCloud, Trash2 } from "lucide-react";
+import { Loader2, Save, Search, FileText, DownloadCloud, Trash2, LockKeyhole } from "lucide-react";
 import { format } from "date-fns";
 import {
     DisbursementPayload, DisbursementSubmitResult, PayableLine, SupplierDto, COADto,
@@ -24,7 +24,8 @@ import { StickyTableWrapper } from "./StickyTableWrapper";
 import { SearchableDropdown } from "./SearchableDropdown";
 import { replaceEmptyPayablePlaceholders } from "@/modules/financial-management/treasury/components/payable-line-state";
 import { getMemoAvailableAmount } from "@/modules/financial-management/treasury/components/memo-cap";
-import { normalizeMemoReference, stripMemoLineMetadata } from "@/modules/financial-management/treasury/components/memo-payable-line";
+import { isMemoPayableLine, normalizeMemoReference, stripMemoLineMetadata } from "@/modules/financial-management/treasury/components/memo-payable-line";
+import { updateVatSplitDivision } from "@/modules/financial-management/treasury/components/payable-line-splits";
 import { isPettyCashBankAccount } from "@/app/api/fm/treasury/disbursements/_payment-method";
 import { cn } from "@/lib/utils";
 
@@ -40,7 +41,7 @@ interface CashIssuanceCreateDialogProps {
     onPaymentAllocationSubmit?: (id: number, payments: PaymentLine[]) => Promise<DisbursementSubmitResult>;
     loading: boolean;
     editData?: ExtendedDisbursement | null;
-    allowPaymentEditing?: boolean;
+    paymentEditingMode?: "preparation" | "releasing";
 }
 const isPaymentCOA = (c: COADto) => {
     return !!c.isPayment;
@@ -65,6 +66,17 @@ function getMemoAmountError(requestedAmount: number, availableAmount: number) {
     return null;
 }
 
+function isPopulatedPayableLine(line: PayableLine) {
+    return !!line.coaId
+        || (Number.isFinite(Number(line.amount)) && Number(line.amount) !== 0)
+        || Boolean(line.referenceNo?.trim());
+}
+
+function isValidDivisionId(value: unknown) {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed > 0;
+}
+
 export function CashIssuanceCreateDialog({
     open,
     onOpenChange,
@@ -72,7 +84,7 @@ export function CashIssuanceCreateDialog({
     onPaymentAllocationSubmit,
     loading,
     editData,
-    allowPaymentEditing = false,
+    paymentEditingMode = "preparation",
 }: CashIssuanceCreateDialogProps) {
     const today = new Date().toISOString().split("T")[0];
 
@@ -85,6 +97,7 @@ export function CashIssuanceCreateDialog({
     const [payments, setPayments] = useState<PaymentLine[]>([]);
     const [banks, setBanks] = useState<BankAccountDto[]>([]);
     const [paymentValidationErrors, setPaymentValidationErrors] = useState<Set<string>>(new Set());
+    const [payableValidationErrors, setPayableValidationErrors] = useState<Set<string>>(new Set());
 
     const [suppliers, setSuppliers] = useState<SupplierDto[]>([]);
     const [coas, setCoas] = useState<COADto[]>([]);
@@ -104,6 +117,9 @@ export function CashIssuanceCreateDialog({
     const [loadingMemos, setLoadingMemos] = useState(false);
     const [isMemoModalOpen, setIsMemoModalOpen] = useState(false);
     const [memoSearchQuery, setMemoSearchQuery] = useState("");
+    const [memoLoadError, setMemoLoadError] = useState<string | null>(null);
+    const memoAbortControllerRef = useRef<AbortController | null>(null);
+    const memoRequestIdRef = useRef(0);
 
     const [departmentId, setDepartmentId] = useState<number | "">("");
     const [supportingDocumentsUrl, setSupportingDocumentsUrl] = useState("");
@@ -114,18 +130,20 @@ export function CashIssuanceCreateDialog({
     const [poSearchQuery, setPoSearchQuery] = useState("");
     const [isPayeeRegistrationOpen, setIsPayeeRegistrationOpen] = useState(false);
     
-    const [previewDocNo, setPreviewDocNo] = useState("");
-    const [loadingDocNo, setLoadingDocNo] = useState(false);
     const [localSubmitting, setLocalSubmitting] = useState(false);
     const submitLockRef = useRef(false);
 
     const isReleasingEdit = !!(editData && (editData.status === "Approved" || editData.status === "Partially Released"));
-    const isPaymentEditorEnabled = allowPaymentEditing && isReleasingEdit;
     const isReadOnly = !!(editData && (
         editData.status === "Released" || 
         editData.status === "Posted" || 
         (editData.status === "Submitted" && !editData.transactionTypeName?.toUpperCase().includes("NON"))
     ));
+    const isPreparationPaymentEdit = paymentEditingMode === "preparation"
+        && (!editData || editData.status === "Draft" || editData.status === "Returned for Revision");
+    const isReleasingPaymentEdit = paymentEditingMode === "releasing" && isReleasingEdit;
+    const isPaymentEditorEnabled = !isReadOnly && (isPreparationPaymentEdit || isReleasingPaymentEdit);
+    const isPaymentOnlyEdit = !isReadOnly && isReleasingPaymentEdit;
 
     const isHeaderLocked = isReleasingEdit || isReadOnly;
     const isPayablesLocked = isReleasingEdit || isReadOnly;
@@ -134,11 +152,21 @@ export function CashIssuanceCreateDialog({
     const totalAmount = useMemo(() => payables.reduce((sum, line) => sum + (Number(line.amount) || 0), 0), [payables]);
     const paymentTotal = useMemo(() => payments.reduce((sum, line) => sum + (Number(line.amount) || 0), 0), [payments]);
     const remainingPayment = Number((totalAmount - paymentTotal).toFixed(2));
+    const availableMemos = useMemo(
+        () => memos.filter((memo) =>
+            Number(memo.supplier_id) === Number(payeeId)
+            && [1, 2].includes(Number(memo.type))
+            && (Number(memo.remaining_amount ?? memo.amount) > 0.01
+                || Boolean(memo.is_locked)
+                || payables.some((payable) => normalizeMemoReference(payable.referenceNo) === normalizeMemoReference(memo.memo_number))),
+        ),
+        [memos, payables, payeeId],
+    );
     const filteredMemos = useMemo(() => {
         const query = memoSearchQuery.trim().toLowerCase();
-        if (!query) return memos;
+        if (!query) return availableMemos;
 
-        return memos.filter((memo) => [
+        return availableMemos.filter((memo) => [
             memo.memo_number,
             memo.memo_type_name,
             format(new Date(memo.date), "MMM dd, yyyy"),
@@ -149,10 +177,21 @@ export function CashIssuanceCreateDialog({
             memo.remaining_amount ?? memo.amount,
             (memo.remaining_amount ?? memo.amount).toLocaleString("en-US", { minimumFractionDigits: 2 }),
         ].filter((value) => value !== null && value !== undefined).join(" ").toLowerCase().includes(query));
-    }, [memos, memoSearchQuery]);
+    }, [availableMemos, memoSearchQuery]);
     const memoReferences = useMemo(
         () => new Set(memos.map((memo) => normalizeMemoReference(memo.memo_number)).filter(Boolean)),
         [memos],
+    );
+    const memoSupplierMismatchIndices = useMemo(
+        () => new Set(payables
+            .map((line, index) => isMemoPayableLine(line, memoReferences)
+                && line.memoSupplierId != null
+                && payeeId !== ""
+                && Number(line.memoSupplierId) !== Number(payeeId)
+                ? index
+                : -1)
+            .filter((index) => index >= 0)),
+        [payables, memoReferences, payeeId],
     );
     const memoAmountErrors = useMemo(() => {
         const errors: Record<number, string> = {};
@@ -206,22 +245,6 @@ export function CashIssuanceCreateDialog({
     }, [open, transactionTypeId]);
 
     useEffect(() => {
-        if (open && !editData) {
-            setLoadingDocNo(true);
-            const supplierType = transactionTypeId === 2 ? "Non-Trade" : "Trade";
-            disbursementProvider.getNextDocNo(supplierType)
-                .then(setPreviewDocNo)
-                .catch(err => {
-                    console.warn("Failed to load next doc no preview:", err);
-                    setPreviewDocNo("");
-                })
-                .finally(() => setLoadingDocNo(false));
-        } else {
-            setPreviewDocNo("");
-        }
-    }, [open, transactionTypeId, editData]);
-
-    useEffect(() => {
         if (open) {
             if (editData) {
                 const isNonTrade = editData.transactionTypeName?.toUpperCase().includes("NON");
@@ -241,6 +264,7 @@ export function CashIssuanceCreateDialog({
                     date: p.date ? p.date.split('T')[0] : today,
                     amount: p.amount,
                     memoOriginalAmount: Math.abs(Number(p.amount) || 0),
+                    memoSupplierId: p.isMemo || p.memoId != null ? Number(editData.payeeId) : undefined,
                     coaId: p.coaId,
                     divisionId: p.divisionId || undefined,
                     remarks: p.remarks,
@@ -261,6 +285,7 @@ export function CashIssuanceCreateDialog({
                     releasedBy: p.releasedBy,
                 })));
                 setPaymentValidationErrors(new Set());
+                setPayableValidationErrors(new Set());
 
             } else {
                 setTransactionTypeId(1);
@@ -272,6 +297,7 @@ export function CashIssuanceCreateDialog({
                 setPayables([{referenceNo: "", date: today, amount: 0, remarks: "", divisionId: undefined}]);
                 setPayments([]);
                 setPaymentValidationErrors(new Set());
+                setPayableValidationErrors(new Set());
                 setTransactionDate(today);
             }
         }
@@ -292,26 +318,69 @@ export function CashIssuanceCreateDialog({
     }, [open, editData, departmentId, departments]);
 
     useEffect(() => {
+        memoAbortControllerRef.current?.abort();
+        memoRequestIdRef.current += 1;
+        setMemos([]);
+        setMemoAmounts({});
+        setMemoSearchQuery("");
+        setMemoLoadError(null);
+
         if (!open || !payeeId) {
-            if (open && !payeeId) setMemos([]);
+            setLoadingMemos(false);
             return;
         }
 
-        let active = true;
-        disbursementProvider.getSupplierMemos(Number(payeeId))
+        const controller = new AbortController();
+        memoAbortControllerRef.current = controller;
+        const requestId = memoRequestIdRef.current;
+        setLoadingMemos(true);
+
+        disbursementProvider.getSupplierMemos(Number(payeeId), controller.signal)
             .then((fetchedMemos) => {
-                if (active) setMemos(fetchedMemos);
+                if (controller.signal.aborted || requestId !== memoRequestIdRef.current) return;
+                setMemos(fetchedMemos);
+                setMemoAmounts(Object.fromEntries(fetchedMemos.map((memo) => [String(memo.id), String(memo.remaining_amount ?? memo.amount)])));
             })
-            .catch(() => {
-                if (active) setMemos([]);
+            .catch((error: unknown) => {
+                if (controller.signal.aborted || requestId !== memoRequestIdRef.current) return;
+                setMemoLoadError(error instanceof Error ? error.message : "Failed to load supplier memos");
+            })
+            .finally(() => {
+                if (!controller.signal.aborted && requestId === memoRequestIdRef.current) setLoadingMemos(false);
             });
 
-        return () => {
-            active = false;
-        };
+        return () => controller.abort();
     }, [open, payeeId]);
 
     const handleAddPayable = useCallback(() => setPayables((prev) => [...prev, {referenceNo: "", date: today, amount: 0, remarks: "", divisionId: undefined}]), [today]);
+
+    const handleDivisionSelect = useCallback((index: number, divisionId?: number) => {
+        const nextPayables = updateVatSplitDivision(payables, index, divisionId);
+        setPayables(nextPayables);
+        setPayableValidationErrors((current) => {
+            const next = new Set(current);
+            nextPayables.forEach((line, lineIndex) => {
+                const key = `${lineIndex}:divisionId`;
+                if (isValidDivisionId(line.divisionId)) next.delete(key);
+                else if (current.size > 0 && isPopulatedPayableLine(line)) next.add(key);
+            });
+            return next;
+        });
+    }, [payables]);
+
+    const handleRemovePayable = useCallback((index: number) => {
+        setPayables((current) => current.filter((_, lineIndex) => lineIndex !== index));
+        setPayableValidationErrors((current) => {
+            const next = new Set<string>();
+            current.forEach((key) => {
+                const [indexText, field] = key.split(":");
+                const errorIndex = Number(indexText);
+                if (!Number.isInteger(errorIndex) || errorIndex === index) return;
+                next.add(`${errorIndex > index ? errorIndex - 1 : errorIndex}:${field}`);
+            });
+            return next;
+        });
+    }, []);
 
     const handleAmountChange = useCallback((index: number, rawValue: string) => {
         const parsedAmount = rawValue.trim() === "" ? 0 : Number(rawValue);
@@ -395,11 +464,27 @@ export function CashIssuanceCreateDialog({
 
     // Auto-open PO modal when a Trade payee is selected (no extra click needed)
     const handlePayeeSelect = useCallback((val: number) => {
+        const previousPayeeId = payeeId === "" ? undefined : Number(payeeId);
+        if (previousPayeeId && previousPayeeId !== val) {
+            setPayables((current) => current.map((line) => {
+                const isMemoLine = isMemoPayableLine(line, memoReferences) || line.memoSupplierId != null;
+                return isMemoLine && line.memoSupplierId == null
+                    ? { ...line, memoSupplierId: previousPayeeId }
+                    : line;
+            }));
+        }
+        memoAbortControllerRef.current?.abort();
+        memoRequestIdRef.current += 1;
+        setMemos([]);
+        setMemoAmounts({});
+        setMemoSearchQuery("");
+        setMemoLoadError(null);
+        setIsMemoModalOpen(false);
         setPayeeId(val);
         if (!isNonTradeVoucher && val) {
             handleOpenPoModal(val);
         }
-    }, [isNonTradeVoucher, handleOpenPoModal]);
+    }, [payeeId, memoReferences, isNonTradeVoucher, handleOpenPoModal]);
 
     const handlePendingRecordsError = poLoadError ? (
         <TableRow><TableCell colSpan={5}
@@ -467,24 +552,27 @@ export function CashIssuanceCreateDialog({
         toast.success(`Imported ${selected.length} record(s) successfully`);
     }, [unpaidPos, selectedPoIds, taxTypes, today, calculateTaxedPayables]);
 
-    const handleOpenMemoModal = async () => {
+    const handleOpenMemoModal = () => {
         if (!payeeId) return toast.error("Please select a Payee first.");
         setMemoSearchQuery("");
-        setLoadingMemos(true);
+        setMemoAmounts(Object.fromEntries(availableMemos.map((memo) => [String(memo.id), String(memo.remaining_amount ?? memo.amount)])));
         setIsMemoModalOpen(true);
-        try {
-            const fetchedMemos = await disbursementProvider.getSupplierMemos(Number(payeeId));
-            setMemos(fetchedMemos);
-            setMemoAmounts(Object.fromEntries(fetchedMemos.map((memo) => [String(memo.id), String(memo.remaining_amount ?? memo.amount)])));
-        } catch {
-            toast.error("Failed to load supplier memos");
-            setIsMemoModalOpen(false);
-        } finally {
-            setLoadingMemos(false);
-        }
     };
 
     const handleApplyMemo = (memo: MemoDto) => {
+        const isAlreadyInPayables = payables.some((payable) => normalizeMemoReference(payable.referenceNo) === normalizeMemoReference(memo.memo_number));
+        if (memo.is_locked) {
+            const blocker = memo.locking_tr_doc_no
+                ? `${memo.locking_tr_doc_no} (${memo.locking_tr_status || "unposted"})`
+                : "another unposted TR";
+            const additionalBlockers = (memo.locking_tr_count || 0) > 1
+                ? ` ${(memo.locking_tr_count || 0) - 1} additional TR(s) also use this memo.`
+                : "";
+            return toast.error(`Memo ${memo.memo_number} is locked by ${blocker} and cannot be used until that TR is Posted.${additionalBlockers}`);
+        }
+        if (isAlreadyInPayables) {
+            return toast.error(`Memo ${memo.memo_number} is already applied to this TR.`);
+        }
         const isCredit = memo.type === 1;
         const remainingAmount = Number(memo.remaining_amount ?? memo.amount) || 0;
         const locallyRemainingAmount = getMemoAvailableAmount(remainingAmount, payables, memo.memo_number);
@@ -500,6 +588,7 @@ export function CashIssuanceCreateDialog({
             memoId: memo.id,
             memoType: memo.type,
             memoNumber: memo.memo_number,
+            memoSupplierId: Number(payeeId),
             referenceNo: memo.memo_number,
             date: today,
             amount: finalAmount,
@@ -597,16 +686,35 @@ export function CashIssuanceCreateDialog({
         return true;
     };
 
+    const validatePayables = () => {
+        const errors = new Set<string>();
+        const invalidRows: number[] = [];
+
+        payables.forEach((line, index) => {
+            if (!isPopulatedPayableLine(line) || isValidDivisionId(line.divisionId)) return;
+            errors.add(`${index}:divisionId`);
+            invalidRows.push(index + 1);
+        });
+
+        setPayableValidationErrors(errors);
+        if (invalidRows.length > 0) {
+            toast.error(`Cost Division is required on payable row${invalidRows.length === 1 ? "" : "s"} ${invalidRows.join(", ")}.`);
+            return false;
+        }
+        return true;
+    };
+
     const handleSubmit = async () => {
         if (loading || isReadOnly || submitLockRef.current) return;
         const isPartialReleasePaymentEdit = isPaymentEditorEnabled && editData?.status === "Partially Released";
-        if (!editData && !previewDocNo) {
-            return toast.error("Document number is still loading. Please try again.");
-        }
         if (!transactionTypeId) return toast.error("Transaction Type is required.");
         if (!payeeId) return toast.error("Please select a Payee.");
         if (!departmentId && !isPartialReleasePaymentEdit) return toast.error("Department is required.");
         if (totalAmount <= 0) return toast.error("Voucher total must be greater than 0.");
+        if (memoSupplierMismatchIndices.size > 0) {
+            return toast.error("Remove and reapply memo lines that belong to a different supplier.");
+        }
+        if (!isPaymentOnlyEdit && !validatePayables()) return;
         const memoAmountError = Object.values(memoAmountErrors)[0];
         if (memoAmountError) return toast.error(memoAmountError);
         if (isPaymentEditorEnabled && !validatePayments()) return;
@@ -625,7 +733,7 @@ export function CashIssuanceCreateDialog({
                 };
             });
             const payload: DisbursementPayload = {
-                docNo: editData ? editData.docNo : (previewDocNo || undefined),
+                ...(editData ? { docNo: editData.docNo } : {}),
                 transactionTypeId: Number(transactionTypeId),
                 payeeId: Number(payeeId),
                 departmentId: departmentId ? Number(departmentId) : undefined,
@@ -642,17 +750,9 @@ export function CashIssuanceCreateDialog({
                     payments: paymentLines,
                 } : {}),
             };
-            const result = editData && isPaymentEditorEnabled && onPaymentAllocationSubmit
+            const result = editData && isPaymentOnlyEdit && onPaymentAllocationSubmit
                 ? await onPaymentAllocationSubmit(editData.id, paymentLines)
                 : await onSubmit(payload);
-            if (result.code === "DOC_NO_CONFLICT") {
-                if (result.nextDocNo) {
-                    setPreviewDocNo(result.nextDocNo);
-                    toast.warning(`Document number was already used. A new number, ${result.nextDocNo}, is ready. Review and submit again.`);
-                } else {
-                    toast.warning(result.message || "Document number is already in use. Refresh the voucher number before submitting again.");
-                }
-            }
             if (result.success) {
                 setTransactionTypeId(1);
                 setPayeeId("");
@@ -662,6 +762,7 @@ export function CashIssuanceCreateDialog({
                 setPayables([]);
                 setPayments([]);
                 setPaymentValidationErrors(new Set());
+                setPayableValidationErrors(new Set());
                 onOpenChange(false);
             }
         } finally {
@@ -678,7 +779,7 @@ export function CashIssuanceCreateDialog({
                     <DialogHeader className="px-6 py-4 border-b border-border bg-card shrink-0 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                         <div className="space-y-1">
                             <DialogTitle className="text-lg font-bold text-foreground">
-                                {editData ? `Disbursement Voucher [Doc: ${editData.docNo}]` : `New Disbursement Voucher [Doc: ${loadingDocNo ? "..." : (previewDocNo || "AUTO-GENERATED")}]`}
+                                {editData ? `Disbursement Voucher [Doc: ${editData.docNo}]` : "New Disbursement Voucher"}
                             </DialogTitle>
                             <DialogDescription className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
                                 {editData ? "Update voucher details and line items." : "Draft a new voucher, select a payee, and assign financial entries."}
@@ -745,11 +846,14 @@ export function CashIssuanceCreateDialog({
                                     payeeId={payeeId}
                                     handleAddPayable={handleAddPayable}
                                     handleOpenMemoModal={handleOpenMemoModal}
-                                    handleRemovePayable={(idx) => setPayables(payables.filter((_, i) => i !== idx))}
+                                    handleRemovePayable={handleRemovePayable}
                                     handleAmountChange={handleAmountChange}
                                     formatMoney={formatCurrency}
                                     memoReferences={memoReferences}
+                                    memoSupplierMismatchIndices={memoSupplierMismatchIndices}
                                     memoAmountErrors={memoAmountErrors}
+                                    divisionValidationErrors={payableValidationErrors}
+                                    onDivisionSelect={handleDivisionSelect}
                                     disabled={isPayablesLocked}
                                     isAddDisabled={!departmentId}
                                     fillHeight={!isPaymentEditorEnabled}
@@ -1056,7 +1160,7 @@ export function CashIssuanceCreateDialog({
                         </DialogTitle>
                         <DialogDescription
                             className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                            Select a Credit or Debit memo to apply to this voucher&apos;s payables.
+                            Locked memos remain visible but cannot be applied until their blocking TR is Posted.
                         </DialogDescription>
                     </DialogHeader>
 
@@ -1096,7 +1200,10 @@ export function CashIssuanceCreateDialog({
                                                          className="h-24 text-center text-sm font-medium text-muted-foreground"><Loader2
                                         className="w-5 h-5 animate-spin mx-auto mb-2"/> Fetching
                                         Memos...</TableCell></TableRow>
-                                ) : memos.length === 0 ? (
+                                ) : memoLoadError ? (
+                                    <TableRow><TableCell colSpan={5}
+                                                         className="h-24 text-center text-sm font-medium text-destructive">{memoLoadError}</TableCell></TableRow>
+                                ) : availableMemos.length === 0 ? (
                                     <TableRow><TableCell colSpan={5}
                                                          className="h-24 text-center text-sm font-medium text-muted-foreground">No
                                         available memos found for this supplier.</TableCell></TableRow>
@@ -1106,6 +1213,8 @@ export function CashIssuanceCreateDialog({
                                         supplier memos match your search.</TableCell></TableRow>
                                 ) : (
                                     filteredMemos.map(memo => {
+                                        const isMemoLocked = Boolean(memo.is_locked)
+                                            || payables.some((payable) => normalizeMemoReference(payable.referenceNo) === normalizeMemoReference(memo.memo_number));
                                         const memoAvailableAmount = getMemoAvailableAmount(
                                             memo.remaining_amount ?? memo.amount,
                                             payables,
@@ -1114,12 +1223,24 @@ export function CashIssuanceCreateDialog({
                                         const requestedAmount = Number(
                                             memoAmounts[String(memo.id)] ?? memo.remaining_amount ?? memo.amount,
                                         );
-                                        const memoAmountError = getMemoAmountError(requestedAmount, memoAvailableAmount);
+                                        const memoAmountError = isMemoLocked
+                                            ? null
+                                            : getMemoAmountError(requestedAmount, memoAvailableAmount);
+                                        const lockDescription = memo.is_locked
+                                            ? `Locked by ${memo.locking_tr_doc_no || "another unposted TR"}${memo.locking_tr_status ? ` (${memo.locking_tr_status})` : ""}${(memo.locking_tr_count || 0) > 1 ? ` · ${(memo.locking_tr_count || 0) - 1} more` : ""}`
+                                            : "Already applied to this TR.";
 
                                         return (
-                                        <TableRow key={memo.id} className="hover:bg-muted/50 border-border">
+                                        <TableRow key={memo.id} className={`hover:bg-muted/50 border-border ${isMemoLocked ? "bg-muted/40" : ""}`}>
                                             <TableCell
-                                                className="font-bold text-xs uppercase text-foreground">{memo.memo_number}</TableCell>
+                                                className="font-bold text-xs uppercase text-foreground">
+                                                <div>{memo.memo_number}</div>
+                                                {isMemoLocked && (
+                                                    <Badge variant="outline" className="mt-1 text-[9px] uppercase text-amber-700 border-amber-300 bg-amber-50">
+                                                        <LockKeyhole className="mr-1 h-3 w-3" /> Locked
+                                                    </Badge>
+                                                )}
+                                            </TableCell>
                                             <TableCell>
                                                 <Badge variant="outline"
                                                        className={`text-[9px] uppercase ${memo.type === 1 ? 'text-emerald-600 border-emerald-200 bg-emerald-50' : 'text-red-600 border-red-200 bg-red-50'}`}>
@@ -1133,6 +1254,7 @@ export function CashIssuanceCreateDialog({
                                                     className="text-[10px] font-black uppercase text-foreground">{memo.account_title}</div>
                                                 <div
                                                     className="text-[10px] text-muted-foreground mt-0.5 truncate max-w-[180px]">{memo.reason || "N/A"}</div>
+                                                {isMemoLocked && <div className="mt-1 text-[9px] font-bold text-amber-700">{lockDescription}</div>}
                                             </TableCell>
                                             <TableCell
                                                 className={`text-xs font-black text-right ${memo.type === 1 ? 'text-emerald-600' : 'text-red-600'}`}>
@@ -1145,6 +1267,7 @@ export function CashIssuanceCreateDialog({
                                                     step="0.01"
                                                     value={memoAmounts[String(memo.id)] ?? String(memo.remaining_amount ?? memo.amount)}
                                                     onChange={(event) => setMemoAmounts((current) => ({ ...current, [String(memo.id)]: event.target.value }))}
+                                                    disabled={isMemoLocked}
                                                     aria-invalid={!!memoAmountError}
                                                     className={`h-7 w-28 ml-auto mt-1 text-right text-xs ${memoAmountError ? "border-destructive" : ""}`}
                                                 />
@@ -1155,7 +1278,7 @@ export function CashIssuanceCreateDialog({
                                                 )}
                                             </TableCell>
                                             <TableCell className="text-right">
-                                                <Button size="sm" onClick={() => handleApplyMemo(memo)} disabled={!!memoAmountError}
+                                                <Button size="sm" onClick={() => handleApplyMemo(memo)} disabled={isMemoLocked || !!memoAmountError}
                                                         className="h-7 text-[10px] font-black uppercase tracking-widest bg-purple-600 hover:bg-purple-700 text-white">
                                                     Apply
                                                 </Button>
