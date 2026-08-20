@@ -593,6 +593,77 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({ success: true, message: "Cancellation request rejected.", requestId: cancellationRequest?.id ?? null });
 
+    } else if (action === "upload_attachments") {
+      // ── UPLOAD ADDITIONAL ATTACHMENTS ──
+      const cancellationRequest = await getPendingCancellationRequest(invoiceId, requestId);
+      if (!requestId || !cancellationRequest) {
+        return NextResponse.json({ message: "Pending cancellation request not found" }, { status: 404 });
+      }
+
+      if (cancellationRequest.requested_by !== username) {
+        return NextResponse.json({ message: "Only the original requester can add documents to this request" }, { status: 403 });
+      }
+
+      if (attachmentFiles.length === 0) {
+        return NextResponse.json({ message: "No attachments provided" }, { status: 400 });
+      }
+
+      if (attachmentFiles.length > 10) {
+        return NextResponse.json({ message: "You can upload up to 10 attachments at a time" }, { status: 400 });
+      }
+
+      for (const file of attachmentFiles) {
+        const isImage = file.type.startsWith("image/");
+        const isPdf = file.type === "application/pdf";
+        if (!isImage && !isPdf) {
+          return NextResponse.json({ message: `Unsupported attachment type: ${file.name}. Upload an image or PDF.` }, { status: 400 });
+        }
+        if (file.size > 10 * 1024 * 1024) {
+          return NextResponse.json({ message: `${file.name} exceeds the 10 MB attachment limit` }, { status: 400 });
+        }
+      }
+
+      const createdAttachmentIds: Array<string | number> = [];
+      const uploadedFiles: UploadedDirectusFile[] = [];
+
+      try {
+        for (const file of attachmentFiles) {
+          const uploadedFile = await uploadDirectusFile(file);
+          uploadedFiles.push(uploadedFile);
+          
+          const attachmentResponse = await directusFetch<{ data?: DirectusCancellationAttachment }>(
+            `/items/${CANCELLATION_ATTACHMENTS_COLLECTION}`,
+            {
+              method: "POST",
+              body: JSON.stringify({
+                cancellation_request_id: requestId,
+                file_id: uploadedFile.id,
+                filename: uploadedFile.filename,
+                mime_type: uploadedFile.mimeType || file.type,
+                file_size: uploadedFile.size,
+                uploaded_by: username,
+                uploaded_at: new Date().toISOString(),
+              }),
+            }
+          );
+          
+          const attachmentId = attachmentResponse.data?.id;
+          if (attachmentId === undefined || attachmentId === null) {
+            throw new Error("Directus did not return an attachment ID");
+          }
+          createdAttachmentIds.push(attachmentId);
+        }
+      } catch (error) {
+        await cleanupCreatedCancellationData(null, createdAttachmentIds, uploadedFiles);
+        throw error;
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: "Attachments uploaded successfully.",
+        attachmentIds: createdAttachmentIds,
+      });
+
     } else {
       return NextResponse.json({ message: "Invalid action" }, { status: 400 });
     }
