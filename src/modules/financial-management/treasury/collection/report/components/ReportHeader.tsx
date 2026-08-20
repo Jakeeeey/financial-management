@@ -1,6 +1,6 @@
 import React from "react";
 import { CalendarDays, Search, Printer, Download, Scale, Clock } from "lucide-react";
-import { format, subDays, startOfWeek, startOfMonth, startOfQuarter, startOfYear, endOfQuarter, subMonths, subYears } from "date-fns";
+import { format, subDays, startOfWeek, startOfMonth, startOfQuarter, startOfYear, endOfMonth, endOfQuarter, endOfYear, subMonths, subYears } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -57,7 +57,7 @@ export function ReportHeader({
             case "lastMonth":
                 const lastMonth = subMonths(today, 1);
                 setStartDate(format(startOfMonth(lastMonth), "yyyy-MM-dd"));
-                setEndDate(format(endOfQuarter(lastMonth), "yyyy-MM-dd"));
+                setEndDate(format(endOfMonth(lastMonth), "yyyy-MM-dd"));
                 break;
             case "thisQuarter":
                 setStartDate(format(startOfQuarter(today), "yyyy-MM-dd"));
@@ -75,7 +75,7 @@ export function ReportHeader({
             case "lastYear":
                 const lastYear = subYears(today, 1);
                 setStartDate(format(startOfYear(lastYear), "yyyy-MM-dd"));
-                setEndDate(format(endOfQuarter(lastYear), "yyyy-MM-dd"));
+                setEndDate(format(endOfYear(lastYear), "yyyy-MM-dd"));
                 break;
             case "ytd":
                 setStartDate(format(startOfYear(today), "yyyy-MM-dd"));
@@ -85,19 +85,19 @@ export function ReportHeader({
     };
 
     return (
-        <div className="bg-card border border-border/60 p-4 rounded-2xl shadow-sm flex flex-wrap gap-4 items-center justify-between shrink-0 relative overflow-hidden z-10">
+        <div className="bg-card border border-border/60 p-4 rounded-2xl shadow-sm flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between shrink-0 relative overflow-hidden z-10">
             {/* Subtle left accent */}
             <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-primary/80 to-primary/20" />
 
-            <div className="flex flex-wrap items-center gap-4 pl-2">
-                <h1 className="text-xl font-black flex items-center gap-2.5 tracking-tight">
+            <div className="flex w-full min-w-0 flex-col items-stretch gap-4 pl-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
+                <h1 className="text-xl font-black flex items-center gap-2.5 tracking-tight whitespace-nowrap">
                     <div className="p-1.5 bg-primary/10 rounded-lg text-primary">
                         <Scale size={18}/>
                     </div>
                     Collection Summary
                 </h1>
 
-                <div className="flex items-center gap-2 ml-4">
+                <div className="flex w-full min-w-0 flex-col gap-2 sm:ml-4 sm:w-auto sm:flex-row sm:items-center">
                     {/* 🚀 Modern Quick Range Dropdown */}
                     <Select onValueChange={handleQuickRange}>
                         <SelectTrigger className="h-10 w-[140px] rounded-xl bg-muted/40 border-border/50 text-xs font-bold focus:ring-primary/20">
@@ -124,24 +124,27 @@ export function ReportHeader({
                     </Select>
 
                     {/* Modern Date Pill */}
-                    <div className="flex items-center gap-2 bg-muted/40 border border-border/50 rounded-xl p-1.5 focus-within:ring-2 focus-within:ring-primary/20 transition-all hover:bg-muted/60">
-                        <div className="flex items-center gap-2 px-2 cursor-pointer">
-                            <CalendarDays size={14} className="text-muted-foreground" />
-                            <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="h-7 w-[125px] text-xs font-bold border-none shadow-none bg-transparent cursor-pointer focus-visible:ring-0 px-0" />
+                    <div className="flex w-full min-w-0 flex-col gap-2 bg-muted/40 border border-border/50 rounded-xl p-2 focus-within:ring-2 focus-within:ring-primary/20 transition-all hover:bg-muted/60 sm:w-auto sm:flex-row sm:items-center sm:gap-2 sm:p-1.5">
+                        <div className="flex w-full items-center gap-2 px-1 cursor-pointer sm:w-auto sm:px-2">
+                            <span className="w-10 shrink-0 text-[10px] font-black uppercase text-muted-foreground sm:hidden">From</span>
+                            <CalendarDays size={14} className="hidden text-muted-foreground sm:block" />
+                            <Input id="collection-report-start-date" aria-label="Start date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="h-8 w-full min-w-0 text-xs font-bold border-none shadow-none bg-transparent cursor-pointer focus-visible:ring-0 px-0 sm:h-7 sm:w-[125px]" />
                         </div>
-                        <div className="w-px h-4 bg-border/80 mx-1"></div>
-                        <div className="flex items-center gap-2 px-2 cursor-pointer">
-                            <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="h-7 w-[125px] text-xs font-bold border-none shadow-none bg-transparent cursor-pointer focus-visible:ring-0 px-0" />
+                        <div className="hidden h-px w-full bg-border/80 sm:block sm:h-4 sm:w-px sm:mx-1"></div>
+                        <div className="flex w-full items-center gap-2 px-1 cursor-pointer sm:w-auto sm:px-2">
+                            <span className="w-10 shrink-0 text-[10px] font-black uppercase text-muted-foreground sm:hidden">To</span>
+                            <CalendarDays size={14} className="hidden text-muted-foreground sm:block" />
+                            <Input id="collection-report-end-date" aria-label="End date" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="h-8 w-full min-w-0 text-xs font-bold border-none shadow-none bg-transparent cursor-pointer focus-visible:ring-0 px-0 sm:h-7 sm:w-[125px]" />
                         </div>
                     </div>
                 </div>
 
-                <Button onClick={onGenerate} disabled={isLoading} size="sm" className="h-10 rounded-xl px-5 text-xs font-bold tracking-wider uppercase shadow-sm active:scale-95 transition-all">
+                <Button onClick={onGenerate} disabled={isLoading} size="sm" className="h-10 self-start rounded-xl px-5 text-xs font-bold tracking-wider uppercase shadow-sm active:scale-95 transition-all sm:self-auto">
                     <Search size={14} className={`mr-2 ${isLoading ? "animate-spin" : ""}`}/> {isLoading ? "Crunching..." : "Generate"}
                 </Button>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
                 <Button onClick={onExportExcel} disabled={!hasData} variant="outline" size="sm" className="h-10 rounded-xl px-4 text-xs font-bold tracking-wider uppercase border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 active:scale-95 transition-all bg-background">
                     <Download size={14} className="mr-2"/> Excel
                 </Button>

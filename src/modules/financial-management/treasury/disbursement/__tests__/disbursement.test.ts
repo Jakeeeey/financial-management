@@ -8,8 +8,10 @@ import { Disbursement, PaymentLine } from "../types";
 import { sumLineAmounts } from "../../utils/line-amounts";
 import {
     isFullyPostedPurchaseOrder,
+    isPurchaseOrderReferenceTagged,
     isPostedReceivingAmount,
     postedReceivingRowsByPurchaseOrder,
+    purchaseOrderReferenceKeyFromParts,
 } from "@/app/api/fm/treasury/disbursements/_purchase-order-eligibility";
 import {
     normalizeDisbursementStatus,
@@ -23,6 +25,14 @@ import {
     isPettyCashBankAccount,
     validatePaymentLine,
 } from "@/app/api/fm/treasury/disbursements/_payment-method";
+import {
+    findMissingPayableDivisionError,
+    normalizeVatSplitDivisions,
+} from "@/app/api/fm/treasury/disbursements/_payable-split-integrity";
+import {
+    isMemoLockingDisbursementStatus,
+    shouldExposeSupplierMemo,
+} from "@/app/api/fm/treasury/disbursements/_memo-cap-integrity";
 
 // 1. Business Logic Code to Test (Usually resides in controllers/utilities)
 export function validateMutation(disbursement: Pick<Disbursement, "isPosted" | "status">) {
@@ -154,6 +164,36 @@ describe("Disbursement Module Core Business Rules", () => {
                 { coaId: 10, checkNo: "" },
                 "Office Expenses",
             )).toBe("Please select a bank account.");
+        });
+    });
+
+    describe("Payable cost division requirements", () => {
+        it("rejects a populated payable line without a Division", () => {
+            expect(findMissingPayableDivisionError([
+                { referenceNo: "INV-001", remarks: "Office supplies" },
+            ])).toBe("Cost Division is required on payable row 1.");
+        });
+
+        it("rejects zero, negative, and non-integer Division IDs", () => {
+            expect(findMissingPayableDivisionError([{ divisionId: 0 }])).toBe("Cost Division is required on payable row 1.");
+            expect(findMissingPayableDivisionError([{ divisionId: -2 }])).toBe("Cost Division is required on payable row 1.");
+            expect(findMissingPayableDivisionError([{ divisionId: 1.5 }])).toBe("Cost Division is required on payable row 1.");
+        });
+
+        it("accepts a positive integer Division ID", () => {
+            expect(findMissingPayableDivisionError([{ divisionId: 4 }])).toBeNull();
+        });
+
+        it("accepts VAT split rows after the principal Division cascades", () => {
+            const normalizedLines = normalizeVatSplitDivisions([
+                { referenceNo: "INV-002", remarks: "Principal Net of VAT", divisionId: 4 },
+                { referenceNo: "INV-002", remarks: "Input VAT (12%)" },
+                { referenceNo: "INV-002", remarks: "EWT Deduction (1%)" },
+            ]);
+
+            expect(normalizedLines[1].divisionId).toBe(4);
+            expect(normalizedLines[2].divisionId).toBe(4);
+            expect(findMissingPayableDivisionError(normalizedLines)).toBeNull();
         });
     });
     
@@ -291,6 +331,34 @@ describe("Disbursement Module Core Business Rules", () => {
                 { isPosted: 1, is_posted_amounts: 1, is_reverted: 0 },
                 { isPosted: 1, is_posted_amounts: 1, is_reverted: 0 },
             ])).toBe(true);
+        });
+
+        it("matches an already-tagged PO reference regardless of separator spacing or case", () => {
+            const taggedReferences = new Set([
+                purchaseOrderReferenceKeyFromParts("PO-100", "RCV-01"),
+            ]);
+
+            expect(isPurchaseOrderReferenceTagged(" po-100 / rcv-01 ", taggedReferences)).toBe(true);
+            expect(isPurchaseOrderReferenceTagged("PO-100 / RCV-02", taggedReferences)).toBe(false);
+            expect(isPurchaseOrderReferenceTagged("Supplier memo 100", taggedReferences)).toBe(false);
+        });
+    });
+
+    describe("Supplier memo locks", () => {
+        it("locks every unposted TR workflow status", () => {
+            expect(["Draft", "Submitted", "Returned for Revision", "Approved", "Released", "Partially Released"]
+                .every(isMemoLockingDisbursementStatus)).toBe(true);
+        });
+
+        it("does not lock a memo after its TR is Posted", () => {
+            expect(isMemoLockingDisbursementStatus("Posted")).toBe(false);
+            expect(isMemoLockingDisbursementStatus("Deleted")).toBe(false);
+        });
+
+        it("keeps a fully allocated memo visible while an unposted TR holds it", () => {
+            expect(shouldExposeSupplierMemo({ remainingAmount: 0, isLocked: true })).toBe(true);
+            expect(shouldExposeSupplierMemo({ remainingAmount: 0, isLocked: false })).toBe(false);
+            expect(shouldExposeSupplierMemo({ remainingAmount: 50, isLocked: false })).toBe(true);
         });
     });
 

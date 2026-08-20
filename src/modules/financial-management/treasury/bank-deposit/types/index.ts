@@ -47,8 +47,9 @@ export interface DepositAsset {
     assetType: "CASH" | "CHECK";
     bankName: string;
     checkNo: string;
+    chequeDate: string | null;
     amount: number;
-    status: "IN_TRANSIT" | "CLEARED" | "BOUNCED";
+    status: "IN_TRANSIT" | "CLEARED" | "BOUNCED" | "BOUNCED CHECK";
 }
 
 export interface CheckBreakdown {
@@ -62,9 +63,13 @@ export interface DepositSlip {
     depositNo: string;
     depositDate: string;
     targetBankAccount?: string | null;
-    status: "PREPARED" | "CLEARED" | "CANCELLED";
+    depositReference?: string | null;
+    validationDocumentFileId?: string | null;
+    status: "PREPARED" | "PARTIALLY_BOUNCED" | "BOUNCED" | "CLEARED" | "CANCELLED";
     preparedBy: string;
     datePrepared: string;
+    clearedAt?: string | null;
+    clearedBy?: string | null;
     totalCash: number;
     totalChecks: number;
     grandTotal: number;
@@ -76,4 +81,16 @@ export interface PrepareDepositPayload {
     assetIds: number[];
     targetBankId: number;
     remarks: string;
+}
+
+export interface ClearDepositPayload {
+    depositReference: string;
+    validationDocument: File | null;
+}
+
+export interface ClearDepositResponse {
+    message: string;
+    clearedAt?: string | null;
+    depositReference?: string | null;
+    validationDocumentFileId?: string | null;
 }

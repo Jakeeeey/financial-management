@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { getSupplierMemoBalances } from "../../_memo-cap-integrity";
+import { getSupplierMemoBalances, shouldExposeSupplierMemo } from "../../_memo-cap-integrity";
 
 export const runtime = "nodejs";
 
@@ -15,6 +15,7 @@ interface DirectusCOA {
 interface DirectusMemo {
     id: number;
     memo_number: string;
+    supplier_id?: number | { id?: number } | null;
     type: number;
     date: string;
     amount: number;
@@ -32,6 +33,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const resolvedParams = await params;
     const supplierId = Number(resolvedParams.supplierId);
 
+    if (!Number.isInteger(supplierId) || supplierId <= 0) {
+        return NextResponse.json({ message: "A valid supplier ID is required." }, { status: 400 });
+    }
+
     try {
         const queryParams = new URLSearchParams({
             filter: JSON.stringify({
@@ -40,7 +45,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
                     { status: { _neq: "CANCELLED" } }
                 ]
             }),
-            fields: "id,memo_number,type,date,amount,reason,status,chart_of_account",
+            fields: "id,memo_number,supplier_id,type,date,amount,reason,status,chart_of_account",
             sort: "-date",
             limit: "-1"
         });
@@ -110,17 +115,27 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
             return {
                 id: row.id,
                 memo_number: row.memo_number,
+                supplier_id: row.supplier_id && typeof row.supplier_id === "object"
+                    ? Number(row.supplier_id.id) || supplierId
+                    : Number(row.supplier_id) || supplierId,
                 type: row.type,
                 memo_type_name: Number(row.type) === 1 ? "CREDIT MEMO" : Number(row.type) === 2 ? "DEBIT MEMO" : "UNKNOWN",
                 date: row.date,
                 amount: Number(row.amount) || 0,
                 applied_amount: balance?.appliedAmount || 0,
                 remaining_amount: balance?.remainingAmount || 0,
+                is_locked: balance?.isLocked || false,
+                locking_tr_doc_no: balance?.lockingTrDocNo || null,
+                locking_tr_status: balance?.lockingTrStatus || null,
+                locking_tr_count: balance?.lockingTrCount || 0,
                 reason: row.reason || "",
                 coa_id: coaId,
                 account_title: accountTitle
             };
-        }).filter((memo) => memo.remaining_amount > 0.01);
+        }).filter((memo) => shouldExposeSupplierMemo({
+            remainingAmount: memo.remaining_amount,
+            isLocked: memo.is_locked,
+        }));
 
         return NextResponse.json(mapped);
     } catch (err: unknown) {

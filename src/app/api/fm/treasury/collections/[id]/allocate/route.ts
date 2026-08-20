@@ -32,7 +32,16 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
         if (!springRes.ok) {
             const errorText = await springRes.text();
             console.error(`[Spring Boot POST Allocate Error] Status: ${springRes.status}`, errorText);
-            throw new Error(errorText || `Spring Boot rejected with status: ${springRes.status}`);
+
+            let errorMessage = errorText || `Spring Boot rejected with status: ${springRes.status}`;
+            try {
+                const parsed = JSON.parse(errorText) as { detail?: string; message?: string; error?: string };
+                errorMessage = parsed.detail || parsed.message || parsed.error || errorMessage;
+            } catch {
+                // Preserve plain-text Spring errors.
+            }
+
+            return NextResponse.json({ message: errorMessage }, { status: springRes.status });
         }
 
         const result = await springRes.text();

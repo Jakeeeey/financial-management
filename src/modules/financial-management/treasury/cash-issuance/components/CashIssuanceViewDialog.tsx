@@ -31,17 +31,22 @@ interface CashIssuanceViewDialogProps {
 
 function AttachmentPreview({ docUrl }: { docUrl: string }) {
     const [contentType, setContentType] = useState<string>("");
-    const cleanBase = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "");
-    const viewUrl = docUrl.startsWith("http") ? docUrl : `${cleanBase}/assets/${docUrl}`;
+    const fileId = docUrl.split(/[/?#]/).filter(Boolean).pop() || "";
+    const viewUrl = `/api/fm/treasury/disbursements/attachments/${encodeURIComponent(fileId)}`;
 
     useEffect(() => {
         if (!viewUrl) return;
-        fetch(viewUrl, { method: "HEAD" })
+        const controller = new AbortController();
+        fetch(viewUrl, { method: "HEAD", signal: controller.signal })
             .then((res) => {
+                if (!res.ok) return;
                 const type = res.headers.get("content-type");
                 if (type) setContentType(type.toLowerCase());
             })
-            .catch((err) => console.warn("Failed to fetch document headers:", err));
+            .catch(() => {
+                if (!controller.signal.aborted) setContentType("");
+            });
+        return () => controller.abort();
     }, [viewUrl]);
 
     const isPdf = docUrl.toLowerCase().endsWith(".pdf") || viewUrl.toLowerCase().endsWith(".pdf") || contentType.includes("pdf");
@@ -375,7 +380,7 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                         </div>
 
                         {/* PAYMENTS SECTION */}
-                        {subModule !== "preparation" && <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col">
+                        <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col">
                             <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center justify-between">
                                 <div className="flex items-center gap-2 text-foreground font-black uppercase tracking-widest text-[11px]">
                                     <ArrowUpFromLine className="w-4 h-4 text-emerald-500"/> Bank Checks (Credits)
@@ -442,7 +447,7 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                                 <span className="text-muted-foreground">Total Credits</span>
                                 <span className="text-emerald-600 dark:text-emerald-500">{formatCurrency(totalCredit)}</span>
                             </div>
-                        </div>}
+                        </div>
 
                     </div>
                 </div>

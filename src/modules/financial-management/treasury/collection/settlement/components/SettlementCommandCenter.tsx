@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { useSettlement, WalletItem } from "../hooks/useSettlement";
 import {
     ShieldCheck,
@@ -32,7 +32,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { fetchProvider } from "../../providers/fetchProvider";
-import { UnpaidInvoice } from "../../types";
+import { UnpaidInvoice, UnpaidInvoiceSearchResponse } from "../../types";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -42,29 +42,50 @@ import InvoiceSearchPopover from "./InvoiceSearchPopover";
 import AllocationSidePanel from "./AllocationSidePanel";
 import { generateAdjustmentPDF } from "../utils/adjustment-pdf-generator";
 import { printSettlementReceiptA4 } from "../utils/printSettlementReceiptA4";
+import {
+    capSettlementAllocation,
+    findOverAllocatedInvoice,
+    findUnderAllocatedInvoice,
+    getCartBalanceTotals,
+    getInvoiceAllocationCapacity,
+    getInvoiceAppliedForSettlement,
+    getInvoiceRequiredBalance,
+    getSourceAllocationCapacity,
+    roundCurrency,
+    SETTLEMENT_BALANCE_TOLERANCE,
+} from "../utils/settlement-balance";
 
 export interface SettlementCommandCenterProps {
     id: string | number;
     onClose?: (hasSaved?: boolean) => void;
+    onChanged?: () => void;
     autoAddInvoiceNo?: string;
 }
 
-export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo }: SettlementCommandCenterProps) {
+export default function SettlementCommandCenter({ id, onClose, onChanged, autoAddInvoiceNo }: SettlementCommandCenterProps) {
+    const [activeInvoiceId, setActiveInvoiceId] = useState<number | null>(null);
+
     const {
-        isLoading, wallet, credits, cartInvoices, allocations, setAllocations, salesmanName, findings, docNo, isPosted,
+        isLoading, wallet, credits, cartInvoices, allocations, setAllocations, salesmanName, findings, docNo, isPosted, isClearing, companyProfile,
         isLoadingRoute, loadRouteInvoices, addToCart, removeFromCart, clearCart, fetchAndInjectExternalCredit,
         getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement,
+        hasPartialChanges, hasClearableCart, savePartialSettlement,
         deleteWalletItem, editWalletItem, dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate,
-        isLoadingCredits, collectionDate
-    } = useSettlement(id);
+        isLoadingCredits, creditsError, retryCredits, hasMoreCredits, loadMoreCredits, collectionDate
+    } = useSettlement(id, activeInvoiceId);
 
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isPartialSaving, setIsPartialSaving] = useState(false);
     const [isSuccess, setIsSuccess] = useState(false);
 
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [searchResults, setSearchResults] = useState<UnpaidInvoice[]>([]);
     const [isSearching, setIsSearching] = useState(false);
+    const [searchError, setSearchError] = useState<string | null>(null);
+    const [searchHasMore, setSearchHasMore] = useState(false);
+    const [searchCursor, setSearchCursor] = useState<number | null>(null);
+    const searchAbortRef = useRef<AbortController | null>(null);
 
     const [creditSearch, setCreditSearch] = useState("");
     const [poolSearch, setPoolSearch] = useState("");
@@ -99,8 +120,6 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
 
     const [routePopoverOpen, setRoutePopoverOpen] = useState(false);
 
-    const [activeInvoiceId, setActiveInvoiceId] = useState<number | null>(null);
-
     const uniqueCategories = useMemo(() => {
         const coaMap = new Map<number, {id: number, title: string}>();
         findings.forEach(f => {
@@ -123,34 +142,80 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
     }, [findings, editCoaId]);
 
     useEffect(() => {
+        searchAbortRef.current?.abort();
+        searchAbortRef.current = null;
+        setSearchError(null);
+        setSearchCursor(null);
+        setSearchHasMore(false);
+
         if (!searchQuery || searchQuery.trim().length < 2 || isPosted) {
             setSearchResults([]);
             return;
         }
 
         const delayDebounceFn = setTimeout(async () => {
+            const controller = new AbortController();
+            searchAbortRef.current = controller;
             setIsSearching(true);
             try {
-                const data = await fetchProvider.get<UnpaidInvoice[]>(
-                    `/api/fm/treasury/collections/search-unpaid?query=${encodeURIComponent(searchQuery.trim())}&pouchId=${encodeURIComponent(String(id))}`
+                const data = await fetchProvider.getOrThrow<UnpaidInvoiceSearchResponse>(
+                    `/api/fm/treasury/collections/search-unpaid?query=${encodeURIComponent(searchQuery.trim())}&pouchId=${encodeURIComponent(String(id))}&limit=50`,
+                    {signal: controller.signal, timeoutMs: 12_000}
                 );
-                const cleanResults = (data || []).filter(inv => !cartInvoices.some(cartInv => cartInv.id === inv.id));
+                const cleanResults = (data?.items || []).filter(inv => !cartInvoices.some(cartInv => cartInv.id === inv.id));
                 setSearchResults(cleanResults);
+                setSearchHasMore(Boolean(data?.hasMore));
+                setSearchCursor(data?.nextCursor ?? null);
             } catch (error) {
-                console.error("Search failed:", error);
+                if (!(error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError"))) {
+                    console.error("Search failed:", error);
+                    setSearchError(error instanceof Error ? error.message : "Unable to search unpaid invoices.");
+                    setSearchResults([]);
+                }
             } finally {
-                setIsSearching(false);
+                if (searchAbortRef.current === controller) setIsSearching(false);
             }
         }, 300);
 
-        return () => clearTimeout(delayDebounceFn);
+        return () => {
+            clearTimeout(delayDebounceFn);
+            searchAbortRef.current?.abort();
+        };
     }, [searchQuery, cartInvoices, isPosted, id]);
 
+    const loadMoreSearchResults = async () => {
+        if (!searchHasMore || !searchCursor || isSearching || !searchQuery.trim() || isPosted) return;
+
+        searchAbortRef.current?.abort();
+        const controller = new AbortController();
+        searchAbortRef.current = controller;
+        setIsSearching(true);
+        setSearchError(null);
+
+        try {
+            const data = await fetchProvider.getOrThrow<UnpaidInvoiceSearchResponse>(
+                `/api/fm/treasury/collections/search-unpaid?query=${encodeURIComponent(searchQuery.trim())}&pouchId=${encodeURIComponent(String(id))}&limit=50&cursor=${encodeURIComponent(String(searchCursor))}`,
+                {signal: controller.signal, timeoutMs: 12_000}
+            );
+            const cleanResults = (data?.items || []).filter(inv => !cartInvoices.some(cartInv => cartInv.id === inv.id));
+            setSearchResults(previous => [...previous, ...cleanResults]);
+            setSearchHasMore(Boolean(data?.hasMore));
+            setSearchCursor(data?.nextCursor ?? null);
+        } catch (error) {
+            if (!(error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError"))) {
+                console.error("Loading more search results failed:", error);
+                setSearchError(error instanceof Error ? error.message : "Unable to load more unpaid invoices.");
+            }
+        } finally {
+            if (searchAbortRef.current === controller) setIsSearching(false);
+        }
+    };
+
     useEffect(() => {
-        if (cartInvoices.length > 0 && !activeInvoiceId) {
-            setActiveInvoiceId(cartInvoices[0].id);
-        } else if (cartInvoices.length === 0) {
+        if (cartInvoices.length === 0) {
             setActiveInvoiceId(null);
+        } else if (!cartInvoices.some(invoice => invoice.id === activeInvoiceId)) {
+            setActiveInvoiceId(cartInvoices[0].id);
         }
     }, [cartInvoices, activeInvoiceId]);
  
@@ -158,10 +223,11 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
 
     useEffect(() => {
         if (autoAddInvoiceNo && !isPosted && !autoAdded && cartInvoices.length >= 0) {
-            fetchProvider.get<UnpaidInvoice[]>(
-                `/api/fm/treasury/collections/search-unpaid?query=${encodeURIComponent(autoAddInvoiceNo.trim())}&pouchId=${encodeURIComponent(String(id))}`
+            fetchProvider.getOrThrow<UnpaidInvoiceSearchResponse>(
+                `/api/fm/treasury/collections/search-unpaid?query=${encodeURIComponent(autoAddInvoiceNo.trim())}&pouchId=${encodeURIComponent(String(id))}&limit=50`,
+                {timeoutMs: 12_000}
             ).then((res) => {
-                const found = res?.find(inv => inv.invoiceNo === autoAddInvoiceNo);
+                const found = res?.items?.find(inv => inv.invoiceNo === autoAddInvoiceNo);
                 if (found) {
                     addToCart(found);
                     setAutoAdded(true);
@@ -169,6 +235,7 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
                 }
             }).catch(err => {
                 console.error("Auto add invoice failed:", err);
+                toast.error(err instanceof Error ? err.message : "Unable to find the invoice.");
             });
         }
     }, [autoAddInvoiceNo, isPosted, autoAdded, cartInvoices, addToCart, id]);
@@ -186,31 +253,45 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
             const applied = tempAllocations
                 .filter(a => a.invoiceId === invoiceId)
                 .reduce((s, a) => s + a.amountApplied, 0);
-            return baseBal - applied;
+            return getInvoiceAllocationCapacity(baseBal, applied);
         };
 
         const getRemainingWalletAmt = (sourceId: string, baseAmt: number) => {
             const used = tempAllocations
                 .filter(a => a.sourceTempId === sourceId)
                 .reduce((s, a) => s + a.amountApplied, 0);
-            return baseAmt - used;
+            return getSourceAllocationCapacity(baseAmt, used);
         };
 
         const allocateSim = (invoice: UnpaidInvoice, source: WalletItem, amount: number) => {
-            if (amount <= 0.009) return;
+            const sourceUsedElsewhere = tempAllocations
+                .filter(a => a.sourceTempId === source.id && a.invoiceId !== invoice.id)
+                .reduce((sum, allocation) => sum + allocation.amountApplied, 0);
+            const invoiceUsedElsewhere = tempAllocations
+                .filter(a => a.invoiceId === invoice.id && a.sourceTempId !== source.id)
+                .reduce((sum, allocation) => sum + allocation.amountApplied, 0);
+            const finalAmount = capSettlementAllocation(
+                amount,
+                getSourceAllocationCapacity(source.originalAmount, sourceUsedElsewhere),
+                getInvoiceAllocationCapacity(getInvoiceRequiredBalance(invoice), invoiceUsedElsewhere)
+            );
+            if (finalAmount <= SETTLEMENT_BALANCE_TOLERANCE) return;
             const index = tempAllocations.findIndex(a => a.invoiceId === invoice.id && a.sourceTempId === source.id);
             if (index > -1) {
-                tempAllocations[index].amountApplied += amount;
+                tempAllocations[index].amountApplied = roundCurrency(
+                    tempAllocations[index].amountApplied + finalAmount
+                );
             } else {
                 tempAllocations.push({
                     invoiceId: invoice.id,
                     invoiceNo: invoice.invoiceNo || "",
                     customerName: invoice.customerName || "",
-                    amountApplied: amount,
+                    amountApplied: finalAmount,
                     allocationType: source.type || "CASH",
                     sourceTempId: source.id,
                     originalAmount: invoice.originalAmount || 0,
                     remainingBalance: invoice.remainingBalance || 0,
+                    maxSettleableAmount: invoice.maxSettleableAmount,
                     totalPayments: invoice.totalPayments || 0,
                     totalMemos: invoice.totalMemos || 0,
                     totalReturns: invoice.totalReturns || 0,
@@ -227,7 +308,7 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
 
         // 1. EXACT MATCHES FIRST
         for (const inv of cartInvoices) {
-            const invBal = getRemainingInvoiceBal(inv.id, inv.remainingBalance);
+            const invBal = getRemainingInvoiceBal(inv.id, getInvoiceRequiredBalance(inv));
             if (invBal <= 0.01) continue;
 
             const exactSource = combinedSources.find(src => {
@@ -243,7 +324,7 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
 
         // 2. REFERENCE/NAME MATCHING
         for (const inv of cartInvoices) {
-            const invBal = getRemainingInvoiceBal(inv.id, inv.remainingBalance);
+            const invBal = getRemainingInvoiceBal(inv.id, getInvoiceRequiredBalance(inv));
             if (invBal <= 0.01) continue;
 
             const matchingSource = combinedSources.find(src => {
@@ -268,7 +349,7 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
             if (srcAmt <= 0.01) continue;
 
             for (const inv of sortedInvoices) {
-                const invBal = getRemainingInvoiceBal(inv.id, inv.remainingBalance);
+                const invBal = getRemainingInvoiceBal(inv.id, getInvoiceRequiredBalance(inv));
                 if (invBal <= 0.01) continue;
 
                 const allocationAmt = Math.min(invBal, srcAmt);
@@ -297,10 +378,31 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
     }, 0), [allocations, wallet]);
 
     const remainingToAllocate = Math.round(((pouchTotal + ewtTotal + varianceTotal) - totalAllocated) * 100) / 100;
-    const cartTotalBalance = Math.round(cartInvoices.reduce((sum, inv) => sum + (inv.remainingBalance || 0), 0) * 100) / 100;
-    const cartTotalAppliedSession = Math.round(allocations.reduce((sum, a) => sum + a.amountApplied, 0) * 100) / 100;
+    const cartBalanceTotals = getCartBalanceTotals(cartInvoices, allocations);
+    const cartTotalBalance = cartBalanceTotals.required;
+    const cartTotalAppliedSession = cartBalanceTotals.applied;
+    const underAllocatedInvoice = findUnderAllocatedInvoice(cartInvoices, allocations);
+    const overAllocatedInvoice = findOverAllocatedInvoice(cartInvoices, allocations);
+    const isCartBalanced = !underAllocatedInvoice
+        && !overAllocatedInvoice
+        && Math.abs(cartBalanceTotals.difference) <= SETTLEMENT_BALANCE_TOLERANCE;
+    const isPouchBalanced = Math.abs(remainingToAllocate) <= 0.01;
+    const isCommitReady = isPouchBalanced && isCartBalanced;
+    const cartBalanceMessage = underAllocatedInvoice
+        ? `Invoice ${underAllocatedInvoice.invoiceNo} still has ₱${(
+            getInvoiceRequiredBalance(underAllocatedInvoice)
+            - getInvoiceAppliedForSettlement(allocations, underAllocatedInvoice.id)
+        ).toLocaleString(undefined, { minimumFractionDigits: 2 })} unallocated. Apply the balance or remove it from the cart.`
+        : overAllocatedInvoice
+            ? `The allocation for ${overAllocatedInvoice.invoiceNo} exceeds its remaining balance.`
+            : `Settlement cart is not balanced. ₱${Math.abs(cartBalanceTotals.difference).toLocaleString(undefined, { minimumFractionDigits: 2 })} remains unallocated.`;
 
     const handleMasterSave = async () => {
+        if (!isCommitReady) {
+            toast.error(!isCartBalanced ? `Cannot commit: ${cartBalanceMessage}` : "Cannot commit: the pouch allocation is not balanced.");
+            return;
+        }
+
         setIsSubmitting(true);
         const success = await submitSettlement();
         if (success) {
@@ -309,6 +411,22 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
         } else {
             setIsSubmitting(false);
         }
+    };
+
+    const handlePartialSave = async () => {
+        setIsPartialSaving(true);
+        const success = await savePartialSettlement();
+        if (success) {
+            setIsSuccess(true);
+            setTimeout(() => { if (onClose) onClose(true); }, 1200);
+        } else {
+            setIsPartialSaving(false);
+        }
+    };
+
+    const handleClearCart = async () => {
+        const cleared = await clearCart();
+        if (cleared) onChanged?.();
     };
 
     const handleCreateAdjustment = async () => {
@@ -339,7 +457,7 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
 
     const handleInvoiceDiscrepancy = (inv: UnpaidInvoice) => {
         const appliedSession = getInvoiceApplied(inv.id);
-        const remaining = Number(inv.remainingBalance ?? inv.originalAmount ?? 0);
+        const remaining = getInvoiceRequiredBalance(inv);
         const discrepancy = remaining - appliedSession;
         if (discrepancy <= 0.01) return toast.error(`Cannot accept a variance adjustment. Variance: ₱${discrepancy.toFixed(2)}`);
         setAdjAmount(Math.abs(discrepancy).toFixed(2));
@@ -349,7 +467,7 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
     };
 
     const handleAutoCalculateEWT = (inv: UnpaidInvoice) => {
-        const netOfVat = inv.remainingBalance / 1.12;
+        const netOfVat = getInvoiceRequiredBalance(inv) / 1.12;
         const refNo = prompt(`Generate Form 2307 for ${inv.invoiceNo}\n\nEnter Reference Number:`, `2307-${inv.invoiceNo}`);
         if (refNo) createEwt(netOfVat * 0.01, refNo, inv.id);
     };
@@ -375,7 +493,7 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
     };
 
     const handlePrintReceipt = () => {
-        printSettlementReceiptA4(wallet, allocations, docNo, salesmanName, collectionDate, isPosted);
+        printSettlementReceiptA4(wallet, allocations, docNo, salesmanName, collectionDate, isPosted, companyProfile);
     };
 
     const filteredWallet = useMemo(() => {
@@ -458,16 +576,31 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
                     </Button>
 
                     {!isPosted && (
+                        <>
+                        <Button
+                            onClick={handlePartialSave}
+                            disabled={!hasPartialChanges || isSubmitting || isPartialSaving || isSuccess}
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 lg:flex-none font-black text-[10px] uppercase tracking-widest shadow-sm border-amber-500 text-amber-700 hover:bg-amber-50 h-8"
+                        >
+                            {isSuccess ? (
+                                <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5"/> Saved!</span>
+                            ) : isPartialSaving ? (
+                                <span className="flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin"/> Saving...</span>
+                            ) : (
+                                <span className="flex items-center gap-1.5"><Save className="w-3.5 h-3.5"/> Save Partial</span>
+                            )}
+                        </Button>
                         <Button
                             onClick={handleMasterSave}
-                            disabled={remainingToAllocate < -0.01 || isSubmitting || isSuccess}
+                            disabled={!isCommitReady || isSubmitting || isPartialSaving || isSuccess}
                             size="sm"
                             className={cn(
                                 "flex-1 lg:flex-none font-black text-[10px] uppercase tracking-widest shadow-sm transition-all duration-300 h-8 overflow-hidden relative",
                                 isSuccess ? "bg-emerald-500 hover:bg-emerald-600 text-white scale-105 shadow-emerald-500/50" :
                                     isSubmitting ? "bg-primary/80 cursor-wait" :
-                                        remainingToAllocate < -0.01 ? 'bg-destructive hover:bg-destructive/90 text-white' :
-                                            (remainingToAllocate > 0.01 ? 'bg-orange-600 hover:bg-orange-700 text-white' : 'bg-primary')
+                                        !isCommitReady ? 'bg-muted text-muted-foreground' : 'bg-primary'
                             )}
                         >
                             {isSuccess ? (
@@ -477,10 +610,11 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
                             ) : (
                                 <span className="flex items-center gap-1.5">
                                     <Save className="w-3.5 h-3.5" />
-                                    {remainingToAllocate < -0.01 ? "Over-Allocated!" : (remainingToAllocate > 0.01 ? "Save Partial" : "Commit")}
+                                    {!isPouchBalanced ? "Balance Pouch" : (!isCartBalanced ? "Balance Cart" : "Commit")}
                                 </span>
                             )}
                         </Button>
+                        </>
                     )}
                 </div>
             </div>
@@ -488,7 +622,7 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
             {/* MAIN WORKSPACE - NOW 3 COLUMNS */}
             <div className={cn(
                 "flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-3 p-3 lg:p-4 overflow-y-auto lg:overflow-hidden transition-all duration-500",
-                (isSubmitting || isSuccess) ? "opacity-60 blur-[1px] pointer-events-none grayscale-[20%]" : "opacity-100"
+                (isSubmitting || isPartialSaving || isSuccess) ? "opacity-60 blur-[1px] pointer-events-none grayscale-[20%]" : "opacity-100"
             )}>
                 {/* LEFT SIDEBAR: WALLET & CREDITS (col-span-3) */}
                 <div className="col-span-1 lg:col-span-3 flex flex-col gap-3 overflow-hidden lg:h-full">
@@ -595,6 +729,14 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
                             <Input placeholder="Search local pool..." value={creditSearch} onChange={(e) => setCreditSearch(e.target.value)} className="h-6 text-[10px] font-bold shadow-inner bg-background border-purple-200 focus-visible:ring-purple-500 px-2"/>
                         </div>
                         <div className="p-2 flex-1 overflow-y-auto space-y-1.5 scrollbar-thin">
+                            {creditsError && !isLoadingCredits && (
+                                <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-center dark:border-amber-900/50 dark:bg-amber-950/20">
+                                    <p className="text-[9px] font-bold text-amber-700 dark:text-amber-300">{creditsError}</p>
+                                    <Button type="button" variant="outline" size="sm" className="mt-1 h-6 text-[9px] font-black uppercase tracking-widest text-amber-700 border-amber-300" onClick={retryCredits}>
+                                        Retry
+                                    </Button>
+                                </div>
+                            )}
                             {isLoadingCredits ? (
                                 <div className="flex flex-col items-center justify-center h-full py-8">
                                     <Loader2 size={20} className="animate-spin text-purple-500 mb-2"/>
@@ -603,9 +745,10 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
                             ) : filteredCredits.length === 0 ? (
                                 <p className="text-[10px] text-center text-muted-foreground font-bold uppercase pt-6 italic">No matching credits</p>
                             ) : (
-                                filteredCredits.map(c => {
+                                <>
+                                {filteredCredits.map(c => {
                                     const used = c.originalAmount > 0 ? getUsedAmount(c.id) : 0;
-                                    const remaining = c.originalAmount - used;
+                                    const remaining = getSourceAllocationCapacity(c.originalAmount, used);
                                     const isExhausted = c.originalAmount > 0 && remaining <= 0;
                                     return (
                                         <div key={`source-${c.id}`} className={`p-2 rounded-md border shadow-sm transition-all group ${isExhausted ? 'bg-muted/30 border-dashed opacity-60' : 'bg-background border-border border-l-[3px] border-l-purple-500'}`}>
@@ -620,7 +763,21 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
                                             </div>
                                         </div>
                                     );
-                                })
+                                })}
+                                {hasMoreCredits && (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="w-full h-7 text-[9px] font-black uppercase tracking-widest text-purple-700 border-purple-200"
+                                        disabled={isLoadingCredits}
+                                        onClick={loadMoreCredits}
+                                    >
+                                        {isLoadingCredits ? <Loader2 size={12} className="mr-1 animate-spin"/> : null}
+                                        Load More Returns
+                                    </Button>
+                                )}
+                                </>
                             )}
                         </div>
                     </div>
@@ -671,12 +828,12 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
                                         </Popover>
                                     </>
                                 )}
-                                {!isPosted && cartInvoices.length > 0 && <Button onClick={clearCart} variant="ghost" size="sm" className="h-6 text-[8px] uppercase font-black tracking-widest text-destructive hover:bg-destructive/10 px-2.5"><Trash2 size={10} className="mr-1"/> Clear Cart</Button>}
+                    {!isPosted && hasClearableCart && <Button onClick={handleClearCart} disabled={isClearing || isSubmitting || isPartialSaving || isSuccess} variant="ghost" size="sm" className="h-6 text-[8px] uppercase font-black tracking-widest text-destructive hover:bg-destructive/10 px-2.5">{isClearing ? <Loader2 size={10} className="mr-1 animate-spin"/> : <Trash2 size={10} className="mr-1"/>}{isClearing ? "Clearing..." : "Clear Cart"}</Button>}
                             </div>
                         </div>
 
                         {!isPosted && (
-                            <InvoiceSearchPopover searchOpen={searchOpen} setSearchOpen={setSearchOpen} searchQuery={searchQuery} setSearchQuery={setSearchQuery} isSearching={isSearching} searchResults={searchResults} addToCart={addToCart} />
+                            <InvoiceSearchPopover searchOpen={searchOpen} setSearchOpen={setSearchOpen} searchQuery={searchQuery} setSearchQuery={setSearchQuery} isSearching={isSearching} searchResults={searchResults} searchError={searchError} searchHasMore={searchHasMore} addToCart={addToCart} loadMoreSearchResults={loadMoreSearchResults} />
                         )}
                     </div>
 

@@ -45,7 +45,10 @@ export const disbursementProvider = {
         supplier: string = "", startDate: string = "", endDate: string = "",
         status: string = "All", divisionId: string = "", departmentId: string = "", docNo: string = ""
     ): Promise<PaginatedResponse<Disbursement>> => {
-        let url = `${API_BASE}?page=${page}&size=${size}&type=${encodeURIComponent(type)}&status=${encodeURIComponent(status)}`;
+        const isWerFilter = type.trim().toUpperCase() === "WER";
+        const transactionType = isWerFilter ? "All" : type;
+        let url = `${API_BASE}?page=${page}&size=${size}&type=${encodeURIComponent(transactionType)}&status=${encodeURIComponent(status)}`;
+        if (isWerFilter) url += "&source=WER";
         if (supplier) url += `&supplier=${encodeURIComponent(supplier)}`;
         if (startDate) url += `&startDate=${encodeURIComponent(startDate)}`;
         if (endDate) url += `&endDate=${encodeURIComponent(endDate)}`;
@@ -182,10 +185,12 @@ export const disbursementProvider = {
         return data as UnpaidPoDto[];
     },
 
-    getSupplierMemos: async (supplierId: number): Promise<MemoDto[]> => {
-        const res = await fetch(`/api/fm/treasury/disbursements/memos/${supplierId}`);
-        if (!res.ok) throw new Error("Failed to fetch supplier memos");
-        return res.json();
+    getSupplierMemos: async (supplierId: number, signal?: AbortSignal): Promise<MemoDto[]> => {
+        const res = await fetch(`/api/fm/treasury/disbursements/memos/${supplierId}`, { signal });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.detail || data?.message || "Failed to fetch supplier memos");
+        if (!Array.isArray(data)) throw new Error("Supplier memos returned an invalid response");
+        return (data as MemoDto[]).filter((memo) => Number(memo.supplier_id) === Number(supplierId));
     },
 
     getDivisions: async (): Promise<DivisionDto[]> => {

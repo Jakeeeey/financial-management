@@ -1,11 +1,12 @@
 "use client";
 
 import React from "react";
-import { Search, Loader2 } from "lucide-react";
+import { Search, Loader2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { UnpaidInvoice } from "../../types";
+import { getInvoiceRequiredBalance } from "../utils/settlement-balance";
 
 interface InvoiceSearchPopoverProps {
     searchOpen: boolean;
@@ -14,11 +15,14 @@ interface InvoiceSearchPopoverProps {
     setSearchQuery: (value: string) => void;
     isSearching: boolean;
     searchResults: UnpaidInvoice[];
+    searchError: string | null;
+    searchHasMore: boolean;
     addToCart: (invoice: UnpaidInvoice) => void;
+    loadMoreSearchResults: () => void;
 }
 
 export default function InvoiceSearchPopover({
-    searchOpen, setSearchOpen, searchQuery, setSearchQuery, isSearching, searchResults, addToCart
+    searchOpen, setSearchOpen, searchQuery, setSearchQuery, isSearching, searchResults, searchError, searchHasMore, addToCart, loadMoreSearchResults
 }: InvoiceSearchPopoverProps) {
     return (
         <Popover open={searchOpen} onOpenChange={setSearchOpen}>
@@ -30,13 +34,20 @@ export default function InvoiceSearchPopover({
             <PopoverContent className="w-[90vw] sm:w-[700px] p-0 shadow-2xl" align="start">
                 <Command shouldFilter={false}>
                     <CommandInput placeholder="Type Invoice No. or Customer Name..." value={searchQuery} onValueChange={setSearchQuery} className="h-9 text-xs" />
+                    {searchError && (
+                        <div className="flex items-center gap-2 border-b border-destructive/20 bg-destructive/10 px-3 py-2 text-[10px] font-bold text-destructive" role="alert">
+                            <AlertCircle size={14}/> {searchError}
+                        </div>
+                    )}
                     <CommandList
                         className="max-h-[250px] overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border hover:scrollbar-thumb-foreground/20"
                         onWheelCapture={(e) => e.stopPropagation()}
                         onTouchMoveCapture={(e) => e.stopPropagation()}
                     >
                         <CommandEmpty className="py-4 text-center text-xs text-muted-foreground">
-                            {isSearching ? <span className="flex items-center justify-center gap-2"><Loader2 size={14} className="animate-spin"/> Searching...</span> : "No results."}
+                            {isSearching ? (
+                                <span className="flex items-center justify-center gap-2"><Loader2 size={14} className="animate-spin"/> Searching...</span>
+                            ) : "No results."}
                         </CommandEmpty>
                         <CommandGroup heading={searchResults.length > 0 ? "Database Results" : ""}>
                             {searchResults.map((inv: UnpaidInvoice) => (
@@ -51,10 +62,24 @@ export default function InvoiceSearchPopover({
                                             </span>
                                         )}
                                     </div>
-                                    <span className="font-mono font-black text-emerald-600 text-sm">₱{inv.remainingBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                                    <span className="font-mono font-black text-emerald-600 text-sm">₱{getInvoiceRequiredBalance(inv).toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
                                 </CommandItem>
                             ))}
                         </CommandGroup>
+                        {searchHasMore && !searchError && (
+                            <div className="border-t border-muted/50 p-2 text-center">
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={loadMoreSearchResults}
+                                    disabled={isSearching}
+                                    className="h-7 text-[10px] font-bold uppercase tracking-wider"
+                                >
+                                    {isSearching ? "Loading..." : "Load more results"}
+                                </Button>
+                            </div>
+                        )}
                     </CommandList>
                 </Command>
             </PopoverContent>

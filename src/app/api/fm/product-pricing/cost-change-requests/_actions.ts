@@ -37,6 +37,11 @@ export type CcrRow = {
 type DirectusSingleResponse<T> = { data: T };
 type DirectusList<T> = { data?: T[] };
 
+type ProductCostRow = {
+    product_id?: number | string | null;
+    cost_per_unit?: number | string | null;
+};
+
 export function pickRequestId(row: CcrRow): number {
     return Number(row.request_id);
 }
@@ -85,11 +90,22 @@ export async function patchProductCostField(args: { product_id: number; proposed
     const params = new URLSearchParams({ fields: "product_id,cost_per_unit" });
     const url = `${mustBase()}/items/${PRODUCTS}/${product_id}?${params.toString()}`;
 
-    await fetchDirectus<unknown>(url, {
+    const response = await fetchDirectus<DirectusSingleResponse<ProductCostRow | null>>(url, {
         method: "PATCH",
         headers: directusHeaders(),
         body: JSON.stringify({ cost_per_unit: proposed_cost }),
     });
+
+    const persistedProductId = Number(response.data?.product_id);
+    const persistedCost = Number(response.data?.cost_per_unit);
+    const productMatches = Number.isFinite(persistedProductId) && persistedProductId === product_id;
+    const costMatches = Number.isFinite(persistedCost) && Math.abs(persistedCost - proposed_cost) <= 1e-9;
+
+    if (!productMatches || !costMatches) {
+        throw new Error(
+            `List cost update did not persist for product ${product_id}. Expected cost_per_unit ${proposed_cost}.`,
+        );
+    }
 }
 
 export async function approveOneCostRequest(

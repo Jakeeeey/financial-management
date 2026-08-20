@@ -152,14 +152,6 @@ export function useCashIssuance(initialStatusFilter = "All") {
             applyFilters();
             return {success: true};
         } catch (error: unknown) {
-            if (error instanceof DisbursementRequestError && error.code === "DOC_NO_CONFLICT") {
-                return {
-                    success: false,
-                    code: error.code,
-                    message: error.message,
-                    nextDocNo: error.nextDocNo,
-                };
-            }
             const message = error instanceof Error ? error.message : "Creation failed";
             toast.error(message);
             return {success: false, message};

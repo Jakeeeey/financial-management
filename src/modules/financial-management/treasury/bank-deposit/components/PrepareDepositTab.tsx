@@ -33,6 +33,7 @@ interface Props {
     onFiltersChange: (filters: VaultAssetFilters) => void;
     error: string | null;
     isLoading: boolean;
+    isBanksLoading: boolean;
     isSubmitting: boolean;
     page: number;
     totalPages: number;
@@ -64,6 +65,7 @@ export function PrepareDepositTab({
                                       onFiltersChange,
                                       error,
                                       isLoading,
+                                      isBanksLoading,
                                       isSubmitting,
                                       page,
                                       totalPages,
@@ -417,7 +419,14 @@ export function PrepareDepositTab({
                                     <CommandInput placeholder="Search bank accounts..." className="uppercase text-xs font-bold" />
                                     <CommandList className="custom-scrollbar">
                                         <CommandEmpty className="text-xs font-bold uppercase p-4 text-center text-muted-foreground">
-                                            No bank found.
+                                            {isBanksLoading ? (
+                                                <span className="inline-flex items-center gap-2">
+                                                    <Loader2 size={14} className="animate-spin" />
+                                                    Loading banks...
+                                                </span>
+                                            ) : (
+                                                "No bank found."
+                                            )}
                                         </CommandEmpty>
                                         <CommandGroup>
                                             {activeBanks.map((b) => (
