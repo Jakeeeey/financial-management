@@ -493,7 +493,7 @@ async function resolveLinkedTopSheetData(params: {
 
 export async function getExpenseHeaderGroups(params: {
   context: BulkApprovalContext;
-  statusFilter?: "ready" | "completed";
+  statusFilter?: "ready" | "completed" | "all";
 }): Promise<FinalHeaderGroupResponse[]> {
   const { approverRecords, maxLevelByDivision } = params.context;
   const finalDivisionIds = [...new Set(
@@ -649,7 +649,7 @@ export async function getExpenseHeaderGroups(params: {
       };
     });
 
-  const filteredGroups = params.statusFilter
+  const filteredGroups = params.statusFilter && params.statusFilter !== "all"
     ? mappedGroups.filter((g) => params.statusFilter === "completed" ? g.is_completed : !g.is_completed)
     : mappedGroups;
 
@@ -1035,7 +1035,7 @@ export async function handleFinalTopSheetsGetResource(params: {
   context: BulkApprovalContext;
 }): Promise<NextResponse | null> {
   if (params.resource === "final-header-groups") {
-    const statusFilter = params.searchParams.get("status") as "ready" | "completed" | null;
+    const statusFilter = params.searchParams.get("status") as "ready" | "completed" | "all" | null;
     const groups = await getExpenseHeaderGroups({
       context: params.context,
       statusFilter: statusFilter || undefined,
