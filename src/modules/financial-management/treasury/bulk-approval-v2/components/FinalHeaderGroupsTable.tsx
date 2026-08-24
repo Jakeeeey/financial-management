@@ -18,6 +18,7 @@ import {
   XCircle,
   Check,
   ChevronsUpDown,
+  AlertTriangle,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -69,6 +70,7 @@ type ApprovalAwareGroup = FinalHeaderGroup & {
   current_tier?: number;
   required_approver_level?: number;
   is_completed?: boolean;
+  has_concern?: boolean;
 };
 
 function uniqueStatuses(group: ApprovalAwareGroup) {
@@ -499,6 +501,12 @@ export default function FinalHeaderGroupsTable({
                             {group.division_name ?? `Division #${group.division_id}`}
                           </Badge>
                           <ApprovalStateBadge group={group as ApprovalAwareGroup} />
+                          {group.has_concern && (
+                            <Badge className="w-fit rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-500/10 dark:bg-amber-900/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-400 hover:bg-amber-500/15 dark:hover:bg-amber-900/40 gap-1 flex items-center">
+                              <AlertTriangle size={10} className="text-amber-600 dark:text-amber-500 animate-pulse" />
+                              <span>With Concern</span>
+                            </Badge>
+                          )}
                         </div>
                         <div className="space-y-0.5">
                           <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">

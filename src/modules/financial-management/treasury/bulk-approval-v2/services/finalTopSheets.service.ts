@@ -604,7 +604,7 @@ export async function getExpenseHeaderGroups(params: {
       chunks.map(async (chunk) => {
         const expenseQuery = buildFilterQuery(
           { id: { _in: chunk } },
-          "id,header_id,encoded_by,particulars,amount",
+          "id,header_id,encoded_by,particulars,amount,status",
           { limit: "-1" }
         );
         const res = await directusFetch<DirectusListResponse<ExpenseDraftRow>>(
@@ -633,6 +633,9 @@ export async function getExpenseHeaderGroups(params: {
       groupExpenses.map((expense) => toNumericId(expense.particulars) ?? 0).filter((id) => id > 0)
     ).size;
     group.total_amount = groupExpenses.reduce((sum, expense) => sum + toNumber(expense.amount), 0);
+    group.has_concern = groupExpenses.some((expense) =>
+      (expense.status ?? "").toLowerCase().includes("concern")
+    );
   }
 
   const mappedGroups = [...groupMap.values()]
@@ -940,6 +943,7 @@ export async function buildFinalTopSheet(params: {
       salesman_name: salesman?.salesman_name?.trim() || userMap.get(employeeId) || `User #${employeeId}`,
       coa_id: coaId,
       account_title: coa?.account_title ?? `COA #${coaId}`,
+      gl_code: coa?.gl_code ?? null,
       transaction_date: toStringOrNull(expense.transaction_date) ?? "",
       amount: toNumber(expense.amount),
       payee: expense.payee ?? null,

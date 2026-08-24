@@ -336,6 +336,7 @@ export type FinalHeaderGroupResponse = {
   creator_name?: string | null;
   creator_id?: number | null;
   date_submitted?: string | null;
+  has_concern?: boolean;
 };
 export type FinalHeaderGroup = FinalHeaderGroupResponse;
 
@@ -378,6 +379,7 @@ export type FinalTopSheetDetail = {
   salesman_name: string;
   coa_id: number;
   account_title: string;
+  gl_code?: string | null;
   transaction_date: string;
   amount: number;
   payee: string | null;
