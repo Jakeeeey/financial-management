@@ -155,7 +155,7 @@ export async function getActivityLogDetail(
   return data.data;
 }
 
-export async function getFinalHeaderGroups(status?: "ready" | "completed"): Promise<FinalHeaderGroup[]> {
+export async function getFinalHeaderGroups(status?: "ready" | "completed" | "all"): Promise<FinalHeaderGroup[]> {
   const url = `${BASE}?resource=final-header-groups${status ? `&status=${status}` : ""}`;
   const data = await apiFetch<{ data: FinalHeaderGroup[] }>(url);
 
