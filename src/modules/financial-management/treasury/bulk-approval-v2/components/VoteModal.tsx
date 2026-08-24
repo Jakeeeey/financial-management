@@ -6,7 +6,7 @@ import {
   Loader2, FileText, CheckCircle2,
   ShieldCheck, X,
   ExternalLink, Info,
-  AlertTriangle, RefreshCw, Send, Check, User, Building2, Wallet,
+  AlertTriangle, RefreshCw, Check, User, Building2, Wallet,
   Maximize2, ZoomIn, ZoomOut, RotateCcw, RotateCw, Move
 } from "lucide-react";
 import { toast } from "sonner";
@@ -336,30 +336,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
   const currentTier = draft.current_tier || 1;
   const isInteractionDisabled = !!detail.my_vote || !detail.can_vote;
 
-  const handleSingleItemVote = async (p: DraftPayable) => {
-    const status = itemDecisions[p.id];
-    const feedback = showItemRemarks[p.id];
 
-    if (status === "PENDING" || !status) return;
-    if ((status === "WITH_CONCERN" || status === "REJECTED") && !feedback?.trim()) {
-      return toast.warning("Feedback is required for this decision.");
-    }
-
-    // Single-item batch: auto-post the full vote immediately.
-    // Pass the item feedback as batch remarks so the user doesn't have
-    // to fill two separate fields for a single-line decision.
-    if (combinedItems.length === 1) {
-      const batchRemarks = remarks.trim() || feedback?.trim() || "";
-      setRemarks(batchRemarks);
-      setRemarksOpen(true);
-      return;
-    }
-
-    // Multi-item batch: local staging only. The backend vote endpoint is
-    // submitted once per draft by the main Submit Decision button;
-    // calling it per line would cause subsequent lines to fail with "Already voted".
-    toast.success(`Decision for item #${p.id} staged. Submit the batch to finalize.`);
-  };
 
   async function handleVote(overrideRemarks?: string) {
     if (!detail) return;
