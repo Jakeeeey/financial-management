@@ -1756,8 +1756,8 @@ export async function processDraftApproval(params: {
     }
 
 
-    // Do NOT delete disbursement_payables_draft records — the payable must stay so
-    // the salesman can correct and resubmit. Only update expense_draft status + feedback.
+    // SPLIT LOGIC: Delete disbursement_payables_draft records for concern items so they are separated from the Approved items in this draft.
+    // The underlying expense_draft is updated so the encoder can view and fix them.
     for (const [idStr, decision] of payableDecisions) {
       const payableId = Number(idStr);
       if (!Number.isFinite(payableId) || payableId <= 0) continue;
@@ -1804,6 +1804,11 @@ export async function processDraftApproval(params: {
         amount: payable.amount,
         remarks: decision.remarks || (targetStatus === "Rejected" ? "Item rejected." : "Concern raised."),
         status: targetStatus,
+      });
+
+      // Remove from current draft
+      await directusFetch(`/items/disbursement_payables_draft/${payableId}`, {
+        method: "DELETE",
       });
     }
 
