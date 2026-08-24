@@ -6,7 +6,7 @@ import {
   Loader2, FileText, CheckCircle2,
   ShieldCheck, X,
   ExternalLink, Info,
-  AlertTriangle, RefreshCw, Send, Check, User, Building2, Wallet,
+  AlertTriangle, RefreshCw, Check, User, Building2, Wallet,
   Maximize2, ZoomIn, ZoomOut, RotateCcw, RotateCw, Move
 } from "lucide-react";
 import { toast } from "sonner";
@@ -135,6 +135,20 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
   // itemDecisions now defaults to PENDING (Explicit Verification Pattern)
   const [itemDecisions, setItemDecisions] = React.useState<Record<number, "APPROVED" | "REJECTED" | "WITH_CONCERN" | "PENDING">>({});
   const [showItemRemarks, setShowItemRemarks] = React.useState<Record<number, string>>({});
+
+  const [itemPromptOpen, setItemPromptOpen] = React.useState(false);
+  const [itemPromptData, setItemPromptData] = React.useState<{ id: number; status: "APPROVED" | "REJECTED" | "WITH_CONCERN"; item: DraftPayable } | null>(null);
+  const [itemPromptRemarks, setItemPromptRemarks] = React.useState("");
+
+  const handleItemActionClick = (p: DraftPayable, newStatus: "APPROVED" | "REJECTED" | "WITH_CONCERN") => {
+    if (itemDecisions[p.id] === newStatus) {
+      setItemStatus(p.id, newStatus);
+    } else {
+      setItemPromptData({ id: p.id, status: newStatus, item: p });
+      setItemPromptRemarks(showItemRemarks[p.id] || "");
+      setItemPromptOpen(true);
+    }
+  };
 
 
   React.useEffect(() => {
@@ -322,30 +336,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
   const currentTier = draft.current_tier || 1;
   const isInteractionDisabled = !!detail.my_vote || !detail.can_vote;
 
-  const handleSingleItemVote = async (p: DraftPayable) => {
-    const status = itemDecisions[p.id];
-    const feedback = showItemRemarks[p.id];
 
-    if (status === "PENDING" || !status) return;
-    if ((status === "WITH_CONCERN" || status === "REJECTED") && !feedback?.trim()) {
-      return toast.warning("Feedback is required for this decision.");
-    }
-
-    // Single-item batch: auto-post the full vote immediately.
-    // Pass the item feedback as batch remarks so the user doesn't have
-    // to fill two separate fields for a single-line decision.
-    if (combinedItems.length === 1) {
-      const batchRemarks = remarks.trim() || feedback?.trim() || "";
-      setRemarks(batchRemarks);
-      setRemarksOpen(true);
-      return;
-    }
-
-    // Multi-item batch: local staging only. The backend vote endpoint is
-    // submitted once per draft by the main Submit Decision button;
-    // calling it per line would cause subsequent lines to fail with "Already voted".
-    toast.success(`Decision for item #${p.id} staged. Submit the batch to finalize.`);
-  };
 
   async function handleVote(overrideRemarks?: string) {
     if (!detail) return;
@@ -408,7 +399,8 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
         const id = Number(idStr);
         if (status === "PENDING") return;
         const isVirtualOrConcernItem = id < 0;
-        const shouldSendDecision = status !== "APPROVED" || isVirtualOrConcernItem;
+        const hasRemarks = !!showItemRemarks[id]?.trim();
+        const shouldSendDecision = status !== "APPROVED" || isVirtualOrConcernItem || hasRemarks;
         if (!shouldSendDecision) return;
 
         payloadItemDecisions[id] = {
@@ -853,6 +845,9 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                   <TableCell className="py-3">
                                     <p className="text-[10px] font-black text-slate-800 dark:text-slate-200 leading-none mb-1 line-clamp-1">{p.remarks || "No remarks"}</p>
                                     <p className="text-[8px] text-muted-foreground dark:text-slate-500 font-mono">REF: {p.reference_no || "N/A"}</p>
+                                    {showItemRemarks[p.id] && (
+                                      <p className="text-[9px] font-bold text-blue-600 dark:text-blue-400 mt-1 line-clamp-1 break-all">Feedback: {showItemRemarks[p.id]}</p>
+                                    )}
                                   </TableCell>
                                   <TableCell className="py-3 text-center">
                                     <Input
@@ -893,43 +888,18 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                   </TableCell>
                                   <TableCell className="py-3 text-center">
                                     <div className="flex items-center justify-center gap-1">
-                                      <Button size="icon" className={`h-7 w-7 rounded-lg shadow-sm ${status === "APPROVED" ? "bg-emerald-500 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/40"}`} onClick={() => setItemStatus(p.id, "APPROVED")} disabled={processingItem === p.id || submitting || isStatusLocked}>
+                                      <Button size="icon" className={`h-7 w-7 rounded-lg shadow-sm ${status === "APPROVED" ? "bg-emerald-500 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/40"}`} onClick={() => handleItemActionClick(p, "APPROVED")} disabled={processingItem === p.id || submitting || isStatusLocked}>
                                         <Check size={14} strokeWidth={3} />
                                       </Button>
-                                      <Button size="icon" className={`h-7 w-7 rounded-lg shadow-sm ${status === "WITH_CONCERN" ? "bg-amber-500 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:bg-amber-50 dark:hover:bg-amber-900/40"}`} onClick={() => setItemStatus(p.id, "WITH_CONCERN")} disabled={processingItem === p.id || submitting || isStatusLocked}>
+                                      <Button size="icon" className={`h-7 w-7 rounded-lg shadow-sm ${status === "WITH_CONCERN" ? "bg-amber-500 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:bg-amber-50 dark:hover:bg-amber-900/40"}`} onClick={() => handleItemActionClick(p, "WITH_CONCERN")} disabled={processingItem === p.id || submitting || isStatusLocked}>
                                         <AlertTriangle size={12} />
                                       </Button>
-                                      <Button size="icon" className={`h-7 w-7 rounded-lg shadow-sm ${status === "REJECTED" ? "bg-rose-500 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:bg-rose-50 dark:hover:bg-rose-900/40"}`} onClick={() => setItemStatus(p.id, "REJECTED")} disabled={processingItem === p.id || submitting || isStatusLocked}>
+                                      <Button size="icon" className={`h-7 w-7 rounded-lg shadow-sm ${status === "REJECTED" ? "bg-rose-500 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:bg-rose-50 dark:hover:bg-rose-900/40"}`} onClick={() => handleItemActionClick(p, "REJECTED")} disabled={processingItem === p.id || submitting || isStatusLocked}>
                                         <X size={14} strokeWidth={3} />
                                       </Button>
                                     </div>
                                   </TableCell>
                                 </TableRow>
-                                {(status === "REJECTED" || status === "WITH_CONCERN") && (
-                                  <TableRow className={`${status === "REJECTED" ? "bg-rose-50/30 dark:bg-rose-900/10" : "bg-amber-50/30 dark:bg-amber-900/10"}`}>
-                                    <TableCell colSpan={7} className="px-8 py-3">
-                                      <div className="flex items-center gap-4 pl-12 flex-1">
-                                        <span className={`text-[10px] font-black uppercase tracking-widest ${status === "REJECTED" ? "text-rose-600 dark:text-rose-400" : "text-amber-600 dark:text-amber-400"} shrink-0`}>Audit Feedback:</span>
-                                        <Input
-                                          placeholder="Provide mandatory feedback for decision..."
-                                          className="h-8 text-xs font-medium border-2 focus:border-primary bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 shadow-inner flex-1"
-                                          value={showItemRemarks[p.id] || ""}
-                                          onChange={(e) => setShowItemRemarks(prev => ({ ...prev, [p.id]: e.target.value }))}
-                                          disabled={processingItem === p.id || submitting || isPersistentLocked || isInteractionDisabled}
-                                        />
-                                        <Button
-                                          size="sm"
-                                          className="h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-md gap-2 disabled:bg-slate-100 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-600 disabled:border-none disabled:shadow-none disabled:cursor-not-allowed"
-                                          disabled={processingItem === p.id || !showItemRemarks[p.id]?.trim() || isPersistentLocked || submitting}
-                                          onClick={() => handleSingleItemVote(p)}
-                                        >
-                                          {processingItem === p.id ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-                                          Submit Decision
-                                        </Button>
-                                      </div>
-                                    </TableCell>
-                                  </TableRow>
-                                )}
                               </React.Fragment>
                             );
                                   })}
@@ -975,6 +945,58 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                 </div>
               </>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={itemPromptOpen} onOpenChange={setItemPromptOpen}>
+        <DialogContent className="max-w-md p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl">
+          <DialogTitle className="flex items-center gap-2 text-slate-800 dark:text-slate-100 text-lg font-black">
+            {itemPromptData?.status === "APPROVED" && <Check className="text-emerald-500 shrink-0" size={20} />}
+            {itemPromptData?.status === "WITH_CONCERN" && <AlertTriangle className="text-amber-500 shrink-0" size={20} />}
+            {itemPromptData?.status === "REJECTED" && <X className="text-rose-500 shrink-0" size={20} />}
+            Item Feedback Required
+          </DialogTitle>
+          <DialogDescription className="text-slate-500 dark:text-slate-400 text-sm mt-2">
+            Please provide mandatory feedback or remarks for this <strong>{itemPromptData?.status}</strong> decision. This will be recorded for revisions and audit.
+          </DialogDescription>
+          
+          <div className="mt-4 space-y-3">
+            <Textarea 
+              placeholder="Enter your remarks here..."
+              className="resize-none h-24 border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-blue-500"
+              value={itemPromptRemarks}
+              onChange={(e) => setItemPromptRemarks(e.target.value)}
+              autoFocus
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-3 mt-6">
+            <Button variant="ghost" onClick={() => setItemPromptOpen(false)} className="text-slate-500">
+              Cancel
+            </Button>
+            <Button 
+              disabled={!itemPromptRemarks.trim()}
+              className={`font-black uppercase tracking-widest text-[10px] px-6 text-white ${
+                itemPromptData?.status === "APPROVED" ? "bg-emerald-600 hover:bg-emerald-700" :
+                itemPromptData?.status === "WITH_CONCERN" ? "bg-amber-600 hover:bg-amber-700" :
+                "bg-rose-600 hover:bg-rose-700"
+              }`}
+              onClick={() => {
+                if (!itemPromptData) return;
+                setShowItemRemarks(prev => ({ ...prev, [itemPromptData.id]: itemPromptRemarks }));
+                setItemDecisions(prev => ({ ...prev, [itemPromptData.id]: itemPromptData.status }));
+                setItemPromptOpen(false);
+                
+                // If this is a single item draft, submit immediately
+                if (combinedItems.length === 1 && !detail?.my_vote) {
+                  // We simulate handleSingleItemVote logic by directly staging it 
+                  // and waiting for the user to click the final "Submit Decision" button on the modal footer
+                }
+              }}
+            >
+              Confirm {itemPromptData?.status}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
