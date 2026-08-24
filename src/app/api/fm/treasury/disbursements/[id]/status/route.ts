@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
-import { normalizeDisbursement, getLineItems, getUserMap, PayableRow, DisbursementRow, resolveEncoderId, getCoaMap, getDivisionMap, getBankMap } from "../../route";
+import { normalizeDisbursement, getLineItems, getUserMap, PayableRow, DisbursementRow, resolveEncoderId, getCoaMap, getDivisionMap, getBankMap, relationId, loadNormalizedDisbursement } from "../../route";
+import { findUnpostedPurchaseOrderReferences } from "../../_purchase-order-eligibility";
+import { findVatSplitDivisionError } from "../../_payable-split-integrity";
+import { acquireMemoCapLock, refreshSupplierMemoStatuses, validateSupplierMemoCaps } from "../../_memo-cap-integrity";
+import { validatePaymentLine } from "../../_payment-method";
+import { hasDisbursementApprovalAccess } from "../../_approval-access";
 
 export const runtime = "nodejs";
 
@@ -109,32 +114,12 @@ async function syncPurchaseOrderStatuses(disbursement: DisbursementRow, payables
 }
 
 // 🚀 Helper: Lock Applied Memos
-async function lockAppliedMemos(payablesList: PayableRow[]) {
+async function lockAppliedMemos(payablesList: PayableRow[], supplierId: number) {
     const referenceNumbers = Array.from(new Set(
         payablesList.map((p) => String(p.reference_no || "")).filter((ref) => ref && ref.trim())
     ));
 
-    for (const refNo of referenceNumbers) {
-        try {
-            // Find memo by memo_number
-            const memoRes = await fetch(`${DIRECTUS_URL}/items/suppliers_memo?filter[memo_number][_eq]=${encodeURIComponent(refNo)}&fields=id,status`, {
-                headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }
-            });
-            if (!memoRes.ok) continue;
-            const memos = ((await memoRes.json()).data || []) as { id: number; status: string }[];
-            for (const memo of memos) {
-                if (memo.status !== "USED") {
-                    await fetch(`${DIRECTUS_URL}/items/suppliers_memo/${memo.id}`, {
-                        method: "PATCH",
-                        headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}`, "Content-Type": "application/json" },
-                        body: JSON.stringify({ status: "USED" })
-                    });
-                }
-            }
-        } catch (e) {
-            console.error(`Failed to lock memo ${refNo}:`, e);
-        }
-    }
+    await refreshSupplierMemoStatuses(supplierId, referenceNumbers);
 }
 
 // 🚀 PATCH Handler - Status Transitions
@@ -154,8 +139,16 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     const decoded = decodeJwtPayload(token);
     const encoderEmail = decoded?.email || decoded?.sub || null;
-    const resolvedUserId = await resolveEncoderId(encoderEmail);
-    const currentUserId = resolvedUserId || 1;
+    const currentUserId = await resolveEncoderId(encoderEmail);
+
+    if (!currentUserId) {
+        return NextResponse.json({
+            message: "User Profile Not Found",
+            detail: "Your account is not registered in the system user directory. State transitions are blocked."
+        }, { status: 403 });
+    }
+
+    let releaseMemoCapLock: (() => void) | undefined;
 
     try {
         // 1. Fetch current record from Directus
@@ -168,6 +161,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         if (!currentRes.ok) return NextResponse.json({ message: "Disbursement not found in Directus" }, { status: 404 });
         const currentDis = (await currentRes.json()).data;
 
+        const currentStatus = String(currentDis.status || "");
+        const isReplay = currentStatus === status ||
+            (status === "Submitted" && currentStatus === "Approved" && Number(currentDis.total_amount) < 1000);
+        if (isReplay) {
+            return NextResponse.json(await loadNormalizedDisbursement(currentDis, token));
+        }
+
         // Immutability Enforcement: block modifications if isPosted = 1
         if (Number(currentDis.isPosted) === 1) {
             return NextResponse.json({
@@ -176,10 +176,64 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             }, { status: 400 });
         }
 
+        if (status === "Returned for Revision") {
+            if (currentStatus !== "Submitted" && currentStatus !== "Approved") {
+                return NextResponse.json({
+                    message: "Only Submitted or Approved vouchers can be returned for revision.",
+                }, { status: 400 });
+            }
+
+            if (!(await hasDisbursementApprovalAccess(currentUserId))) {
+                return NextResponse.json({
+                    message: "Only authorized disbursement approvers can return a voucher for revision.",
+                }, { status: 403 });
+            }
+        }
+
+        if (status === "Draft" && currentStatus === "Submitted") {
+            return NextResponse.json({
+                message: "Submitted vouchers are locked. An authorized approver must return the voucher for revision.",
+            }, { status: 409 });
+        }
+
         // 2. Fetch line items to calculate double-entry debits/credits balance
         const lineItems = await getLineItems([id]);
         const payables = lineItems.payables.get(id) || [];
         const payments = lineItems.payments.get(id) || [];
+        const coaMap = await getCoaMap();
+        const bankMap = await getBankMap();
+
+        releaseMemoCapLock = await acquireMemoCapLock(
+            payables.map((line) => ({ referenceNo: line.reference_no, amount: line.amount })),
+        );
+
+        const currentPayeeId = relationId(currentDis.payee, "id") || 0;
+        const memoCapError = currentPayeeId
+            ? await validateSupplierMemoCaps(
+                currentPayeeId,
+                status === "Returned for Revision"
+                    ? []
+                    : payables.map((line) => ({ referenceNo: line.reference_no, amount: line.amount })),
+                id,
+            )
+            : null;
+        if (memoCapError) {
+            return NextResponse.json({
+                message: memoCapError.isLocked
+                    ? "Supplier memo is currently locked by an unposted TR."
+                    : "Supplier memo amount exceeds its authorized cap.",
+                detail: memoCapError.message,
+                memoNumber: memoCapError.memoNumber,
+                authorizedAmount: memoCapError.authorizedAmount,
+                appliedAmount: memoCapError.appliedAmount,
+                requestedAmount: memoCapError.requestedAmount,
+                remainingAmount: memoCapError.remainingAmount,
+                isLocked: memoCapError.isLocked || false,
+                lockingTrDocNo: memoCapError.lockingTrDocNo || null,
+                lockingTrStatus: memoCapError.lockingTrStatus || null,
+                lockingTrCount: memoCapError.lockingTrCount || 0,
+            }, { status: 409 });
+        }
 
         let totalDebit = 0;
         let totalCredit = 0;
@@ -201,16 +255,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         const isBalanced = Math.abs(totalDebit - totalCredit) <= 0.01;
 
         // 3. Status Transition Logic matching Spring Boot and Specifications
-        const APPROVAL_THRESHOLD = 1000.00;
         let newStatus = status;
-        let approverId = currentDis.approver_id;
+        let approverId: number | null | undefined = relationId(currentDis.approver_id, "user_id");
         let dateApproved = currentDis.date_approved;
-        let postedBy = currentDis.posted_by;
+        let postedBy: number | null | undefined = relationId(currentDis.posted_by, "user_id");
         let datePosted = currentDis.date_posted;
         let isPosted = currentDis.isPosted;
-        let submittedBy = currentDis.submitted_by;
+        let submittedBy: number | null | undefined = relationId(currentDis.submitted_by, "user_id");
         let dateSubmitted = currentDis.date_submitted;
-        let releasedBy = currentDis.released_by;
+        let releasedBy: number | null | undefined = relationId(currentDis.released_by, "user_id");
         let dateReleased = currentDis.date_released;
         let paidAmount = currentDis.paid_amount;
 
@@ -220,7 +273,31 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                     return NextResponse.json({ message: "Can only submit from Draft or Returned status." }, { status: 400 });
                 }
 
+                const unpostedPoReferences = await findUnpostedPurchaseOrderReferences(
+                    payables.map((line) => line.reference_no),
+                    relationId(currentDis.payee, "id"),
+                );
+                if (unpostedPoReferences.length > 0) {
+                    return NextResponse.json({
+                        message: "Disbursement cannot include purchase-order amounts that have not been posted.",
+                        detail: `Unposted or ineligible references: ${unpostedPoReferences.join(", ")}`,
+                        references: unpostedPoReferences,
+                    }, { status: 409 });
+                }
+
                 // Submission Integrity Constraint: disbursement.total_amount = sum(disbursement_payables.amount)
+                const vatSplitDivisionError = findVatSplitDivisionError(payables.map((line) => ({
+                    referenceNo: line.reference_no,
+                    divisionId: relationId(line.division_id, "division_id"),
+                    remarks: line.remarks,
+                })));
+                if (vatSplitDivisionError) {
+                    return NextResponse.json({
+                        message: "VAT split Cost Division mismatch",
+                        detail: vatSplitDivisionError,
+                    }, { status: 400 });
+                }
+
                 const totalPayableLinesSum = payables.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
                 const roundedPayables = Math.round(totalPayableLinesSum * 100) / 100;
                 const roundedTotalAmount = Math.round(Number(currentDis.total_amount) * 100) / 100;
@@ -235,11 +312,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                 submittedBy = currentUserId;
                 dateSubmitted = new Date().toISOString();
 
-                if (roundedTotalAmount < APPROVAL_THRESHOLD) {
-                    newStatus = "Approved";
-                    approverId = currentUserId;
-                    dateApproved = new Date().toISOString();
-                }
+                // Existing Draft and Returned for Revision vouchers must always
+                // return to formal approval, including low-value vouchers.
+                newStatus = "Submitted";
                 break;
             }
             case "Approved":
@@ -256,6 +331,23 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                     return NextResponse.json({ message: "Can only release Approved or already Released disbursements." }, { status: 400 });
                 }
 
+                for (let index = 0; index < payments.length; index++) {
+                    const line = payments[index];
+                    const validationError = validatePaymentLine({
+                        coaId: relationId(line.coa_id, "coa_id"),
+                        bankId: relationId(line.bank_id as never),
+                        checkNo: line.check_no,
+                    },
+                    coaMap.get(relationId(line.coa_id, "coa_id") || 0),
+                    bankMap.get(relationId(line.bank_id as never) || 0));
+                    if (validationError) {
+                        return NextResponse.json({
+                            message: validationError,
+                            detail: `Payment row ${index + 1} is invalid.`,
+                        }, { status: 400 });
+                    }
+                }
+
                 releasedBy = currentUserId;
                 dateReleased = new Date().toISOString();
 
@@ -263,6 +355,46 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                 // disbursement.paid_amount = sum(disbursement_payments.amount)
                 const totalPaidPayments = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
                 paidAmount = totalPaidPayments;
+
+                // Dynamically determine status based on total paid amount vs total voucher amount
+                const totalVoucherAmount = Number(currentDis.total_amount) || 0;
+                if (totalPaidPayments > totalVoucherAmount + 0.01) {
+                    return NextResponse.json({
+                        message: "Payment total cannot exceed the voucher total.",
+                        detail: `Payments total ${totalPaidPayments.toFixed(2)} exceeds voucher total ${totalVoucherAmount.toFixed(2)}.`,
+                    }, { status: 400 });
+                }
+                if (Math.abs(totalVoucherAmount - totalPaidPayments) < 0.01) {
+                    newStatus = "Released";
+                } else {
+                    newStatus = "Partially Released";
+                }
+
+                // Batch-update all related payment rows to bind release audit stamps
+                const paymentIds = payments.map((p) => p.id).filter(Boolean);
+                if (paymentIds.length > 0) {
+                    try {
+                        const batchRes = await fetch(`${DIRECTUS_URL}/items/disbursement_payments`, {
+                            method: "PATCH",
+                            headers: {
+                                Authorization: `Bearer ${DIRECTUS_TOKEN}`,
+                                "Content-Type": "application/json"
+                            },
+                            body: JSON.stringify({
+                                keys: paymentIds,
+                                data: {
+                                    released_by: releasedBy,
+                                    released_date: dateReleased
+                                }
+                            })
+                        });
+                        if (!batchRes.ok) {
+                            console.error("Directus payment lines release stamp failed:", await batchRes.text());
+                        }
+                    } catch (err) {
+                        console.error("Failed to execute batch release update on payments:", err);
+                    }
+                }
 
                 // Sync PO statuses
                 await syncPurchaseOrderStatuses(currentDis, payables);
@@ -284,8 +416,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                 isPosted = 1;
                 postedBy = currentUserId;
                 datePosted = new Date().toISOString();
-                // Lock applied memos
-                await lockAppliedMemos(payables);
                 // Sync PO statuses
                 await syncPurchaseOrderStatuses(currentDis, payables);
                 break;
@@ -330,11 +460,28 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         if (!patchRes.ok) throw new Error(await patchRes.text());
         const updatedDis = (await patchRes.json()).data;
 
+        if (status === "Posted" || status === "Returned for Revision") {
+            await lockAppliedMemos(payables, currentPayeeId);
+        }
+
         // 5. Build DTO representation
-        const userMap = await getUserMap(token);
-        const coaMap = await getCoaMap();
+        const userIdsToFetch: number[] = [];
+        const addId = (val: number | undefined) => {
+            if (typeof val === "number" && Number.isFinite(val)) {
+                userIdsToFetch.push(val);
+            }
+        };
+        addId(relationId(updatedDis.encoder_id, "user_id"));
+        addId(relationId(updatedDis.submitted_by, "user_id"));
+        addId(relationId(updatedDis.approver_id, "user_id"));
+        addId(relationId(updatedDis.released_by, "user_id"));
+        addId(relationId(updatedDis.posted_by, "user_id"));
+        payments.forEach(p => {
+            addId(relationId(p.released_by, "user_id"));
+        });
+
+        const userMap = await getUserMap(token, userIdsToFetch);
         const divisionMap = await getDivisionMap();
-        const bankMap = await getBankMap();
         const normalized = normalizeDisbursement(updatedDis, lineItems.payables, lineItems.payments, userMap, coaMap, divisionMap, bankMap);
 
         return NextResponse.json(normalized);
@@ -342,5 +489,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     } catch (err: unknown) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         return NextResponse.json({ message: "BFF Error", detail: errorMessage }, { status: 502 });
+    } finally {
+        releaseMemoCapLock?.();
     }
 }

@@ -21,6 +21,7 @@ export function useAccountsPayable(): UseAPResult {
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     const toastId = toast.loading('Loading accounts payable data...');
 
     async function fetchData() {
@@ -34,7 +35,7 @@ export function useAccountsPayable(): UseAPResult {
 
         const res = await fetch(
           `/api/fm/accounting/accounts-payable?${params}`,
-          { credentials: 'include' }
+          { credentials: 'include', signal: controller.signal }
         );
         if (!res.ok) throw new Error(`Request failed: ${res.status} ${res.statusText}`);
 
@@ -60,6 +61,7 @@ export function useAccountsPayable(): UseAPResult {
         toast.success('Data loaded successfully', { id: toastId });
       } catch (e: unknown) {
         if (cancelled) return;
+        if (e instanceof DOMException && e.name === 'AbortError') return;
         const msg = e instanceof Error ? e.message : 'Unknown error';
         setError(msg);
         toast.error(`Failed to load data: ${msg}`, { id: toastId });
@@ -69,7 +71,12 @@ export function useAccountsPayable(): UseAPResult {
     }
 
     fetchData();
-    return () => { cancelled = true; };
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      toast.dismiss(toastId);
+    };
   }, []);
 
   return { loading, error, records };

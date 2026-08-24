@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { X, Calendar, ChevronRight, FileText, Loader2 } from "lucide-react";
+import { X, Calendar, ChevronRight, FileText, Loader2, History, Clock3 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { SalesmanExpenseDetail, ExpenseHeader, SalesmanExpenseRow } from "../type";
@@ -13,10 +13,25 @@ interface Props {
   loading: boolean;
   onClose: () => void;
   onSelectHeader: (header: ExpenseHeader) => void;
+  initialTab: "pending" | "history";
 }
 
-export default function HeaderSelectionPanel({ selectedSalesman, detail, loading, onClose, onSelectHeader }: Props) {
+const TERMINAL_HEADER_STATUSES = new Set(["approved", "posted", "rejected"]);
+
+export default function HeaderSelectionPanel({ selectedSalesman, detail, loading, onClose, onSelectHeader, initialTab }: Props) {
+  const [activeTab, setActiveTab] = React.useState<"pending" | "history">(initialTab);
+
+  React.useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab, selectedSalesman?.id]);
+
   if (!selectedSalesman) return null;
+
+  const detailExpenses = detail?.expenses ?? [];
+  const visibleHeaders = (detail?.headers ?? []).filter((header) => {
+    const isHistorical = TERMINAL_HEADER_STATUSES.has(header.status.trim().toLowerCase());
+    return activeTab === "history" ? isHistorical : !isHistorical;
+  });
 
   return (
     <div className="flex flex-col h-full bg-card dark:bg-slate-900 animate-in slide-in-from-right duration-300 overflow-hidden">
@@ -30,15 +45,34 @@ export default function HeaderSelectionPanel({ selectedSalesman, detail, loading
         </Button>
       </div>
 
+      <div className="flex gap-1 border-b bg-muted/10 p-2 dark:border-slate-800 dark:bg-slate-800/30">
+        <Button
+          size="sm"
+          variant={activeTab === "pending" ? "default" : "ghost"}
+          className="h-8 flex-1 rounded-xl text-[9px] font-black uppercase tracking-wider"
+          onClick={() => setActiveTab("pending")}
+        >
+          <Clock3 className="mr-1.5 h-3.5 w-3.5" /> Pending
+        </Button>
+        <Button
+          size="sm"
+          variant={activeTab === "history" ? "default" : "ghost"}
+          className="h-8 flex-1 rounded-xl text-[9px] font-black uppercase tracking-wider"
+          onClick={() => setActiveTab("history")}
+        >
+          <History className="mr-1.5 h-3.5 w-3.5" /> Approved / Rejected
+        </Button>
+      </div>
+
       <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-muted/5 dark:bg-slate-900/50">
         {loading ? (
           <div className="flex flex-col items-center justify-center h-40 gap-3">
             <Loader2 className="h-6 w-6 animate-spin text-primary" />
             <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Loading Periods...</p>
           </div>
-        ) : detail?.headers && detail.headers.length > 0 ? (
-          detail.headers.map((header) => {
-             const headerItems = detail.expenses.filter(e => Number(e.header_id) === header.id);
+        ) : visibleHeaders.length > 0 ? (
+          visibleHeaders.map((header) => {
+             const headerItems = detailExpenses.filter(e => Number(e.header_id) === header.id);
              const itemCount = headerItems.length;
              const totalAmount = headerItems.reduce((sum, e) => sum + Number(e.amount), 0);
 
@@ -64,6 +98,18 @@ export default function HeaderSelectionPanel({ selectedSalesman, detail, loading
                       <Badge variant="outline" className="text-[9px] font-bold px-1.5 py-0 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 dark:text-slate-300">
                         {itemCount} Line{itemCount !== 1 ? 's' : ''}
                       </Badge>
+                      {activeTab === "history" && (
+                        <Badge
+                          variant="outline"
+                          className={`text-[9px] font-black px-1.5 py-0 uppercase ${
+                            header.status.trim().toLowerCase() === "rejected"
+                              ? "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-400"
+                              : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400"
+                          }`}
+                        >
+                          {header.status}
+                        </Badge>
+                      )}
                       <span className="text-[9px] text-muted-foreground italic truncate max-w-[80px]">
                         {header.remarks || "No remarks"}
                       </span>
@@ -78,7 +124,9 @@ export default function HeaderSelectionPanel({ selectedSalesman, detail, loading
         ) : (
           <div className="flex flex-col items-center justify-center h-40 text-center space-y-2">
             <FileText className="h-8 w-8 text-slate-200" />
-            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">No Submittals Found</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+              {activeTab === "pending" ? "No Pending Submittals" : "No Decided Submittals"}
+            </p>
           </div>
         )}
       </div>

@@ -9,6 +9,7 @@ import { CashIssuanceViewDialog } from "./components/CashIssuanceViewDialog";
 import { CashIssuanceDashboardTab } from "./components/CashIssuanceDashboardTab";
 import { Disbursement } from "./types";
 import { disbursementProvider } from "./providers/fetchProvider";
+import { SearchableDropdown } from "./components/SearchableDropdown";
 import { AddPayeeModal } from "@/modules/financial-management/payee-registration/components/modals/add-payee-modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,21 +25,33 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
+type CashIssuanceSubModule = "preparation" | "approval" | "releasing" | "posting" | "all" | "dashboard";
+
+const SUBMODULE_STATUS_FILTERS: Record<CashIssuanceSubModule, string> = {
+    preparation: "Draft,Submitted,Returned for Revision",
+    approval: "Submitted",
+    releasing: "Approved,Partially Released",
+    posting: "Released",
+    all: "All",
+    dashboard: "All",
+};
+
 interface CashIssuanceModuleProps {
-    initialSubModule?: "preparation" | "approval" | "releasing" | "posting" | "all" | "dashboard";
+    initialSubModule?: CashIssuanceSubModule;
 }
 
 export default function CashIssuanceModule({ initialSubModule = "preparation" }: CashIssuanceModuleProps) {
+    const initialStatusFilter = SUBMODULE_STATUS_FILTERS[initialSubModule];
     const {
         data, loading, page, setPage, size, changeSize, totalPages,
         activeType, handleTabChange, refresh,
-        create, update, changeStatus, actionLoading,
+        create, update, updatePaymentAllocation, changeStatus, actionLoading,
         supplierSearch, setSupplierSearch, startDate, setStartDate, endDate, setEndDate,
         statusFilter, setStatusFilter, divisionFilter, setDivisionFilter, departmentFilter, setDepartmentFilter, docNoSearch, setDocNoSearch,
         applyFilters, clearFilters, filterSuppliers, divisions, departments
-    } = useCashIssuance();
+    } = useCashIssuance(initialStatusFilter);
 
-    const [subModule, setSubModule] = useState<"preparation" | "approval" | "releasing" | "posting" | "all" | "dashboard">(initialSubModule);
+    const [subModule, setSubModule] = useState<CashIssuanceSubModule>(initialSubModule);
 
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [isViewOpen, setIsViewOpen] = useState(false);
@@ -88,14 +101,7 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
 
     // Sync subModule to hook's statusFilter
     React.useEffect(() => {
-        let filterVal = "All";
-        if (subModule === "preparation") filterVal = "Draft,Submitted,Returned for Revision";
-        else if (subModule === "approval") filterVal = "Submitted";
-        else if (subModule === "releasing") filterVal = "Approved";
-        else if (subModule === "posting") filterVal = "Released";
-        else if (subModule === "all" || subModule === "dashboard") filterVal = "All";
-
-        setStatusFilter(filterVal);
+        setStatusFilter(SUBMODULE_STATUS_FILTERS[subModule]);
         setPage(0);
         setSelectedIds([]); // Clear selection when subModule changes
     }, [subModule, setStatusFilter, setPage]);
@@ -263,7 +269,7 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
                                             Apply
                                         </Button>
                                         <Button
-                                            onClick={clearFilters}
+                                    onClick={() => clearFilters(SUBMODULE_STATUS_FILTERS[subModule])}
                                             variant="ghost"
                                             size="icon"
                                             className="h-10 w-10 text-destructive hover:bg-destructive/10 hover:text-destructive rounded-xl"
@@ -328,6 +334,7 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
                                                 <option value="Draft">Draft</option>
                                                 <option value="Submitted">Submitted</option>
                                                 <option value="Approved">Approved</option>
+                                                <option value="Partially Released">Partially Released</option>
                                                 <option value="Released">Released</option>
                                                 <option value="Posted">Posted</option>
                                                 <option value="Returned for Revision">Returned</option>
@@ -338,14 +345,20 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
                                     {/* Division */}
                                     <div className="space-y-2">
                                         <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">Cost Division</Label>
-                                        <select className="h-9 w-full rounded-lg border border-border/50 bg-background px-3 text-xs font-bold uppercase text-foreground shadow-sm focus:ring-1 focus:ring-primary/30 transition-all outline-none" value={divisionFilter} onChange={e => setDivisionFilter(e.target.value)}>
-                                            <option value="">All Divisions</option>
-                                            {divisions.map((d, idx) => (
-                                                <option key={`f-div-${d.divisionId|| idx}`} value={d.divisionId}>
-                                                    {d.divisionName}
-                                                </option>
-                                            ))}
-                                        </select>
+                                        <SearchableDropdown<string>
+                                            options={[
+                                                { value: "", label: "All Divisions" },
+                                                ...divisions.map((d, idx) => ({
+                                                    value: String(d.divisionId),
+                                                    label: d.divisionName || `Division-${d.divisionId || idx}`,
+                                                })),
+                                            ]}
+                                            value={divisionFilter}
+                                            onSelect={setDivisionFilter}
+                                            placeholder="All Divisions"
+                                            className="h-9 w-full rounded-lg border border-border/50 bg-background px-3 text-xs font-bold uppercase text-foreground shadow-sm focus:ring-1 focus:ring-primary/30 transition-all outline-none"
+                                            popoverWidth="w-[280px]"
+                                        />
                                     </div>
 
                                     {/* Department */}
@@ -371,6 +384,7 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
                                             <TabsTrigger value="All" className="rounded-lg text-[10px] font-black uppercase tracking-widest data-[state=active]:bg-background data-[state=active]:shadow-sm px-4">All Types</TabsTrigger>
                                             <TabsTrigger value="Trade" className="rounded-lg text-[10px] font-black uppercase tracking-widest data-[state=active]:bg-background data-[state=active]:shadow-sm px-4">Trade</TabsTrigger>
                                             <TabsTrigger value="Non-Trade" className="rounded-lg text-[10px] font-black uppercase tracking-widest data-[state=active]:bg-background data-[state=active]:shadow-sm px-4">Non-Trade</TabsTrigger>
+                                            <TabsTrigger value="WER" className="rounded-lg text-[10px] font-black uppercase tracking-widest data-[state=active]:bg-background data-[state=active]:shadow-sm px-4">WER</TabsTrigger>
                                         </TabsList>
                                     </div>
 
@@ -447,7 +461,9 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
                 open={isCreateOpen}
                 onOpenChange={setIsCreateOpen}
                 onSubmit={(payload) => formMode === "edit" ? update(selectedDisbursement!.id, payload) : create(payload)}
+                onPaymentAllocationSubmit={updatePaymentAllocation}
                 editData={formMode === "edit" ? selectedDisbursement : null}
+                paymentEditingMode={subModule === "releasing" ? "releasing" : "preparation"}
                 loading={actionLoading}
             />
 

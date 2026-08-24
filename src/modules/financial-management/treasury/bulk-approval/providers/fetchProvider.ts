@@ -68,12 +68,15 @@ export async function checkMyAccess(): Promise<
   return data.data;
 }
 
-export async function getMyApprovalContexts(): Promise<ApprovalContext[]> {
-  const data = await apiFetch<{ data: ApprovalContext[] }>(
+export async function getMyApprovalContexts(): Promise<{ contexts: ApprovalContext[]; currentUserName: string }> {
+  const data = await apiFetch<{ data: ApprovalContext[]; currentUserName?: string }>(
     `${BASE}?resource=my-approval-contexts`
   );
 
-  return data.data ?? [];
+  return {
+    contexts: data.data ?? [],
+    currentUserName: data.currentUserName ?? "",
+  };
 }
 
 export async function listDrafts(
@@ -152,10 +155,9 @@ export async function getActivityLogDetail(
   return data.data;
 }
 
-export async function getFinalHeaderGroups(): Promise<FinalHeaderGroup[]> {
-  const data = await apiFetch<{ data: FinalHeaderGroup[] }>(
-    `${BASE}?resource=final-header-groups`
-  );
+export async function getFinalHeaderGroups(status?: "ready" | "completed"): Promise<FinalHeaderGroup[]> {
+  const url = `${BASE}?resource=final-header-groups${status ? `&status=${status}` : ""}`;
+  const data = await apiFetch<{ data: FinalHeaderGroup[] }>(url);
 
   return data.data ?? [];
 }

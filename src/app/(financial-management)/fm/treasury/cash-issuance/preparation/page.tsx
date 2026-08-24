@@ -97,7 +97,9 @@ export default async function Page() {
                                 </BreadcrumbItem>
                                 <BreadcrumbSeparator className="hidden md:block shrink-0" />
                                 <BreadcrumbItem className="shrink-0">
-                                    <BreadcrumbLink href="/fm/treasury/cash-issuance/preparation">Cash Issuance</BreadcrumbLink>
+                                    <BreadcrumbLink href="/fm/treasury/cash-issuance/preparation">
+                                        Cash Issuance
+                                    </BreadcrumbLink>
                                 </BreadcrumbItem>
                                 <BreadcrumbSeparator className="shrink-0" />
                                 <BreadcrumbItem className="min-w-0 overflow-hidden">

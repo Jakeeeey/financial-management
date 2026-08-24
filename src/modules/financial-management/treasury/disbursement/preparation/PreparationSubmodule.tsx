@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,7 +15,7 @@ import {
     Plus, Trash2, Loader2, Save, Calculator,
     FileText, Check, ChevronsUpDown, Printer, UploadCloud, RefreshCw,
     DownloadCloud, Search, PlusCircle,
-    PanelLeftClose, PanelLeftOpen
+    PanelLeftClose, PanelLeftOpen, LockKeyhole
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -24,6 +24,9 @@ import { disbursementProvider } from "../providers/fetchProvider";
 import { formatCurrency } from "../utils/disbursement-utils";
 import { generateDisbursementPDF } from "../utils/pdfGenerator";
 import { StickyTableWrapper } from "../components/StickyTableWrapper";
+import { isInheritedVatSplitLine, updateVatSplitDivision } from "@/modules/financial-management/treasury/components/payable-line-splits";
+import { replaceEmptyPayablePlaceholders } from "@/modules/financial-management/treasury/components/payable-line-state";
+import { isMemoPayableLine, normalizeMemoReference, stripMemoLineMetadata } from "@/modules/financial-management/treasury/components/memo-payable-line";
 import {
     DisbursementPayload, PayableLine, SupplierDto, COADto, DivisionDto, DepartmentDto, Disbursement,
     UnpaidPoDto, MemoDto
@@ -44,16 +47,17 @@ interface SearchSelectProps<T extends string | number> {
     onSelect: (val: T) => void;
     placeholder: string;
     className?: string;
+    disabled?: boolean;
 }
 
-function SearchSelect<T extends string | number>({ options, value, onSelect, placeholder, className }: SearchSelectProps<T>) {
+function SearchSelect<T extends string | number>({ options, value, onSelect, placeholder, className, disabled }: SearchSelectProps<T>) {
     const [open, setOpen] = useState(false);
     const selectedLabel = options.find(o => String(o.value) === String(value))?.label || placeholder;
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger asChild>
-                <Button variant="outline" role="combobox" aria-expanded={open} className={cn("justify-between w-full h-9 text-xs font-bold uppercase bg-background px-2.5", className)}>
+                <Button disabled={disabled} variant="outline" role="combobox" aria-expanded={open} className={cn("justify-between w-full h-9 text-xs font-bold uppercase bg-background px-2.5", className)}>
                     <span className="truncate text-left">{selectedLabel}</span>
                     <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-55" />
                 </Button>
@@ -123,10 +127,10 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
     const [payeeId, setPayeeId] = useState<number | "">("");
     const [remarks, setRemarks] = useState("");
     const [transactionDate, setTransactionDate] = useState(today);
-    const [divisionId, setDivisionId] = useState<number | "">("");
     const [departmentId, setDepartmentId] = useState<number | "">("");
     const [supportingDocumentsUrl, setSupportingDocumentsUrl] = useState("");
     const [payables, setPayables] = useState<PayableLine[]>([]);
+    const [previewDocNo, setPreviewDocNo] = useState("");
 
     const isNonTradeVoucher = transactionTypeId === 2;
 
@@ -134,14 +138,22 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
     const [unpaidPos, setUnpaidPos] = useState<UnpaidPoDto[]>([]);
     const [loadingPos, setLoadingPos] = useState(false);
     const [isPoModalOpen, setIsPoModalOpen] = useState(false);
+    const poRequestIdRef = useRef(0);
+    const poAbortControllerRef = useRef<AbortController | null>(null);
+    const [poLoadError, setPoLoadError] = useState<string | null>(null);
     const [selectedPoIds, setSelectedPoIds] = useState<string[]>([]);
     const [taxTypes, setTaxTypes] = useState<Record<string, "VAT" | "NON_VAT">>({});
     const [poSearchQuery, setPoSearchQuery] = useState("");
 
     // Memo state
     const [memos, setMemos] = useState<MemoDto[]>([]);
+    const [memoAmounts, setMemoAmounts] = useState<Record<string, string>>({});
     const [loadingMemos, setLoadingMemos] = useState(false);
     const [isMemoModalOpen, setIsMemoModalOpen] = useState(false);
+    const [memoSearchQuery, setMemoSearchQuery] = useState("");
+    const [memoLoadError, setMemoLoadError] = useState<string | null>(null);
+    const memoAbortControllerRef = useRef<AbortController | null>(null);
+    const memoRequestIdRef = useRef(0);
 
     // Dropdowns / Lookups
     const [suppliers, setSuppliers] = useState<SupplierDto[]>([]);
@@ -151,15 +163,25 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
 
     const coaOptions = useMemo(() => coas.map(c => ({ label: `${c.glCode} - ${c.accountTitle}`, value: c.coaId })), [coas]);
     const divisionOptions = useMemo(() => divisions.map(d => ({ label: d.divisionName, value: d.divisionId })), [divisions]);
+    const departmentOptions = useMemo(() => departments.map(d => ({ label: d.departmentName, value: d.departmentId })), [departments]);
     
     // Loaders
     const [loadingData, setLoadingData] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+    const submitLockRef = useRef(false);
     const [uploading, setUploading] = useState(false);
 
     // Print Success Modal
     const [showPrintModal, setShowPrintModal] = useState(false);
     const [createdDisbursement, setCreatedDisbursement] = useState<Disbursement | null>(null);
+
+    // Validation State
+    const [showValidationErrors, setShowValidationErrors] = useState(false);
+
+    // Sidebar Filters
+    const [sidebarStartDate, setSidebarStartDate] = useState("");
+    const [sidebarEndDate, setSidebarEndDate] = useState("");
+    const [sidebarPayeeId, setSidebarPayeeId] = useState<number | "">("");
 
     // Dropdown triggers
     const [payeeOpen, setPayeeOpen] = useState(false);
@@ -215,7 +237,17 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                     (sidebarTypeFilter === "Trade" && v.transactionTypeName === "Trade") ||
                     (sidebarTypeFilter === "Non-Trade" && v.transactionTypeName === "Non-Trade");
 
-                return matchesSearch && matchesStatus && matchesType;
+                // Filter by date range
+                const matchesDateRange =
+                    (!sidebarStartDate || (v.transactionDate && v.transactionDate >= sidebarStartDate)) &&
+                    (!sidebarEndDate || (v.transactionDate && v.transactionDate <= sidebarEndDate));
+
+                // Filter by payee supplier
+                const matchesPayee =
+                    sidebarPayeeId === "" ||
+                    v.payeeId === sidebarPayeeId;
+
+                return matchesSearch && matchesStatus && matchesType && matchesDateRange && matchesPayee;
             })
             .sort((a, b) => {
                 // Sort by created date descending (newest first)
@@ -223,7 +255,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                 const dateB = b.dateCreated ? new Date(b.dateCreated).getTime() : 0;
                 return dateB - dateA;
             });
-    }, [editableVouchers, sidebarSearch, sidebarStatusFilter, sidebarTypeFilter]);
+    }, [editableVouchers, sidebarSearch, sidebarStatusFilter, sidebarTypeFilter, sidebarStartDate, sidebarEndDate, sidebarPayeeId]);
 
     // Load active records from DB
     const loadMetadata = useCallback(async () => {
@@ -261,47 +293,131 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             setPayeeId(activeVoucher.payeeId || "");
             setRemarks(activeVoucher.remarks || "");
             setTransactionDate(activeVoucher.transactionDate || today);
-            setDivisionId(activeVoucher.divisionId || "");
             setDepartmentId(activeVoucher.departmentId || "");
             setSupportingDocumentsUrl(activeVoucher.supportingDocumentsUrl || "");
-            setPayables(activeVoucher.payables || []);
+            setPayables((activeVoucher.payables || []).map((line) =>
+                line.isMemo || line.memoId != null
+                    ? { ...line, memoSupplierId: line.memoSupplierId ?? activeVoucher.payeeId }
+                    : line,
+            ));
+            setShowValidationErrors(false);
         } else {
             // Reset to blank voucher creation
             setPayeeId("");
             setRemarks("");
             setTransactionDate(today);
-            setDivisionId("");
             setDepartmentId("");
             setSupportingDocumentsUrl("");
             setPayables([]);
+            setShowValidationErrors(false);
         }
     }, [activeVoucher, today]);
 
-    const handleOpenPoModal = useCallback(async (supplierIdOverride?: number) => {
-        const sid = supplierIdOverride ?? (payeeId ? Number(payeeId) : null);
-        if (!sid) return toast.error("Please select a Payee first.");
+    useEffect(() => {
+        if (activeVoucher) {
+            setPreviewDocNo("");
+            return;
+        }
+
+        const supplierType = transactionTypeId === 2 ? "Non-Trade" : "Trade";
+        disbursementProvider.getNextDocNo(supplierType)
+            .then(setPreviewDocNo)
+            .catch(() => setPreviewDocNo(""));
+    }, [activeVoucher, transactionTypeId]);
+
+    useEffect(() => {
+        memoAbortControllerRef.current?.abort();
+        memoRequestIdRef.current += 1;
+        setMemos([]);
+        setMemoAmounts({});
+        setMemoSearchQuery("");
+        setMemoLoadError(null);
+
+        if (!payeeId) {
+            setLoadingMemos(false);
+            return;
+        }
+
+        const controller = new AbortController();
+        memoAbortControllerRef.current = controller;
+        const requestId = memoRequestIdRef.current;
+        setLoadingMemos(true);
+
+        disbursementProvider.getSupplierMemos(Number(payeeId), controller.signal)
+            .then((fetchedMemos) => {
+                if (controller.signal.aborted || requestId !== memoRequestIdRef.current) return;
+                setMemos(fetchedMemos);
+                setMemoAmounts(Object.fromEntries(fetchedMemos.map((memo) => [String(memo.id), String(memo.remaining_amount ?? memo.amount)])));
+            })
+            .catch((error: unknown) => {
+                if (controller.signal.aborted || requestId !== memoRequestIdRef.current) return;
+                setMemoLoadError(error instanceof Error ? error.message : "Failed to load supplier memos");
+            })
+            .finally(() => {
+                if (!controller.signal.aborted && requestId === memoRequestIdRef.current) setLoadingMemos(false);
+            });
+
+        return () => controller.abort();
+    }, [payeeId]);
+
+    const handleOpenPoModal = useCallback(async (supplierId: number) => {
+        if (!Number.isInteger(supplierId) || supplierId <= 0) return toast.error("Please select a Payee first.");
+
+        poAbortControllerRef.current?.abort();
+        const controller = new AbortController();
+        poAbortControllerRef.current = controller;
+        const requestId = ++poRequestIdRef.current;
+        setUnpaidPos([]);
+        setSelectedPoIds([]);
+        setTaxTypes({});
+        setPoSearchQuery("");
+        setPoLoadError(null);
         setLoadingPos(true);
         setIsPoModalOpen(true);
         try {
-            const pos = await disbursementProvider.getUnpaidPos(sid);
+            const pos = await disbursementProvider.getUnpaidPos(supplierId, controller.signal);
+            if (requestId !== poRequestIdRef.current) return;
             setUnpaidPos(pos);
-            setSelectedPoIds([]);
-            setTaxTypes({});
-            setPoSearchQuery("");
-        } catch {
-            toast.error("Failed to load unpaid POs");
-            setIsPoModalOpen(false);
+        } catch (error) {
+            if (controller.signal.aborted || requestId !== poRequestIdRef.current) return;
+            setPoLoadError(error instanceof Error ? error.message : "Failed to load unpaid POs");
         } finally {
+            if (requestId === poRequestIdRef.current) setLoadingPos(false);
+        }
+    }, []);
+
+    const handlePoModalOpenChange = useCallback((nextOpen: boolean) => {
+        setIsPoModalOpen(nextOpen);
+        if (!nextOpen) {
+            poAbortControllerRef.current?.abort();
+            poRequestIdRef.current += 1;
             setLoadingPos(false);
         }
-    }, [payeeId]);
+    }, []);
 
     const handlePayeeSelect = useCallback((val: number) => {
+        const previousPayeeId = payeeId === "" ? undefined : Number(payeeId);
+        if (previousPayeeId && previousPayeeId !== val) {
+            const currentMemoReferences = new Set(memos.map((memo) => normalizeMemoReference(memo.memo_number)).filter(Boolean));
+            setPayables((current) => current.map((line) => {
+                const isMemoLine = isMemoPayableLine(line, currentMemoReferences) || line.memoSupplierId != null;
+                return isMemoLine && line.memoSupplierId == null
+                    ? { ...line, memoSupplierId: previousPayeeId }
+                    : line;
+            }));
+        }
+        memoAbortControllerRef.current?.abort();
+        memoRequestIdRef.current += 1;
+        setMemos([]);
+        setMemoAmounts({});
+        setMemoSearchQuery("");
+        setMemoLoadError(null);
+        setIsMemoModalOpen(false);
         setPayeeId(val);
         if (transactionTypeId === 1 && val) {
             handleOpenPoModal(val);
         }
-    }, [transactionTypeId, handleOpenPoModal]);
+    }, [payeeId, memos, transactionTypeId, handleOpenPoModal]);
 
     const calculateTaxedPayables = useCallback((selectedPos: UnpaidPoDto[], currentTaxTypes: Record<string, "VAT" | "NON_VAT">, date: string): PayableLine[] => {
         const newPayables: PayableLine[] = [];
@@ -311,8 +427,6 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
         selectedPos.forEach(po => {
             const baseRef = `${po.poNo} / ${po.receiptNo}`;
             const taxType = currentTaxTypes[po.uniqueKey] || "VAT";
-            const lineDivId = divisionId ? Number(divisionId) : undefined;
-
             if (taxType === "VAT") {
                 const netAmount = po.amountDue / (1 + VAT_RATE);
                 const vatAmount = netAmount * VAT_RATE;
@@ -323,7 +437,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                     amount: Number(netAmount.toFixed(2)),
                     coaId: 8,
                     remarks: `Principal Net of VAT`,
-                    divisionId: lineDivId
+                    divisionId: undefined
                 });
                 newPayables.push({
                     referenceNo: baseRef,
@@ -331,7 +445,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                     amount: Number(vatAmount.toFixed(2)),
                     coaId: 9,
                     remarks: `Input VAT (12%)`,
-                    divisionId: lineDivId
+                    divisionId: undefined
                 });
                 newPayables.push({
                     referenceNo: baseRef,
@@ -339,7 +453,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                     amount: -Number(ewtAmount.toFixed(2)),
                     coaId: 38,
                     remarks: `EWT Deduction (1%)`,
-                    divisionId: lineDivId
+                    divisionId: undefined
                 });
             } else {
                 newPayables.push({
@@ -348,48 +462,62 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                     amount: Number(po.amountDue.toFixed(2)),
                     coaId: 8,
                     remarks: `Principal (Non-VAT)`,
-                    divisionId: lineDivId
+                    divisionId: undefined
                 });
             }
         });
         return newPayables;
-    }, [divisionId]);
+    }, []);
 
     const handleImportPos = useCallback(() => {
         const selected = unpaidPos.filter(po => selectedPoIds.includes(po.uniqueKey));
         const newPayables = calculateTaxedPayables(selected, taxTypes, today);
 
-        setPayables((prev) => [...prev, ...newPayables]);
+        setPayables((prev) => replaceEmptyPayablePlaceholders(prev, newPayables));
         setIsPoModalOpen(false);
         toast.success(`Imported ${selected.length} record(s) successfully`);
     }, [unpaidPos, selectedPoIds, taxTypes, today, calculateTaxedPayables]);
 
-    const handleOpenMemoModal = async () => {
+    const handleOpenMemoModal = () => {
         if (!payeeId) return toast.error("Please select a Payee first.");
-        setLoadingMemos(true);
+        setMemoSearchQuery("");
+        setMemoAmounts(Object.fromEntries(availableMemos.map((memo) => [String(memo.id), String(memo.remaining_amount ?? memo.amount)])));
         setIsMemoModalOpen(true);
-        try {
-            const fetchedMemos = await disbursementProvider.getSupplierMemos(Number(payeeId));
-            setMemos(fetchedMemos);
-        } catch {
-            toast.error("Failed to load supplier memos");
-            setIsMemoModalOpen(false);
-        } finally {
-            setLoadingMemos(false);
-        }
     };
 
     const handleApplyMemo = (memo: MemoDto) => {
+        const isAlreadyInPayables = payables.some((payable) => normalizeMemoReference(payable.referenceNo) === normalizeMemoReference(memo.memo_number));
+        if (memo.is_locked) {
+            const blocker = memo.locking_tr_doc_no
+                ? `${memo.locking_tr_doc_no} (${memo.locking_tr_status || "unposted"})`
+                : "another unposted TR";
+            const additionalBlockers = (memo.locking_tr_count || 0) > 1
+                ? ` ${(memo.locking_tr_count || 0) - 1} additional TR(s) also use this memo.`
+                : "";
+            return toast.error(`Memo ${memo.memo_number} is locked by ${blocker} and cannot be used until that TR is Posted.${additionalBlockers}`);
+        }
+        if (isAlreadyInPayables) {
+            return toast.error(`Memo ${memo.memo_number} is already applied to this TR.`);
+        }
         const isCredit = memo.type === 1;
-        const finalAmount = isCredit ? -Math.abs(memo.amount) : Math.abs(memo.amount);
+        const remainingAmount = Number(memo.remaining_amount ?? memo.amount) || 0;
+        const requestedAmount = Number(memoAmounts[String(memo.id)] ?? remainingAmount);
+        if (!Number.isFinite(requestedAmount) || requestedAmount <= 0 || requestedAmount > remainingAmount + 0.01) {
+            return toast.error(`Memo ${memo.memo_number} can only use up to ${remainingAmount.toFixed(2)}.`);
+        }
+        const finalAmount = isCredit ? -Math.abs(requestedAmount) : Math.abs(requestedAmount);
 
         setPayables([...payables, {
+            isMemo: true,
+            memoId: memo.id,
+            memoType: memo.type,
+            memoNumber: memo.memo_number,
+            memoSupplierId: Number(payeeId),
             referenceNo: memo.memo_number,
             date: today,
             amount: finalAmount,
             coaId: memo.coa_id,
             remarks: `${memo.memo_type_name}: ${memo.reason || 'Applied to voucher'}`,
-            divisionId: divisionId ? Number(divisionId) : undefined
         }]);
 
         setIsMemoModalOpen(false);
@@ -397,6 +525,47 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
     };
 
     // Derived State
+    const availableMemos = useMemo(
+        () => memos.filter((memo) =>
+            Number(memo.supplier_id) === Number(payeeId)
+            && [1, 2].includes(Number(memo.type))
+            && (Number(memo.remaining_amount ?? memo.amount) > 0.01
+                || Boolean(memo.is_locked)
+                || payables.some((payable) => normalizeMemoReference(payable.referenceNo) === normalizeMemoReference(memo.memo_number))),
+        ),
+        [memos, payables, payeeId],
+    );
+    const memoReferences = useMemo(
+        () => new Set(memos.map((memo) => normalizeMemoReference(memo.memo_number)).filter(Boolean)),
+        [memos],
+    );
+    const memoSupplierMismatchIndices = useMemo(
+        () => new Set(payables
+            .map((line, index) => isMemoPayableLine(line, memoReferences)
+                && line.memoSupplierId != null
+                && payeeId !== ""
+                && Number(line.memoSupplierId) !== Number(payeeId)
+                ? index
+                : -1)
+            .filter((index) => index >= 0)),
+        [payables, memoReferences, payeeId],
+    );
+    const filteredMemos = useMemo(() => {
+        const query = memoSearchQuery.trim().toLowerCase();
+        if (!query) return availableMemos;
+
+        return availableMemos.filter((memo) => [
+            memo.memo_number,
+            memo.memo_type_name,
+            format(parseLocalDate(memo.date), "MMM dd, yyyy"),
+            memo.account_title,
+            memo.reason,
+            memo.amount,
+            memo.amount.toLocaleString("en-US", { minimumFractionDigits: 2 }),
+            memo.remaining_amount ?? memo.amount,
+            (memo.remaining_amount ?? memo.amount).toLocaleString("en-US", { minimumFractionDigits: 2 }),
+        ].filter((value) => value !== null && value !== undefined).join(" ").toLowerCase().includes(query));
+    }, [availableMemos, memoSearchQuery]);
     const totalAmount = useMemo(() => {
         return payables.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
     }, [payables]);
@@ -404,10 +573,10 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
     // Handlers for payable line editing
     const handleAddPayable = () => {
         const newLine: PayableLine = {
-            coaId: coas[0]?.coaId || undefined,
-            divisionId: Number(divisionId) || undefined,
+            coaId: undefined,
+            divisionId: undefined,
             referenceNo: "",
-            date: transactionDate,
+            date: today,
             amount: 0,
             remarks: ""
         };
@@ -440,7 +609,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             });
             if (!res.ok) throw new Error("Upload failed");
             const data = await res.json();
-            const cleanUrl = data.url || data.uuid || data.id || "";
+            const cleanUrl = data.data?.id || data.url || data.uuid || data.id || "";
             setSupportingDocumentsUrl(cleanUrl);
             toast.success("Supporting document uploaded successfully");
         } catch (err) {
@@ -453,13 +622,30 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
 
     // Submit for approval (Draft -> Submitted)
     const handleSave = async (submitImmediate: boolean) => {
-        if (!payeeId) {
-            toast.error("Please select a Payee / Supplier");
+        if (submitting || submitLockRef.current) return;
+        let hasError = false;
+        if (!payeeId) hasError = true;
+        if (!departmentId) hasError = true;
+        if (!transactionDate) hasError = true;
+        if (submitImmediate && !supportingDocumentsUrl) hasError = true;
+
+        if (hasError) {
+            setShowValidationErrors(true);
+            toast.error(submitImmediate && !supportingDocumentsUrl
+                ? "Please complete the required fields and attach a supporting document."
+                : "Please fill out all required fields marked in red.");
             return;
         }
 
         if (payables.length === 0) {
+            setShowValidationErrors(true);
             toast.error("Please add at least one payable allocation line item.");
+            return;
+        }
+
+        if (memoSupplierMismatchIndices.size > 0) {
+            setShowValidationErrors(true);
+            toast.error("Remove and reapply memo lines that belong to a different supplier.");
             return;
         }
 
@@ -467,10 +653,17 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
         for (let i = 0; i < payables.length; i++) {
             const p = payables[i];
             if (!p.coaId) {
+                setShowValidationErrors(true);
                 toast.error(`Please select a GL COA account on payable row ${i + 1}`);
                 return;
             }
+            if (!p.date) {
+                setShowValidationErrors(true);
+                toast.error(`Please select an invoice date on payable row ${i + 1}`);
+                return;
+            }
             if (Number(p.amount) === 0) {
+                setShowValidationErrors(true);
                 toast.error(`Amount cannot be zero on payable row ${i + 1}`);
                 return;
             }
@@ -483,19 +676,23 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             toast.error("Submission blocked: Calculated total amount does not equal the sum of payable lines.");
             return;
         }
+        if (!activeVoucher && !previewDocNo) {
+            toast.error("Document number is still loading. Please try again.");
+            return;
+        }
 
+        submitLockRef.current = true;
         setSubmitting(true);
         const payload: DisbursementPayload = {
+            docNo: activeVoucher ? activeVoucher.docNo : (previewDocNo || undefined),
             transactionTypeId,
             payeeId: Number(payeeId),
             remarks,
             totalAmount,
             transactionDate,
-            divisionId: divisionId ? Number(divisionId) : undefined,
             departmentId: departmentId ? Number(departmentId) : undefined,
             supportingDocumentsUrl,
-            payables,
-            payments: [] // New/Edited vouchers start released payments blank
+            payables: payables.map((line) => stripMemoLineMetadata(line)),
         };
 
         try {
@@ -523,6 +720,15 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             
             // Clear current editor selection and refresh the list
             setLocalEditVoucher(null);
+            setTransactionTypeId(1);
+            setPreviewDocNo("");
+            setPayeeId("");
+            setRemarks("");
+            setTransactionDate(today);
+            setDepartmentId("");
+            setSupportingDocumentsUrl("");
+            setPayables([]);
+            setShowValidationErrors(false);
             fetchEditableVouchers();
 
             if (onSuccess) onSuccess();
@@ -530,6 +736,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             console.error(err);
             toast.error(err instanceof Error ? err.message : "Failed to save disbursement voucher.");
         } finally {
+            submitLockRef.current = false;
             setSubmitting(false);
         }
     };
@@ -636,6 +843,56 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                 Non-Trade
                             </Button>
                         </div>
+
+                        {/* Date Range & Payee Filters */}
+                        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-border/40">
+                            <div className="space-y-1">
+                                <Label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground/80">Start Date</Label>
+                                <Input
+                                    type="date"
+                                    value={sidebarStartDate}
+                                    onChange={(e) => setSidebarStartDate(e.target.value)}
+                                    className="h-7 text-[9px] font-bold bg-background border-border/60"
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <Label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground/80">End Date</Label>
+                                <Input
+                                    type="date"
+                                    value={sidebarEndDate}
+                                    onChange={(e) => setSidebarEndDate(e.target.value)}
+                                    className="h-7 text-[9px] font-bold bg-background border-border/60"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="space-y-1 pt-1">
+                            <Label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground/80">Filter Payee</Label>
+                            <select
+                                className="h-7 w-full rounded-md border border-border/60 bg-background px-2 text-[9px] font-bold uppercase outline-none focus:ring-1 focus:ring-primary/20 cursor-pointer text-foreground"
+                                value={sidebarPayeeId}
+                                onChange={(e) => setSidebarPayeeId(e.target.value === "" ? "" : Number(e.target.value))}
+                            >
+                                <option value="">All Payees</option>
+                                {suppliers.map(s => (
+                                    <option key={s.id} value={s.id}>{s.supplier_name}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {(sidebarStartDate || sidebarEndDate || sidebarPayeeId !== "") && (
+                            <Button
+                                onClick={() => {
+                                    setSidebarStartDate("");
+                                    setSidebarEndDate("");
+                                    setSidebarPayeeId("");
+                                }}
+                                variant="ghost"
+                                className="w-full h-6 text-[8px] font-black uppercase text-destructive hover:bg-destructive/5 mt-1 border border-dashed border-destructive/25"
+                            >
+                                Clear Extra Filters
+                            </Button>
+                        )}
                     </div>
 
                     <div className="h-px bg-border/40 my-1 shrink-0" />
@@ -734,9 +991,9 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                                 {/* Inputs */}
                                 <div className="space-y-2">
-                                    <Label className="text-[10px] font-black uppercase tracking-wider">Transaction Type</Label>
+                                    <Label className="text-[10px] font-black uppercase tracking-wider">Transaction Type <span className="text-destructive">*</span></Label>
                                     <select 
-                                        className="h-10 w-full rounded-lg border border-border/80 bg-background px-3 text-xs font-bold uppercase outline-none focus:ring-1 focus:ring-primary/30 cursor-pointer"
+                                        className={cn("h-10 w-full rounded-lg border border-border/80 bg-background px-3 text-xs font-bold uppercase outline-none focus:ring-1 focus:ring-primary/30 cursor-pointer", showValidationErrors && !transactionTypeId && "border-rose-500 focus:ring-rose-500/30")}
                                         value={transactionTypeId}
                                         onChange={e => setTransactionTypeId(Number(e.target.value))}
                                     >
@@ -753,7 +1010,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                         <div className="flex-1 min-w-0">
                                             <Popover open={payeeOpen} onOpenChange={setPayeeOpen}>
                                                 <PopoverTrigger asChild>
-                                                    <Button variant="outline" className="w-full min-w-0 h-10 text-xs font-bold justify-between bg-background border-border/80 px-3 uppercase text-left">
+                                                    <Button variant="outline" className={cn("w-full min-w-0 h-10 text-xs font-bold justify-between bg-background border-border/80 px-3 uppercase text-left", showValidationErrors && !payeeId && "border-rose-500 hover:border-rose-600 focus:ring-rose-500/20")}>
                                                         <span className="truncate flex-1 pr-1">{suppliers.find(s => s.id === payeeId)?.supplier_name || "Select Payee..."}</span>
                                                         <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-55" />
                                                     </Button>
@@ -788,7 +1045,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                             </Popover>
                                         </div>
                                         {!isNonTradeVoucher && (
-                                            <Button type="button" onClick={() => handleOpenPoModal()} disabled={!payeeId}
+                                            <Button type="button" onClick={() => handleOpenPoModal(Number(payeeId))} disabled={!payeeId}
                                                     className="h-10 px-3 bg-amber-500 hover:bg-amber-600 text-white shadow-sm shrink-0"
                                                     title="Pull Unpaid POs">
                                                 <DownloadCloud className="w-4 h-4"/>
@@ -798,59 +1055,49 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                 </div>
 
                                 <div className="space-y-2">
-                                    <Label className="text-[10px] font-black uppercase tracking-wider">Transaction Date</Label>
-                                    <Input type="date" className="h-10 text-xs font-bold uppercase bg-background border-border/80" value={transactionDate} onChange={e => setTransactionDate(e.target.value)} />
-                                </div>
+                                     <Label className="text-[10px] font-black uppercase tracking-wider">Transaction Date <span className="text-destructive">*</span></Label>
+                                     <Input type="date" className={cn("h-10 text-xs font-bold uppercase bg-background border-border/80", showValidationErrors && !transactionDate && "border-rose-500 focus:ring-rose-500/30")} value={transactionDate} onChange={e => setTransactionDate(e.target.value)} />
+                                 </div>
 
-                                <div className="space-y-2">
-                                    <Label className="text-[10px] font-black uppercase tracking-wider">Voucher Limit (Calculated)</Label>
-                                    <div className="h-10 flex items-center px-4 bg-muted/40 border border-border/85 rounded-lg text-sm font-black text-emerald-600 dark:text-emerald-500">
-                                        {formatCurrency(totalAmount)}
-                                    </div>
-                                </div>
+                                 <div className="space-y-2">
+                                     <Label className="text-[10px] font-black uppercase tracking-wider">Voucher Limit (Calculated)</Label>
+                                     <div className="h-10 flex items-center px-4 bg-muted/40 border border-border/85 rounded-lg text-sm font-black text-emerald-600 dark:text-emerald-500">
+                                         {formatCurrency(totalAmount)}
+                                     </div>
+                                 </div>
 
-                                <div className="space-y-2">
-                                    <Label className="text-[10px] font-black uppercase tracking-wider">Cost Division</Label>
-                                    <select 
-                                        className="h-10 w-full rounded-lg border border-border/80 bg-background px-3 text-xs font-bold uppercase outline-none focus:ring-1 focus:ring-primary/30 cursor-pointer"
-                                        value={divisionId !== "" ? String(divisionId) : ""}
-                                        onChange={e => setDivisionId(e.target.value === "" ? "" : Number(e.target.value))}
-                                    >
-                                        <option value="">No Division</option>
-                                        {divisions.map(d => <option key={d.divisionId} value={String(d.divisionId)}>{d.divisionName}</option>)}
-                                    </select>
-                                </div>
+                                 <div className="space-y-2 flex flex-col justify-end">
+                                     <Label className="text-[10px] font-black uppercase tracking-wider mb-1.5">Cost Department <span className="text-destructive">*</span></Label>
+                                     <SearchSelect
+                                         options={departmentOptions}
+                                         value={departmentId !== "" ? Number(departmentId) : ""}
+                                         onSelect={val => setDepartmentId(Number(val))}
+                                         placeholder="Select Department..."
+                                         className={cn("h-10 text-xs font-bold bg-background border-border/80", showValidationErrors && !departmentId && "border-rose-500 ring-rose-500/20")}
+                                     />
+                                 </div>
 
-                                <div className="space-y-2">
-                                    <Label className="text-[10px] font-black uppercase tracking-wider">Cost Department</Label>
-                                    <select 
-                                        className="h-10 w-full rounded-lg border border-border/80 bg-background px-3 text-xs font-bold uppercase outline-none focus:ring-1 focus:ring-primary/30 cursor-pointer"
-                                        value={departmentId !== "" ? String(departmentId) : ""}
-                                        onChange={e => setDepartmentId(e.target.value === "" ? "" : Number(e.target.value))}
-                                    >
-                                        <option value="">No Department</option>
-                                        {departments.map(d => <option key={d.departmentId} value={String(d.departmentId)}>{d.departmentName}</option>)}
-                                    </select>
-                                </div>
+                                 <div className="space-y-2 sm:col-span-2">
+                                     <Label className="text-[10px] font-black uppercase tracking-wider">Voucher Remarks</Label>
+                                     <Input className="h-10 text-xs font-bold bg-background border-border/80" placeholder="e.g. Purchase of office supplies" value={remarks} onChange={e => setRemarks(e.target.value)} />
+                                 </div>
 
-                                <div className="space-y-2 sm:col-span-2">
-                                    <Label className="text-[10px] font-black uppercase tracking-wider">Voucher Remarks</Label>
-                                    <Input className="h-10 text-xs font-bold bg-background border-border/80" placeholder="e.g. Purchase of office supplies" value={remarks} onChange={e => setRemarks(e.target.value)} />
-                                </div>
-
-                                {/* Supporting Doc Upload */}
-                                <div className="space-y-2 sm:col-span-2 lg:col-span-4 border-t border-dashed border-border pt-4">
-                                    <Label className="text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5"><UploadCloud className="w-3.5 h-3.5" /> Supporting Document File</Label>
-                                    <div className="flex items-center gap-4">
-                                        <Input type="file" onChange={handleFileUpload} disabled={uploading} className="max-w-[320px] text-xs cursor-pointer" />
-                                        {uploading && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
-                                        {supportingDocumentsUrl && (
-                                            <Badge variant="outline" className="text-xs bg-emerald-500/10 border-emerald-500/35 text-emerald-600 dark:text-emerald-400 font-bold max-w-[400px] truncate">
-                                                Doc URL: {supportingDocumentsUrl}
-                                            </Badge>
-                                        )}
-                                    </div>
-                                </div>
+                                 {/* Supporting Doc Upload */}
+                                 <div className="space-y-2 sm:col-span-2 lg:col-span-4 border-t border-dashed border-border pt-4">
+                                     <Label className="text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5"><UploadCloud className="w-3.5 h-3.5" /> Supporting Document File <span className="text-destructive">*</span></Label>
+                                     <div className="flex items-center gap-4">
+                                         <Input type="file" aria-invalid={showValidationErrors && !supportingDocumentsUrl} onChange={handleFileUpload} disabled={uploading} className={cn("max-w-[320px] text-xs cursor-pointer", showValidationErrors && !supportingDocumentsUrl && "border-rose-500 ring-rose-500/30")} />
+                                         {uploading && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
+                                         {supportingDocumentsUrl && (
+                                             <Badge variant="outline" className="text-xs bg-emerald-500/10 border-emerald-500/35 text-emerald-600 dark:text-emerald-400 font-bold max-w-[400px] truncate">
+                                                 Doc URL: {supportingDocumentsUrl}
+                                             </Badge>
+                                         )}
+                                         {showValidationErrors && !supportingDocumentsUrl && (
+                                             <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400">Required for approval submission.</span>
+                                         )}
+                                     </div>
+                                 </div>
                             </div>
                         )}
                     </CardContent>
@@ -889,11 +1136,11 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                             <Table className="min-w-[1100px] table-fixed">
                                 <TableHeader className="bg-muted/70 sticky top-0 z-10">
                                     <TableRow>
-                                        <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[220px]">GL Account (COA)</TableHead>
+                                        <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[220px]">GL Account (COA) <span className="text-destructive">*</span></TableHead>
                                         <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[160px]">Cost Division</TableHead>
                                         <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[160px]">Reference / PO</TableHead>
-                                        <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[130px]">Invoice Date</TableHead>
-                                        <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[160px] text-right">Amount (PHP)</TableHead>
+                                        <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[130px]">Invoice Date <span className="text-destructive">*</span></TableHead>
+                                        <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[160px] text-right">Amount (PHP) <span className="text-destructive">*</span></TableHead>
                                         <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[210px]">Line Remarks</TableHead>
                                         <TableHead className="w-[60px]"></TableHead>
                                     </TableRow>
@@ -907,7 +1154,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                         </TableRow>
                                     ) : (
                                         payables.map((line, idx) => (
-                                            <TableRow key={idx} className="hover:bg-muted/5">
+                                            <TableRow key={idx} className={cn("hover:bg-muted/5", memoSupplierMismatchIndices.has(idx) && "border-destructive bg-destructive/5")}>
                                                 {/* COA select */}
                                                 <TableCell className="py-2.5">
                                                     <SearchSelect
@@ -915,7 +1162,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                                         value={line.coaId != null ? line.coaId : ""}
                                                         onSelect={val => handlePayableChange(idx, "coaId", val)}
                                                         placeholder="Select GL Account..."
-                                                        className="h-9 font-bold text-xs bg-background"
+                                                        className={cn("h-9 font-bold text-xs bg-background", showValidationErrors && !line.coaId && "border-rose-500 ring-rose-500/20")}
                                                     />
                                                 </TableCell>
 
@@ -924,27 +1171,33 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                                     <SearchSelect
                                                         options={divisionOptions}
                                                         value={line.divisionId != null ? line.divisionId : ""}
-                                                        onSelect={val => handlePayableChange(idx, "divisionId", val)}
+                                                        onSelect={val => setPayables(updateVatSplitDivision(payables, idx, Number(val)))}
                                                         placeholder="Select Division..."
+                                                        disabled={isInheritedVatSplitLine(payables, idx)}
                                                         className="h-9 font-bold text-xs bg-background"
                                                     />
                                                 </TableCell>
 
                                                 {/* Ref No */}
                                                 <TableCell className="py-2.5">
-                                                    <Input 
-                                                        className="h-9 text-xs font-bold bg-background border-border/80" 
-                                                        placeholder="PO-0001" 
-                                                        value={line.referenceNo} 
-                                                        onChange={e => handlePayableChange(idx, "referenceNo", e.target.value)} 
+                                                    <Input
+                                                        className="h-9 text-xs font-bold bg-background border-border/80"
+                                                        placeholder="PO-0001"
+                                                        value={line.referenceNo}
+                                                        onChange={e => handlePayableChange(idx, "referenceNo", e.target.value)}
                                                     />
+                                                    {memoSupplierMismatchIndices.has(idx) && (
+                                                        <p className="pt-1 text-[10px] font-semibold text-destructive">
+                                                            Memo belongs to another supplier. Remove and reapply it.
+                                                        </p>
+                                                    )}
                                                 </TableCell>
 
                                                 {/* Date */}
                                                 <TableCell className="py-2.5">
                                                     <Input 
                                                         type="date"
-                                                        className="h-9 text-xs font-bold bg-background border-border/80" 
+                                                        className={cn("h-9 text-xs font-bold bg-background border-border/80", showValidationErrors && !line.date && "border-rose-500 focus:ring-rose-500/30")}
                                                         value={line.date} 
                                                         onChange={e => handlePayableChange(idx, "date", e.target.value)} 
                                                     />
@@ -954,7 +1207,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                                 <TableCell className="py-2.5">
                                                     <Input 
                                                         type="number"
-                                                        className="h-9 text-xs font-bold bg-background border-border/80 text-right font-mono" 
+                                                        className={cn("h-9 text-xs font-bold bg-background border-border/80 text-right font-mono", showValidationErrors && Number(line.amount) === 0 && "border-rose-500 focus:ring-rose-500/30")}
                                                         placeholder="0.00"
                                                         value={line.amount || ""} 
                                                         onChange={e => handlePayableChange(idx, "amount", e.target.value === "" ? 0 : Number(e.target.value))} 
@@ -1015,7 +1268,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
 
             {/* 🌟 INSTANT PRINT DIALOG (Submodule 1 Feature Integration) 🌟 */}
             <Dialog open={showPrintModal} onOpenChange={setShowPrintModal}>
-                <DialogContent className="sm:max-w-[460px] border-border shadow-2xl p-6 bg-background rounded-2xl text-center">
+                <DialogContent className="max-w-[95vw] sm:max-w-[460px] w-full border-border shadow-2xl p-6 bg-background rounded-2xl text-center">
                     <DialogHeader className="flex flex-col items-center">
                         <div className="h-16 w-16 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center mb-4">
                             <Check className="w-8 h-8 stroke-[3]" />
@@ -1030,37 +1283,37 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                         Do you want to print a copy of this voucher for physical records or ledger archiving now?
                     </div>
 
-                    <DialogFooter className="sm:justify-center flex flex-col sm:flex-row gap-3">
+                    <div className="flex flex-col sm:flex-row gap-2.5 justify-center">
                         <Button 
                             variant="outline" 
                             onClick={() => {
                                 if (createdDisbursement) generateDisbursementPDF(createdDisbursement, "A4");
                             }}
-                            className="h-11 px-5 text-xs font-black uppercase tracking-widest border-border/60"
+                            className="h-10 text-xs font-black uppercase tracking-widest border-border/60 hover:bg-muted"
                         >
-                            <Printer className="w-4 h-4 mr-2 text-blue-500" /> Print A4 Document
+                            <Printer className="w-3.5 h-3.5 mr-2 text-blue-500" /> Print A4
                         </Button>
                         <Button 
                             variant="outline" 
                             onClick={() => {
                                 if (createdDisbursement) generateDisbursementPDF(createdDisbursement, "58mm");
                             }}
-                            className="h-11 px-5 text-xs font-black uppercase tracking-widest border-border/60"
+                            className="h-10 text-xs font-black uppercase tracking-widest border-border/60 hover:bg-muted"
                         >
-                            <Printer className="w-4 h-4 mr-2 text-amber-500" /> Print 58mm Thermal
+                            <Printer className="w-3.5 h-3.5 mr-2 text-amber-500" /> Print Thermal
                         </Button>
                         <Button 
                             onClick={() => setShowPrintModal(false)}
-                            className="h-11 px-6 text-xs font-bold uppercase tracking-widest"
+                            className="h-10 text-xs font-black uppercase tracking-widest bg-primary hover:bg-primary/90 text-primary-foreground"
                         >
                             Close
                         </Button>
-                    </DialogFooter>
+                    </div>
                 </DialogContent>
             </Dialog>
 
             {/* UNPAID POs SELECTION MODAL */}
-            <Dialog open={isPoModalOpen} onOpenChange={setIsPoModalOpen}>
+            <Dialog open={isPoModalOpen} onOpenChange={handlePoModalOpenChange}>
                 <DialogContent className="sm:max-w-[750px] bg-background border-border">
                     <DialogHeader>
                         <DialogTitle className="text-lg font-black uppercase flex items-center gap-2 text-foreground">
@@ -1101,20 +1354,30 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                             <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2"/> Loading Records...
                                         </TableCell>
                                     </TableRow>
-                                ) : unpaidPos.filter(po =>
-                                    po.poNo.toLowerCase().includes(poSearchQuery.toLowerCase()) ||
-                                    (po.receiptNo && po.receiptNo.toLowerCase().includes(poSearchQuery.toLowerCase()))
-                                ).length === 0 ? (
+                                ) : poLoadError ? (
+                                    <TableRow>
+                                        <TableCell colSpan={5} className="h-24 text-center text-sm font-medium text-destructive">
+                                            {poLoadError}
+                                        </TableCell>
+                                    </TableRow>
+                                ) : unpaidPos.filter(po => {
+                                    const matchesSearch = po.poNo.toLowerCase().includes(poSearchQuery.toLowerCase()) ||
+                                        (po.receiptNo && po.receiptNo.toLowerCase().includes(poSearchQuery.toLowerCase()));
+                                    const isAlreadyImported = payables.some(p => p.referenceNo.startsWith(`${po.poNo} / ${po.receiptNo}`));
+                                    return matchesSearch && !isAlreadyImported;
+                                }).length === 0 ? (
                                     <TableRow>
                                         <TableCell colSpan={5} className="h-24 text-center text-sm font-medium text-muted-foreground">
                                             No matching records found.
                                         </TableCell>
                                     </TableRow>
                                 ) : (
-                                    unpaidPos.filter(po =>
-                                        po.poNo.toLowerCase().includes(poSearchQuery.toLowerCase()) ||
-                                        (po.receiptNo && po.receiptNo.toLowerCase().includes(poSearchQuery.toLowerCase()))
-                                    ).map(po => (
+                                    unpaidPos.filter(po => {
+                                        const matchesSearch = po.poNo.toLowerCase().includes(poSearchQuery.toLowerCase()) ||
+                                            (po.receiptNo && po.receiptNo.toLowerCase().includes(poSearchQuery.toLowerCase()));
+                                        const isAlreadyImported = payables.some(p => p.referenceNo.startsWith(`${po.poNo} / ${po.receiptNo}`));
+                                        return matchesSearch && !isAlreadyImported;
+                                    }).map(po => (
                                         <TableRow key={po.uniqueKey} className="cursor-pointer hover:bg-muted/50 border-border" onClick={() => {
                                             const isChecking = !selectedPoIds.includes(po.uniqueKey);
                                             setSelectedPoIds(prev => isChecking ? [...prev, po.uniqueKey] : prev.filter(id => id !== po.uniqueKey));
@@ -1122,13 +1385,13 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                                 setTaxTypes(prev => ({...prev, [po.uniqueKey]: "VAT"}));
                                             }
                                         }}>
-                                            <TableCell className="text-center">
+                                            <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                                                 <Checkbox checked={selectedPoIds.includes(po.uniqueKey)} onCheckedChange={(checked) => {
                                                     if (checked === true) {
-                                                        setSelectedPoIds([...selectedPoIds, po.uniqueKey]);
+                                                        setSelectedPoIds(prev => prev.includes(po.uniqueKey) ? prev : [...prev, po.uniqueKey]);
                                                         if (!taxTypes[po.uniqueKey]) setTaxTypes(prev => ({ ...prev, [po.uniqueKey]: "VAT" }));
                                                     } else {
-                                                        setSelectedPoIds(selectedPoIds.filter(id => id !== po.uniqueKey));
+                                                        setSelectedPoIds(prev => prev.filter(id => id !== po.uniqueKey));
                                                     }
                                                 }}/>
                                             </TableCell>
@@ -1171,7 +1434,10 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             </Dialog>
 
             {/* SUPPLIER MEMOs SELECTION MODAL */}
-            <Dialog open={isMemoModalOpen} onOpenChange={setIsMemoModalOpen}>
+            <Dialog open={isMemoModalOpen} onOpenChange={(open) => {
+                setIsMemoModalOpen(open);
+                if (!open) setMemoSearchQuery("");
+            }}>
                 <DialogContent className="sm:max-w-[700px] bg-background border-border">
                     <DialogHeader>
                         <DialogTitle className="text-lg font-black uppercase flex items-center gap-2 text-foreground">
@@ -1179,9 +1445,21 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                             Available Supplier Memos
                         </DialogTitle>
                         <DialogDescription className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                            Select a Credit or Debit memo to apply to this voucher&apos;s payables.
+                            Locked memos remain visible but cannot be applied until their blocking TR is Posted.
                         </DialogDescription>
                     </DialogHeader>
+
+                    <div className="relative mt-4">
+                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                            type="search"
+                            aria-label="Search supplier memos"
+                            placeholder="Search memo number, type, date, account, reason, or amount..."
+                            value={memoSearchQuery}
+                            onChange={(event) => setMemoSearchQuery(event.target.value)}
+                            className="pl-9"
+                        />
+                    </div>
 
                     <StickyTableWrapper className="max-h-[400px] overflow-auto border border-border rounded-md mt-4 custom-scrollbar">
                         <Table>
@@ -1201,16 +1479,42 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                             <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2"/> Fetching Memos...
                                         </TableCell>
                                     </TableRow>
-                                ) : memos.length === 0 ? (
+                                ) : memoLoadError ? (
+                                    <TableRow>
+                                        <TableCell colSpan={5} className="h-24 text-center text-sm font-medium text-destructive">
+                                            {memoLoadError}
+                                        </TableCell>
+                                    </TableRow>
+                                ) : availableMemos.length === 0 ? (
                                     <TableRow>
                                         <TableCell colSpan={5} className="h-24 text-center text-sm font-medium text-muted-foreground">
                                             No available memos found for this supplier.
                                         </TableCell>
                                     </TableRow>
+                                ) : filteredMemos.length === 0 ? (
+                                    <TableRow>
+                                        <TableCell colSpan={5} className="h-24 text-center text-sm font-medium text-muted-foreground">
+                                            No supplier memos match your search.
+                                        </TableCell>
+                                    </TableRow>
                                 ) : (
-                                    memos.map(memo => (
-                                        <TableRow key={memo.id} className="hover:bg-muted/50 border-border">
-                                            <TableCell className="font-bold text-xs uppercase text-foreground">{memo.memo_number}</TableCell>
+                                    filteredMemos.map(memo => {
+                                        const isMemoLocked = Boolean(memo.is_locked)
+                                            || payables.some((payable) => normalizeMemoReference(payable.referenceNo) === normalizeMemoReference(memo.memo_number));
+                                        const lockDescription = memo.is_locked
+                                            ? `Locked by ${memo.locking_tr_doc_no || "another unposted TR"}${memo.locking_tr_status ? ` (${memo.locking_tr_status})` : ""}${(memo.locking_tr_count || 0) > 1 ? ` · ${(memo.locking_tr_count || 0) - 1} more` : ""}`
+                                            : "Already applied to this TR.";
+
+                                        return (
+                                        <TableRow key={memo.id} className={`hover:bg-muted/50 border-border ${isMemoLocked ? "bg-muted/40" : ""}`}>
+                                            <TableCell className="font-bold text-xs uppercase text-foreground">
+                                                <div>{memo.memo_number}</div>
+                                                {isMemoLocked && (
+                                                    <Badge variant="outline" className="mt-1 text-[9px] uppercase text-amber-700 border-amber-300 bg-amber-50">
+                                                        <LockKeyhole className="mr-1 h-3 w-3" /> Locked
+                                                    </Badge>
+                                                )}
+                                            </TableCell>
                                             <TableCell>
                                                 <Badge variant="outline" className={`text-[9px] uppercase ${memo.type === 1 ? 'text-emerald-600 border-emerald-200 bg-emerald-50' : 'text-red-600 border-red-200 bg-red-50'}`}>
                                                     {memo.memo_type_name}
@@ -1220,17 +1524,30 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                             <TableCell>
                                                 <div className="text-[10px] font-black uppercase text-foreground">{memo.account_title}</div>
                                                 <div className="text-[10px] text-muted-foreground mt-0.5 truncate max-w-[180px]">{memo.reason || "N/A"}</div>
+                                                {isMemoLocked && <div className="mt-1 text-[9px] font-bold text-amber-700">{lockDescription}</div>}
                                             </TableCell>
                                             <TableCell className={`text-xs font-black text-right ${memo.type === 1 ? 'text-emerald-600' : 'text-red-600'}`}>
-                                                {memo.type === 1 ? '-' : '+'} ₱{memo.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}
+                                                <div>{memo.type === 1 ? '-' : '+'} ₱{memo.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}</div>
+                                                <div className="text-[9px] font-bold text-muted-foreground">Remaining: ₱{(memo.remaining_amount ?? memo.amount).toLocaleString('en-US', {minimumFractionDigits: 2})}</div>
+                                                <Input
+                                                    type="number"
+                                                    min="0.01"
+                                                    max={memo.remaining_amount ?? memo.amount}
+                                                    step="0.01"
+                                                    value={memoAmounts[String(memo.id)] ?? String(memo.remaining_amount ?? memo.amount)}
+                                                    onChange={(event) => setMemoAmounts((current) => ({ ...current, [String(memo.id)]: event.target.value }))}
+                                                    disabled={isMemoLocked}
+                                                    className="h-7 w-28 ml-auto mt-1 text-right text-xs"
+                                                />
                                             </TableCell>
                                             <TableCell className="text-right">
-                                                <Button size="sm" onClick={() => handleApplyMemo(memo)} className="h-7 text-[10px] font-black uppercase tracking-widest bg-purple-600 hover:bg-purple-700 text-white">
+                                                <Button size="sm" onClick={() => handleApplyMemo(memo)} disabled={isMemoLocked} className="h-7 text-[10px] font-black uppercase tracking-widest bg-purple-600 hover:bg-purple-700 text-white">
                                                     Apply
                                                 </Button>
                                             </TableCell>
                                         </TableRow>
-                                    ))
+                                        );
+                                    })
                                 )}
                             </TableBody>
                         </Table>

@@ -18,7 +18,7 @@ export interface FormValues {
   invoice_date: string;
   dispatch_date: string;
   due_date: string;
-  gross_amount: number;
+  gross_amount: number | "";
   discount_amount: number;
   discount_type_id: string;
 }
@@ -52,6 +52,7 @@ export default function SalesOnboardingForm({
     register,
     handleSubmit,
     control,
+    getValues,
     setValue,
     reset,
     formState: { errors },
@@ -64,14 +65,14 @@ export default function SalesOnboardingForm({
       invoice_date: todayStr,
       dispatch_date: todayStr,
       due_date: todayStr,
-      gross_amount: 0,
+      gross_amount: "",
       discount_amount: 0,
       discount_type_id: "",
     },
   });
 
   // Watch fields for reactive calculation
-  const gross = useWatch({ control, name: "gross_amount", defaultValue: 0 });
+  const gross = useWatch({ control, name: "gross_amount", defaultValue: "" });
   const discount = useWatch({ control, name: "discount_amount", defaultValue: 0 });
   const selectedSalesmanId = useWatch({ control, name: "salesman_id", defaultValue: "" });
   const selectedCustomerCode = useWatch({ control, name: "customer_code", defaultValue: "" });
@@ -137,15 +138,20 @@ export default function SalesOnboardingForm({
     if (!selectedCustomerCode) return;
     const cust = customers.find(c => String(c.customer_code) === String(selectedCustomerCode));
     if (!cust) return;
-    const terms = cust.payment_term || 0;
-    if (terms > 0 && invoiceDate) {
-      const baseDate = new Date(invoiceDate);
+    const terms = cust.payment_term?.payment_days || 0;
+    const currentInvoiceDate = invoiceDate || getValues("invoice_date");
+    if (!currentInvoiceDate) {
+      setValue("due_date", "");
+      return;
+    }
+    if (terms > 0) {
+      const baseDate = new Date(currentInvoiceDate);
       baseDate.setDate(baseDate.getDate() + terms);
       setValue("due_date", baseDate.toISOString().split("T")[0]);
     } else {
-      setValue("due_date", invoiceDate);
+      setValue("due_date", currentInvoiceDate);
     }
-  }, [selectedCustomerCode, invoiceDate, customers, setValue]);
+  }, [selectedCustomerCode, invoiceDate, customers, getValues, setValue]);
 
   // Auto-calculate discount amount when discount type is selected
   useEffect(() => {
@@ -187,7 +193,9 @@ export default function SalesOnboardingForm({
     return customers.map((c) => ({
       value: c.customer_code,
       label: c.customer_name,
-      sublabel: `Code: ${c.customer_code} | Payment Term: ${c.payment_term || "N/A"} days`,
+      sublabel: c.payment_term
+        ? `Code: ${c.customer_code} | ${c.payment_term.payment_name} (${c.payment_term.payment_days} days)`
+        : `Code: ${c.customer_code} | Payment Term: N/A`,
     }));
   }, [customers]);
 
@@ -229,7 +237,7 @@ export default function SalesOnboardingForm({
         invoice_date: todayStr,
         dispatch_date: todayStr,
         due_date: todayStr,
-        gross_amount: 0,
+        gross_amount: "",
         discount_amount: 0,
         discount_type_id: "",
       });
@@ -359,7 +367,7 @@ export default function SalesOnboardingForm({
               {/* Gross Amount */}
               <div className="space-y-1.5">
                 <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground flex items-center gap-1">
-                  <DollarSign size={12} /> Gross Amount (PHP)
+                  <DollarSign size={12} /> Gross Amount (PHP) <span className="text-red-500">*</span>
                 </label>
                 <Input
                   type="number"
@@ -367,10 +375,20 @@ export default function SalesOnboardingForm({
                   placeholder="0.00"
                   {...register("gross_amount", {
                     required: "Gross amount is required",
-                    min: { value: 0, message: "Must be positive" },
-                    valueAsNumber: true
+                    setValueAs: (value) => value === "" ? "" : Number(value),
+                    validate: (value) => {
+                      const numericValue = Number(value);
+                      return Number.isFinite(numericValue) && numericValue > 0
+                        ? true
+                        : "Gross amount must be greater than zero";
+                    },
                   })}
-                  className="h-10 text-xs rounded-xl font-medium border-border/60"
+                  aria-required="true"
+                  className={`h-10 text-xs rounded-xl font-medium ${
+                    errors.gross_amount
+                      ? "border-red-500 focus-visible:ring-red-500/20"
+                      : "border-border/60"
+                  }`}
                 />
                 {errors.gross_amount && (
                   <p className="text-[10px] font-bold text-red-500">{errors.gross_amount.message}</p>

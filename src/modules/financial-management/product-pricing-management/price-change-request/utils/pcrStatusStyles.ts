@@ -15,10 +15,18 @@ export function normalizePcrStatus(status: string): PCRDisplayStatus | null {
     return STATUS_VALUES.includes(normalized as PCRDisplayStatus) ? (normalized as PCRDisplayStatus) : null;
 }
 
-export function displayPcrStatus(status: string, applicationStatus?: string | null): PCRDisplayStatus | string {
+export function displayPcrStatus(
+    status: string,
+    applicationStatus?: string | null,
+    _effectiveAt?: string | null,
+): PCRDisplayStatus | string {
+    void _effectiveAt;
     const normalized = status.trim().toUpperCase();
     const normalizedApplicationStatus = String(applicationStatus ?? "").trim().toUpperCase();
-    if (normalized === "APPROVED" && ["SCHEDULED", "APPLYING", "FAILED"].includes(normalizedApplicationStatus)) {
+    if (normalized === "APPROVED" && normalizedApplicationStatus === "SCHEDULED") {
+        return normalizedApplicationStatus;
+    }
+    if (normalized === "APPROVED" && ["APPLYING", "FAILED"].includes(normalizedApplicationStatus)) {
         return normalizedApplicationStatus;
     }
     return normalizePcrStatus(normalized) ?? normalized;
@@ -83,6 +91,7 @@ export function pcrStatusTabTriggerClass(status: Exclude<PCRDisplayStatus, "CANC
 }
 
 export function approvalTypeLabel(kind: ApprovalKind): string {
+    if (kind === "mixed_batch") return "Price Type + List Cost";
     return kind === "price_batch" || kind === "price_type" ? "Price Type" : "List Cost";
 }
 
@@ -94,6 +103,8 @@ export function approvalTypeBadgeClass(kind: ApprovalKind): string {
         case "cost_batch":
         case "list_price":
             return "border-violet-200 bg-violet-100 text-violet-900 dark:border-violet-800 dark:bg-violet-950 dark:text-violet-200";
+        case "mixed_batch":
+            return "border-slate-300 bg-slate-100 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200";
     }
 }
 

@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { WalletItem, GeneralFinding } from "../hooks/useSettlement";
 import { UnpaidInvoice } from "../../types";
+import { getSourceAllocationCapacity } from "../utils/settlement-balance";
 
 export interface WalletAssetCardProps {
     item: WalletItem;
@@ -48,7 +49,7 @@ export default function WalletAssetCard({
                                         }: WalletAssetCardProps) {
 
     const used = item.originalAmount > 0 ? getUsedAmount(item.id) : 0;
-    const remaining = item.originalAmount - used;
+    const remaining = getSourceAllocationCapacity(item.originalAmount, used);
     const isExhausted = item.originalAmount > 0 && remaining <= 0;
 
     let borderLeft = "border-l-emerald-500";

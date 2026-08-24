@@ -95,10 +95,12 @@ export function CashIssuanceApprovalTable({
                                 <div className="space-y-1 bg-muted/20 p-2 rounded-lg border border-border/30">
                                     <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Payee & Cost Center</p>
                                     <p className="text-xs font-black text-foreground uppercase truncate">{d.payeeName || "UNKNOWN PAYEE"}</p>
-                                    <div className="flex items-center gap-1.5 text-[9px] font-bold text-muted-foreground/80 uppercase">
-                                        <Building2 className="w-3 h-3 opacity-60" />
-                                        <span>{d.divisionName || "No Division"} {d.departmentName ? `| ${d.departmentName}` : ""}</span>
-                                    </div>
+                                    {(d.divisionName || d.departmentName) && (
+                                        <div className="flex items-center gap-1.5 text-[9px] font-bold text-muted-foreground/80 uppercase">
+                                            <Building2 className="w-3 h-3 opacity-60" />
+                                            <span>{[d.divisionName, d.departmentName].filter(Boolean).join(" | ")}</span>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Audit warnings */}
@@ -188,12 +190,14 @@ export function CashIssuanceApprovalTable({
                                                     {d.payeeName || "UNKNOWN PAYEE"}
                                                 </span>
                                                 <div className="flex flex-col gap-0.5">
-                                                    <div className="flex items-center gap-1 text-[9px] font-bold text-muted-foreground uppercase">
-                                                        <Building2 className="w-3 h-3 opacity-60" />
-                                                        <span className="truncate">{d.divisionName || "No Division"}</span>
-                                                    </div>
+                                                    {d.divisionName && (
+                                                        <div className="flex items-center gap-1 text-[9px] font-bold text-muted-foreground uppercase">
+                                                            <Building2 className="w-3 h-3 opacity-60" />
+                                                            <span className="truncate">{d.divisionName}</span>
+                                                        </div>
+                                                    )}
                                                     {d.departmentName && (
-                                                        <span className="text-[8px] font-bold text-muted-foreground/70 uppercase pl-4 truncate">
+                                                        <span className={`text-[8px] font-bold text-muted-foreground/70 uppercase ${d.divisionName ? "pl-4" : ""} truncate`}>
                                                             {d.departmentName}
                                                         </span>
                                                     )}

@@ -82,12 +82,8 @@ export default function DeliveryTermsFormDialog(props: {
       // Build payload step by step
       const payload: DeliveryTermPayload = {
         delivery_name: deliveryName.trim(),
+        delivery_description: deliveryDescription.trim() || null,
       };
-
-      // Only add description if it's not empty
-      if (deliveryDescription.trim()) {
-        payload.delivery_description = deliveryDescription.trim();
-      }
 
       // Add user tracking
       if (mode === "create") {

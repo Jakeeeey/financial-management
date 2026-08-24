@@ -10,6 +10,14 @@ import { Input } from "@/components/ui/input";
 import { UnpaidInvoice, SettlementAllocation } from "../../types";
 import { WalletItem } from "../hooks/useSettlement";
 import { cn } from "@/lib/utils";
+import {
+    findOverAllocatedInvoice,
+    findUnderAllocatedInvoice,
+    getCartBalanceTotals,
+    getInvoiceAppliedForSettlement,
+    getInvoiceRequiredBalance,
+    SETTLEMENT_BALANCE_TOLERANCE,
+} from "../utils/settlement-balance";
 
 export interface SettlementInvoiceCartTableProps {
     isPosted: boolean;
@@ -65,6 +73,20 @@ export default function SettlementInvoiceCartTable({
         );
     }, [sortedCartInvoices, cartSearchQuery]);
 
+    const cartBalanceTotals = getCartBalanceTotals(cartInvoices, allocations);
+    const underAllocatedInvoice = findUnderAllocatedInvoice(cartInvoices, allocations);
+    const overAllocatedInvoice = findOverAllocatedInvoice(cartInvoices, allocations);
+    const isCartUnbalanced = Boolean(underAllocatedInvoice || overAllocatedInvoice)
+        || Math.abs(cartBalanceTotals.difference) > SETTLEMENT_BALANCE_TOLERANCE;
+    const cartValidationMessage = underAllocatedInvoice
+        ? `Invoice ${underAllocatedInvoice.invoiceNo} still has ₱${(
+            getInvoiceRequiredBalance(underAllocatedInvoice)
+            - getInvoiceAppliedForSettlement(allocations, underAllocatedInvoice.id)
+        ).toLocaleString(undefined, { minimumFractionDigits: 2 })} unallocated. Apply the balance or remove it before committing.`
+        : overAllocatedInvoice
+            ? `The allocation for ${overAllocatedInvoice.invoiceNo} exceeds its remaining balance.`
+            : `Settlement cart is not balanced. ₱${Math.abs(cartBalanceTotals.difference).toLocaleString(undefined, { minimumFractionDigits: 2 })} remains unallocated.`;
+
     return (
         <div className="relative w-full h-full flex flex-col overflow-hidden bg-card">
             {/* Search Bar for Cart */}
@@ -80,6 +102,15 @@ export default function SettlementInvoiceCartTable({
                     />
                 </div>
             </div>
+
+            {cartInvoices.length > 0 && !isPosted && isCartUnbalanced && (
+                <div role="alert" className="px-3 py-2 border-b border-orange-200 bg-orange-50 text-orange-800 flex items-center gap-2 shrink-0">
+                    <Info size={13} className="shrink-0" />
+                    <span className="text-[10px] font-bold">
+                        {cartValidationMessage}
+                    </span>
+                </div>
+            )}
 
             <div className="relative w-full flex-1 overflow-y-auto scrollbar-thin [&>div]:!overflow-visible">
                 <Table className="relative min-w-[700px]">
@@ -118,7 +149,7 @@ export default function SettlementInvoiceCartTable({
                             const appliedAdj = invoiceAllocations.filter(a => a.allocationType === "ADJUSTMENT").reduce((sum, a) => sum + a.amountApplied, 0);
                             const appliedCredits = invoiceAllocations.filter(a => a.allocationType === "MEMO" || a.allocationType === "RETURN").reduce((sum, a) => sum + a.amountApplied, 0);
                             const hasEWTApplied = invoiceAllocations.some(a => a.allocationType === "EWT");
-                            const isFullySettled = appliedSession >= (inv.remainingBalance - 0.01);
+                            const isFullySettled = appliedSession >= (getInvoiceRequiredBalance(inv) - 0.01);
                             const isPartiallySettled = appliedSession > 0 && !isFullySettled;
 
                             let rowStatus = ""; let badgeColor = ""; let rowBg = "bg-background"; let IconComponent: React.ReactNode = null;
@@ -220,8 +251,8 @@ export default function SettlementInvoiceCartTable({
                     {filteredCartInvoices.length > 0 && (
                         <TableFooter className="bg-muted/90 backdrop-blur-md sticky bottom-0 z-20 outline outline-1 outline-border shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
                             <TableRow>
-                                <TableCell colSpan={2} className="text-right py-2"><span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mr-4">Cart Balance:</span><span className="font-mono font-black text-xs">₱{cartTotalBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}</span></TableCell>
-                                <TableCell className="text-right py-2 border-l border-border/50 pr-4"><div className="flex flex-col items-end"><span className="text-[8px] font-black uppercase tracking-widest text-emerald-600 mb-0.5 leading-none">Total Applied</span><span className="font-mono font-black text-emerald-600 text-xs leading-none">₱{cartTotalAppliedSession.toLocaleString(undefined, {minimumFractionDigits: 2})}</span></div></TableCell>
+                                <TableCell colSpan={2} className="text-right py-2"><span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mr-4">Open Balance:</span><span className="font-mono font-black text-xs">₱{cartTotalBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}</span></TableCell>
+                                <TableCell className="text-right py-2 border-l border-border/50 pr-4"><div className="flex flex-col items-end"><span className="text-[8px] font-black uppercase tracking-widest text-emerald-600 mb-0.5 leading-none">Applied This Pouch</span><span className="font-mono font-black text-emerald-600 text-xs leading-none">₱{cartTotalAppliedSession.toLocaleString(undefined, {minimumFractionDigits: 2})}</span></div></TableCell>
                             </TableRow>
                         </TableFooter>
                     )}

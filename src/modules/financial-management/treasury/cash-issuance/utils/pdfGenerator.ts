@@ -2,6 +2,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { format } from "date-fns";
 import { Disbursement } from "../types";
+import { sumLineAmounts } from "../../utils/line-amounts";
 
 export const generateDisbursementPDF = (disbursement: Disbursement, paperSize: "A4" | "58mm") => {
     const doc = new jsPDF({
@@ -13,6 +14,9 @@ export const generateDisbursementPDF = (disbursement: Disbursement, paperSize: "
     const isA4 = paperSize === "A4";
     const marginX = isA4 ? 15 : 3; // Ultra tight margins for 58mm
     const center = isA4 ? 105 : 29;
+    const totalPayables = sumLineAmounts(disbursement.payables || []);
+    const totalPayments = sumLineAmounts(disbursement.payments || []);
+    const formatAmount = (amount: number) => amount.toLocaleString("en-US", { minimumFractionDigits: 2 });
     let startY = isA4 ? 15 : 8;
 
     // --- 1. HEADER ---
@@ -45,8 +49,7 @@ export const generateDisbursementPDF = (disbursement: Disbursement, paperSize: "
         printLine("Date:", disbursement.transactionDate ? format(new Date(disbursement.transactionDate), "MMM dd, yyyy") : "N/A", marginX, startY, 25);
         printLine("Trans Type:", disbursement.transactionTypeName || "N/A", 120, startY, 20);
         startY += 6;
-        printLine("Division:", disbursement.divisionName || "N/A", marginX, startY, 25);
-        printLine("Department:", disbursement.departmentName || "N/A", 120, startY, 20);
+        printLine("Department:", disbursement.departmentName || "N/A", marginX, startY, 25);
         startY += 6;
         const linesUsed = printLine("Payee:", disbursement.payeeName || "N/A", marginX, startY, 25);
         startY += (linesUsed * 5) + 1;
@@ -57,7 +60,6 @@ export const generateDisbursementPDF = (disbursement: Disbursement, paperSize: "
         printLine("No:", disbursement.docNo, marginX, startY, 8); startY += 4;
         printLine("Date:", disbursement.transactionDate ? format(new Date(disbursement.transactionDate), "MMM dd, yy") : "N/A", marginX, startY, 8); startY += 4;
         const lines = printLine("Payee:", disbursement.payeeName || "N/A", marginX, startY, 11); startY += (lines * 3) + 1;
-        printLine("Div:", disbursement.divisionName || "N/A", marginX, startY, 8); startY += 5;
     }
 
     // --- 3. PAYABLES TABLE (Debits) ---
@@ -77,6 +79,7 @@ export const generateDisbursementPDF = (disbursement: Disbursement, paperSize: "
             cellPadding: isA4 ? 2 : 1 // 🚀 Tight padding for 58mm
         },
         headStyles: { fillColor: [255, 255, 255], textColor: 0, fontStyle: 'bold', lineColor: 0, lineWidth: 0.2 },
+        footStyles: { fillColor: [245, 245, 245], textColor: 0, fontStyle: 'bold', lineColor: 0, lineWidth: 0.2 },
         // 🚀 SMART LAYOUT: A4 gets 4 columns, 58mm gets 3 columns (Account and Remarks are merged!)
         head: isA4 ? [['Ref / PO', 'GL Account', 'Remarks', 'Amount']] : [['Ref', 'Account/Rem', 'Amount']],
         body: (disbursement.payables || []).map(p => {
@@ -87,7 +90,16 @@ export const generateDisbursementPDF = (disbursement: Disbursement, paperSize: "
                 const acctRem = `${p.accountTitle || `COA: ${p.coaId}`}\n${p.remarks ? `(${p.remarks})` : ''}`;
                 return [p.referenceNo || '-', acctRem, { content: p.amount.toLocaleString('en-US', {minimumFractionDigits: 2}), styles: { halign: 'right' } }];
             }
-        })
+        }),
+        foot: isA4
+            ? [[
+                { content: 'TOTAL PAYABLES', colSpan: 3, styles: { halign: 'right', fontStyle: 'bold' } },
+                { content: formatAmount(totalPayables), styles: { halign: 'right', fontStyle: 'bold' } }
+            ]]
+            : [[
+                { content: 'TOTAL PAYABLES', colSpan: 2, styles: { halign: 'right', fontStyle: 'bold' } },
+                { content: formatAmount(totalPayables), styles: { halign: 'right', fontStyle: 'bold' } }
+            ]]
     });
 
     // @ts-expect-error - TypeScript doesn't recognize lastAutoTable property from jsPDF autotable plugin
@@ -104,6 +116,7 @@ export const generateDisbursementPDF = (disbursement: Disbursement, paperSize: "
         theme: 'grid',
         styles: { fontSize: isA4 ? 8 : 5, textColor: 0, lineColor: [150, 150, 150], lineWidth: 0.1, cellPadding: isA4 ? 2 : 1 },
         headStyles: { fillColor: [255, 255, 255], textColor: 0, fontStyle: 'bold', lineColor: 0, lineWidth: 0.2 },
+        footStyles: { fillColor: [245, 245, 245], textColor: 0, fontStyle: 'bold', lineColor: 0, lineWidth: 0.2 },
         head: isA4 ? [['Check / Ref', 'Bank / GL Account', 'Amount']] : [['Check', 'Bank/GL', 'Amount']],
         body: (disbursement.payments || []).map(p => {
             if (isA4) {
@@ -118,7 +131,11 @@ export const generateDisbursementPDF = (disbursement: Disbursement, paperSize: "
                     { content: p.amount.toLocaleString('en-US', {minimumFractionDigits: 2}), styles: { halign: 'right' } }
                 ];
             }
-        })
+        }),
+        foot: [[
+            { content: 'TOTAL PAYMENTS', colSpan: 2, styles: { halign: 'right', fontStyle: 'bold' } },
+            { content: formatAmount(totalPayments), styles: { halign: 'right', fontStyle: 'bold' } }
+        ]]
     });
 
     // @ts-expect-error - TypeScript doesn't recognize lastAutoTable property from jsPDF autotable plugin

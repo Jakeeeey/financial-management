@@ -3,6 +3,7 @@
 import {
     Disbursement,
     DisbursementPayload,
+    PaymentAllocationPayload,
     PaginatedResponse,
     SupplierDto,
     COADto,
@@ -14,6 +15,19 @@ import {
     DisbursementDashboardData,
     DashboardFilters
 } from "../types";
+import { RELEASING_PAYMENT_SCOPE } from "../utils/update-scope";
+
+export class DisbursementRequestError extends Error {
+    readonly code?: string;
+    readonly nextDocNo?: string;
+
+    constructor(message: string, code?: string, nextDocNo?: string) {
+        super(message);
+        this.name = "DisbursementRequestError";
+        this.code = code;
+        this.nextDocNo = nextDocNo;
+    }
+}
 
 const API_BASE = "/api/fm/treasury/disbursements";
 const SUPPLIER_API_BASE = "/api/fm/treasury/suppliers";
@@ -50,7 +64,11 @@ export const disbursementProvider = {
         });
         if (!res.ok) {
             const errData = await res.json().catch(() => ({}));
-            throw new Error(errData.detail || errData.message || "Failed to create disbursement");
+            throw new DisbursementRequestError(
+                errData.detail || errData.message || "Failed to create disbursement",
+                typeof errData.code === "string" ? errData.code : undefined,
+                typeof errData.nextDocNo === "string" ? errData.nextDocNo : undefined,
+            );
         }
         return res.json();
     },
@@ -121,16 +139,42 @@ export const disbursementProvider = {
         return res.json();
     },
 
-    getUnpaidPos: async (supplierId: number): Promise<UnpaidPoDto[]> => {
-        const res = await fetch(`/api/fm/treasury/disbursements/unpaid-pos/${supplierId}`);
-        if (!res.ok) throw new Error("Failed to fetch unpaid POs");
+    updatePaymentAllocation: async (id: number, payments: PaymentAllocationPayload["payments"]): Promise<Disbursement> => {
+        const payload: PaymentAllocationPayload = {
+            saveScope: RELEASING_PAYMENT_SCOPE,
+            payments,
+        };
+        const res = await fetch(`${API_BASE}/${id}`, {
+            method: "PUT",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error(errorData.detail || errorData.message || "Failed to save payment allocation");
+        }
         return res.json();
     },
 
-    getSupplierMemos: async (supplierId: number): Promise<MemoDto[]> => {
-        const res = await fetch(`/api/fm/treasury/disbursements/memos/${supplierId}`);
-        if (!res.ok) throw new Error("Failed to fetch supplier memos");
-        return res.json();
+    getUnpaidPos: async (supplierId: number, signal?: AbortSignal): Promise<UnpaidPoDto[]> => {
+        const res = await fetch(`/api/fm/treasury/disbursements/unpaid-pos/${supplierId}`, {
+            cache: "no-store",
+            signal,
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+            throw new Error(data?.detail || data?.message || "Failed to fetch unpaid POs");
+        }
+        if (!Array.isArray(data)) throw new Error("Pending Records returned an invalid response");
+        return data as UnpaidPoDto[];
+    },
+
+    getSupplierMemos: async (supplierId: number, signal?: AbortSignal): Promise<MemoDto[]> => {
+        const res = await fetch(`/api/fm/treasury/disbursements/memos/${supplierId}`, { signal });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.detail || data?.message || "Failed to fetch supplier memos");
+        if (!Array.isArray(data)) throw new Error("Supplier memos returned an invalid response");
+        return (data as MemoDto[]).filter((memo) => Number(memo.supplier_id) === Number(supplierId));
     },
 
     getDivisions: async (): Promise<DivisionDto[]> => {

@@ -26,7 +26,14 @@ export const SupplierSchema = z.object({
     .email("Invalid email address")
     .or(z.literal("N/A"))
     .or(z.literal("")),
-  phone_number: z.string(),
+  phone_number: z
+    .string()
+    .transform((val) => val.replace(/\D/g, "")) // Strip non-digits
+    .refine((val) => val.length <= 11, {
+      message: "Phone number must be at most 11 digits",
+    })
+    .optional()
+    .default(""),
   address: z.string().min(1, "Address is required"),
   brgy: z.string().min(1, "Barangay is required"),
   city: z.string().min(1, "City is required"),
@@ -42,7 +49,7 @@ export const SupplierSchema = z.object({
   notes_or_comments: z.string().optional().default(""),
   agreement_or_contract: z.string().optional().default(""),
   preferred_communication_method: z.string().optional().default(""),
-  nonBuy: z.any().optional(), // Buffer type - ignore for now
+  nonBuy: z.boolean().optional().default(true),
 });
 
 /**
@@ -74,7 +81,14 @@ export const SupplierFormSchema = z.object({
     .or(z.literal(""))
     .optional()
     .default(""),
-  phone_number: z.string().optional().default(""),
+  phone_number: z
+    .string()
+    .transform((val) => val.replace(/\D/g, "")) // Strip non-digits
+    .refine((val) => val.length <= 11, {
+      message: "Phone number must be at most 11 digits",
+    })
+    .optional()
+    .default(""),
   address: z.string().min(1, "Address is required"),
   brgy: z.string().min(1, "Barangay is required"),
   city: z.string().min(1, "City is required"),
@@ -89,6 +103,7 @@ export const SupplierFormSchema = z.object({
   notes_or_comments: z.string().optional().default(""),
   agreement_or_contract: z.string().optional().default(""),
   preferred_communication_method: z.string().optional().default(""),
+  nonBuy: z.boolean().optional().default(true),
 });
 
 /**

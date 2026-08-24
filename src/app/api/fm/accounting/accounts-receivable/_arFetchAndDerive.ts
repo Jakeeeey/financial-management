@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /** Types, Directus fetchers, area logic, derivation functions, and orchestrator. */
 
 export interface SalesInvoiceRow {
@@ -214,6 +215,74 @@ export async function fetchAllSalesInvoices(
   }
 
   return { rows: all, sourceCount: sourceCount ?? all.length };
+}
+
+export interface StatusLookupData {
+  dispatchInvoices: any[];
+  transmittalDetails: any[];
+  counteredInvoices: any[];
+  collectionInvoices: any[];
+}
+
+export function computeDerivedStatus(
+  invoiceId: number,
+  paymentStatus: string,
+  dbTransactionStatus: string | null | undefined,
+  totalPaid: number,
+  lookups: StatusLookupData
+): string {
+  const dbStatus = (dbTransactionStatus || '').trim();
+  if (
+    dbStatus === 'Cancellation Requested' ||
+    dbStatus === 'Cancelled' ||
+    dbStatus === 'CANCELLED'
+  ) {
+    return dbStatus;
+  }
+
+  // 1. Check Collected (Priority 5 - highest)
+  const hasCollection = lookups.collectionInvoices.some(
+    c => c.invoice_id === invoiceId && 
+         c.collection_id?.isCancelled !== true && 
+         c.collection_id?.isCancelled !== 1
+  );
+  const isPaidStatus = paymentStatus === 'Paid' || paymentStatus === 'Fully Paid' || paymentStatus === 'Partially Paid';
+  if (hasCollection || totalPaid > 0 || isPaidStatus) {
+    return 'Collected';
+  }
+
+  // 2. Check Countered (Priority 4)
+  const counteredRecord = lookups.counteredInvoices.find(c => c.invoice_id === invoiceId);
+  if (counteredRecord && counteredRecord.countered_date) {
+    return 'Countered';
+  }
+
+  // 3. Check Transmitted (Priority 3)
+  const transmittalRecord = lookups.transmittalDetails.find(t => t.invoice_id === invoiceId);
+  if (transmittalRecord) {
+    if (transmittalRecord.receivedAt || transmittalRecord.document_transmittal_id?.receivedAt) {
+      return 'Transmitted';
+    }
+  }
+
+  // 4. Check Delivered (Priority 2)
+  const dispatchRecord = lookups.dispatchInvoices.find(d => d.invoice_id === invoiceId);
+  if (dispatchRecord) {
+    const dStatus = dispatchRecord.status;
+    if (['Fulfilled', 'Fulfilled With Returns', 'Fulfilled With Concerns'].includes(dStatus)) {
+      return 'Delivered';
+    }
+  }
+
+  // 5. Check Dispatched (Priority 1)
+  if (dispatchRecord) {
+    const planStatus = dispatchRecord.post_dispatch_plan_id?.status;
+    if (planStatus && planStatus !== 'For Approval' && planStatus !== 'Reject') {
+      return 'Dispatch';
+    }
+  }
+
+  return dbStatus || 'Onboarded';
 }
 
 function parseBit(val: unknown): boolean {
@@ -497,7 +566,10 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
   const salesTypeIds = Array.from(new Set(invoices.map(inv => inv.sales_type).filter((s): s is number => typeof s === 'number')));
   const unpostedPouchIds = unpostedCollections.map(c => c.id);
 
-  const [payments, returns_, memos, unfulfilled, customers, salesmen, operations, unpostedInvoiceAllocs, clusters, areas] =
+  const [
+    payments, returns_, memos, unfulfilled, customers, salesmen, operations, unpostedInvoiceAllocs, clusters, areas,
+    dispatchInvoices, transmittalDetails, counteredInvoices, collectionInvoices
+  ] =
     await Promise.all([
       fetchAllChunked<PaymentRow>(`${DIRECTUS_URL}/items/sales_invoice_payments?limit=-1&fields=invoice_id,paid_amount`, 'invoice_id', invoiceIds),
       fetchAllChunked<ReturnRow>(`${DIRECTUS_URL}/items/sales_invoice_sales_return?limit=-1&fields=invoice_no,amount`, 'invoice_no', invoiceIds),
@@ -512,6 +584,11 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
         .catch(() => [] as CollectionInvoiceRow[]),
       fetchAll<{ id: number; cluster_name: string }>(`${DIRECTUS_URL}/items/cluster?limit=-1&fields=id,cluster_name`).catch(() => []),
       fetchAll<AreaRow>(`${DIRECTUS_URL}/items/area_per_cluster?limit=-1&fields=id,cluster_id,province,city,baranggay`).catch(() => []),
+      
+      fetchAllChunked<any>(`${DIRECTUS_URL}/items/post_dispatch_invoices?limit=-1&fields=invoice_id,status,post_dispatch_plan_id.status`, 'invoice_id', invoiceIds).catch(() => []),
+      fetchAllChunked<any>(`${DIRECTUS_URL}/items/document_transmittal_details?limit=-1&fields=invoice_id,receivedAt,document_transmittal_id.receivedAt`, 'invoice_id', invoiceIds).catch(() => []),
+      fetchAllChunked<any>(`${DIRECTUS_URL}/items/countered_invoices?limit=-1&fields=invoice_id,countered_date`, 'invoice_id', invoiceIds).catch(() => []),
+      fetchAllChunked<any>(`${DIRECTUS_URL}/items/collection_invoices?limit=-1&fields=invoice_id,collection_id.isPosted,collection_id.isCancelled`, 'invoice_id', invoiceIds).catch(() => []),
     ]);
 
   const divisionIds = Array.from(new Set(salesmen.map(s => s.division_id).filter((d): d is number => typeof d === 'number')));
@@ -586,7 +663,13 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
       calculatedDueDate: inv.due_date,
       dispatchDate: inv.dispatch_date,
       paymentStatus: inv.payment_status || 'Unpaid',
-      transactionStatus: inv.transaction_status || 'NULL',
+      transactionStatus: computeDerivedStatus(
+        inv.invoice_id,
+        inv.payment_status || 'Unpaid',
+        inv.transaction_status,
+        totalPaid,
+        { dispatchInvoices, transmittalDetails, counteredInvoices, collectionInvoices }
+      ),
       grossAmount, discountAmount, netReceivable, returnAmount, unfulfilledAmount,
       appliedCreditMemos: creditMemos, appliedDebitMemos: debitMemos, totalPaid, outstandingBalance,
       unpostedCollectionAmount: unpostedAgg.get(inv.invoice_id) || 0, daysOverdue,

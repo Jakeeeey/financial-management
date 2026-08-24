@@ -98,12 +98,6 @@ function buildDeliveryTermsListQuery(req: NextRequest) {
   return { q, page, pageSize, offset, params };
 }
 
-function nowManila(): string {
-  return new Date()
-    .toLocaleString("sv-SE", { timeZone: "Asia/Manila" })
-    .replace(" ", "T");
-}
-
 export async function GET(req: NextRequest) {
   try {
     const sp = req.nextUrl.searchParams;
@@ -177,7 +171,7 @@ export async function POST(req: NextRequest) {
     const payloadWithId = {
       ...body,
       id: nextId,
-      created_at: nowManila(),
+      created_at: new Date().toISOString(),
     };
 
     console.log("📤 Sending to Directus:", payloadWithId);
@@ -218,7 +212,7 @@ export async function PATCH(req: NextRequest) {
 
     const updatedPayload = {
       ...payload,
-      updated_at: nowManila(),
+      updated_at: new Date().toISOString(),
     };
 
     const res = await directusFetch(`/items/delivery_terms/${encodeURIComponent(id)}`, {

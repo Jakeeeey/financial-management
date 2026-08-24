@@ -11,9 +11,11 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const documentNo = searchParams.get("documentNo");
     if (!documentNo) return NextResponse.json({ message: "Missing documentNo" }, { status: 400 });
+    const currentPouchId = searchParams.get("currentPouchId");
+    const customerCode = searchParams.get("customerCode");
 
     const baseUrl = (process.env.SPRING_API_BASE_URL || "http://localhost:8080").replace(/\/$/, "");
-    const targetUrl = `${baseUrl}/api/v1/collections/returns/search?documentNo=${encodeURIComponent(documentNo)}`;
+    const targetUrl = `${baseUrl}/api/v1/collections/returns/search?documentNo=${encodeURIComponent(documentNo)}${currentPouchId ? `&currentPouchId=${encodeURIComponent(currentPouchId)}` : ""}${customerCode ? `&customerCode=${encodeURIComponent(customerCode)}` : ""}`;
 
     try {
         const springRes = await fetch(targetUrl, {

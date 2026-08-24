@@ -45,7 +45,8 @@ const PIE_COLORS = [
 function AttachmentPreview({ docUrl }: { docUrl: string }) {
     const [contentType, setContentType] = useState<string>("");
     const cleanBase = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "");
-    const viewUrl = docUrl.startsWith("http") ? docUrl : `${cleanBase}/assets/${docUrl}`;
+    const token = process.env.NEXT_PUBLIC_DIRECTUS_STATIC_TOKEN || "AAKv73dkIV8DfAIA5vEt3eXVdIebzmBW";
+    const viewUrl = docUrl.startsWith("http") ? docUrl : `${cleanBase}/assets/${docUrl}?access_token=${token}`;
 
     useEffect(() => {
         if (!viewUrl) return;

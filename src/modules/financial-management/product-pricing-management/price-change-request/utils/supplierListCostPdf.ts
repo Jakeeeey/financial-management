@@ -2,13 +2,14 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
 import type { MatrixRow } from "../../product-pricing/types";
+import { COST_MAX_DECIMAL_PLACES } from "../../shared/pricePrecision";
 import { flattenListCostMatrixRows } from "../../shared/supplier-batch/flattenPrintMatrix";
 
 function formatAmount(value: number | null | undefined): string {
     if (value === null || value === undefined || !Number.isFinite(Number(value))) return "";
     return Number(value).toLocaleString("en-PH", {
         minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
+        maximumFractionDigits: COST_MAX_DECIMAL_PLACES,
     });
 }
 

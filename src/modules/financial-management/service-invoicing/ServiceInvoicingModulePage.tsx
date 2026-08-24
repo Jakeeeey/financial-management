@@ -44,6 +44,11 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
+function formatInvoiceDate(value: string | null | undefined): string {
+  if (!value) return "N/A";
+  return value.split(/[T ]/)[0] || "N/A";
+}
+
 interface SearchableSelectProps {
   options: { value: string | number; label: string; sublabel?: string }[];
   value: string | number;
@@ -264,6 +269,7 @@ export default function ServiceInvoicingModulePage() {
 
   // Selected invoices mappings state: Record<child_invoice_id, { selected, amountApplied }>
   const [selectedItems, setSelectedItems] = useState<Record<number, { selected: boolean; amountApplied: string }>>({});
+  const invoiceRequestIdRef = useRef(0);
 
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -364,31 +370,57 @@ export default function ServiceInvoicingModulePage() {
     return () => clearTimeout(timer);
   }, [invoiceNo]);
 
+  const handleSalesmanChange = (nextSalesman: string | number) => {
+    invoiceRequestIdRef.current += 1;
+    setSelectedSalesman(nextSalesman);
+    setSelectedCustomer("");
+    setChildInvoices([]);
+    setSelectedItems({});
+    setChildSearchQuery("");
+    setLoadingInvoices(false);
+    setGrossAmount("0");
+    setDiscountAmount("0");
+    setDueDate(invoiceDate);
+  };
+
   // Load unlinked invoices when customer selection changes
   useEffect(() => {
+    const requestId = ++invoiceRequestIdRef.current;
     setChildSearchQuery("");
     if (!selectedCustomer) {
       setChildInvoices([]);
       setSelectedItems({});
+      setLoadingInvoices(false);
       return;
     }
 
+    const customerCode = String(selectedCustomer);
     const loadInvoices = async () => {
       setLoadingInvoices(true);
       try {
-        const data = await fetchUnlinkedInvoices(String(selectedCustomer));
+        const data = await fetchUnlinkedInvoices(customerCode);
+        if (requestId !== invoiceRequestIdRef.current) return;
         setChildInvoices(data || []);
         // Reset selections on customer change
         setSelectedItems({});
       } catch (err) {
+        if (requestId !== invoiceRequestIdRef.current) return;
         const error = err instanceof Error ? err : new Error(String(err));
         toast.error(error.message || "Could not retrieve unlinked invoices.");
       } finally {
-        setLoadingInvoices(false);
+        if (requestId === invoiceRequestIdRef.current) {
+          setLoadingInvoices(false);
+        }
       }
     };
 
-    loadInvoices();
+    void loadInvoices();
+
+    return () => {
+      if (requestId === invoiceRequestIdRef.current) {
+        invoiceRequestIdRef.current += 1;
+      }
+    };
   }, [selectedCustomer, refreshKey]);
 
   // Calculate default due date when customer or invoiceDate changes
@@ -444,7 +476,6 @@ export default function ServiceInvoicingModulePage() {
   }, [salesmen, allowedSalesmanIds]);
 
   const prevCustomerRef = useRef(selectedCustomer);
-  const prevSalesmanRef = useRef(selectedSalesman);
 
   // Auto-select salesman if customer has exactly one salesman linked
   useEffect(() => {
@@ -460,24 +491,6 @@ export default function ServiceInvoicingModulePage() {
       prevCustomerRef.current = selectedCustomer;
     }
   }, [selectedCustomer, selectedSalesman, allowedSalesmanIds]);
-
-  // Auto-select customer if salesman has exactly one customer linked
-  useEffect(() => {
-    if (selectedSalesman !== prevSalesmanRef.current) {
-      prevSalesmanRef.current = selectedSalesman;
-      if (selectedSalesman && !selectedCustomer && allowedCustomerIds && allowedCustomerIds.size === 1) {
-        const singleCustomerId = Array.from(allowedCustomerIds)[0];
-        const cust = customers.find(c => Number(c.id) === singleCustomerId);
-        if (cust) {
-          setSelectedCustomer(cust.customer_code);
-          toast.info("Customer auto-selected based on salesman assignment.");
-        }
-      }
-    } else {
-      // Sync ref if value changed by user
-      prevSalesmanRef.current = selectedSalesman;
-    }
-  }, [selectedSalesman, selectedCustomer, allowedCustomerIds, customers]);
 
   // Dropdown options formatting
   const salesmanOptions = useMemo(() => {
@@ -640,11 +653,11 @@ export default function ServiceInvoicingModulePage() {
         net_amount: calculatedNet,
         sales_type: salesmanObj && salesmanObj.operation
           ? (typeof salesmanObj.operation === "object" ? salesmanObj.operation.id : Number(salesmanObj.operation))
-          : 0,
+          : null,
         price_type: salesmanObj && salesmanObj.price_type ? salesmanObj.price_type : "",
         payment_terms: customerObj && customerObj.payment_term && typeof customerObj.payment_term === "object"
-          ? (customerObj.payment_term.payment_days || 0)
-          : 0,
+          ? customerObj.payment_term.id
+          : (customerObj && customerObj.payment_term ? Number(customerObj.payment_term) : null),
         remarks: remarks.trim() || null,
         mappings: selectedList.map(item => ({
           child_invoice_id: item.invoiceId,
@@ -782,7 +795,7 @@ export default function ServiceInvoicingModulePage() {
                   <KeyboardNavSelect
                     options={salesmanOptions}
                     value={selectedSalesman}
-                    onChange={setSelectedSalesman}
+                    onChange={handleSalesmanChange}
                     placeholder="-- Select Salesman --"
                     label="Salesman"
                     icon={<User size={12} />}
@@ -943,7 +956,7 @@ export default function ServiceInvoicingModulePage() {
                                       {inv.invoice_no}
                                     </TableCell>
                                     <TableCell className="p-2 text-[10px] font-bold text-muted-foreground font-mono">
-                                      {inv.invoice_date ? inv.invoice_date.split("T")[0] : "N/A"}
+                                      {formatInvoiceDate(inv.invoice_date)}
                                     </TableCell>
                                     <TableCell className="p-2 text-xs font-black text-right text-foreground">
                                       ₱{Number(inv.total_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
@@ -1124,7 +1137,7 @@ export default function ServiceInvoicingModulePage() {
                         <div className="text-[10px] font-bold text-muted-foreground uppercase flex flex-wrap gap-x-3 gap-y-1">
                           <span className="flex items-center gap-1"><User size={10} /> Salesman: {salesm ? salesm.salesman_name : `ID: ${parent.salesman_id}`}</span>
                           <span className="flex items-center gap-1"><Building2 size={10} /> Customer: {cust ? cust.customer_name : parent.customer_code}</span>
-                          <span className="flex items-center gap-1"><Calendar size={10} /> Consolidated on: {parent.invoice_date ? parent.invoice_date.split("T")[0] : "N/A"}</span>
+                          <span className="flex items-center gap-1"><Calendar size={10} /> Consolidated on: {formatInvoiceDate(parent.invoice_date)}</span>
                         </div>
                         {parent.remarks && (
                           <div className="mt-2 text-[10px] bg-muted/40 p-2 rounded-lg text-muted-foreground italic border border-border/20 max-w-lg">
@@ -1166,7 +1179,7 @@ export default function ServiceInvoicingModulePage() {
                                     {child.child_invoice_no}
                                   </TableCell>
                                   <TableCell className="p-2.5 text-[10px] font-bold text-muted-foreground font-mono">
-                                    {child.child_date ? child.child_date.split("T")[0] : "N/A"}
+                                    {formatInvoiceDate(child.child_date)}
                                   </TableCell>
                                   <TableCell className="p-2.5 text-xs font-bold text-right text-foreground">
                                     ₱{Number(child.child_total_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}

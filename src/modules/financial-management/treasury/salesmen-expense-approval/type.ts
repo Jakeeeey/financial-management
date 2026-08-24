@@ -34,7 +34,7 @@ export interface ExpenseDraft {
   amount: number;
   payee: string | null;
   attachment_url: string | null;
-  status: "Drafts" | "Approved" | "Rejected" | "With Concern";
+  status: "Drafts" | "Approved" | "Posted" | "Rejected" | "With Concern";
   drafted_at: string | null;
   rejected_at: string | null;
   approved_at: string | null;
@@ -42,6 +42,7 @@ export interface ExpenseDraft {
   version: number;
   feedback: string | null;
   return_to: string | null;
+  is_supervisor?: number | null;
 }
 
 /** Match vos_database.disbursement_draft */
@@ -93,6 +94,8 @@ export interface SalesmanExpenseRow {
   employee_id: number;
   division_id: number | null;
   division_name: string | null;
+  division_names: string[];
+  header_statuses: string[];
   draft_count: number;
   rejected_count: number;
   concern_count: number;
@@ -111,13 +114,14 @@ export interface ExpenseDraftRow {
   payee: string | null;
   payee_id: number | null;
   attachment_url: string | null;
-  status: "Drafts" | "Approved" | "Rejected" | "With Concern";
+  status: "Drafts" | "Approved" | "Posted" | "Rejected" | "With Concern";
   drafted_at: string | null;
   rejected_at: string | null;
   approved_at: string | null;
   remarks: string | null;
   version: number;
   feedback: string | null;
+  is_supervisor?: number | null;
 }
 
 export interface ExpenseHeader {

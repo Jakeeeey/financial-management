@@ -13,8 +13,10 @@ import {cn} from "@/lib/utils";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter} from "@/components/ui/sheet";
-import {Popover, PopoverContent, PopoverTrigger} from "@/components/ui/popover";
+import {Popover, PopoverTrigger} from "@/components/ui/popover";
 import {Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList} from "@/components/ui/command";
+import {getCheckValidationErrors} from "../hooks/useCashiering";
+import {CashieringPopoverContent} from "./CashieringPopoverContent";
 
 export default function CashieringSheet({state}: { state: CashieringState }) {
     const {
@@ -53,7 +55,9 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
         grandTotal,
         handleSubmit,
         isSheetLoading,
+        isLookupsLoading,
         isSubmitting,
+        submissionError,
         editingId,
         masterList
     } = state;
@@ -67,12 +71,37 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
     const [openBankIdx, setOpenBankIdx] = useState<number | null>(null);
     const [openCustomerIdx, setOpenCustomerIdx] = useState<number | null>(null);
     const [openInvoiceIdx, setOpenInvoiceIdx] = useState<number | null>(null);
+    const [popoverContainer, setPopoverContainer] = useState<HTMLDivElement | null>(null);
 
     const currentPouch = editingId ? masterList.find((m: CollectionSummary) => m.id === editingId) : null;
     const displayDocNo = currentPouch ? currentPouch.docNo : "AUTO-GENERATED";
 
     // 🚀 STRICT VALIDATION
-    const isFormValid = salesmanId !== "" && grandTotal > 0 && checks.every((c: CheckDetail) => c.bankId && c.bankId !== "");
+    const checkValidationErrors = checks.map((check: CheckDetail) => getCheckValidationErrors(check));
+    const hasInvalidCheckLines = checkValidationErrors.some(errors => Object.values(errors).some(Boolean));
+    const firstInvalidCheck = checkValidationErrors.find(errors => Object.values(errors).some(Boolean));
+    const hasInvalidDenominations = Object.values(denominations).some(quantity => !Number.isInteger(quantity) || quantity < 0);
+    const isFormValid = !isSheetLoading && !isLookupsLoading && salesmanId !== "" && grandTotal > 0 && !hasInvalidDenominations && !hasInvalidCheckLines;
+    const lineValidationMessage = firstInvalidCheck?.paymentMethod
+        ? "Payment method required"
+        : firstInvalidCheck?.coa
+            ? "Asset type required"
+            : firstInvalidCheck?.bank
+                ? "Target Bank required"
+                : firstInvalidCheck?.chequeDate
+                    ? "Date on check required"
+                : firstInvalidCheck?.reference
+                    ? "Reference or check number required"
+                    : firstInvalidCheck?.amount
+                            ? "Each non-cash amount must be greater than 0.00"
+                            : null;
+    const validationMessage = !salesmanId
+        ? "Collector required"
+        : hasInvalidDenominations
+            ? "Cash quantities must be non-negative whole numbers"
+        : grandTotal <= 0
+            ? "Pouch total must be greater than ₱0.00"
+            : lineValidationMessage;
 
     return (
         <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
@@ -100,7 +129,8 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                     </div>
                 </SheetHeader>
 
-                <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 bg-muted/10 custom-scrollbar">
+                <div ref={setPopoverContainer}
+                     className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 bg-muted/10 custom-scrollbar">
                     {isSheetLoading ? (
                         <div className="flex flex-col items-center justify-center h-40 text-muted-foreground space-y-3">
                             <Loader2 className="animate-spin h-8 w-8 text-primary"/>
@@ -125,7 +155,7 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50"/>
                                             </Button>
                                         </PopoverTrigger>
-                                        <PopoverContent className="w-[300px] p-0" align="start">
+                                        <CashieringPopoverContent container={popoverContainer} className="w-[300px] p-0" align="start">
                                             <Command>
                                                 <CommandInput placeholder="Type code or name..." className="text-xs"/>
                                                 <CommandList className="max-h-[250px] overflow-y-auto custom-scrollbar">
@@ -146,7 +176,7 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                     </CommandGroup>
                                                 </CommandList>
                                             </Command>
-                                        </PopoverContent>
+                                        </CashieringPopoverContent>
                                     </Popover>
                                 </div>
 
@@ -164,7 +194,7 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50"/>
                                             </Button>
                                         </PopoverTrigger>
-                                        <PopoverContent className="w-[300px] p-0" align="start">
+                                        <CashieringPopoverContent container={popoverContainer} className="w-[300px] p-0" align="start">
                                             <Command>
                                                 <CommandInput placeholder="Type name..." className="text-xs"/>
                                                 <CommandList className="max-h-[250px] overflow-y-auto custom-scrollbar">
@@ -184,7 +214,7 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                     </CommandGroup>
                                                 </CommandList>
                                             </Command>
-                                        </PopoverContent>
+                                        </CashieringPopoverContent>
                                     </Popover>
                                 </div>
 
@@ -284,6 +314,9 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
 
                                         {checks.map((check: CheckDetail, i: number) => {
                                             const availableInvoices = check.customerId ? (customerInvoices[check.customerId] || []) : routeInvoices;
+                                            const lineErrors = getCheckValidationErrors(check);
+                                            const isSpecialLine = check.tempId?.startsWith("adj-") || check.tempId?.startsWith("ewt-");
+                                            const requiresBank = !isSpecialLine;
 
                                             return (
                                                 <div key={check.tempId}
@@ -309,7 +342,8 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                                      onOpenChange={(open) => setOpenPaymentIdx(open ? i : null)}>
                                                                 <PopoverTrigger asChild>
                                                                     <Button variant="outline"
-                                                                            className={cn("w-full h-8 text-[11px] justify-between px-2 font-bold", !check.paymentMethodId && "border-amber-500/50 text-amber-600 bg-amber-50 dark:bg-amber-900/10")}>
+                                                                            aria-invalid={lineErrors.paymentMethod}
+                                                                            className={cn("w-full h-8 text-[11px] justify-between px-2 font-bold", !check.paymentMethodId && "border-amber-500/50 text-amber-600 bg-amber-50 dark:bg-amber-900/10", lineErrors.paymentMethod && "border-destructive focus-visible:ring-destructive")}>
                                                                         <div
                                                                             className="flex items-center gap-1.5 truncate pr-2">
                                                                             <CreditCard size={12}
@@ -321,7 +355,7 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                                             className="ml-1 h-3 w-3 opacity-50 shrink-0"/>
                                                                     </Button>
                                                                 </PopoverTrigger>
-                                                                <PopoverContent className="w-[200px] p-0" align="start">
+                                                                <CashieringPopoverContent container={popoverContainer} className="w-[200px] p-0" align="start">
                                                                     <Command>
                                                                         <CommandInput placeholder="Search..."
                                                                                       className="h-8 text-xs"/>
@@ -341,7 +375,7 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                                             </CommandGroup>
                                                                         </CommandList>
                                                                     </Command>
-                                                                </PopoverContent>
+                                                                </CashieringPopoverContent>
                                                             </Popover>
                                                         </div>
 
@@ -353,7 +387,8 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                                      onOpenChange={(open) => setOpenCoaIdx(open ? i : null)}>
                                                                 <PopoverTrigger asChild>
                                                                     <Button variant="outline"
-                                                                            className={cn("w-full h-8 text-[11px] justify-between px-2 font-bold", !check.coaId && "border-amber-500/50 text-amber-600 bg-amber-50 dark:bg-amber-900/10")}>
+                                                                             aria-invalid={lineErrors.coa}
+                                                                             className={cn("w-full h-8 text-[11px] justify-between px-2 font-bold", !check.coaId && "border-amber-500/50 text-amber-600 bg-amber-50 dark:bg-amber-900/10", lineErrors.coa && "border-destructive focus-visible:ring-destructive")}>
                                                                         <div
                                                                             className="flex items-center gap-1.5 truncate pr-2">
                                                                             <Landmark size={12}
@@ -365,7 +400,7 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                                             className="ml-1 h-3 w-3 opacity-50 shrink-0"/>
                                                                     </Button>
                                                                 </PopoverTrigger>
-                                                                <PopoverContent className="w-[250px] p-0" align="start">
+                                                                <CashieringPopoverContent container={popoverContainer} className="w-[250px] p-0" align="start">
                                                                     <Command>
                                                                         <CommandInput placeholder="Search COA..."
                                                                                       className="h-8 text-xs"/>
@@ -384,26 +419,27 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                                             </CommandGroup>
                                                                         </CommandList>
                                                                     </Command>
-                                                                </PopoverContent>
+                                                                </CashieringPopoverContent>
                                                             </Popover>
                                                         </div>
 
                                                         <div className="space-y-1.5 min-w-0">
                                                             <label
-                                                                className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Bank <span
-                                                                className="text-destructive">*</span></label>
+                                                                className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Bank {requiresBank && <span
+                                                                className="text-destructive">*</span>}</label>
                                                             <Popover open={openBankIdx === i}
                                                                      onOpenChange={(open) => setOpenBankIdx(open ? i : null)}>
                                                                 <PopoverTrigger asChild>
                                                                     <Button variant="outline"
-                                                                            className={cn("w-full h-8 text-[11px] font-bold justify-between px-2", !check.bankId ? "border-amber-500/50 text-amber-600 bg-amber-50" : "text-muted-foreground")}>
+                                                                             aria-invalid={lineErrors.bank}
+                                                                             className={cn("w-full h-8 text-[11px] font-bold justify-between px-2", !check.bankId ? "border-amber-500/50 text-amber-600 bg-amber-50" : "text-muted-foreground", lineErrors.bank && "border-destructive focus-visible:ring-destructive")}>
                                                                         <span
                                                                             className="truncate pr-2">{check.bankId ? banks.find((b: Bank) => b.id.toString() === check.bankId)?.bankName : "Required"}</span>
                                                                         <ChevronsUpDown
                                                                             className="ml-1 h-3 w-3 opacity-50 shrink-0"/>
                                                                     </Button>
                                                                 </PopoverTrigger>
-                                                                <PopoverContent className="w-[200px] p-0" align="start">
+                                                                <CashieringPopoverContent container={popoverContainer} className="w-[200px] p-0" align="start">
                                                                     <Command>
                                                                         <CommandInput placeholder="Search bank..."
                                                                                       className="h-8 text-xs"/>
@@ -422,7 +458,7 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                                             </CommandGroup>
                                                                         </CommandList>
                                                                     </Command>
-                                                                </PopoverContent>
+                                                                </CashieringPopoverContent>
                                                             </Popover>
                                                         </div>
                                                     </div>
@@ -453,19 +489,11 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                                             className="ml-1 h-3 w-3 opacity-50 shrink-0"/>
                                                                     </Button>
                                                                 </PopoverTrigger>
-                                                                <PopoverContent className="w-[300px] p-0" align="start" onWheelCapture={(e) => e.stopPropagation()}>
+                                                                <CashieringPopoverContent container={popoverContainer} className="w-[300px] p-0" align="start">
                                                                     <Command>
                                                                         <CommandInput placeholder="Search customer..."
                                                                                       className="h-8 text-xs"/>
-                                                                        <CommandList
-                                                                            className="max-h-[250px] overflow-y-auto"
-                                                                            style={{
-                                                                                scrollbarWidth: 'thin',
-                                                                                scrollbarColor: 'hsl(var(--border)) transparent',
-                                                                                overflowY: 'auto',
-                                                                                maxHeight: '250px'
-                                                                            }}
-                                                                            onWheel={(e) => e.currentTarget.scrollTop += e.deltaY}>
+                                                                        <CommandList className="max-h-[250px] overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border hover:scrollbar-thumb-foreground/20">
                                                                             <CommandEmpty>No customer
                                                                                 found.</CommandEmpty>
                                                                             <CommandGroup>
@@ -484,7 +512,7 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                                             </CommandGroup>
                                                                         </CommandList>
                                                                     </Command>
-                                                                </PopoverContent>
+                                                                </CashieringPopoverContent>
                                                             </Popover>
                                                         </div>
 
@@ -511,19 +539,11 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                                             className="ml-1 h-3 w-3 opacity-50 shrink-0"/>
                                                                     </Button>
                                                                 </PopoverTrigger>
-                                                                <PopoverContent className="w-[250px] p-0" align="start" onWheelCapture={(e) => e.stopPropagation()}>
+                                                                <CashieringPopoverContent container={popoverContainer} className="w-[250px] p-0" align="start">
                                                                     <Command>
                                                                         <CommandInput placeholder="Search invoice..."
                                                                                       className="h-8 text-xs"/>
-                                                                        <CommandList
-                                                                            className="max-h-[250px] overflow-y-auto"
-                                                                            style={{
-                                                                                scrollbarWidth: 'thin',
-                                                                                scrollbarColor: 'hsl(var(--border)) transparent',
-                                                                                overflowY: 'auto',
-                                                                                maxHeight: '250px'
-                                                                            }}
-                                                                            onWheel={(e) => e.currentTarget.scrollTop += e.deltaY}>
+                                                                        <CommandList className="max-h-[250px] overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border hover:scrollbar-thumb-foreground/20">
                                                                             <CommandEmpty>No unpaid invoices
                                                                                 available.</CommandEmpty>
                                                                             <CommandGroup>
@@ -548,7 +568,7 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                                             </CommandGroup>
                                                                         </CommandList>
                                                                     </Command>
-                                                                </PopoverContent>
+                                                                </CashieringPopoverContent>
                                                             </Popover>
                                                         </div>
                                                     </div>
@@ -562,19 +582,26 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                                 / Check No <span
                                                                     className="text-destructive">*</span></label>
                                                             <Input
-                                                                className="h-8 text-xs font-bold placeholder:font-normal bg-background"
+                                                                aria-invalid={lineErrors.reference}
+                                                                className={cn("h-8 text-xs font-bold placeholder:font-normal bg-background", lineErrors.reference && "border-destructive focus-visible:ring-destructive")}
                                                                 placeholder="00001234" value={check.checkNo}
                                                                 onChange={(e) => updateCheck(i, "checkNo", e.target.value)}/>
                                                         </div>
                                                         <div className="space-y-1.5">
                                                             <label
-                                                                className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Date
-                                                                on Check</label>
-                                                            <Input type="date"
-                                                                   className="h-8 text-[10px] font-bold text-muted-foreground uppercase bg-background"
-                                                                   value={check.chequeDate}
-                                                                   onChange={(e) => updateCheck(i, "chequeDate", e.target.value)}/>
-                                                        </div>
+                                                                 className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Date
+                                                                 on Check <span className="text-destructive">*</span></label>
+                                                             <Input type="date"
+                                                                    aria-invalid={lineErrors.chequeDate}
+                                                                    className={cn("h-8 text-[10px] font-bold text-muted-foreground uppercase bg-background", lineErrors.chequeDate && "border-destructive focus-visible:ring-destructive")}
+                                                                    value={check.chequeDate}
+                                                                    onChange={(e) => updateCheck(i, "chequeDate", e.target.value)}/>
+                                                             {lineErrors.chequeDate && (
+                                                                 <p className="text-[10px] font-bold text-destructive" role="alert">
+                                                                     Date on check is required.
+                                                                 </p>
+                                                             )}
+                                                         </div>
                                                         <div className="space-y-1.5">
                                                             <label
                                                                 className="text-[9px] font-black text-primary uppercase tracking-widest block">Amount <span
@@ -583,12 +610,18 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                                 <span
                                                                     className="absolute left-2.5 top-2 text-[10px] font-black text-muted-foreground">₱</span>
                                                                 <Input
-                                                                    type="number" min="0" step="0.01"
-                                                                    className="h-8 pl-6 text-xs font-black text-right text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-900/10 border-blue-200/60 shadow-inner"
+                                                                    type="number" min="0.01" step="0.01"
+                                                                    aria-invalid={lineErrors.amount}
+                                                                    className={cn("h-8 pl-6 text-xs font-black text-right text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-900/10 border-blue-200/60 shadow-inner", lineErrors.amount && "border-destructive focus-visible:ring-destructive")}
                                                                     placeholder="0.00" value={check.amount}
                                                                     onChange={(e) => updateCheck(i, "amount", e.target.value)}
                                                                 />
                                                             </div>
+                                                            {lineErrors.amount && (
+                                                                <p className="text-[10px] font-bold text-destructive" role="alert">
+                                                                    {check.amount.trim() ? "Amount must be greater than ₱0.00." : "Amount is required."}
+                                                                </p>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 </div>
@@ -609,10 +642,18 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                 <SheetFooter
                     className="p-4 sm:p-5 bg-card border-t border-border shrink-0 flex flex-col sm:flex-row justify-between items-center gap-4 z-10 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
                     <div className="flex items-center w-full sm:w-auto">
+                        {submissionError && (
+                            <span
+                                className="flex items-center justify-center w-full sm:w-auto gap-1.5 text-[11px] font-bold text-destructive bg-destructive/10 border border-destructive/20 px-3 py-2 rounded-md"
+                                role="alert"
+                            >
+                                <AlertCircle size={14}/> {submissionError}
+                            </span>
+                        )}
                         {!isFormValid && !isSheetLoading && (
                             <span
                                 className="flex items-center justify-center w-full sm:w-auto gap-1.5 text-[11px] font-bold uppercase tracking-widest text-amber-600 dark:text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 rounded-md">
-                                <AlertCircle size={14}/> Salesman, &gt; ₱0.00, and Bank required
+                                <AlertCircle size={14}/> {lineValidationMessage || validationMessage}
                             </span>
                         )}
                     </div>
