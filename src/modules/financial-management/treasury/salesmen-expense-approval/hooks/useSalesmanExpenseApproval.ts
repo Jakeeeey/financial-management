@@ -8,6 +8,7 @@ import type { SalesmanExpenseRow, SalesmanExpenseDetail, ApprovalLog, ExpenseHea
 import * as api from "../providers/fetchProvider";
 
 export function useSalesmanExpenseApproval() {
+  const [listMode, setListModeState] = React.useState<"pending" | "history">("pending");
   const [rows, setRows] = React.useState<SalesmanExpenseRow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [logs, setLogs] = React.useState<ApprovalLog[]>([]);
@@ -49,7 +50,7 @@ export function useSalesmanExpenseApproval() {
     try {
       setLoading(true);
       const [data] = await Promise.all([
-        api.listSalesmenWithExpenses(),
+        api.listSalesmenWithExpenses(undefined, undefined, listMode),
         loadLogs(),
       ]);
       setRows(data);
@@ -63,7 +64,7 @@ export function useSalesmanExpenseApproval() {
     } finally {
       setLoading(false);
     }
-  }, [loadLogs]);
+  }, [listMode, loadLogs]);
 
   React.useEffect(() => {
     load();
@@ -102,7 +103,10 @@ export function useSalesmanExpenseApproval() {
     setSelectedHeader(null);
     setDetailLoading(true);
     try {
-      const detail = await api.getSalesmanExpenses(row.id);
+      const detail = await api.getSalesmanExpenses(row.id, undefined, undefined, "all");
+      if (detail && detail.expenses) {
+        detail.expenses = detail.expenses.filter((e) => Number(e.is_supervisor) !== 1);
+      }
       setSalesmanDetail(detail);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to load expenses");
@@ -131,6 +135,13 @@ export function useSalesmanExpenseApproval() {
     setModalOpen(false);
   }
 
+  function setListMode(mode: "pending" | "history") {
+    setListModeState(mode);
+    setQ("");
+    setPage(1);
+    closePanel();
+  }
+
   async function onConfirmed() {
     closeModal();
     closePanel();
@@ -138,6 +149,8 @@ export function useSalesmanExpenseApproval() {
   }
 
   return {
+    listMode,
+    setListMode,
     rows: paginatedRows,
     totalItems,
     q,

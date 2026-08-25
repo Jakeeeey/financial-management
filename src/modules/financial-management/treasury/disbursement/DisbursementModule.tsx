@@ -14,6 +14,8 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { QUICK_RANGES, detectQuickRange } from "./utils/dateRangeHelper";
 import {
     Plus, RefreshCw, FileText, Search, Check, ChevronsUpDown,
     X, UserPlus, BarChart3, Receipt, SlidersHorizontal
@@ -40,6 +42,20 @@ export default function DisbursementModule() {
 
     // 🚀 State to toggle the advanced filters!
     const [showFilters, setShowFilters] = useState(false);
+
+    const selectedQuickRange = React.useMemo(() => {
+        return detectQuickRange(startDate, endDate);
+    }, [startDate, endDate]);
+
+    const handleQuickRange = (rangeVal: string) => {
+        if (rangeVal === "custom") return;
+        const matched = QUICK_RANGES.find(r => r.value === rangeVal);
+        if (matched) {
+            const range = matched.getRange();
+            setStartDate(range.start);
+            setEndDate(range.end);
+        }
+    };
 
     const addPayeeSupplierType = activeType === "Non-Trade" ? "NON-TRADE" : "TRADE";
 
@@ -169,7 +185,7 @@ export default function DisbursementModule() {
 
                         {/* Secondary Row (Advanced Filters) */}
                         <div className={cn(
-                            "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5 px-5 pb-5 border-t border-border/50 bg-muted/10 transition-all duration-300 ease-in-out overflow-hidden",
+                            "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-5 px-5 pb-5 border-t border-border/50 bg-muted/10 transition-all duration-300 ease-in-out overflow-hidden",
                             showFilters ? "pt-5 opacity-100 max-h-[500px]" : "pt-0 opacity-0 max-h-0 border-transparent pb-0"
                         )}>
                             {/* Supplier Combobox */}
@@ -200,6 +216,22 @@ export default function DisbursementModule() {
                                         </Command>
                                     </PopoverContent>
                                 </Popover>
+                            </div>
+
+                            {/* Quick Date Range */}
+                            <div className="space-y-2">
+                                <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">Quick Date Range</Label>
+                                <Select value={selectedQuickRange} onValueChange={handleQuickRange}>
+                                    <SelectTrigger className="h-9 text-xs font-bold uppercase bg-background shadow-sm border-border/50 rounded-lg">
+                                        <SelectValue placeholder="Custom" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="custom" className="text-xs font-bold uppercase text-muted-foreground/60">Custom</SelectItem>
+                                        {QUICK_RANGES.map(r => (
+                                            <SelectItem key={r.value} value={r.value} className="text-xs font-bold uppercase">{r.label}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                             </div>
 
                             {/* Date Range */}

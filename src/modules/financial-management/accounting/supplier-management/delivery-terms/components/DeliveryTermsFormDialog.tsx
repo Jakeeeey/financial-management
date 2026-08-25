@@ -82,24 +82,20 @@ export default function DeliveryTermsFormDialog(props: {
       // Build payload step by step
       const payload: DeliveryTermPayload = {
         delivery_name: deliveryName.trim(),
+        delivery_description: deliveryDescription.trim() || null,
       };
 
-      // Only add description if it's not empty
-      if (deliveryDescription.trim()) {
-        payload.delivery_description = deliveryDescription.trim();
-      }
-
       // Add user tracking
-      if (userId) {
-        if (mode === "create") {
+      if (mode === "create") {
+        if (userId) {
           payload.created_by = userId;
           console.log("✅ Added created_by:", userId, "to payload");
-        } else if (mode === "edit") {
+        }
+      } else if (mode === "edit") {
+        if (userId) {
           payload.updated_by = userId;
           console.log("✅ Added updated_by:", userId, "to payload");
         }
-      } else {
-        console.warn("⚠️  userId is", userId, "not adding user tracking");
       }
 
       console.log("📦 Final payload being sent:", payload);

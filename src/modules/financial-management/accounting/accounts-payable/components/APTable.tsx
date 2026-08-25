@@ -1,6 +1,6 @@
 // src/modules/financial-management/accounting/accounts-payable/components/APTable.tsx
 
-import { useState, useMemo } from 'react';
+import { useDeferredValue, useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -141,14 +141,15 @@ export function APTable({ records, page, setPage }: APTableProps) {
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<keyof APRecord | null>(null);
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>(null);
+  const deferredSearch = useDeferredValue(search);
 
   const handleSort = (key: keyof APRecord, order: 'asc' | 'desc' | null) => {
     setSortKey(key);
     setSortOrder(order);
   };
 
-  const q = search.trim().toLowerCase();
-  const filtered = q
+  const q = deferredSearch.trim().toLowerCase();
+  const filtered = useMemo(() => q
     ? records.filter((r) =>
         r.refNo.toLowerCase().includes(q)              ||
         r.invoiceNo.toLowerCase().includes(q)          ||
@@ -157,7 +158,7 @@ export function APTable({ records, page, setPage }: APTableProps) {
         r.amountPayable.toString().includes(q)         ||
         r.outstandingBalance.toString().includes(q)
       )
-    : records;
+    : records, [q, records]);
 
   const sorted = useMemo(() => {
     if (!sortKey || !sortOrder) return filtered;

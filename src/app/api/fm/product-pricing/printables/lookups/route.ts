@@ -1,6 +1,14 @@
 // src/app/api/fm/printables/lookups/route.ts
 import { NextRequest, NextResponse } from "next/server";
 
+import {
+    chunkArray,
+    fetchAllPages,
+    getChildProductIdsForParents,
+    getSupplierProductIdsForSuppliers,
+} from "../../_directusPaging";
+import { collectCascadeSets } from "../../_lookupCascade";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -60,12 +68,6 @@ function safeCsvIds(v: string | null) {
     return s.split(",").map(x => x.trim()).filter(Boolean).filter(x => /^\d+$/.test(x));
 }
 
-function chunk<T>(arr: T[], size: number) {
-    const out: T[][] = [];
-    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-    return out;
-}
-
 async function collectSetsFromProducts(args: {
     productIds?: number[];
     categoryId?: number;
@@ -83,37 +85,39 @@ async function collectSetsFromProducts(args: {
         "unit_of_measurement.unit_id",
     ].join(",");
 
-    const applyFilters = (sp: URLSearchParams) => {
-        sp.set("limit", "-1");
-        sp.set("fields", fields);
-        if (categoryId > 0) sp.set("filter[product_category][category_id][_eq]", String(categoryId));
-        if (brandId > 0) sp.set("filter[product_brand][brand_id][_eq]", String(brandId));
+    const buildParams = (batch?: number[]) => {
+        const params = new URLSearchParams();
+        params.set("fields", fields);
+        if (categoryId > 0) params.set("filter[product_category][category_id][_eq]", String(categoryId));
+        if (brandId > 0) params.set("filter[product_brand][brand_id][_eq]", String(brandId));
+        if (batch && batch.length > 0) params.set("filter[product_id][_in]", batch.join(","));
+        return params;
+    };
+
+    const absorbProducts = (prods: Record<string, unknown>[]) => {
+        for (const p of prods) {
+            if ((p.product_category as Record<string, unknown>)?.category_id != null) {
+                catSet.add(String((p.product_category as Record<string, unknown>).category_id));
+            }
+            if ((p.product_brand as Record<string, unknown>)?.brand_id != null) {
+                brandSet.add(String((p.product_brand as Record<string, unknown>).brand_id));
+            }
+            if ((p.unit_of_measurement as Record<string, unknown>)?.unit_id != null) {
+                unitSet.add(String((p.unit_of_measurement as Record<string, unknown>).unit_id));
+            }
+        }
     };
 
     if (Array.isArray(productIds) && productIds.length > 0) {
-        const batches = chunk(productIds, 300);
-        for (const batch of batches) {
-            const sp = new URLSearchParams();
-            applyFilters(sp);
-            sp.set("filter[product_id][_in]", batch.join(","));
-            const prodJson = await fetchDirectus<{ data: Record<string, unknown>[] }>(`${DIRECTUS_URL}/items/${PRODUCTS}?${sp.toString()}`);
-            for (const p of (prodJson.data ?? [])) {
-                if ((p.product_category as Record<string, unknown>)?.category_id != null) catSet.add(String((p.product_category as Record<string, unknown>).category_id));
-                if ((p.product_brand as Record<string, unknown>)?.brand_id != null) brandSet.add(String((p.product_brand as Record<string, unknown>).brand_id));
-                if ((p.unit_of_measurement as Record<string, unknown>)?.unit_id != null) unitSet.add(String((p.unit_of_measurement as Record<string, unknown>).unit_id));
-            }
+        for (const batch of chunkArray(productIds, 300)) {
+            const prods = await fetchAllPages<Record<string, unknown>>(PRODUCTS, () => buildParams(batch));
+            absorbProducts(prods);
         }
         return { catSet, brandSet, unitSet };
     }
 
-    const sp = new URLSearchParams();
-    applyFilters(sp);
-    const prodJson = await fetchDirectus<{ data: Record<string, unknown>[] }>(`${DIRECTUS_URL}/items/${PRODUCTS}?${sp.toString()}`);
-    for (const p of (prodJson.data ?? [])) {
-        if ((p.product_category as Record<string, unknown>)?.category_id != null) catSet.add(String((p.product_category as Record<string, unknown>).category_id));
-        if ((p.product_brand as Record<string, unknown>)?.brand_id != null) brandSet.add(String((p.product_brand as Record<string, unknown>).brand_id));
-        if ((p.unit_of_measurement as Record<string, unknown>)?.unit_id != null) unitSet.add(String((p.unit_of_measurement as Record<string, unknown>).unit_id));
-    }
+    const prods = await fetchAllPages<Record<string, unknown>>(PRODUCTS, () => buildParams());
+    absorbProducts(prods);
     return { catSet, brandSet, unitSet };
 }
 
@@ -146,23 +150,26 @@ export async function GET(req: NextRequest) {
         let universeProductIds: number[] | null = null;
 
         if (shouldScopeBySupplier) {
-            const ppsJson = await fetchDirectus<{ data: Record<string, unknown>[] }>(`${DIRECTUS_URL}/items/${PRODUCT_PER_SUPPLIER}?limit=-1&fields=product_id&filter[supplier_id][_in]=${supplierIds.join(",")}`);
-            const directIds = (ppsJson.data ?? [])
-                .map((r) => Number(r.product_id))
-                .filter(n => Number.isFinite(n) && n > 0);
-            
+            let directIds: number[];
+
+            if (supplierIds.length > 0) {
+                directIds = await getSupplierProductIdsForSuppliers(supplierIds);
+            } else {
+                const ppsRows = await fetchAllPages<{ product_id?: unknown }>(PRODUCT_PER_SUPPLIER, () => {
+                    const params = new URLSearchParams();
+                    params.set("fields", "product_id");
+                    return params;
+                });
+                directIds = ppsRows
+                    .map((r) => Number(r.product_id))
+                    .filter((n) => Number.isFinite(n) && n > 0);
+            }
+
             if (directIds.length === 0) {
                 return NextResponse.json({ data: { categories: [], brands: [], units: [], suppliers } });
             }
 
-            // Also fetch child products (parent_id in the directly linked product IDs)
-            const childrenJson = await fetchDirectus<{ data: Record<string, unknown>[] }>(
-                `${DIRECTUS_URL}/items/${PRODUCTS}?limit=-1&fields=product_id&filter[parent_id][_in]=${directIds.join(",")}`
-            );
-            const childIds = (childrenJson.data ?? [])
-                .map((r) => Number(r.product_id))
-                .filter(n => Number.isFinite(n) && n > 0);
-
+            const childIds = await getChildProductIdsForParents(directIds);
             universeProductIds = Array.from(new Set([...directIds, ...childIds]));
             
             if (universeProductIds.length === 0) {
@@ -172,15 +179,21 @@ export async function GET(req: NextRequest) {
 
         const needsCascade = (universeProductIds && universeProductIds.length > 0) || categoryId > 0 || brandId > 0;
         if (needsCascade) {
-            const [cSets, bSets, uSets] = await Promise.all([
-                collectSetsFromProducts({ productIds: universeProductIds ?? undefined, brandId, categoryId: 0 }),
-                collectSetsFromProducts({ productIds: universeProductIds ?? undefined, categoryId, brandId: 0 }),
-                collectSetsFromProducts({ productIds: universeProductIds ?? undefined, categoryId, brandId }),
-            ]);
+            const { catsResult, brandsResult, unitsResult } = await collectCascadeSets({
+                productIds: universeProductIds ?? undefined,
+                categoryId,
+                brandId,
+                runScan: (filter) =>
+                    collectSetsFromProducts({
+                        productIds: universeProductIds ?? undefined,
+                        categoryId: filter.categoryId,
+                        brandId: filter.brandId,
+                    }),
+            });
 
-            categories = categories.filter(c => cSets.catSet.has(String(c.category_id)));
-            brands = brands.filter(b => bSets.brandSet.has(String(b.brand_id)));
-            units = units.filter(u => uSets.unitSet.has(String(u.unit_id)));
+            categories = categories.filter((c) => catsResult.catSet.has(String(c.category_id)));
+            brands = brands.filter((b) => brandsResult.brandSet.has(String(b.brand_id)));
+            units = units.filter((u) => unitsResult.unitSet.has(String(u.unit_id)));
         }
 
         return NextResponse.json({ data: { categories, brands, units, suppliers } });

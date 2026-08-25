@@ -63,11 +63,20 @@ export interface CollectionSummary {
     id: number;
     docNo: string;
     date: string;
+    encodedDate: string;
+    collectedBy: string;
     salesmanCode: string;
     salesmanName: string;
     amount: number;
     appliedAmount: number;
     status: string;
+}
+
+export interface PaginatedCollectionResponse {
+    content: CollectionSummary[];
+    totalElements: number;
+    totalPages: number;
+    currentPage: number;
 }
 
 export interface CheckDetail {
@@ -116,6 +125,7 @@ export interface UnpaidInvoice {
     id: number;
     invoiceId?: number; // Added for backwards compatibility in UI
     invoiceNo: string;
+    customerCode?: string;
     customerName: string;
     transactionDate: string;
     dueDate: string;
@@ -127,14 +137,28 @@ export interface UnpaidInvoice {
     totalMemos: number;
     totalReturns: number;
     remainingBalance: number;
+    maxSettleableAmount?: number;
 
     // AUDIT TRAIL
     history?: PaymentHistory[];
+
+    matchSource?: "invoice" | "customer" | "collection_check";
+    matchedCheckNo?: string;
+    matchedCheckAmount?: number;
+    matchedCollectionDetailId?: number;
+    matchedCollectionCustomerName?: string;
+}
+
+export interface UnpaidInvoiceSearchResponse {
+    items: UnpaidInvoice[];
+    hasMore: boolean;
+    nextCursor: number | null;
 }
 
 export interface SettlementAllocation {
     invoiceId: number;
     invoiceNo: string;
+    customerCode?: string;
     customerName: string;
     transactionDate: string;
     dueDate: string;
@@ -146,6 +170,7 @@ export interface SettlementAllocation {
     totalMemos: number;
     totalReturns: number;
     remainingBalance: number;
+    maxSettleableAmount?: number;
 
     // HISTORY POPUP
     history?: PaymentHistory[];
@@ -161,10 +186,16 @@ export interface CashieringState {
     isSheetOpen: boolean;
     setIsSheetOpen: (open: boolean) => void;
     isLoading: boolean;
+    isLookupsLoading: boolean;
     isSheetLoading: boolean;
     isSubmitting: boolean;
+    submissionError: string | null;
+    listError: string | null;
     editingId: number | null;
     masterList: CollectionSummary[];
+    totalElements: number;
+    totalPages: number;
+    currentPage: number;
     salesmen: Salesman[];
     users: UserDto[];                // 🚀 Added: List of users for the dropdown
     banks: Bank[];
@@ -203,6 +234,8 @@ export interface CashieringState {
     handleSubmit: () => Promise<void>;
     loadPouchForEdit: (id: number) => Promise<void>;
     resetForm: () => void;
+    refreshList: () => Promise<void>;
+    loadModalLookups: () => Promise<void>;
 }
 
 export interface NewAdjustmentDto {

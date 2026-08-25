@@ -22,9 +22,11 @@ export function useBulkApproval() {
 
   const [approvalContexts, setApprovalContexts] = React.useState<ApprovalContext[]>([]);
   const [contextsLoading, setContextsLoading] = React.useState(true);
+  const [currentUserName, setCurrentUserName] = React.useState("");
 
   const [finalHeaderGroups, setFinalHeaderGroups] = React.useState<FinalHeaderGroup[]>([]);
   const [finalHeaderGroupsLoading, setFinalHeaderGroupsLoading] = React.useState(false);
+  const [finalHeaderStatus, setFinalHeaderStatus] = React.useState<"ready" | "completed">("ready");
 
   const [logs, setLogs] = React.useState<LogDraft[]>([]);
   const [logsLoading, setLogsLoading] = React.useState(false);
@@ -65,8 +67,9 @@ export function useBulkApproval() {
   const loadApprovalContexts = React.useCallback(async () => {
     try {
       setContextsLoading(true);
-      const contexts = await api.getMyApprovalContexts();
+      const { contexts, currentUserName: name } = await api.getMyApprovalContexts();
       setApprovalContexts(contexts);
+      setCurrentUserName(name);
       if (contexts.length === 0) setUnauthorized(true);
     } catch (e: unknown) {
       if (e instanceof Error && e.message === "403_UNAUTHORIZED") {
@@ -96,10 +99,10 @@ export function useBulkApproval() {
     }
   }, []);
 
-  const loadFinalHeaderGroups = React.useCallback(async (): Promise<FinalHeaderGroup[]> => {
+  const loadFinalHeaderGroups = React.useCallback(async (status: "ready" | "completed" = "ready"): Promise<FinalHeaderGroup[]> => {
     try {
       setFinalHeaderGroupsLoading(true);
-      const groups = await api.getFinalHeaderGroups();
+      const groups = await api.getFinalHeaderGroups(status);
       setFinalHeaderGroups(groups);
       return groups;
     } catch (e: unknown) {
@@ -120,7 +123,7 @@ export function useBulkApproval() {
       const [result] = await Promise.all([
         api.listDrafts(selectedDivisionId),
         loadLogs(),
-        loadFinalHeaderGroups(),
+        loadFinalHeaderGroups(finalHeaderStatus),
       ]);
       setDrafts(result.data);
       setMyLevel(result.myLevel);
@@ -135,7 +138,7 @@ export function useBulkApproval() {
     } finally {
       setLoading(false);
     }
-  }, [loadFinalHeaderGroups, loadLogs, selectedDivisionId]);
+  }, [loadFinalHeaderGroups, loadLogs, selectedDivisionId, finalHeaderStatus]);
 
   React.useEffect(() => {
     void loadApprovalContexts();
@@ -147,7 +150,7 @@ export function useBulkApproval() {
 
   React.useEffect(() => {
     setPage(1);
-  }, [selectedDivisionId]);
+  }, [selectedDivisionId, q]);
 
   React.useEffect(() => {
     if (!selectedDivisionId) return;
@@ -245,12 +248,15 @@ export function useBulkApproval() {
     selectedDraftId,
     approvalContexts,
     contextsLoading,
+    currentUserName,
     normalApprovalContexts,
     finalApprovalContexts,
     canDoNormalApproval,
     canDoFinalApproval,
     finalHeaderGroups,
     finalHeaderGroupsLoading,
+    finalHeaderStatus,
+    setFinalHeaderStatus,
     loadFinalHeaderGroups,
     openVoteModal,
     closeModal,

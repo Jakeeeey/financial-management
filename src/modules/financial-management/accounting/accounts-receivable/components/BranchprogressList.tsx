@@ -1,25 +1,25 @@
-// components/BranchProgressList.tsx
+// components/ClusterProgressList.tsx
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartEmptyState } from './ChartEmptyState';
 import type { NamedAmount } from '../types';
 
-interface BranchProgressListProps {
+interface ClusterProgressListProps {
   data: NamedAmount[];
   isFiltered?: boolean;
 }
 
-export function BranchProgressList({ data, isFiltered = false }: BranchProgressListProps) {
+export function ClusterProgressList({ data, isFiltered = false }: ClusterProgressListProps) {
   const isEmpty = isFiltered && data.length === 0;
 
   return (
     <Card className="min-w-0 overflow-hidden w-full">
       <CardHeader>
-        <CardTitle className="text-sm font-medium">Outstanding by Branch</CardTitle>
+        <CardTitle className="text-sm font-medium">Outstanding by Cluster</CardTitle>
       </CardHeader>
       <CardContent>
         {isEmpty ? (
           <div className="h-[160px]">
-            <ChartEmptyState message="No branch data for the selected filters." />
+            <ChartEmptyState message="No cluster data for the selected filters." />
           </div>
         ) : (
           <div className="space-y-3 mt-1">

@@ -99,25 +99,23 @@ export async function checkDeliveryNameExists(deliveryName: string, excludeId?: 
 
 export async function getCurrentUserId(): Promise<number | null> {
   try {
-    console.log("🔄 Calling /api/auth/me...");
-    const res = await fetch("/api/auth/me", {
+    console.log("🔄 Calling /api/fm/accounting/supplier-management/delivery-terms?resource=me...");
+    const res = await fetch("/api/fm/accounting/supplier-management/delivery-terms?resource=me", {
       method: "GET",
       credentials: "include",
     });
 
-    console.log("📡 /api/auth/me response status:", res.status);
+    console.log("📡 /api/fm/accounting/supplier-management/delivery-terms?resource=me response status:", res.status);
     
     if (!res.ok) {
-      console.warn("❌ /api/auth/me returned non-OK status:", res.status);
+      console.warn("❌ /api/fm/accounting/supplier-management/delivery-terms?resource=me returned non-OK status:", res.status);
       const errorData = await res.json();
-      console.error("❌ Error response from /api/auth/me:", errorData);
-      console.error("❌ Error details:", errorData.details);
-      console.error("❌ JWT payload keys available:", errorData.jwt_payload_keys);
+      console.error("❌ Error response from /api/fm/accounting/supplier-management/delivery-terms?resource=me:", errorData);
       return null;
     }
 
     const data = (await res.json()) as Record<string, unknown>;
-    console.log("📊 /api/auth/me full response data:", JSON.stringify(data, null, 2));
+    console.log("📊 /api/fm/accounting/supplier-management/delivery-terms?resource=me full response data:", JSON.stringify(data, null, 2));
     
     // Try multiple possible ID field names
     let userId: number | null = null;
@@ -158,12 +156,12 @@ export async function fetchUserInfo(userId: number): Promise<UserInfo | null> {
 
   try {
     console.log(`🔄 Fetching user info for userId: ${userId}`);
-    const res = await fetch(`/api/auth/users/${userId}`);
+    const res = await fetch(`/api/fm/accounting/supplier-management/delivery-terms?resource=user&id=${userId}`);
     
-    console.log(`📡 /api/auth/users/${userId} response status:`, res.status);
+    console.log(`📡 /api/fm/accounting/supplier-management/delivery-terms?resource=user&id=${userId} response status:`, res.status);
     
     if (!res.ok) {
-      console.warn(`❌ /api/auth/users/${userId} returned status ${res.status}`);
+      console.warn(`❌ /api/fm/accounting/supplier-management/delivery-terms?resource=user&id=${userId} returned status ${res.status}`);
       return null;
     }
 

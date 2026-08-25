@@ -2,8 +2,21 @@
 "use client";
 
 import * as React from "react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -14,47 +27,52 @@ import { usePricingMatrix } from "../hooks/usePricingMatrix";
 import PricingFiltersBar from "./PricingFiltersBar";
 import PricingTable from "./PricingTable";
 import BulkSaveBar from "./BulkSaveBar";
+import { PriceChangeBatchDialog } from "./PriceChangeBatchDialog";
+import { CreatePriceChangeBatchDialog } from "../../price-change-request/components/CreatePriceChangeBatchDialog";
+import { SessionExpiredPanel } from "../../shared/SessionExpiredPanel";
 
-import { pivotPrices } from "../utils/pivot";
+import { buildMatrixTierKeys, priceViewFilterLabel } from "../utils/pivot";
 import * as api from "../providers/pricingApi";
+import * as pcrApi from "../../price-change-request/providers/pcrApi";
+import type { PrintFilterParams } from "../providers/pricingApi";
 import PrintPricingDialog from "./PrintPricingDialog";
+import PrintPrepareDialog from "./PrintPrepareDialog";
+import PrintLargeJobConfirmDialog from "./PrintLargeJobConfirmDialog";
+
+import { exportSupplierBatchExcel } from "../../shared/supplier-batch/supplierBatchExcel";
+import {
+    ExcelExportOptionsDialog,
+    type ExcelExportColumnMode,
+} from "../../shared/supplier-batch/ExcelExportOptionsDialog";
+import { parseSupplierBatchExcelImport } from "../../price-change-request/utils/supplierBatchExcel";
+import { productIdsFromMatrixRows } from "../../shared/supplier-batch/flattenPrintMatrix";
+import { fetchSupplierPrintMatrix } from "../../shared/supplier-batch/supplierPrintMatrix";
+import { requireSingleSupplier } from "../../shared/supplier-batch/requireSingleSupplier";
+import type { BatchImportPrefill } from "../../price-change-request/types";
 
 import type {
     Brand,
     Category,
     MatrixRow,
-    PriceRow,
     PricingFilters,
-    ProductRow,
     Supplier,
     Unit,
-    VariantCell,
 } from "../types";
 
 type SupplierScope = "ALL" | "LINKED_ONLY";
 
-type PrintProductsParams = {
-    q?: string;
-    category_ids?: string;
-    brand_ids?: string;
-    unit_ids?: string;
-    supplier_ids?: string;
-    supplier_scope: SupplierScope;
-    active_only: "0" | "1";
-    missing_tier: "0" | "1";
-};
+import {
+    PRINT_CONFIRM_PRODUCT_THRESHOLD,
+    PRINT_GROUP_CHUNK_SIZE,
+} from "../../shared/print/printConstants";
+import { buildProductPricingPdfSaveAsName } from "../../shared/print/pdfFileNames";
+import { DEFAULT_TABLE_BLOCKS_PER_PAGE } from "../utils/printLayout";
 
-const EMPTY_FILTERS: PricingFilters = {
-    q: "",
-    category_ids: [],
-    brand_ids: [],
-    unit_ids: [],
-    supplier_ids: [],
-    supplier_scope: "ALL",
-    active_only: true,
-    missing_tier: false,
-    price_type_ids: [],
-    show_list_price: false,
+type PendingPrintJob = {
+    filters: PricingFilters;
+    printParams: PrintFilterParams;
+    totalGroups: number;
+    groupIds: number[];
 };
 
 function safeStr(v: unknown): string {
@@ -111,8 +129,9 @@ function buildFiltersText(args: {
     brandsById: Map<number, string>;
     unitsById: Map<number, string>;
     suppliersById: Map<number, string>;
+    priceTypes: import("../types").PriceType[];
 }): string {
-    const { filters, categoriesById, brandsById, unitsById, suppliersById } = args;
+    const { filters, categoriesById, brandsById, unitsById, suppliersById, priceTypes } = args;
 
     const parts: string[] = [];
 
@@ -156,6 +175,15 @@ function buildFiltersText(args: {
     if (filters.active_only) parts.push("Active Only");
     if (filters.missing_tier) parts.push("Missing Tier");
 
+    parts.push(
+        `Price view: ${priceViewFilterLabel({
+            priceView: filters.price_view,
+            priceTypeIds: filters.price_type_ids,
+            priceTypes,
+            showListPrice: filters.show_list_price,
+        })}`,
+    );
+
     return parts.join(" • ");
 }
 
@@ -185,78 +213,35 @@ function sameNumberArray(a: number[], b: number[]): boolean {
     return true;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null;
-}
-
-function toNullableNumber(value: unknown): number | null {
-    if (value === null || value === undefined || value === "") return null;
-    if (typeof value === "object" && value !== null) {
-        const record = value as Record<string, unknown>;
-        const val = record.product_id ?? record.id ?? record.value;
-        const n = Number(val);
-        return Number.isFinite(n) && n > 0 ? n : null;
-    }
-    const n = Number(value);
-    return Number.isFinite(n) && n > 0 ? n : null;
-}
-
-function toNumberOrZero(value: unknown): number {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : 0;
-}
-
-function toStringOrEmpty(value: unknown): string {
-    return safeStr(value);
-}
-
-function normalizePrintRow(value: unknown): ProductRow | null {
-    if (!isRecord(value)) return null;
-
-    const productId = toNullableNumber(value.product_id);
-    if (productId === null) return null;
-
-    const productName = toStringOrEmpty(value.product_name);
-    if (!productName) return null;
-
+function buildPrintFilterParams(filters: PricingFilters): PrintFilterParams {
     return {
-        product_id: productId,
-        parent_id: toNullableNumber(value.parent_id),
-
-        product_code: toStringOrEmpty(value.product_code) || null,
-        barcode: toStringOrEmpty(value.barcode) || null,
-        product_name: productName,
-        isActive: toNumberOrZero(value.isActive),
-
-        product_category: toNullableNumber(value.product_category),
-        product_brand: toNullableNumber(value.product_brand),
-        unit_of_measurement: toNullableNumber(value.unit_of_measurement),
-
-        price_per_unit: toNumberOrZero(value.price_per_unit),
-        priceA: toNumberOrZero(value.priceA),
-        priceB: toNumberOrZero(value.priceB),
-        priceC: toNumberOrZero(value.priceC),
-        priceD: toNumberOrZero(value.priceD),
-        priceE: toNumberOrZero(value.priceE),
-        cost_per_unit: toNullableNumber(value.cost_per_unit),
+        q: safeStr(filters.q) || undefined,
+        category_ids: filters.category_ids.length ? filters.category_ids.join(",") : undefined,
+        brand_ids: filters.brand_ids.length ? filters.brand_ids.join(",") : undefined,
+        unit_ids: filters.unit_ids.length ? filters.unit_ids.join(",") : undefined,
+        supplier_ids: filters.supplier_ids.length ? filters.supplier_ids.join(",") : undefined,
+        supplier_scope: filters.supplier_scope,
+        active_only: toBool01(filters.active_only, "1"),
+        missing_tier: toBool01(filters.missing_tier, "0"),
     };
 }
 
-function extractPrintRows(value: unknown): ProductRow[] {
-    if (!isRecord(value)) return [];
-    const rawData = value.data;
-    if (!Array.isArray(rawData)) return [];
-
-    const rows: ProductRow[] = [];
-
-    for (const item of rawData) {
-        const normalized = normalizePrintRow(item);
-        if (normalized) {
-            rows.push(normalized);
-        }
-    }
-
-    return rows;
+function enrichPrintMatrixRows(
+    rows: MatrixRow[],
+    lookupMaps: {
+        categoriesById: Map<number, string>;
+        brandsById: Map<number, string>;
+    },
+): MatrixRow[] {
+    return rows.map((row) => ({
+        ...row,
+        category_name: row.display.product_category
+            ? lookupMaps.categoriesById.get(Number(row.display.product_category)) ?? null
+            : null,
+        brand_name: row.display.product_brand
+            ? lookupMaps.brandsById.get(Number(row.display.product_brand)) ?? null
+            : null,
+    }));
 }
 
 function buildLookupMaps(args: {
@@ -295,9 +280,14 @@ function buildLookupMaps(args: {
 export default function PricingMatrixView() {
     const pt = usePriceTypes();
 
-    const [lookupFilters, setLookupFilters] = React.useState<PricingFilters>(EMPTY_FILTERS);
+    const [lookupFilterInput, setLookupFilterInput] = React.useState<Partial<PricingFilters>>({
+        supplier_scope: "ALL",
+        supplier_ids: [],
+        category_ids: [],
+        brand_ids: [],
+    });
 
-    const lookups = useLookups(lookupFilters);
+    const lookups = useLookups(lookupFilterInput);
 
     const lookupMaps = React.useMemo(
         () =>
@@ -310,7 +300,7 @@ export default function PricingMatrixView() {
         [lookups.categories, lookups.brands, lookups.units, lookups.suppliers],
     );
 
-    const matrix = usePricingMatrix({
+    const { matrix, dirtySummary } = usePricingMatrix({
         categoriesById: lookupMaps.categoriesById,
         brandsById: lookupMaps.brandsById,
         unitsById: lookupMaps.unitsById,
@@ -320,17 +310,45 @@ export default function PricingMatrixView() {
     });
 
     React.useEffect(() => {
-        setLookupFilters(matrix.filters);
-    }, [matrix.filters]);
+        setLookupFilterInput({
+            supplier_scope: matrix.filters.supplier_scope,
+            supplier_ids: matrix.filters.supplier_ids,
+            category_ids: matrix.filters.category_ids,
+            brand_ids: matrix.filters.brand_ids,
+        });
+    }, [
+        matrix.filters.supplier_scope,
+        matrix.filters.supplier_ids,
+        matrix.filters.category_ids,
+        matrix.filters.brand_ids,
+    ]);
 
     const selectedSupplierIds = React.useMemo(
         () => matrix.filters.supplier_ids.map((id) => String(id)),
         [matrix.filters.supplier_ids],
     );
 
+    const printSupplierNames = React.useMemo(
+        () => labelListFromIds(selectedSupplierIds, lookupMaps.suppliersById),
+        [lookupMaps.suppliersById, selectedSupplierIds],
+    );
+
     const supplierScope: SupplierScope = matrix.filters.supplier_scope;
     const supplierFilterActive =
         selectedSupplierIds.length > 0 && supplierScope === "LINKED_ONLY";
+    const batchSupplierOptions = React.useMemo(() => {
+        if (!supplierFilterActive || selectedSupplierIds.length === 0) {
+            return lookups.suppliers;
+        }
+        const allowed = new Set(selectedSupplierIds.map(Number));
+        return lookups.suppliers.filter((supplier) => allowed.has(supplier.id));
+    }, [supplierFilterActive, selectedSupplierIds, lookups.suppliers]);
+
+    const defaultBatchSupplierId = React.useMemo(() => {
+        if (!supplierFilterActive || selectedSupplierIds.length !== 1) return null;
+        const id = Number(selectedSupplierIds[0]);
+        return Number.isFinite(id) && id > 0 ? id : null;
+    }, [supplierFilterActive, selectedSupplierIds]);
 
     const currentRows = React.useMemo<MatrixRow[]>(
         () => (Array.isArray(matrix.rows) ? matrix.rows : []),
@@ -438,125 +456,331 @@ export default function PricingMatrixView() {
     ]);
 
     const [printOpen, setPrintOpen] = React.useState(false);
+    const [batchDialogOpen, setBatchDialogOpen] = React.useState(false);
+    const [unsavedAction, setUnsavedAction] = React.useState<"refresh" | "discard" | null>(null);
     const [printFiltersText, setPrintFiltersText] = React.useState("");
     const [printGeneratedAt, setPrintGeneratedAt] = React.useState("");
+    const [printPdfSaveAsName, setPrintPdfSaveAsName] = React.useState("");
     const [isPrinting, setIsPrinting] = React.useState(false);
     const [printMatrixRows, setPrintMatrixRows] = React.useState<MatrixRow[]>([]);
+    const [printTiers, setPrintTiers] = React.useState<string[]>([]);
     const [printUsedUnitIds, setPrintUsedUnitIds] = React.useState<Set<number>>(new Set());
+    const [printPrepareOpen, setPrintPrepareOpen] = React.useState(false);
+    const [printPrepareProgress, setPrintPrepareProgress] = React.useState({ done: 0, total: 0 });
+    const [largePrintConfirmOpen, setLargePrintConfirmOpen] = React.useState(false);
+    const [pendingPrintJob, setPendingPrintJob] = React.useState<PendingPrintJob | null>(null);
+    const [excelBusy, setExcelBusy] = React.useState(false);
+    const [excelOptionsOpen, setExcelOptionsOpen] = React.useState(false);
+    const [importPrefill, setImportPrefill] = React.useState<BatchImportPrefill | null>(null);
+    const [createBatchOpen, setCreateBatchOpen] = React.useState(false);
+    const importFileInputRef = React.useRef<HTMLInputElement | null>(null);
+    const printAbortRef = React.useRef<AbortController | null>(null);
+
+    const cancelPrintPrepare = React.useCallback(() => {
+        printAbortRef.current?.abort();
+        printAbortRef.current = null;
+        setPrintPrepareOpen(false);
+        setIsPrinting(false);
+    }, []);
+
+    const cancelLargePrintConfirm = React.useCallback(() => {
+        setLargePrintConfirmOpen(false);
+        setPendingPrintJob(null);
+        setIsPrinting(false);
+    }, []);
+
+    const continuePrintPreparation = React.useCallback(
+        async (job: PendingPrintJob) => {
+            const controller = new AbortController();
+            printAbortRef.current = controller;
+            const { signal } = controller;
+
+            setIsPrinting(true);
+            setPrintPrepareProgress({ done: 0, total: job.totalGroups });
+            setPrintPrepareOpen(true);
+
+            try {
+                const assembled: MatrixRow[] = [];
+                const usedUnitIds = new Set<number>();
+
+                for (let offset = 0; offset < job.groupIds.length; offset += PRINT_GROUP_CHUNK_SIZE) {
+                    if (signal.aborted) return;
+
+                    const chunk = job.groupIds.slice(offset, offset + PRINT_GROUP_CHUNK_SIZE);
+                    const pageRes = await api.getPrintMatrixPage(
+                        {
+                            ...job.printParams,
+                            group_ids: chunk.join(","),
+                        },
+                        { signal },
+                    );
+
+                    assembled.push(...(pageRes.data ?? []));
+                    for (const unitId of pageRes.usedUnitIds ?? []) {
+                        usedUnitIds.add(unitId);
+                    }
+
+                    setPrintPrepareProgress({
+                        done: Math.min(offset + chunk.length, job.totalGroups),
+                        total: job.totalGroups,
+                    });
+                }
+
+                const enriched = enrichPrintMatrixRows(assembled, lookupMaps);
+                enriched.sort((a, b) =>
+                    (a.display.product_name || "").localeCompare(b.display.product_name || ""),
+                );
+
+                const resolvedFiltersText = buildFiltersText({
+                    filters: job.filters,
+                    categoriesById: lookupMaps.categoriesById,
+                    brandsById: lookupMaps.brandsById,
+                    unitsById: lookupMaps.unitsById,
+                    suppliersById: lookupMaps.suppliersById,
+                    priceTypes: pt.priceTypes,
+                });
+
+                const printableTiers = buildMatrixTierKeys(pt.priceTypes);
+                const now = new Date();
+
+                setPrintGeneratedAt(`${now.toLocaleDateString()} ${now.toLocaleTimeString()}`);
+                setPrintPdfSaveAsName(
+                    buildProductPricingPdfSaveAsName(
+                        job.filters.supplier_ids,
+                        lookupMaps.suppliersById,
+                        now,
+                    ),
+                );
+                setPrintFiltersText(resolvedFiltersText);
+                setPrintMatrixRows(enriched);
+                setPrintTiers(printableTiers);
+                setPrintUsedUnitIds(usedUnitIds);
+                setPrintOpen(true);
+            } catch (error: unknown) {
+                if (signal.aborted) return;
+                const message = error instanceof Error ? error.message : "Failed to open print editor";
+                toast.error(message);
+            } finally {
+                setPrintPrepareOpen(false);
+                setIsPrinting(false);
+                printAbortRef.current = null;
+            }
+        },
+        [lookupMaps, pt.priceTypes],
+    );
+
+    const confirmLargePrint = React.useCallback(() => {
+        const job = pendingPrintJob;
+        if (!job) return;
+
+        setLargePrintConfirmOpen(false);
+        setPendingPrintJob(null);
+        void continuePrintPreparation(job);
+    }, [pendingPrintJob, continuePrintPreparation]);
 
     const openPrint = React.useCallback(async () => {
         setIsPrinting(true);
         try {
             const filters = matrix.filters;
+            const printParams = buildPrintFilterParams(filters);
 
-            const params: PrintProductsParams = {
-                q: safeStr(filters.q) || undefined,
-                category_ids: filters.category_ids.length ? filters.category_ids.join(",") : undefined,
-                brand_ids: filters.brand_ids.length ? filters.brand_ids.join(",") : undefined,
-                unit_ids: filters.unit_ids.length ? filters.unit_ids.join(",") : undefined,
-                supplier_ids: filters.supplier_ids.length ? filters.supplier_ids.join(",") : undefined,
-                supplier_scope: filters.supplier_scope,
-                active_only: toBool01(filters.active_only, "1"),
-                missing_tier: toBool01(filters.missing_tier, "0"),
-            };
+            const metaRes = await api.getPrintMatrixMeta(printParams);
+            const { meta, groupIds } = metaRes;
 
-            // 1. Fetch ALL products (no pagination)
-            const res = await api.getPrintProducts(params);
-            const allProducts = extractPrintRows(res);
-
-            if (allProducts.length === 0) {
+            if (meta.totalGroups === 0) {
                 toast.warning("No printable products found for the current filters.");
                 return;
             }
 
-            // 2. Fetch ALL prices for these products in chunks (avoid URL length limits)
-            const allProductIds = allProducts.map(p => p.product_id);
-            const CHUNK_SIZE = 200;
-            const priceRows: PriceRow[] = [];
-
-            for (let i = 0; i < allProductIds.length; i += CHUNK_SIZE) {
-                const slice = allProductIds.slice(i, i + CHUNK_SIZE);
-                const chunkRes = await api.getPricesForProducts(slice);
-                if (Array.isArray(chunkRes.data)) {
-                    priceRows.push(...chunkRes.data);
-                }
-            }
-
-            const priceMap = pivotPrices(pt.priceTypes, priceRows);
-
-            // 3. Group into MatrixRows
-            const groups = new Map<number, ProductRow[]>();
-            const usedUnitIds = new Set<number>();
-
-            for (const p of allProducts) {
-                // Harden gid: if parent_id is 0 or null, use product_id
-                const gid = (p.parent_id && p.parent_id > 0) ? p.parent_id : p.product_id;
-
-                if (!groups.has(gid)) groups.set(gid, []);
-                groups.get(gid)!.push(p);
-
-                if (p.unit_of_measurement) usedUnitIds.add(Number(p.unit_of_measurement));
-            }
-
-            const assembled: MatrixRow[] = [];
-            const EMPTY_PIVOT = { A: null, B: null, C: null, D: null, E: null, LIST: null };
-
-            for (const [groupId, variants] of groups.entries()) {
-                const display = variants.find(v => v.product_id === groupId) || variants[0];
-                const variantsByUnitId: Record<number, VariantCell> = {};
-
-                for (const v of variants) {
-                    const uomId = Number(v.unit_of_measurement);
-                    if (uomId) {
-                        variantsByUnitId[uomId] = {
-                            product: v,
-                            tiers: { ...(priceMap.get(v.product_id) ?? EMPTY_PIVOT) }
-                        };
-                    }
-                }
-
-                assembled.push({
-                    group_id: groupId,
-                    display,
-                    variantsByUnitId,
-                    category_name: display.product_category ? lookupMaps.categoriesById.get(Number(display.product_category)) ?? null : null,
-                    brand_name: display.product_brand ? lookupMaps.brandsById.get(Number(display.product_brand)) ?? null : null,
-                });
-            }
-
-            assembled.sort((a, b) =>
-                (a.display.product_name || "").localeCompare(b.display.product_name || "")
-            );
-
-            const resolvedFiltersText = buildFiltersText({
+            const job: PendingPrintJob = {
                 filters,
-                categoriesById: lookupMaps.categoriesById,
-                brandsById: lookupMaps.brandsById,
-                unitsById: lookupMaps.unitsById,
-                suppliersById: lookupMaps.suppliersById,
-            });
+                printParams,
+                totalGroups: meta.totalGroups,
+                groupIds,
+            };
 
-            const now = new Date();
+            if (meta.totalGroups > PRINT_CONFIRM_PRODUCT_THRESHOLD) {
+                setPendingPrintJob(job);
+                setLargePrintConfirmOpen(true);
+                return;
+            }
 
-            setPrintGeneratedAt(`${now.toLocaleDateString()} ${now.toLocaleTimeString()}`);
-            setPrintFiltersText(resolvedFiltersText);
-            setPrintMatrixRows(assembled);
-            setPrintUsedUnitIds(usedUnitIds);
-            setPrintOpen(true);
+            await continuePrintPreparation(job);
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : "Failed to open print editor";
             toast.error(message);
         } finally {
             setIsPrinting(false);
         }
-    }, [matrix.filters, lookupMaps, pt.priceTypes]);
+    }, [matrix.filters, continuePrintPreparation]);
 
     React.useEffect(() => {
         if (lookups.error) toast.error(lookups.error);
         if (pt.error) toast.error(pt.error);
     }, [lookups.error, pt.error]);
 
-    const isInitialLoad = (lookups.loading || pt.loading) && currentRows.length === 0;
+    const isInitialLoad =
+        currentRows.length === 0 &&
+        !matrix.error &&
+        (lookups.loading || pt.loading || matrix.loading);
+
+    React.useEffect(() => {
+        if (dirtySummary.dirtyCount === 0) return;
+
+        const onBeforeUnload = (event: BeforeUnloadEvent) => {
+            event.preventDefault();
+            event.returnValue = "";
+        };
+
+        window.addEventListener("beforeunload", onBeforeUnload);
+        return () => window.removeEventListener("beforeunload", onBeforeUnload);
+    }, [dirtySummary.dirtyCount]);
+
+    const handleSave = React.useCallback(() => {
+        if (dirtySummary.dirtyCount > 0) {
+            setBatchDialogOpen(true);
+        }
+    }, [dirtySummary.dirtyCount]);
+
+    const loadSupplierExcelMatrix = React.useCallback(async (supplierId: number) => {
+        const matrixResult = await fetchSupplierPrintMatrix(supplierId);
+        if (matrixResult.totalGroups === 0) {
+            throw new Error("No linked products found for the selected supplier.");
+        }
+        return matrixResult;
+    }, []);
+
+    const handleExportExcel = React.useCallback(async (mode: ExcelExportColumnMode) => {
+        const supplier = requireSingleSupplier(matrix.filters.supplier_ids, lookups.suppliers);
+        if (!supplier) return;
+
+        const includeProposedColumns = mode === "with-proposed";
+        setExcelBusy(true);
+        try {
+            const data = await loadSupplierExcelMatrix(supplier.id);
+            const productIds = includeProposedColumns ? productIdsFromMatrixRows(data.rows) : [];
+            const [pendingPriceResult, pendingCostResult] = includeProposedColumns
+                ? await Promise.all([
+                      pcrApi.getPendingPriceRequestsForProducts(productIds),
+                      pcrApi.getPendingCostRequestsForProducts(productIds),
+                  ])
+                : [{ data: [] }, { data: [] }];
+            await exportSupplierBatchExcel({
+                supplierId: supplier.id,
+                supplierName: supplier.name,
+                matrixRows: data.rows,
+                priceTypes: pt.priceTypes,
+                units: lookups.units,
+                filenamePrefix: "product-pricing",
+                includeListCost: true,
+                includeProposedColumns,
+                pendingPriceRequests: pendingPriceResult.data,
+                pendingCostRequests: pendingCostResult.data,
+            });
+            toast.success("Excel template downloaded.");
+        } catch (error: unknown) {
+            toast.error(error instanceof Error ? error.message : "Failed to export Excel.");
+        } finally {
+            setExcelBusy(false);
+        }
+    }, [loadSupplierExcelMatrix, lookups.suppliers, lookups.units, matrix.filters.supplier_ids, pt.priceTypes]);
+
+    const openExcelOptions = React.useCallback(() => {
+        if (!requireSingleSupplier(matrix.filters.supplier_ids, lookups.suppliers)) return;
+        setExcelOptionsOpen(true);
+    }, [lookups.suppliers, matrix.filters.supplier_ids]);
+
+    const handleImportExcelClick = React.useCallback(() => {
+        if (!requireSingleSupplier(matrix.filters.supplier_ids, lookups.suppliers)) return;
+        importFileInputRef.current?.click();
+    }, [lookups.suppliers, matrix.filters.supplier_ids]);
+
+    const openCreateBatchDialog = React.useCallback(() => {
+        setImportPrefill(null);
+        setCreateBatchOpen(true);
+    }, []);
+
+    const handleImportExcelFile = React.useCallback(
+        async (event: React.ChangeEvent<HTMLInputElement>) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (!file) return;
+
+            const supplier = requireSingleSupplier(matrix.filters.supplier_ids, lookups.suppliers);
+            if (!supplier) return;
+
+            setExcelBusy(true);
+            try {
+                const data = await loadSupplierExcelMatrix(supplier.id);
+                const parsed = await parseSupplierBatchExcelImport({
+                    file,
+                    expectedSupplierId: supplier.id,
+                    priceTypes: pt.priceTypes,
+                    matrixRows: data.rows,
+                });
+
+                if (!parsed.ok) {
+                    const preview = parsed.errors.slice(0, 5).join("\n");
+                    const suffix =
+                        parsed.errors.length > 5
+                            ? `\n…and ${parsed.errors.length - 5} more issue(s).`
+                            : "";
+                    toast.error(`Import validation failed.\n${preview}${suffix}`);
+                    return;
+                }
+
+                setImportPrefill(parsed.prefill);
+                setCreateBatchOpen(true);
+                toast.success("Imported prices loaded into the new batch dialog.");
+            } catch (error: unknown) {
+                toast.error(error instanceof Error ? error.message : "Failed to import Excel.");
+            } finally {
+                setExcelBusy(false);
+            }
+        },
+        [
+            loadSupplierExcelMatrix,
+            lookups.suppliers,
+            matrix,
+            pt.priceTypes,
+        ],
+    );
+
+    const actionBarLoading =
+        Boolean(matrix.loading) || isPrinting || excelBusy || lookups.loading || pt.loading;
+
+    const requestRefresh = React.useCallback(() => {
+        if (dirtySummary.dirtyCount > 0) {
+            setUnsavedAction("refresh");
+            return;
+        }
+        void matrix.refresh();
+    }, [matrix, dirtySummary.dirtyCount]);
+
+    const requestDiscard = React.useCallback(() => {
+        if (dirtySummary.dirtyCount > 0) {
+            setUnsavedAction("discard");
+            return;
+        }
+        dirtySummary.discardAll();
+    }, [dirtySummary]);
+
+    const confirmUnsavedAction = React.useCallback(() => {
+        const action = unsavedAction;
+        setUnsavedAction(null);
+        if (action === "refresh") {
+            dirtySummary.discardAll();
+            void matrix.refresh();
+            return;
+        }
+        if (action === "discard") {
+            dirtySummary.discardAll();
+        }
+    }, [matrix, dirtySummary, unsavedAction]);
+
+    if (lookups.unauthorized || pt.unauthorized || matrix.unauthorized) {
+        return <SessionExpiredPanel returnPath="/fm/price-control/product-pricing" />;
+    }
 
     if (isInitialLoad) {
         return (
@@ -568,8 +792,8 @@ export default function PricingMatrixView() {
     }
 
     return (
-        <div className="min-h-0 px-0">
-            <div className="flex min-h-0 flex-col gap-3">
+        <div className="flex min-h-0 flex-1 flex-col px-0">
+            <div className="flex min-h-0 flex-1 flex-col gap-3">
                 <div className="shrink-0">
                     <PricingFiltersBar
                         filters={matrix.filters}
@@ -589,18 +813,67 @@ export default function PricingMatrixView() {
 
                 <div className="shrink-0">
                     <BulkSaveBar
-                        dirtyCount={matrix.dirtyCount}
-                        onSave={matrix.saveAll}
-                        onDiscard={matrix.discardAll}
-                        onRefresh={matrix.refresh}
+                        dirtyCount={dirtySummary.dirtyCount}
+                        priceDirtyCount={dirtySummary.priceDirtyCount}
+                        costDirtyCount={dirtySummary.costDirtyCount}
+                        offPageDirtyCount={dirtySummary.offPageDirtyCount}
+                        onSave={handleSave}
+                        onDiscard={requestDiscard}
+                        onRefresh={requestRefresh}
                         onPrint={openPrint}
-                        loading={Boolean(matrix.loading) || isPrinting}
+                        onExportExcel={openExcelOptions}
+                        onImportExcel={handleImportExcelClick}
+                        onNewBatch={openCreateBatchDialog}
+                        loading={actionBarLoading}
+                    />
+                    <input
+                        ref={importFileInputRef}
+                        type="file"
+                        accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        className="hidden"
+                        onChange={(event) => void handleImportExcelFile(event)}
                     />
                 </div>
 
-                <div className="min-h-0 flex-1">
-                    <PricingTable matrix={matrix} />
+                {matrix.error ? (
+                    <Alert variant="destructive">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertTitle>Products could not be loaded</AlertTitle>
+                        <AlertDescription className="space-y-3">
+                            <p>{matrix.error}</p>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => requestRefresh()}
+                                disabled={Boolean(matrix.loading)}
+                            >
+                                {matrix.loading ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : null}
+                                Retry
+                            </Button>
+                        </AlertDescription>
+                    </Alert>
+                ) : null}
+
+                <div className="flex min-h-0 flex-1 flex-col">
+                    <PricingTable matrix={matrix} dirtyVersion={dirtySummary.dirtyVersion} />
                 </div>
+
+                <PrintLargeJobConfirmDialog
+                    open={largePrintConfirmOpen}
+                    totalGroups={pendingPrintJob?.totalGroups ?? 0}
+                    onContinue={confirmLargePrint}
+                    onCancel={cancelLargePrintConfirm}
+                />
+
+                <PrintPrepareDialog
+                    open={printPrepareOpen}
+                    prepared={printPrepareProgress.done}
+                    total={printPrepareProgress.total}
+                    onCancel={cancelPrintPrepare}
+                />
 
                 <PrintPricingDialog
                     open={printOpen}
@@ -611,8 +884,78 @@ export default function PricingMatrixView() {
                     unitName={(id) => (id ? lookupMaps.unitsById.get(Number(id)) ?? "" : "")}
                     units={lookups.units}
                     priceTypes={pt.priceTypes}
+                    tiers={printTiers}
                     usedUnitIds={printUsedUnitIds}
+                    supplierNames={printSupplierNames}
+                    pdfSaveAsName={printPdfSaveAsName}
+                    blocksPerPage={DEFAULT_TABLE_BLOCKS_PER_PAGE}
                 />
+
+                <ExcelExportOptionsDialog
+                    open={excelOptionsOpen}
+                    onOpenChange={setExcelOptionsOpen}
+                    busy={excelBusy}
+                    onConfirm={(mode) => {
+                        setExcelOptionsOpen(false);
+                        void handleExportExcel(mode);
+                    }}
+                />
+
+                <PriceChangeBatchDialog
+                    open={batchDialogOpen}
+                    onOpenChange={setBatchDialogOpen}
+                    suppliers={lookups.suppliers}
+                    batchSupplierOptions={batchSupplierOptions}
+                    defaultSupplierId={defaultBatchSupplierId}
+                    priceLineCount={dirtySummary.priceDirtyCount}
+                    costLineCount={dirtySummary.costDirtyCount}
+                    offPageDirtyCount={dirtySummary.offPageDirtyCount}
+                    previewLines={dirtySummary.dirtyPreviewLines}
+                    onSubmit={(payload) => dirtySummary.saveAll(payload)}
+                />
+
+                <CreatePriceChangeBatchDialog
+                    open={createBatchOpen}
+                    onOpenChange={(open) => {
+                        setCreateBatchOpen(open);
+                        if (!open) setImportPrefill(null);
+                    }}
+                    suppliers={lookups.suppliers}
+                    onCreated={() => void matrix.refresh()}
+                    importPrefill={importPrefill}
+                />
+
+                <AlertDialog
+                    open={unsavedAction != null}
+                    onOpenChange={(open) => {
+                        if (!open) setUnsavedAction(null);
+                    }}
+                >
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                                {unsavedAction === "refresh"
+                                    ? `You have ${dirtySummary.dirtyCount} unsaved change(s). Refreshing will reload the grid and discard those edits.${
+                                          dirtySummary.offPageDirtyCount > 0
+                                              ? ` ${dirtySummary.offPageDirtyCount} of those are on other pages.`
+                                              : ""
+                                      }`
+                                    : `You have ${dirtySummary.dirtyCount} unsaved change(s). This action cannot be undone.${
+                                          dirtySummary.offPageDirtyCount > 0
+                                              ? ` ${dirtySummary.offPageDirtyCount} of those are on other pages.`
+                                              : ""
+                                      }`}
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+                            <AlertDialogAction variant="destructive" onClick={confirmUnsavedAction}>
+                                {unsavedAction === "refresh" ? "Refresh anyway" : "Discard changes"}
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
             </div>
         </div>
     );

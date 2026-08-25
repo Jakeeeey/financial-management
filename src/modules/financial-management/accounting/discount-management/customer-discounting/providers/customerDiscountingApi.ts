@@ -130,7 +130,10 @@ export const customerDiscountingApi = {
     const params = new URLSearchParams({ id: String(id) });
     if (userId) params.set("userId", String(userId));
     const res = await fetch(`${BASE}/product-rules?${params.toString()}`, { method: "DELETE" });
-    return parseResponse<unknown>(res, "Failed to delete product discount");
+    return parseResponse<{ success: boolean; hardDeleted?: boolean; localOnly?: boolean }>(
+      res,
+      "Failed to delete product discount",
+    );
   },
 
   /**

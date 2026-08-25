@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { PRICE_MAX_DECIMAL_PLACES, parseDecimalInput } from "../../shared/pricePrecision";
 
 type PriceTypeRow = { price_type_id: number; price_type_name: string };
 
@@ -16,7 +17,7 @@ function money(v: unknown): string {
     if (!Number.isFinite(n)) return "—";
     return n.toLocaleString("en-PH", {
         minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
+        maximumFractionDigits: PRICE_MAX_DECIMAL_PLACES,
     });
 }
 
@@ -74,15 +75,18 @@ export default function RequestPriceChangeDialog(props: {
         }
     }, [props.open, props.currentPrice]);
 
-    const proposedNum = Number(proposed);
+    const parsedProposed = parseDecimalInput(proposed, PRICE_MAX_DECIMAL_PLACES);
+    const proposedNum = parsedProposed.value;
     const canSave =
         props.product.product_id > 0 &&
         props.priceType.price_type_id > 0 &&
         proposed.trim() !== "" &&
-        Number.isFinite(proposedNum);
+        proposedNum !== null &&
+        !parsedProposed.error;
 
     const submit = async () => {
-        if (!canSave) {
+        const price = parsedProposed.value;
+        if (!canSave || price === null) {
             toast.error("Please enter a valid proposed price.");
             return;
         }
@@ -92,7 +96,7 @@ export default function RequestPriceChangeDialog(props: {
             await createPCR({
                 product_id: props.product.product_id,
                 price_type_id: props.priceType.price_type_id,
-                proposed_price: proposedNum,
+                proposed_price: price,
             });
 
             toast.success("Price change request created.");

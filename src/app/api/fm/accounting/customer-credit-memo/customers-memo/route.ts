@@ -260,19 +260,30 @@ export async function GET(req: NextRequest) {
 
                 const encodedShortcut = encodeURIComponent(shortcut);
 
-                const lastRes = await directusFetch<DirectusListResponse<CustomersMemoRow>>(
-                    `${DIRECTUS_URL}/items/customers_memo?filter[memo_number][_starts_with]=${encodedShortcut}&sort=-id&limit=1&fields=id,memo_number`
+                const allRes = await directusFetch<DirectusListResponse<CustomersMemoRow>>(
+                    `${DIRECTUS_URL}/items/customers_memo?filter[memo_number][_starts_with]=${encodedShortcut}&limit=-1&fields=id,memo_number`
                 );
 
-                const lastMemo = lastRes.data?.[0]?.memo_number;
-
                 let nextNum = 1;
-                if (lastMemo && lastMemo.startsWith(shortcut)) {
-                    const numericPart = lastMemo.substring(shortcut.length);
-                    const lastVal = parseInt(numericPart, 10);
-                    if (!Number.isNaN(lastVal)) {
-                        nextNum = lastVal + 1;
+                let maxNum = 0;
+
+                if (allRes.data) {
+                    for (const row of allRes.data) {
+                        const memoNum = row.memo_number;
+                        if (memoNum && memoNum.startsWith(shortcut)) {
+                            const numericPart = memoNum.substring(shortcut.length);
+                            if (/^\d+$/.test(numericPart)) {
+                                const val = parseInt(numericPart, 10);
+                                if (!Number.isNaN(val) && val > maxNum) {
+                                    maxNum = val;
+                                }
+                            }
+                        }
                     }
+                }
+
+                if (maxNum > 0) {
+                    nextNum = maxNum + 1;
                 }
 
                 return NextResponse.json({ memo_number: `${shortcut}${nextNum}` });

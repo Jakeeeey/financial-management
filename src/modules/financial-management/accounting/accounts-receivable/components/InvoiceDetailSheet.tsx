@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { 
     FileText, Calendar, CreditCard, Tag, 
     User, Briefcase, Building2, Layers, Loader2, AlertCircle,
-    Receipt, RotateCcw, Sparkles, Copy, Check
+    Receipt, RotateCcw, Sparkles, Copy, Check, Wallet
 } from "lucide-react";
 import { formatPeso, formatDate, getInvoiceRiskScore, generateCollectionTemplate } from "../utils";
 import type { Invoice } from "../types";
@@ -264,6 +264,23 @@ export function InvoiceDetailSheet({ invoice, open, onOpenChange }: InvoiceDetai
                             Invoice Details
                         </SheetTitle>
                         <div className="flex gap-2">
+                            {invoice && invoice.outstanding > 0 && (
+                                <Button 
+                                    variant="outline" 
+                                    size="sm" 
+                                    className="h-7 text-[10px] font-bold uppercase tracking-wider border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 gap-1.5"
+                                    onClick={() => {
+                                        const query = new URLSearchParams();
+                                        query.set("invoiceNo", invoice.invoiceNo);
+                                        query.set("salesman", invoice.salesman);
+                                        query.set("customer", invoice.customer);
+                                        window.location.href = `/fm/treasury/collection-posting/settlement?${query.toString()}`;
+                                    }}
+                                >
+                                    <Wallet className="h-3 w-3" />
+                                    Proceed to Settle
+                                </Button>
+                            )}
                             {invoice && statusStyle && (
                                 <Badge 
                                     className="px-2.5 py-0.5 text-xs font-semibold"
@@ -307,53 +324,53 @@ export function InvoiceDetailSheet({ invoice, open, onOpenChange }: InvoiceDetai
                 ) : (
                     <div className="flex-1 space-y-6 pt-4 min-h-0">
                         {/* 1. HEADER INFO CARDS */}
-                        <div className="grid grid-cols-2 gap-3.5">
-                            <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 space-y-2.5">
-                                <div className="space-y-1">
-                                    <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-1.5">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="rounded-xl border border-border/70 bg-gradient-to-b from-card to-muted/20 p-4 space-y-3.5 shadow-sm">
+                                <div className="space-y-1 hover:bg-muted/10 p-1 rounded-md transition-colors">
+                                    <span className="text-[9px] font-extrabold uppercase text-muted-foreground/80 tracking-widest flex items-center gap-1.5">
                                         <User className="w-3.5 h-3.5 text-primary/70" /> Customer Name
                                     </span>
                                     <p className="text-xs font-bold text-foreground truncate" title={invoice.customer}>
                                         {invoice.customer}
                                     </p>
                                 </div>
-                                <div className="space-y-1">
-                                    <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-1.5">
-                                        <Building2 className="w-3.5 h-3.5 text-primary/70" /> Branch
+                                <div className="space-y-1 hover:bg-muted/10 p-1 rounded-md transition-colors">
+                                    <span className="text-[9px] font-extrabold uppercase text-muted-foreground/80 tracking-widest flex items-center gap-1.5">
+                                        <Building2 className="w-3.5 h-3.5 text-primary/70" /> Cluster
                                     </span>
                                     <p className="text-xs font-bold text-foreground truncate">
-                                        {data?.header?.branch_id?.branch_name || invoice.branch}
+                                        {invoice.cluster || 'Unassigned'}
                                     </p>
                                 </div>
-                                <div className="space-y-1">
-                                    <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-1.5">
+                                <div className="space-y-1 hover:bg-muted/10 p-1 rounded-md transition-colors">
+                                    <span className="text-[9px] font-extrabold uppercase text-muted-foreground/80 tracking-widest flex items-center gap-1.5">
                                         <Briefcase className="w-3.5 h-3.5 text-primary/70" /> Salesman
                                     </span>
                                     <p className="text-xs font-bold text-foreground truncate">
-                                        {data?.header?.salesman_id?.salesman_name || invoice.salesman}
+                                        {data?.header?.salesman_id?.salesman_name || invoice.salesman} {invoice.salesmanCode && invoice.salesmanCode !== '—' ? `(${invoice.salesmanCode})` : ''}
                                     </p>
                                 </div>
                             </div>
 
-                            <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 space-y-2.5">
-                                <div className="space-y-1">
-                                    <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-1.5">
+                            <div className="rounded-xl border border-border/70 bg-gradient-to-b from-card to-muted/20 p-4 space-y-3.5 shadow-sm">
+                                <div className="space-y-1 hover:bg-muted/10 p-1 rounded-md transition-colors">
+                                    <span className="text-[9px] font-extrabold uppercase text-muted-foreground/80 tracking-widest flex items-center gap-1.5">
                                         <Calendar className="w-3.5 h-3.5 text-primary/70" /> Invoice Date
                                     </span>
-                                    <p className="text-xs font-bold text-foreground">
+                                    <p className="text-xs font-bold text-foreground font-mono">
                                         {formatDate(invoice.invoiceDate)}
                                     </p>
                                 </div>
-                                <div className="space-y-1">
-                                    <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-1.5">
+                                <div className="space-y-1 hover:bg-muted/10 p-1 rounded-md transition-colors">
+                                    <span className="text-[9px] font-extrabold uppercase text-muted-foreground/80 tracking-widest flex items-center gap-1.5">
                                         <Calendar className="w-3.5 h-3.5 text-primary/70" /> Due Date
                                     </span>
-                                    <p className="text-xs font-bold text-foreground">
+                                    <p className="text-xs font-bold text-foreground font-mono">
                                         {formatDate(invoice.due)}
                                     </p>
                                 </div>
-                                <div className="space-y-1">
-                                    <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-1.5">
+                                <div className="space-y-1 hover:bg-muted/10 p-1 rounded-md transition-colors">
+                                    <span className="text-[9px] font-extrabold uppercase text-muted-foreground/80 tracking-widest flex items-center gap-1.5">
                                         <Layers className="w-3.5 h-3.5 text-primary/70" /> Division
                                     </span>
                                     <p className="text-xs font-bold text-foreground">
@@ -364,37 +381,46 @@ export function InvoiceDetailSheet({ invoice, open, onOpenChange }: InvoiceDetai
                         </div>
 
                         {/* 2. TRANSACTION SUMMARY */}
-                        <div className="rounded-xl border border-border/80 bg-gradient-to-br from-primary/5 to-primary/0 p-4 grid grid-cols-3 gap-4">
-                            <div className="space-y-0.5">
-                                <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Net Receivable</span>
-                                <p className="text-sm font-black text-foreground">{formatPeso(invoice.netReceivable)}</p>
+                        <div className="relative overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-950 dark:bg-black text-white p-4 shadow-md">
+                            <div className="absolute top-0 right-0 h-32 w-32 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
+                            <div className="flex items-center justify-between mb-3 border-b border-white/5 pb-2 relative z-10">
+                                <span className="text-[9px] font-black uppercase tracking-widest text-zinc-400">Financial Snapshot</span>
+                                <span className="text-[9px] px-2 py-0.5 rounded-full bg-white/10 text-white font-mono font-bold">
+                                    SI: #{invoice.invoiceNo}
+                                </span>
                             </div>
-                            <div className="space-y-0.5">
-                                <span className="text-[9px] font-black uppercase text-emerald-600 dark:text-emerald-400 tracking-widest">Amount Paid</span>
-                                <p className="text-sm font-black text-emerald-600 dark:text-emerald-400">{formatPeso(invoice.totalPaid)}</p>
-                            </div>
-                            <div className="space-y-0.5">
-                                <span className="text-[9px] font-black uppercase text-rose-600 dark:text-rose-400 tracking-widest">Outstanding</span>
-                                <p className="text-sm font-black text-rose-600 dark:text-rose-400">{formatPeso(invoice.outstanding)}</p>
+                            <div className="grid grid-cols-3 gap-4 relative z-10">
+                                <div className="space-y-1">
+                                    <span className="text-[9px] font-bold uppercase text-zinc-400 tracking-wider">Net Receivable</span>
+                                    <p className="text-sm font-black text-white font-mono leading-none">{formatPeso(invoice.netReceivable)}</p>
+                                </div>
+                                <div className="space-y-1 border-l border-white/10 pl-4">
+                                    <span className="text-[9px] font-bold uppercase text-emerald-400 tracking-wider">Amount Paid</span>
+                                    <p className="text-sm font-black text-emerald-400 font-mono leading-none">{formatPeso(invoice.totalPaid)}</p>
+                                </div>
+                                <div className="space-y-1 border-l border-white/10 pl-4">
+                                    <span className="text-[9px] font-bold uppercase text-rose-400 tracking-wider">Outstanding</span>
+                                    <p className="text-base font-black text-rose-400 font-mono leading-none">{formatPeso(invoice.outstanding)}</p>
+                                </div>
                             </div>
                         </div>
 
                         {/* 3. TABS FOR ITEMS, PAYMENTS, MEMOS, RETURNS & AI ASSISTANT */}
                         <Tabs defaultValue="items" className="w-full flex-1 flex flex-col min-h-0">
                             <TabsList className="grid w-full grid-cols-5 h-9 p-0.5 bg-muted rounded-lg shrink-0">
-                                <TabsTrigger value="items" className="text-[10px] font-bold uppercase py-1 px-1">
-                                    <Tag className="w-3 h-3 mr-1 hidden sm:inline-block" /> Items ({data?.items?.length || 0})
+                                <TabsTrigger value="items" className="text-[10px] font-bold uppercase py-1 px-1 transition-all">
+                                    <Tag className="w-3 h-3 mr-1 hidden sm:inline-block text-primary" /> Items ({data?.items?.length || 0})
                                 </TabsTrigger>
-                                <TabsTrigger value="payments" className="text-[10px] font-bold uppercase py-1 px-1">
-                                    <CreditCard className="w-3 h-3 mr-1 hidden sm:inline-block" /> Payments ({data?.payments?.length || 0})
+                                <TabsTrigger value="payments" className="text-[10px] font-bold uppercase py-1 px-1 transition-all">
+                                    <CreditCard className="w-3 h-3 mr-1 hidden sm:inline-block text-emerald-500" /> Pay ({data?.payments?.length || 0})
                                 </TabsTrigger>
-                                <TabsTrigger value="memos" className="text-[10px] font-bold uppercase py-1 px-1">
-                                    <Receipt className="w-3 h-3 mr-1 hidden sm:inline-block" /> Memos ({data?.memos?.length || 0})
+                                <TabsTrigger value="memos" className="text-[10px] font-bold uppercase py-1 px-1 transition-all">
+                                    <Receipt className="w-3 h-3 mr-1 hidden sm:inline-block text-amber-500" /> Memos ({data?.memos?.length || 0})
                                 </TabsTrigger>
-                                <TabsTrigger value="returns" className="text-[10px] font-bold uppercase py-1 px-1">
-                                    <RotateCcw className="w-3 h-3 mr-1 hidden sm:inline-block" /> Returns ({data?.returns?.length || 0})
+                                <TabsTrigger value="returns" className="text-[10px] font-bold uppercase py-1 px-1 transition-all">
+                                    <RotateCcw className="w-3 h-3 mr-1 hidden sm:inline-block text-rose-500" /> Returns ({data?.returns?.length || 0})
                                 </TabsTrigger>
-                                <TabsTrigger value="ai" className="text-[10px] font-bold uppercase py-1 px-1 text-purple-600 dark:text-purple-400">
+                                <TabsTrigger value="ai" className="text-[10px] font-bold uppercase py-1 px-1 text-purple-600 dark:text-purple-400 transition-all">
                                     <Sparkles className="w-3 h-3 mr-1 text-purple-500 animate-pulse hidden sm:inline-block" /> AI Assist
                                 </TabsTrigger>
                             </TabsList>

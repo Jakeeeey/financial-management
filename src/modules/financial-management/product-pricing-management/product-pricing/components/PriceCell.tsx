@@ -5,20 +5,44 @@ import * as React from "react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { formatPHP } from "../utils/format";
+import type { PendingCellRequest } from "../types";
 
 type Props = {
     value: number | string | null;
-    pendingValue?: number | null;
+    pendingRequest?: PendingCellRequest | null;
     dirty: boolean;
     error: string | null;
     onChange: (raw: string) => void;
 };
 
-export default function PriceCell(props: Props) {
-    const { value, pendingValue, dirty, error, onChange } = props;
+const PENDING_EDIT_MESSAGE = "A price change request is pending approval for this cell.";
+const SCHEDULED_EDIT_MESSAGE = "An approved price change is scheduled for this cell.";
 
-    // For display in formatPHP, we need a number. 
-    // If it's a string, we parse it. If empty/invalid, we use null.
+function formatScheduledDate(value: string | null | undefined) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString("en-PH", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+    });
+}
+
+function PriceCell(props: Props) {
+    const { value, pendingRequest, dirty, error, onChange } = props;
+    const hasRequest = pendingRequest !== null && pendingRequest !== undefined;
+    const isScheduled =
+        String(pendingRequest?.status ?? "").toUpperCase() === "APPROVED" &&
+        String(pendingRequest?.applicationStatus ?? "").toUpperCase() === "SCHEDULED";
+    const requestValue = pendingRequest?.proposedValue ?? null;
+    const scheduledAt = formatScheduledDate(pendingRequest?.effectiveAt);
+    const requestTitle = isScheduled
+        ? `Scheduled to change to ${formatPHP(requestValue)}${scheduledAt ? ` at ${scheduledAt}` : ""}`
+        : `Request: ${formatPHP(requestValue)} - pending approval`;
+
     const numericValue = React.useMemo(() => {
         if (value === null || value === "") return null;
         if (typeof value === "number") return value;
@@ -27,32 +51,53 @@ export default function PriceCell(props: Props) {
     }, [value]);
 
     return (
-        <div className="flex flex-col justify-center gap-0.5">
+        <div className="flex min-w-0 flex-col justify-center gap-0.5">
             <Input
                 inputMode="decimal"
                 value={value === null ? "" : String(value)}
-                onChange={(e) => onChange(e.target.value)}
+                onChange={(e) => {
+                    if (hasRequest) return;
+                    onChange(e.target.value);
+                }}
                 placeholder="—"
+                disabled={hasRequest}
+                title={hasRequest ? (isScheduled ? SCHEDULED_EDIT_MESSAGE : PENDING_EDIT_MESSAGE) : undefined}
+                aria-describedby={hasRequest ? "price-cell-request-hint" : undefined}
                 className={cn(
-                    "h-8 text-xs",
+                    "h-7 px-2 text-xs",
+                    hasRequest ? "cursor-not-allowed opacity-60" : "",
                     dirty ? "ring-1 ring-primary/50" : "",
-                    error ? "ring-1 ring-destructive" : ""
+                    error ? "ring-1 ring-destructive" : "",
                 )}
             />
-            <div className="flex flex-col gap-0.5 px-0.5">
-                <div className="truncate text-[10px] leading-tight text-muted-foreground font-medium">
-                    {error ? (
-                        <span className="text-destructive">{error}</span>
-                    ) : (
-                        formatPHP(numericValue)
-                    )}
+            <div className="flex min-w-0 flex-col gap-0.5 px-0.5">
+                <div className="truncate text-[10px] font-medium leading-none text-muted-foreground">
+                    {error ? <span className="text-destructive">{error}</span> : formatPHP(numericValue)}
                 </div>
-                {pendingValue !== null && pendingValue !== undefined && (
-                    <div className="truncate text-[10px] leading-tight text-amber-600 dark:text-amber-500 font-semibold bg-amber-50 dark:bg-amber-950/30 px-1 rounded-sm w-fit border border-amber-200/50 dark:border-amber-800/50">
-                        Request: {formatPHP(pendingValue)}
+                {hasRequest ? (
+                    <div
+                        id="price-cell-request-hint"
+                        title={requestTitle}
+                        className={cn(
+                            "max-w-full rounded-sm border px-1 py-0.5 text-[10px] font-semibold",
+                            isScheduled
+                                ? "whitespace-normal break-words leading-tight border-sky-200/60 bg-sky-50 text-sky-700 dark:border-sky-800/60 dark:bg-sky-950/30 dark:text-sky-400"
+                                : "truncate leading-snug border-amber-200/50 bg-amber-50 text-amber-600 dark:border-amber-800/50 dark:bg-amber-950/30 dark:text-amber-500",
+                        )}
+                    >
+                        {isScheduled ? (
+                            <>
+                                <span>Scheduled to change to {formatPHP(requestValue)}</span>
+                                {scheduledAt ? <span className="block">at {scheduledAt}</span> : null}
+                            </>
+                        ) : (
+                            `Pending ${formatPHP(requestValue)}`
+                        )}
                     </div>
-                )}
+                ) : null}
             </div>
         </div>
     );
 }
+
+export default React.memo(PriceCell);

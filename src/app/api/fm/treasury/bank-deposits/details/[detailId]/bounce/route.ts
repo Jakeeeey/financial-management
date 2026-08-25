@@ -7,6 +7,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ de
     const cookieStore = await cookies();
     const token = cookieStore.get("vos_access_token")?.value;
 
+    if (!token) {
+        return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    }
+
     try {
         const springRes = await fetch(`${process.env.SPRING_API_BASE_URL}/api/v1/treasury/bank-deposits/details/${detailId}/bounce`, {
             method: "POST",
@@ -14,10 +18,25 @@ export async function POST(request: NextRequest, context: { params: Promise<{ de
             body: JSON.stringify(body)
         });
 
-        if (!springRes.ok) throw new Error(await springRes.text());
-        return NextResponse.json({ success: true });
+        const responseText = await springRes.text();
+        let responsePayload: Record<string, unknown> = {};
+        if (responseText.trim()) {
+            try {
+                const parsed = JSON.parse(responseText) as unknown;
+                responsePayload = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+                    ? parsed as Record<string, unknown>
+                    : { message: responseText };
+            } catch {
+                responsePayload = { message: responseText };
+            }
+        }
+
+        if (!springRes.ok) {
+            return NextResponse.json(responsePayload, { status: springRes.status });
+        }
+        return NextResponse.json({ success: true, ...responsePayload }, { status: springRes.status });
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : 'An unknown error occurred';
-        return NextResponse.json({ message }, { status: 500 });
+        return NextResponse.json({ message }, { status: 502 });
     }
 }

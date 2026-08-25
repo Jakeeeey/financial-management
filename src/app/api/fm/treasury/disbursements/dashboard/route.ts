@@ -92,8 +92,10 @@ export async function GET(req: NextRequest) {
     const transactionType = url.searchParams.get("transactionType");
     const encoderId = url.searchParams.get("encoderId");
     const coaId = url.searchParams.get("coaId");
-    const amount = url.searchParams.get("amount");
+    const minAmount = url.searchParams.get("minAmount");
+    const maxAmount = url.searchParams.get("maxAmount");
     const remarks = url.searchParams.get("remarks");
+    const divisionId = url.searchParams.get("divisionId");
 
     try {
         const encodersPromise = fetch(`${DIRECTUS_URL}/items/disbursement?groupBy[]=encoder_id&filter[encoder_id][_null]=false`, {
@@ -112,40 +114,82 @@ export async function GET(req: NextRequest) {
             return { data: [] };
         });
 
+        const bankAccountsPromise = fetch(`${DIRECTUS_URL}/items/bank_accounts?limit=-1&fields=bank_id,bank_name,account_number`, {
+            headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+            cache: "no-store",
+        }).then(res => res.json()).catch(err => {
+            console.warn("Failed to fetch bank accounts list for dashboard:", err);
+            return { data: [] };
+        });
+
         const filterAnd: Record<string, unknown>[] = [];
         if (startDate) filterAnd.push({ transaction_date: { _gte: startDate } });
         if (endDate) filterAnd.push({ transaction_date: { _lte: endDate } });
+        
         if (status && status !== "ALL") {
-            filterAnd.push({ status: { _eq: status } });
+            const list = status.split(",").map(s => s.trim()).filter(Boolean);
+            if (list.length > 0) {
+                filterAnd.push({ status: { _in: list } });
+            }
+        } else {
+            filterAnd.push({ status: { _neq: "Deleted" } });
         }
-        if (payeeId) filterAnd.push({ payee: { _eq: Number(payeeId) } });
-        if (transactionType && transactionType !== "ALL") {
-            const typeNum = Number(transactionType);
-            if (!isNaN(typeNum)) {
-                filterAnd.push({ transaction_type: { _eq: typeNum } });
+        if (payeeId && payeeId !== "ALL" && payeeId !== "") {
+            const ids = payeeId.split(",").map(Number).filter(n => !isNaN(n));
+            if (ids.length > 0) {
+                filterAnd.push({ payee: { _in: ids } });
             }
         }
-        if (encoderId) filterAnd.push({ encoder_id: { _eq: Number(encoderId) } });
-        if (amount) filterAnd.push({ total_amount: { _eq: Number(amount) } });
-        if (remarks && remarks.trim() !== "") {
-            filterAnd.push({ remarks: { _contains: remarks } });
+        if (transactionType && transactionType !== "ALL" && transactionType !== "") {
+            const ids = transactionType.split(",").map(Number).filter(n => !isNaN(n));
+            if (ids.length > 0) {
+                filterAnd.push({ transaction_type: { _in: ids } });
+            }
         }
+        if (encoderId && encoderId !== "ALL" && encoderId !== "") {
+            const ids = encoderId.split(",").map(Number).filter(n => !isNaN(n));
+            if (ids.length > 0) {
+                filterAnd.push({ encoder_id: { _in: ids } });
+            }
+        }
+        
+        if (minAmount) filterAnd.push({ total_amount: { _gte: Number(minAmount) } });
+        if (maxAmount) filterAnd.push({ total_amount: { _lte: Number(maxAmount) } });
 
-        if (coaId) {
+        if (remarks && remarks.trim() !== "") {
             filterAnd.push({
                 _or: [
-                    { payables: { coa_id: { _eq: Number(coaId) } } },
-                    { payments: { coa_id: { _eq: Number(coaId) } } }
+                    { remarks: { _contains: remarks } },
+                    { payables: { remarks: { _contains: remarks } } }
                 ]
             });
         }
 
+        if (coaId && coaId !== "ALL" && coaId !== "") {
+            const ids = coaId.split(",").map(Number).filter(n => !isNaN(n));
+            if (ids.length > 0) {
+                filterAnd.push({
+                    _or: [
+                        { payables: { coa_id: { _in: ids } } },
+                        { payments: { coa_id: { _in: ids } } }
+                    ]
+                });
+            }
+        }
+
+        if (divisionId && divisionId !== "ALL" && divisionId !== "") {
+            const ids = divisionId.split(",").map(Number).filter(n => !isNaN(n));
+            if (ids.length > 0) {
+                filterAnd.push({ division_id: { _in: ids } });
+            }
+        }
         const queryParams = new URLSearchParams({
             limit: "-1",
             fields: [
                 "id",
                 "doc_no",
                 "transaction_date",
+                "date_created",
                 "status",
                 "payee.id",
                 "payee.supplier_name",
@@ -164,7 +208,8 @@ export async function GET(req: NextRequest) {
                 "payments.check_no",
                 "payments.bank_id",
                 "supporting_documents_url"
-            ].join(",")
+            ].join(","),
+            sort: "-date_created,-id"
         });
 
         if (filterAnd.length > 0) {
@@ -180,6 +225,16 @@ export async function GET(req: NextRequest) {
 
         if (!directusRes.ok) throw new Error(await directusRes.text());
         const disbursements = ((await directusRes.json()).data || []) as DashboardDisbursement[];
+
+        // Keep the register order deterministic even if the Directus adapter does not honor sort.
+        disbursements.sort((a, b) => {
+            const createdA = a.date_created ? Date.parse(a.date_created) : Number.NEGATIVE_INFINITY;
+            const createdB = b.date_created ? Date.parse(b.date_created) : Number.NEGATIVE_INFINITY;
+            const createdDiff = (Number.isNaN(createdB) ? Number.NEGATIVE_INFINITY : createdB)
+                - (Number.isNaN(createdA) ? Number.NEGATIVE_INFINITY : createdA);
+
+            return createdDiff || Number(b.id) - Number(a.id);
+        });
 
         // Extract voucher IDs
         const ids = disbursements.map(d => d.id).filter(Boolean);
@@ -243,6 +298,18 @@ export async function GET(req: NextRequest) {
                 const title = String(c.account_title);
                 if (id && title) {
                     coaMap.set(id, title);
+                }
+            });
+        }
+
+        const bankAccountsJson = (await bankAccountsPromise) as { data?: { bank_id?: number; bank_name?: string; account_number?: string }[] } | null | undefined;
+        const bankMap = new Map<number, string>();
+        if (bankAccountsJson && Array.isArray(bankAccountsJson.data)) {
+            bankAccountsJson.data.forEach((b) => {
+                const id = Number(b.bank_id);
+                const name = `${b.bank_name || ""} - ${b.account_number || ""}`.trim() || b.bank_name || "";
+                if (id && name) {
+                    bankMap.set(id, name);
                 }
             });
         }
@@ -332,7 +399,7 @@ export async function GET(req: NextRequest) {
 
             const bankNames = Array.from(new Set(
                 payments.map((p) => p.bank_id).filter(Boolean)
-            )).map(b => `Bank #${b}`).join(", ");
+            )).map(b => bankMap.get(Number(b)) || `Bank ID #${b}`).join(", ");
 
             const expenseAccountsHit = Array.from(new Set(
                 payables.map((p) => {
@@ -381,6 +448,27 @@ export async function GET(req: NextRequest) {
             totalExpense: Math.round(data.amount * 100) / 100
         }));
 
+        const payableDivisionMap = new Map<number, { name: string; amount: number }>();
+        payablesList.forEach((p) => {
+            const pDivId = p.division_id && typeof p.division_id === "object" && "division_id" in p.division_id
+                ? p.division_id.division_id
+                : (typeof p.division_id === "number" ? p.division_id : null);
+            let name = "N/A";
+            if (p.division_id && typeof p.division_id === "object" && "division_name" in p.division_id) {
+                name = String(p.division_id.division_name);
+            }
+            const divIdNum = pDivId ? Number(pDivId) : 0;
+            const current = payableDivisionMap.get(divIdNum) || { name, amount: 0 };
+            current.amount += Number(p.amount) || 0;
+            payableDivisionMap.set(divIdNum, current);
+        });
+
+        const payableDivisionExpenses = Array.from(payableDivisionMap.entries()).map(([id, data]) => ({
+            divisionId: id,
+            divisionName: data.name,
+            totalExpense: Math.round(data.amount * 100) / 100
+        }));
+
         const encodersJson = (await encodersPromise) as { data?: { encoder_id?: number | null }[] } | null | undefined;
         const activeEncoderIds = (encodersJson?.data || [])
             .map((e): number | null | undefined => e?.encoder_id)
@@ -391,6 +479,7 @@ export async function GET(req: NextRequest) {
             totalPaid: Math.round(totalPaid * 100) / 100,
             totalUnpaidPayables: Math.round((totalDisbursed - totalPaid) * 100) / 100,
             divisionExpenses,
+            payableDivisionExpenses,
             paymentCoaExpenses,
             payableCoaExpenses,
             vouchers,

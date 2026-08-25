@@ -1,9 +1,9 @@
 "use client";
 
-// 🚀 FIX: Added COADto to the imports!
 import {
     Disbursement,
     DisbursementPayload,
+    PaymentAllocationPayload,
     PaginatedResponse,
     SupplierDto,
     COADto,
@@ -15,6 +15,19 @@ import {
     DisbursementDashboardData,
     DashboardFilters
 } from "../types";
+import { RELEASING_PAYMENT_SCOPE } from "../utils/update-scope";
+
+export class DisbursementRequestError extends Error {
+    readonly code?: string;
+    readonly nextDocNo?: string;
+
+    constructor(message: string, code?: string, nextDocNo?: string) {
+        super(message);
+        this.name = "DisbursementRequestError";
+        this.code = code;
+        this.nextDocNo = nextDocNo;
+    }
+}
 
 const API_BASE = "/api/fm/treasury/disbursements";
 const SUPPLIER_API_BASE = "/api/fm/treasury/suppliers";
@@ -26,7 +39,8 @@ export const disbursementProvider = {
     getDisbursements: async (
         page: number = 0, size: number = 20, type: string = "All",
         supplier: string = "", startDate: string = "", endDate: string = "",
-        status: string = "All", divisionId: string = "", departmentId: string = "", docNo: string = ""
+        status: string = "All", divisionId: string = "", departmentId: string = "", docNo: string = "",
+        isPosted?: string
     ): Promise<PaginatedResponse<Disbursement>> => {
         let url = `${API_BASE}?page=${page}&size=${size}&type=${encodeURIComponent(type)}&status=${encodeURIComponent(status)}`;
         if (supplier) url += `&supplier=${encodeURIComponent(supplier)}`;
@@ -35,6 +49,7 @@ export const disbursementProvider = {
         if (divisionId) url += `&divisionId=${divisionId}`;
         if (departmentId) url += `&departmentId=${departmentId}`;
         if (docNo) url += `&docNo=${encodeURIComponent(docNo)}`;
+        if (isPosted !== undefined && isPosted !== "") url += `&isPosted=${encodeURIComponent(isPosted)}`;
 
         const res = await fetch(url);
         if (!res.ok) throw new Error("Failed to fetch disbursements");
@@ -47,7 +62,14 @@ export const disbursementProvider = {
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify(payload),
         });
-        if (!res.ok) throw new Error("Failed to create disbursement");
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new DisbursementRequestError(
+                errData.detail || errData.message || "Failed to create disbursement",
+                typeof errData.code === "string" ? errData.code : undefined,
+                typeof errData.nextDocNo === "string" ? errData.nextDocNo : undefined,
+            );
+        }
         return res.json();
     },
 
@@ -56,14 +78,12 @@ export const disbursementProvider = {
             method: "PATCH",
         });
         if (!res.ok) {
-            // 🚀 Catch the BFF/Spring Boot error payload!
             const errData = await res.json().catch(() => ({}));
             throw new Error(errData.detail || errData.message || errData.error || "Failed to update status");
         }
         return res.json();
     },
 
-    // 🚀 Fetch Suppliers for the Dropdown
     getSuppliers: async (type: string = "Trade"): Promise<SupplierDto[]> => {
         const res = await fetch(`${SUPPLIER_API_BASE}?type=${encodeURIComponent(toStoredSupplierType(type))}`);
         if (!res.ok) throw new Error("Failed to fetch suppliers");
@@ -88,14 +108,12 @@ export const disbursementProvider = {
         return json.data as SupplierDto;
     },
 
-    // 🚀 Fetch COAs for the Line Items
     getCOAs: async (): Promise<COADto[]> => {
         const res = await fetch("/api/fm/treasury/coas");
         if (!res.ok) throw new Error("Failed to fetch COAs");
         return res.json();
     },
 
-    // 🚀 Fetch COAs restricted to payable account types (3,4,7,8,9,10)
     getPayableCOAs: async (): Promise<COADto[]> => {
         const res = await fetch("/api/fm/treasury/coas?forPayable=true");
         if (!res.ok) throw new Error("Failed to fetch payable COAs");
@@ -114,31 +132,58 @@ export const disbursementProvider = {
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify(payload),
         });
-        if (!res.ok) throw new Error("Failed to update disbursement");
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.detail || errData.message || "Failed to update disbursement");
+        }
         return res.json();
     },
 
-    getUnpaidPos: async (supplierId: number): Promise<UnpaidPoDto[]> => {
-        const res = await fetch(`/api/fm/treasury/disbursements/unpaid-pos/${supplierId}`);
-        if (!res.ok) throw new Error("Failed to fetch unpaid POs");
+    updatePaymentAllocation: async (id: number, payments: PaymentAllocationPayload["payments"]): Promise<Disbursement> => {
+        const payload: PaymentAllocationPayload = {
+            saveScope: RELEASING_PAYMENT_SCOPE,
+            payments,
+        };
+        const res = await fetch(`${API_BASE}/${id}`, {
+            method: "PUT",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error(errorData.detail || errorData.message || "Failed to save payment allocation");
+        }
         return res.json();
     },
 
-    getSupplierMemos: async (supplierId: number): Promise<MemoDto[]> => {
-        const res = await fetch(`/api/fm/treasury/disbursements/memos/${supplierId}`);
-        if (!res.ok) throw new Error("Failed to fetch supplier memos");
-        return res.json();
+    getUnpaidPos: async (supplierId: number, signal?: AbortSignal): Promise<UnpaidPoDto[]> => {
+        const res = await fetch(`/api/fm/treasury/disbursements/unpaid-pos/${supplierId}`, {
+            cache: "no-store",
+            signal,
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+            throw new Error(data?.detail || data?.message || "Failed to fetch unpaid POs");
+        }
+        if (!Array.isArray(data)) throw new Error("Pending Records returned an invalid response");
+        return data as UnpaidPoDto[];
+    },
+
+    getSupplierMemos: async (supplierId: number, signal?: AbortSignal): Promise<MemoDto[]> => {
+        const res = await fetch(`/api/fm/treasury/disbursements/memos/${supplierId}`, { signal });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.detail || data?.message || "Failed to fetch supplier memos");
+        if (!Array.isArray(data)) throw new Error("Supplier memos returned an invalid response");
+        return (data as MemoDto[]).filter((memo) => Number(memo.supplier_id) === Number(supplierId));
     },
 
     getDivisions: async (): Promise<DivisionDto[]> => {
-        // Replace with your actual division API route if different
         const res = await fetch("/api/fm/setup/divisions");
         if (!res.ok) throw new Error("Failed to fetch divisions");
         return res.json();
     },
 
     getDepartments: async (): Promise<DepartmentDto[]> => {
-        // Replace with your actual department API route if different
         const res = await fetch("/api/fm/setup/departments");
         if (!res.ok) throw new Error("Failed to fetch departments");
         return res.json();
@@ -149,12 +194,14 @@ export const disbursementProvider = {
         if (filters.startDate) params.append("startDate", filters.startDate);
         if (filters.endDate) params.append("endDate", filters.endDate);
         if (filters.status) params.append("status", filters.status);
-        if (filters.payeeId) params.append("payeeId", filters.payeeId.toString());
-        if (filters.transactionType) params.append("transactionType", filters.transactionType.toString()); // 🚀 NEW
-        if (filters.encoderId) params.append("encoderId", filters.encoderId.toString());
-        if (filters.coaId) params.append("coaId", filters.coaId.toString());
-        if (filters.amount) params.append("amount", filters.amount.toString());
+        if (filters.payeeId) params.append("payeeId", filters.payeeId);
+        if (filters.transactionType) params.append("transactionType", filters.transactionType);
+        if (filters.encoderId) params.append("encoderId", filters.encoderId);
+        if (filters.coaId) params.append("coaId", filters.coaId);
+        if (filters.minAmount !== undefined && filters.minAmount !== "") params.append("minAmount", filters.minAmount.toString());
+        if (filters.maxAmount !== undefined && filters.maxAmount !== "") params.append("maxAmount", filters.maxAmount.toString());
         if (filters.remarks) params.append("remarks", filters.remarks);
+        if (filters.divisionId) params.append("divisionId", filters.divisionId);
 
         const res = await fetch(`${API_BASE}/dashboard?${params.toString()}`);
         if (!res.ok) throw new Error("Failed to fetch dashboard data");

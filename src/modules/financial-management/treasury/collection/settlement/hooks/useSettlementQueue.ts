@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { fetchProvider } from "../../providers/fetchProvider";
 import { UserDto } from "../../types";
 
@@ -18,15 +18,24 @@ export interface PaginatedQueueResponse {
     currentPage: number;
 }
 
+const QUEUE_ERROR_MESSAGE = "The settlement queue could not be loaded. Please retry.";
+
 export function useSettlementQueue(
     search: string, status: string, collector: string,
     page: number, size: number, sortField: string, sortDir: string
 ) {
     const [data, setData] = useState<PaginatedQueueResponse>({ content: [], totalElements: 0, totalPages: 0, currentPage: 1 });
     const [isLoading, setIsLoading] = useState(true);
+    const [queueError, setQueueError] = useState<string | null>(null);
     const [users, setUsers] = useState<UserDto[]>([]); // To populate the Combobox
+    const requestController = useRef<AbortController | null>(null);
+    const requestVersion = useRef(0);
 
     const fetchQueue = useCallback(async () => {
+        requestController.current?.abort();
+        const controller = new AbortController();
+        requestController.current = controller;
+        const version = ++requestVersion.current;
         setIsLoading(true);
         try {
             const qs = new URLSearchParams({
@@ -34,17 +43,27 @@ export function useSettlementQueue(
                 page: page.toString(), size: size.toString(), sortField, sortDir
             }).toString();
 
-            const result = await fetchProvider.get<PaginatedQueueResponse>(`/api/fm/treasury/collections/settlement-queue?${qs}`);
-            if (result) setData(result);
+            const result = await fetchProvider.getOrThrow<PaginatedQueueResponse>(
+                `/api/fm/treasury/collections/settlement-queue?${qs}`,
+                {signal: controller.signal},
+            );
+            if (controller.signal.aborted || requestVersion.current !== version) return;
+            if (!result) throw new Error("The settlement queue returned no data.");
+
+            setData(result);
+            setQueueError(null);
         } catch (error) {
+            if (controller.signal.aborted || requestVersion.current !== version) return;
             console.error("Failed to fetch paginated queue:", error);
+            setQueueError(QUEUE_ERROR_MESSAGE);
         } finally {
-            setIsLoading(false);
+            if (requestVersion.current === version) setIsLoading(false);
         }
     }, [search, status, collector, page, size, sortField, sortDir]);
 
     useEffect(() => {
-        fetchQueue();
+        void fetchQueue();
+        return () => requestController.current?.abort();
     }, [fetchQueue]);
 
     useEffect(() => {
@@ -53,5 +72,5 @@ export function useSettlementQueue(
             .catch(console.error);
     }, []);
 
-    return { data, isLoading, users, fetchQueue };
+    return { data, isLoading, queueError, users, fetchQueue };
 }

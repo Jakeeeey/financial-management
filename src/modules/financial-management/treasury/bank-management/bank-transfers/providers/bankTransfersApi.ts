@@ -26,6 +26,14 @@ async function parseResponse<T>(res: Response, fallback: string): Promise<T> {
 }
 
 export const bankTransfersApi = {
+  getCheckCalibrationPdfUrl(): string {
+    return `${BASE}/check-calibration-pdf`;
+  },
+
+  getCheckPdfUrl(transferId: number): string {
+    return `${BASE}/${transferId}/check-pdf`;
+  },
+
   async getTransfers(query?: BankTransferQuery): Promise<BankTransfersData> {
     const params = new URLSearchParams();
     if (query?.page) params.set("page", String(query.page));

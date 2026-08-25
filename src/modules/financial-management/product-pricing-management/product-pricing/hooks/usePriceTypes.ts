@@ -3,11 +3,13 @@
 import * as React from "react";
 import type { PriceType } from "../types";
 import * as api from "../providers/pricingApi";
+import { applyLoadError } from "../../shared/loadErrorState";
 
 export function usePriceTypes() {
     const [loading, setLoading] = React.useState(true);
     const [priceTypes, setPriceTypes] = React.useState<PriceType[]>([]);
     const [error, setError] = React.useState<string | null>(null);
+    const [unauthorized, setUnauthorized] = React.useState(false);
 
     React.useEffect(() => {
         let mounted = true;
@@ -21,10 +23,10 @@ export function usePriceTypes() {
                 if (!mounted) return;
 
                 setPriceTypes(res.data ?? []);
+                setUnauthorized(false);
             } catch (error: unknown) {
                 if (!mounted) return;
-
-                setError(error instanceof Error ? error.message : "Failed to load price types");
+                applyLoadError(error, "Failed to load price types", setUnauthorized, setError);
             } finally {
                 if (mounted) setLoading(false);
             }
@@ -35,5 +37,5 @@ export function usePriceTypes() {
         };
     }, []);
 
-    return { loading, error, priceTypes };
+    return { loading, error, unauthorized, priceTypes };
 }

@@ -24,6 +24,8 @@ import {
   useDeliveryTerms,
   usePaymentTerms,
 } from "@/modules/financial-management/supplier-registration/hooks/useTerms";
+import { usePayeeUsers } from "../../hooks/usePayeeUsers";
+import { UserSelect } from "./user-select";
 
 interface AddPayeeFormProps {
   onSuccess: (payee?: Payee) => void | Promise<void>;
@@ -80,9 +82,14 @@ async function getPsgcOptions(
     { cache: "no-store" },
   );
 
-  if (!response.ok) throw new Error("Failed to load PSGC address data");
+  const json = (await response.json().catch(() => ({}))) as {
+    error?: unknown;
+    options?: unknown;
+  };
+  if (!response.ok) {
+    throw new Error(typeof json.error === "string" ? json.error : "Failed to load PSGC address data");
+  }
 
-  const json = await response.json();
   return (json.options || []) as PsgcOption[];
 }
 
@@ -202,9 +209,11 @@ export function AddPayeeForm({
   const supplierTypeLabel = supplierType === "TRADE" ? "Trade" : "Non-Trade";
   const { paymentTerms, isLoading: isLoadingPaymentTerms } = usePaymentTerms();
   const { deliveryTerms, isLoading: isLoadingDeliveryTerms } = useDeliveryTerms();
+  const { users: payeeUsers, loading: isLoadingPayeeUsers } = usePayeeUsers();
   const form = useForm({
     resolver: zodResolver(PayeeFormSchema),
     defaultValues: {
+      user_id: undefined,
       supplier_name: "",
       supplier_shortcut: "",
       supplier_type: supplierType,
@@ -292,15 +301,27 @@ export function AddPayeeForm({
       if (kind === "cities") setCityOptions(options);
       if (kind === "barangays") setBarangayOptions(options);
       return options;
-    } catch {
+    } catch (error: unknown) {
       if (seq === psgcSeqRef.current[kind]) {
-        setPsgcError("Failed to load PSGC address data");
+        setPsgcError(error instanceof Error ? error.message : "Failed to load PSGC address data");
       }
       return [];
     } finally {
-      setPsgcLoading((current) => ({ ...current, [kind]: false }));
+      if (seq === psgcSeqRef.current[kind]) {
+        setPsgcLoading((current) => ({ ...current, [kind]: false }));
+      }
     }
   }, []);
+
+  const retryPsgcOptions = useCallback(() => {
+    void loadPsgcOptions("provinces");
+    void loadPsgcOptions("cities", locationCodes.provinceCode ? { provinceCode: locationCodes.provinceCode } : {});
+    if (locationCodes.cityCode) {
+      void loadPsgcOptions("barangays", { cityCode: locationCodes.cityCode });
+    } else if (locationCodes.provinceCode) {
+      void loadPsgcOptions("barangays", { provinceCode: locationCodes.provinceCode });
+    }
+  }, [loadPsgcOptions, locationCodes.cityCode, locationCodes.provinceCode]);
 
   const loadPostalCodeOptions = useCallback(async (
     province: string,
@@ -498,6 +519,32 @@ export function AddPayeeForm({
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
         <Card>
           <CardContent className="grid gap-4 pt-6">
+            <div className="flex flex-col space-y-2">
+              <FormLabel>Autofill from User (Optional)</FormLabel>
+              <UserSelect
+                users={payeeUsers}
+                loading={isLoadingPayeeUsers}
+                onSelect={(user) => {
+                  const userId = user.id || user.user_id || user.userId;
+                  if (userId) form.setValue("user_id", userId, { shouldValidate: true });
+                  
+                  const fname = user.firstName || user.user_fname || "";
+                  const lname = user.lastName || user.user_lname || "";
+                  const name = `${fname} ${lname}`.trim();
+                  if (name) form.setValue("supplier_name", name, { shouldValidate: true });
+                  
+                  const tin = user.tinNumber || user.user_tin || "";
+                  if (tin) form.setValue("tin_number", tin.replace(/\D/g, "").slice(0, 12), { shouldValidate: true });
+                  
+                  const email = user.email || user.user_email || "";
+                  if (email) form.setValue("email_address", email, { shouldValidate: true });
+                  
+                  const phone = user.contactNumber || user.user_contact || "";
+                  if (phone) form.setValue("phone_number", phone, { shouldValidate: true });
+                }}
+              />
+            </div>
+
             <FormField
               control={form.control}
               name="supplier_name"
@@ -677,7 +724,7 @@ export function AddPayeeForm({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        Address <span className="text-destructive">*</span>
+                        Street Address <span className="text-destructive">*</span>
                       </FormLabel>
                       <FormControl>
                         <Input placeholder="Street address" {...field} />
@@ -687,11 +734,20 @@ export function AddPayeeForm({
                   )}
                 />
 
-                {psgcError ? (
-                  <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                    {psgcError}
-                  </div>
-                ) : null}
+                  {psgcError ? (
+                    <div className="flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                      <span>{psgcError}</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={retryPsgcOptions}
+                        disabled={Object.values(psgcLoading).some(Boolean)}
+                      >
+                        Retry
+                      </Button>
+                    </div>
+                  ) : null}
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <FormField

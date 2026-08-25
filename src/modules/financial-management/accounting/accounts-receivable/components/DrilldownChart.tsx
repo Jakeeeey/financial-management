@@ -2,7 +2,7 @@
 // 4-level interactive drill-down: Operation → Division → Salesman → Customer
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -28,7 +28,6 @@ interface Crumb {
   filterSalesman?: string;
 }
 
-// Palette per level
 const PALETTES: Record<Level, string[]> = {
   operation: [
     'hsl(215,78%,56%)', 'hsl(175,62%,44%)', 'hsl(258,64%,60%)',
@@ -77,6 +76,8 @@ function aggregate(invs: Invoice[], key: (inv: Invoice) => string): { name: stri
     .sort((a, b) => b.value - a.value);
 }
 
+type DrillRow = { name: string; value: number; count: number; _opId?: number | null };
+
 export function DrilldownChart({ operationData, invoices, isFiltered = false }: Props) {
   const [crumbs, setCrumbs] = useState<Crumb[]>([
     { level: 'operation', label: 'All Operations' },
@@ -87,8 +88,7 @@ export function DrilldownChart({ operationData, invoices, isFiltered = false }: 
   const nextLevel    = LEVEL_ORDER[LEVEL_ORDER.indexOf(currentLevel) + 1] as Level | undefined;
   const palette      = PALETTES[currentLevel];
 
-  // ── Filter invoices based on the drill path ──────────────────────────────
-  const scopedInvoices = (() => {
+  const scopedInvoices = useMemo(() => {
     let set = invoices;
     for (const c of crumbs) {
       if (c.filterSalesType !== undefined)
@@ -99,41 +99,38 @@ export function DrilldownChart({ operationData, invoices, isFiltered = false }: 
         set = set.filter((inv) => inv.salesman === c.filterSalesman);
     }
     return set;
-  })();
+  }, [invoices, crumbs]);
 
-  // ── Build current level rows ─────────────────────────────────────────────
-  const rows = (() => {
+  const rows: DrillRow[] = useMemo(() => {
     if (currentLevel === 'operation') {
-      // Use server-side operationData for totals, augmented with client count from scoped invoices
-      return operationData.map((op) => {
-        const subset = invoices.filter((inv) => inv.salesType === op.id);
-        return { name: op.name, value: op.totalOutstanding, count: subset.length, _opId: op.id };
-      }).sort((a, b) => b.value - a.value);
+      return operationData.map((op) => ({
+        name: op.name,
+        value: op.totalOutstanding,
+        count: op.count,
+        _opId: op.id,
+      })).sort((a, b) => b.value - a.value);
     }
     if (currentLevel === 'division')
       return aggregate(scopedInvoices, (inv) => inv.division).map((r) => ({ ...r, _opId: undefined }));
     if (currentLevel === 'salesman')
       return aggregate(scopedInvoices, (inv) => inv.salesman).map((r) => ({ ...r, _opId: undefined }));
-    // customer — leaf, no drill further
     return aggregate(scopedInvoices, (inv) => inv.customer).map((r) => ({ ...r, _opId: undefined }));
-  })();
+  }, [currentLevel, operationData, scopedInvoices]);
 
   const total = rows.reduce((s, r) => s + r.value, 0);
   const chartH = Math.max(120, Math.min(rows.length, 12) * 32);
   const isLeaf = currentLevel === 'customer' || !nextLevel;
 
-  // ── Drill into a row ─────────────────────────────────────────────────────
-  function drillInto(row: typeof rows[0]) {
+  function drillInto(row: DrillRow) {
     if (isLeaf) return;
     const next = nextLevel!;
     const newCrumb: Crumb = { level: next, label: row.name };
-    if (currentLevel === 'operation') newCrumb.filterSalesType = (row as { _opId?: number | null })._opId ?? null;
+    if (currentLevel === 'operation') newCrumb.filterSalesType = row._opId ?? null;
     if (currentLevel === 'division')  newCrumb.filterDivision  = row.name;
     if (currentLevel === 'salesman')  newCrumb.filterSalesman  = row.name;
     setCrumbs([...crumbs, newCrumb]);
   }
 
-  // ── Navigate via breadcrumb ──────────────────────────────────────────────
   function navTo(idx: number) {
     setCrumbs(crumbs.slice(0, idx + 1));
   }
@@ -142,10 +139,8 @@ export function DrilldownChart({ operationData, invoices, isFiltered = false }: 
 
   return (
     <Card className="min-w-0 overflow-hidden w-full border-border/50 shadow-sm">
-      {/* ── Header ── */}
       <CardHeader className="p-0 border-b border-border/40">
         <div className="flex items-center justify-between px-4 py-2.5 gap-2">
-          {/* Breadcrumb trail */}
           <div className="flex items-center gap-1 min-w-0 flex-wrap">
             <LayoutGrid className="h-3 w-3 text-muted-foreground/50 shrink-0" />
             {crumbs.map((c, idx) => {
@@ -169,7 +164,6 @@ export function DrilldownChart({ operationData, invoices, isFiltered = false }: 
             })}
           </div>
 
-          {/* Stats pill */}
           <div className="flex items-center gap-2 shrink-0">
             {!isLeaf && (
               <span className="text-[9px] text-muted-foreground/50 hidden sm:block">
@@ -182,7 +176,6 @@ export function DrilldownChart({ operationData, invoices, isFiltered = false }: 
           </div>
         </div>
 
-        {/* Level tabs */}
         <div className="flex border-t border-border/30">
           {LEVEL_ORDER.map((lv, idx) => {
             const reached = crumbs.some((c) => c.level === lv);
@@ -215,7 +208,6 @@ export function DrilldownChart({ operationData, invoices, isFiltered = false }: 
           </div>
         ) : (
           <div className="px-3 pt-3 pb-3">
-            {/* Bar chart */}
             <ResponsiveContainer width="100%" height={chartH}>
               <BarChart
                 layout="vertical"
@@ -223,34 +215,14 @@ export function DrilldownChart({ operationData, invoices, isFiltered = false }: 
                 margin={{ top: 0, right: 14, left: 4, bottom: 0 }}
                 barCategoryGap="28%"
               >
-                <CartesianGrid
-                  strokeDasharray="2 3"
-                  horizontal={false}
-                  stroke="rgba(128,128,128,0.07)"
-                />
-                <XAxis
-                  type="number"
-                  fontSize={9}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={shortPeso}
-                  tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                />
-                <YAxis
-                  type="category"
-                  dataKey="name"
-                  fontSize={9}
-                  width={100}
-                  tickLine={false}
-                  axisLine={false}
-                  tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                  tickFormatter={(v: string) => v.length > 15 ? v.slice(0, 15) + '…' : v}
-                />
+                <CartesianGrid strokeDasharray="2 3" horizontal={false} stroke="rgba(128,128,128,0.07)" />
+                <XAxis type="number" fontSize={9} tickLine={false} axisLine={false} tickFormatter={shortPeso} tick={{ fill: 'hsl(var(--muted-foreground))' }} />
+                <YAxis type="category" dataKey="name" fontSize={9} width={100} tickLine={false} axisLine={false} tick={{ fill: 'hsl(var(--muted-foreground))' }} tickFormatter={(v: string) => v.length > 15 ? v.slice(0, 15) + '…' : v} />
                 <Tooltip
                   cursor={{ fill: 'rgba(128,128,128,0.05)' }}
                   content={({ active, payload }) => {
                     if (!active || !payload?.length) return null;
-                    const e = payload[0].payload as typeof rows[0];
+                    const e = payload[0].payload as DrillRow;
                     const pct = total > 0 ? ((e.value / total) * 100).toFixed(1) : '0';
                     return (
                       <div className="bg-popover border border-border rounded-md shadow-lg px-3 py-2 text-[10px] space-y-1">
@@ -274,20 +246,15 @@ export function DrilldownChart({ operationData, invoices, isFiltered = false }: 
                   radius={[0, 3, 3, 0]}
                   maxBarSize={20}
                   cursor={isLeaf ? 'default' : 'pointer'}
-                  onClick={isLeaf ? undefined : (entry) => drillInto(entry as typeof rows[0])}
+                  onClick={isLeaf ? undefined : (entry) => drillInto(entry as DrillRow)}
                 >
                   {rows.map((_, i) => (
-                    <Cell
-                      key={i}
-                      fill={palette[i % palette.length]}
-                      opacity={0.9}
-                    />
+                    <Cell key={i} fill={palette[i % palette.length]} opacity={0.9} />
                   ))}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
 
-            {/* Ranked table */}
             <div className="mt-3 border-t border-border/30 pt-2.5 space-y-1">
               {rows.slice(0, 10).map((row, i) => {
                 const pct = total > 0 ? (row.value / total) * 100 : 0;
@@ -301,44 +268,17 @@ export function DrilldownChart({ operationData, invoices, isFiltered = false }: 
                         isLeaf ? 'cursor-default' : 'hover:bg-muted/40 cursor-pointer'
                       }`}
                     >
-                      {/* rank */}
-                      <span className="text-muted-foreground/40 tabular-nums w-3.5 text-right shrink-0">
-                        {i + 1}
-                      </span>
-                      {/* color dot */}
-                      <span
-                        className="w-1.5 h-1.5 rounded-full shrink-0"
-                        style={{ backgroundColor: palette[i % palette.length] }}
-                      />
-                      {/* name */}
-                      <span className="text-muted-foreground truncate flex-1 text-left" title={row.name}>
-                        {row.name}
-                      </span>
-                      {/* progress bar */}
+                      <span className="text-muted-foreground/40 tabular-nums w-3.5 text-right shrink-0">{i + 1}</span>
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: palette[i % palette.length] }} />
+                      <span className="text-muted-foreground truncate flex-1 text-left" title={row.name}>{row.name}</span>
                       <span className="hidden sm:block w-16 shrink-0">
                         <span className="block h-1 rounded-full bg-muted overflow-hidden">
-                          <span
-                            className="block h-full rounded-full transition-all"
-                            style={{
-                              width: `${barW}%`,
-                              backgroundColor: palette[i % palette.length],
-                              opacity: 0.7,
-                            }}
-                          />
+                          <span className="block h-full rounded-full transition-all" style={{ width: `${barW}%`, backgroundColor: palette[i % palette.length], opacity: 0.7 }} />
                         </span>
                       </span>
-                      {/* pct */}
-                      <span className="text-muted-foreground/60 tabular-nums w-8 text-right shrink-0">
-                        {pct.toFixed(1)}%
-                      </span>
-                      {/* amount */}
-                      <span className="font-mono tabular-nums text-foreground/80 text-right shrink-0 min-w-[80px]">
-                        {formatPeso(row.value)}
-                      </span>
-                      {/* drill hint */}
-                      {!isLeaf && (
-                        <ChevronRight className="h-2.5 w-2.5 text-muted-foreground/20 group-hover:text-muted-foreground/60 shrink-0 transition-colors" />
-                      )}
+                      <span className="text-muted-foreground/60 tabular-nums w-8 text-right shrink-0">{pct.toFixed(1)}%</span>
+                      <span className="font-mono tabular-nums text-foreground/80 text-right shrink-0 min-w-[80px]">{formatPeso(row.value)}</span>
+                      {!isLeaf && <ChevronRight className="h-2.5 w-2.5 text-muted-foreground/20 group-hover:text-muted-foreground/60 shrink-0 transition-colors" />}
                     </button>
                   </div>
                 );

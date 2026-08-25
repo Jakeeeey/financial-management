@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -91,7 +92,7 @@ export function SupplierDetailsModal({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="w-full sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-full sm:max-w-4xl max-h-[90vh] overflow-y-auto" showCloseButton={false}>
         <DialogHeader>
           <div className="flex items-start justify-between">
             <div>
@@ -102,6 +103,11 @@ export function SupplierDetailsModal({
                 <Badge variant="secondary" className="rounded-sm">
                   {supplier.supplier_type}
                 </Badge>
+                {supplier.nonBuy ? (
+                  <Badge variant="outline" className="rounded-sm text-amber-600 border-amber-600 bg-amber-50">
+                    Non-Buy
+                  </Badge>
+                ) : null}
                 <div className="flex items-center text-muted-foreground">
                   <Hash className="h-4 w-4" />
                   <span>TIN: {supplier.tin_number}</span>
@@ -331,6 +337,12 @@ export function SupplierDetailsModal({
             )}
           </div>
         </div>
+        
+        <DialogFooter className="mt-4 pt-4 border-t">
+          <Button variant="outline" onClick={onClose}>
+            Close
+          </Button>
+        </DialogFooter>
       </DialogContent>
       <ManageProductsModal
         supplierId={supplier.id!}

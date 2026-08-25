@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,15 +8,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
     Loader2, CheckCircle, Send, SendIcon, Wallet, Building2,
     Printer, Pencil, Lock, AlertTriangle, FileText, Receipt,
-    CheckCircle2, CircleDashed, X, Sparkles, ArrowDownToLine, ArrowUpFromLine,
+    CheckCircle2, CircleDashed, X, ArrowDownToLine, ArrowUpFromLine,
     Paperclip, ExternalLink
 } from "lucide-react";
 import { Disbursement, BankAccountDto, COADto } from "../types";
 import { disbursementProvider } from "../providers/fetchProvider";
-import { format } from "date-fns";
 import { generateDisbursementPDF } from "../utils/pdfGenerator";
 import { cn } from "@/lib/utils";
 import { StickyTableWrapper } from "./StickyTableWrapper";
+import { decodeToken, formatCurrency, formatManilaDate, formatManilaDateTime, getCookie, getPaymentStateLabel, getVoucherStepIndex, VOUCHER_STEPS } from "../utils/disbursement-utils";
 
 interface DisbursementViewSheetProps {
     disbursement: Disbursement | null;
@@ -25,40 +25,14 @@ interface DisbursementViewSheetProps {
     onUpdateStatus: (id: number, status: string) => Promise<boolean>;
     onEdit?: (d: Disbursement) => void;
     loading: boolean;
-}
-
-const VOUCHER_STEPS = ["Draft", "Submitted", "Approved", "Released", "Posted"];
-
-function getCookie(name: string) {
-    if (typeof window === "undefined") return "";
-    const value = `; ${document.cookie}`;
-    const parts = value.split(`; ${name}=`);
-    if (parts.length === 2) return parts.pop()?.split(';').shift() || "";
-    return "";
-}
-
-function decodeToken(token: string) {
-    if (!token) return null;
-    try {
-        const base64Url = token.split('.')[1];
-        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-        const jsonPayload = decodeURIComponent(
-            window.atob(base64)
-                .split('')
-                .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-                .join('')
-        );
-        return JSON.parse(jsonPayload);
-    } catch (e) {
-        console.error("Failed to decode token", e);
-        return null;
-    }
+    readOnly?: boolean;
 }
 
 function AttachmentPreview({ docUrl }: { docUrl: string }) {
     const [contentType, setContentType] = useState<string>("");
     const cleanBase = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "");
-    const viewUrl = docUrl.startsWith("http") ? docUrl : `${cleanBase}/assets/${docUrl}`;
+    const token = process.env.NEXT_PUBLIC_DIRECTUS_STATIC_TOKEN || "AAKv73dkIV8DfAIA5vEt3eXVdIebzmBW";
+    const viewUrl = docUrl.startsWith("http") ? docUrl : `${cleanBase}/assets/${docUrl}?access_token=${token}`;
 
     useEffect(() => {
         if (!viewUrl) return;
@@ -126,8 +100,10 @@ function AttachmentPreview({ docUrl }: { docUrl: string }) {
     );
 }
 
-export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpdateStatus, onEdit, loading }: DisbursementViewSheetProps) {
+export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpdateStatus, onEdit, loading, readOnly = false }: DisbursementViewSheetProps) {
     const [showPrintOptions, setShowPrintOptions] = useState(false);
+    const [actionLocked, setActionLocked] = useState(false);
+    const actionLockRef = useRef(false);
     const [banks, setBanks] = useState<BankAccountDto[]>([]);
     const [coas, setCoas] = useState<COADto[]>([]);
 
@@ -149,12 +125,20 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
     const currentUserId = tokenPayload?.sub;
     const isApprover = disbursement.approverId != null && currentUserId != null && String(disbursement.approverId) === String(currentUserId);
 
-    const formatCurrency = (amount: number) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount || 0);
-
     const handleAction = async (status: string) => {
-        const success = await onUpdateStatus(disbursement.id, status);
-        if (success) onOpenChange(false);
+        if (loading || actionLockRef.current) return;
+        actionLockRef.current = true;
+        setActionLocked(true);
+        try {
+            const success = await onUpdateStatus(disbursement.id, status);
+            if (success) onOpenChange(false);
+        } finally {
+            actionLockRef.current = false;
+            setActionLocked(false);
+        }
     };
+
+    const isActionBusy = loading || actionLocked;
 
     const handlePrint = (size: "A4" | "58mm") => {
         generateDisbursementPDF(disbursement, size);
@@ -166,9 +150,7 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
     const balance = disbursement.balance ?? (totalDebit - totalCredit);
     const isBalanced = Math.abs(balance) < 0.01;
 
-    const currentStepIndex = VOUCHER_STEPS.indexOf(disbursement.status);
-    const isAutoApprove = disbursement.totalAmount < 1000;
-
+    const currentStepIndex = getVoucherStepIndex(disbursement.status);
     return (
         <Sheet open={open} onOpenChange={(val) => { onOpenChange(val); setShowPrintOptions(false); }}>
             <SheetContent className="sm:max-w-[1000px] w-full p-0 flex flex-col bg-background border-l border-border overflow-hidden shadow-2xl">
@@ -184,12 +166,15 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                                 )}
                             </SheetTitle>
                             <SheetDescription className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1">
-                                Transaction Date: {disbursement.transactionDate ? format(new Date(disbursement.transactionDate), "MMMM dd, yyyy") : "No Date Recorded"}
+                                Transaction Date: {formatManilaDate(disbursement.transactionDate, "No Date Recorded")}
                             </SheetDescription>
                         </div>
                         <Badge variant="outline" className="px-3 py-1 bg-muted font-black uppercase tracking-widest text-[10px]">
                             {disbursement.status}
                         </Badge>
+                        <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">
+                            Payment: {getPaymentStateLabel(disbursement.paymentState)}
+                        </span>
                     </div>
 
                     <div className="mt-6 pt-4 border-t border-border/50">
@@ -234,6 +219,10 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                             </p>
                             <p className="text-sm font-black text-foreground uppercase">{disbursement.payeeName || "N/A"}</p>
                         </div>
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">Transaction Type</p>
+                            <p className="text-sm font-black text-foreground uppercase">{disbursement.transactionTypeName || "Unknown"}</p>
+                        </div>
                         <div className="text-right">
                             <p className="flex items-center justify-end gap-1.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">
                                 <Wallet className="w-3 h-3" /> Total Amount
@@ -262,14 +251,32 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                             <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">Particulars / Remarks</p>
                             <p className="text-xs font-bold text-foreground bg-muted p-2 rounded-md border border-border/50">{disbursement.remarks || "No remarks provided."}</p>
                         </div>
-                        <div className="grid grid-cols-2 col-span-2 mt-1 gap-2">
+                        <div className="mt-1">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Department</p>
+                            <p className="text-xs font-bold text-foreground">{disbursement.departmentName || "N/A"}</p>
+                        </div>
+
+                        {/* Audit Trail Section */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 col-span-2 border-t border-border pt-4 mt-2">
                             <div>
-                                <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Division</p>
-                                <p className="text-xs font-bold text-foreground">{disbursement.divisionName || "N/A"}</p>
+                                <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Prepared By</p>
+                                <p className="text-xs font-black text-foreground mt-0.5">{disbursement.submittedByName || disbursement.encoderName || "N/A"}</p>
+                                <p className="text-[8px] font-bold text-muted-foreground mt-0.5">{disbursement.dateSubmitted ? formatManilaDateTime(disbursement.dateSubmitted) : "Draft State"}</p>
                             </div>
                             <div>
-                                <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Department</p>
-                                <p className="text-xs font-bold text-foreground">{disbursement.departmentName || "N/A"}</p>
+                                <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Approved By</p>
+                                <p className="text-xs font-black text-foreground mt-0.5">{disbursement.approverName || "Pending"}</p>
+                                <p className="text-[8px] font-bold text-muted-foreground mt-0.5">{disbursement.dateApproved ? formatManilaDateTime(disbursement.dateApproved) : "N/A"}</p>
+                            </div>
+                            <div>
+                                <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Released By</p>
+                                <p className="text-xs font-black text-foreground mt-0.5">{disbursement.releasedByName || "Pending"}</p>
+                                <p className="text-[8px] font-bold text-muted-foreground mt-0.5">{disbursement.dateReleased ? formatManilaDateTime(disbursement.dateReleased) : "N/A"}</p>
+                            </div>
+                            <div>
+                                <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Posted By</p>
+                                <p className="text-xs font-black text-foreground mt-0.5">{disbursement.postedByName || "Pending"}</p>
+                                <p className="text-[8px] font-bold text-muted-foreground mt-0.5">{disbursement.datePosted ? formatManilaDateTime(disbursement.datePosted) : "N/A"}</p>
                             </div>
                         </div>
                     </div>
@@ -301,6 +308,7 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                                     <TableHeader className="bg-muted/80 backdrop-blur-md sticky top-0 z-10 shadow-[0_1px_0_0_hsl(var(--border))]">
                                         <TableRow className="border-border">
                                             <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[150px]">Ref No</TableHead>
+                                            <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[120px]">Division</TableHead>
                                             <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[300px]">Chart of Account</TableHead>
                                             <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[150px]">Remarks</TableHead>
                                             <TableHead className="text-[9px] font-black uppercase tracking-widest text-right text-muted-foreground min-w-[120px]">Amount</TableHead>
@@ -308,10 +316,11 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                                     </TableHeader>
                                     <TableBody>
                                         {!disbursement.payables?.length ? (
-                                            <TableRow><TableCell colSpan={4} className="text-center text-[10px] text-muted-foreground py-6 font-bold">No payables attached.</TableCell></TableRow>
+                                            <TableRow><TableCell colSpan={5} className="text-center text-[10px] text-muted-foreground py-6 font-bold">No payables attached.</TableCell></TableRow>
                                         ) : disbursement.payables.map((p, i) => (
                                             <TableRow key={i} className="hover:bg-muted/50 border-border">
                                                 <TableCell className="text-xs font-bold uppercase text-foreground">{p.referenceNo || "N/A"}</TableCell>
+                                                <TableCell className="text-xs font-bold uppercase text-foreground">{p.divisionName || "N/A"}</TableCell>
                                                 <TableCell className="text-[10px] font-bold text-muted-foreground uppercase">{p.accountTitle || `COA: ${p.coaId}`}</TableCell>
                                                 <TableCell className="text-[10px] font-medium text-muted-foreground truncate max-w-[200px]">{p.remarks || "-"}</TableCell>
                                                 <TableCell className="text-xs font-black text-right text-foreground">{formatCurrency(p.amount)}</TableCell>
@@ -361,7 +370,7 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                                             return (
                                                 <TableRow key={i} className="hover:bg-muted/50 border-border">
                                                     <TableCell className="text-[10px] font-bold uppercase text-muted-foreground">
-                                                        {p.date ? format(new Date(p.date), "MMM dd, yyyy") : "N/A"}
+                                                        {formatManilaDate(p.date)}
                                                     </TableCell>
                                                     <TableCell className="text-xs font-bold uppercase text-foreground">{p.checkNo || "N/A"}</TableCell>
                                                     <TableCell className="text-[10px] font-bold text-muted-foreground uppercase">
@@ -410,63 +419,69 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                         </div>
 
                         {/* Dynamic Edit Button */}
-                        {(disbursement.status === "Draft" || disbursement.status === "Approved") && onEdit && (
+                        {!readOnly && (disbursement.status === "Draft" || disbursement.status === "Approved" || disbursement.status === "Returned for Revision") && onEdit && (
                             <Button variant="outline" onClick={() => onEdit(disbursement)} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 sm:px-6 text-amber-600 border-amber-200 hover:bg-amber-50 dark:hover:bg-amber-950/30">
                                 <Pencil className="w-4 h-4 sm:mr-2" />
-                                <span className="hidden sm:inline">{disbursement.status === "Draft" ? "Edit Draft" : "Add/Edit Checks"}</span>
+                                <span className="hidden sm:inline">
+                                    {disbursement.status === "Approved" ? "Add/Edit Checks" : "Edit Voucher"}
+                                </span>
                             </Button>
                         )}
 
                         {/* Revert Tool */}
-                        {disbursement.status !== "Draft" && disbursement.status !== "Posted" && (
-                            <Button variant="ghost" onClick={() => handleAction("Draft")} disabled={loading} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 text-destructive hover:bg-destructive/10 hidden md:flex">
-                                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4 mr-2" />} Return to Draft
+                        {!readOnly && disbursement.status !== "Draft" && disbursement.status !== "Returned for Revision" && disbursement.status !== "Submitted" && disbursement.status !== "Posted" && (
+                            <Button variant="ghost" onClick={() => handleAction("Draft")} disabled={isActionBusy} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 text-destructive hover:bg-destructive/10 hidden md:flex">
+                                {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4 mr-2" />} Return to Draft
                             </Button>
                         )}
                     </div>
 
                     {/* RIGHT SIDE: Dynamic Primary Action Pipeline */}
                     <div className="flex gap-2">
-                        {disbursement.status === "Draft" && (
-                            <Button onClick={() => handleAction("Submitted")} disabled={loading} className={cn("text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 text-white shadow-md disabled:opacity-50", isAutoApprove ? "bg-emerald-600 hover:bg-emerald-700" : "bg-blue-600 hover:bg-blue-700")}>
-                                {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : (isAutoApprove ? <Sparkles className="w-4 h-4 sm:mr-2" /> : <SendIcon className="w-4 h-4 sm:mr-2" />)}
-                                {isAutoApprove ? "Submit & Auto-Approve" : "Submit for Approval"}
-                            </Button>
-                        )}
-
-                        {disbursement.status === "Submitted" && (
-                            <Button onClick={() => handleAction("Approved")} disabled={loading} className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md">
-                                {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <CheckCircle className="w-4 h-4 sm:mr-2" />}
-                                Approve Voucher
-                            </Button>
-                        )}
-
-                        {disbursement.status === "Approved" && (
-                            <Button
-                                onClick={() => handleAction("Released")}
-                                disabled={loading || !disbursement.payments || disbursement.payments.length === 0}
-                                className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-purple-600 hover:bg-purple-700 text-white shadow-md disabled:opacity-50">
-                                {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <Send className="w-4 h-4 sm:mr-2" />}
-                                Release Check
-                            </Button>
-                        )}
-
-                        {disbursement.status === "Released" && (
-                            <div className="flex flex-col items-end gap-1">
-                                <Button 
-                                    onClick={() => handleAction("Posted")} 
-                                    disabled={loading || !isBalanced || isApprover} 
-                                    className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md disabled:opacity-50"
-                                >
-                                    {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <Lock className="w-4 h-4 sm:mr-2" />}
-                                    Post to Ledger
-                                </Button>
-                                {isApprover && (
-                                    <span className="text-[9px] text-destructive font-black uppercase tracking-widest mt-1">
-                                        Segregation of Duties: Approver cannot post
-                                    </span>
+                        {!readOnly && (
+                            <>
+                                {(disbursement.status === "Draft" || disbursement.status === "Returned for Revision") && (
+                                    <Button onClick={() => handleAction("Submitted")} disabled={isActionBusy} className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-blue-600 hover:bg-blue-700 text-white shadow-md disabled:opacity-50">
+                                        {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <SendIcon className="w-4 h-4 sm:mr-2" />}
+                                        Submit for Approval
+                                    </Button>
                                 )}
-                            </div>
+
+                                {disbursement.status === "Submitted" && (
+                                    <Button onClick={() => handleAction("Approved")} disabled={isActionBusy} className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md">
+                                        {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <CheckCircle className="w-4 h-4 sm:mr-2" />}
+                                        Approve Voucher
+                                    </Button>
+                                )}
+
+                                {disbursement.status === "Approved" && (
+                                    <Button
+                                        onClick={() => handleAction("Released")}
+                                        disabled={isActionBusy || !disbursement.payments || disbursement.payments.length === 0}
+                                        className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-purple-600 hover:bg-purple-700 text-white shadow-md disabled:opacity-50">
+                                        {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <Send className="w-4 h-4 sm:mr-2" />}
+                                        Release Check
+                                    </Button>
+                                )}
+
+                                {disbursement.status === "Released" && (
+                                    <div className="flex flex-col items-end gap-1">
+                                        <Button 
+                                            onClick={() => handleAction("Posted")} 
+                                            disabled={isActionBusy || !isBalanced || isApprover}
+                                            className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md disabled:opacity-50"
+                                        >
+                                            {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <Lock className="w-4 h-4 sm:mr-2" />}
+                                            Post to Ledger
+                                        </Button>
+                                        {isApprover && (
+                                            <span className="text-[9px] text-destructive font-black uppercase tracking-widest mt-1">
+                                                Segregation of Duties: Approver cannot post
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+                            </>
                         )}
                     </div>
                 </div>

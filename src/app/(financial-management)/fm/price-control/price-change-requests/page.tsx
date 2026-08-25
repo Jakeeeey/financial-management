@@ -14,7 +14,7 @@ import { NavUser } from "@/components/shared/app-sidebar/nav-user";
 import { cookies } from "next/headers";
 
 // ✅ Wire the module you asked for
-import { PriceChangeRequestsModule } from "@/modules/financial-management/product-pricing-management/price-change-request/PriceChangeRequestsModule";
+import { PriceChangeRequestsModule } from "@/modules/financial-management/product-pricing-management/price-change-request";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

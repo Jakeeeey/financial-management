@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
-import { useSettlement } from "../hooks/useSettlement";
+import React, { useEffect, useState, useMemo, useRef } from "react";
+import { useSettlement, WalletItem } from "../hooks/useSettlement";
 import {
     ShieldCheck,
     Wallet,
@@ -32,7 +32,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { fetchProvider } from "../../providers/fetchProvider";
-import { UnpaidInvoice } from "../../types";
+import { UnpaidInvoice, UnpaidInvoiceSearchResponse } from "../../types";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -41,30 +41,54 @@ import WalletAssetCard from "./WalletAssetCard";
 import InvoiceSearchPopover from "./InvoiceSearchPopover";
 import AllocationSidePanel from "./AllocationSidePanel";
 import { generateAdjustmentPDF } from "../utils/adjustment-pdf-generator";
+import { printSettlementReceiptA4 } from "../utils/printSettlementReceiptA4";
+import {
+    capSettlementAllocation,
+    findOverAllocatedInvoice,
+    findUnderAllocatedInvoice,
+    getCartBalanceTotals,
+    getInvoiceAllocationCapacity,
+    getInvoiceAppliedForSettlement,
+    getInvoiceRequiredBalance,
+    getSourceAllocationCapacity,
+    roundCurrency,
+    SETTLEMENT_BALANCE_TOLERANCE,
+} from "../utils/settlement-balance";
 
 export interface SettlementCommandCenterProps {
     id: string | number;
     onClose?: (hasSaved?: boolean) => void;
+    onChanged?: () => void;
+    autoAddInvoiceNo?: string;
 }
 
-export default function SettlementCommandCenter({ id, onClose }: SettlementCommandCenterProps) {
+export default function SettlementCommandCenter({ id, onClose, onChanged, autoAddInvoiceNo }: SettlementCommandCenterProps) {
+    const [activeInvoiceId, setActiveInvoiceId] = useState<number | null>(null);
+
     const {
-        isLoading, wallet, credits, cartInvoices, allocations, salesmanName, findings, docNo, isPosted,
+        isLoading, wallet, credits, cartInvoices, allocations, setAllocations, salesmanName, findings, docNo, isPosted, isClearing, companyProfile,
         isLoadingRoute, loadRouteInvoices, addToCart, removeFromCart, clearCart, fetchAndInjectExternalCredit,
         getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement,
+        hasPartialChanges, hasClearableCart, savePartialSettlement,
         deleteWalletItem, editWalletItem, dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate,
-        isLoadingCredits
-    } = useSettlement(id);
+        isLoadingCredits, creditsError, retryCredits, hasMoreCredits, loadMoreCredits, collectionDate
+    } = useSettlement(id, activeInvoiceId);
 
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isPartialSaving, setIsPartialSaving] = useState(false);
     const [isSuccess, setIsSuccess] = useState(false);
 
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [searchResults, setSearchResults] = useState<UnpaidInvoice[]>([]);
     const [isSearching, setIsSearching] = useState(false);
+    const [searchError, setSearchError] = useState<string | null>(null);
+    const [searchHasMore, setSearchHasMore] = useState(false);
+    const [searchCursor, setSearchCursor] = useState<number | null>(null);
+    const searchAbortRef = useRef<AbortController | null>(null);
 
     const [creditSearch, setCreditSearch] = useState("");
+    const [poolSearch, setPoolSearch] = useState("");
     const [externalCreditInput, setExternalCreditInput] = useState("");
     const [externalCreditType, setExternalCreditType] = useState<"MEMO" | "RETURN">("MEMO");
     const [isFetchingExternal, setIsFetchingExternal] = useState(false);
@@ -96,8 +120,6 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
 
     const [routePopoverOpen, setRoutePopoverOpen] = useState(false);
 
-    const [activeInvoiceId, setActiveInvoiceId] = useState<number | null>(null);
-
     const uniqueCategories = useMemo(() => {
         const coaMap = new Map<number, {id: number, title: string}>();
         findings.forEach(f => {
@@ -120,36 +142,231 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
     }, [findings, editCoaId]);
 
     useEffect(() => {
+        searchAbortRef.current?.abort();
+        searchAbortRef.current = null;
+        setSearchError(null);
+        setSearchCursor(null);
+        setSearchHasMore(false);
+
         if (!searchQuery || searchQuery.trim().length < 2 || isPosted) {
             setSearchResults([]);
             return;
         }
 
         const delayDebounceFn = setTimeout(async () => {
+            const controller = new AbortController();
+            searchAbortRef.current = controller;
             setIsSearching(true);
             try {
-                const data = await fetchProvider.get<UnpaidInvoice[]>(
-                    `/api/fm/treasury/collections/search-unpaid?query=${encodeURIComponent(searchQuery.trim())}`
+                const data = await fetchProvider.getOrThrow<UnpaidInvoiceSearchResponse>(
+                    `/api/fm/treasury/collections/search-unpaid?query=${encodeURIComponent(searchQuery.trim())}&pouchId=${encodeURIComponent(String(id))}&limit=50`,
+                    {signal: controller.signal, timeoutMs: 12_000}
                 );
-                const cleanResults = (data || []).filter(inv => !cartInvoices.some(cartInv => cartInv.id === inv.id));
+                const cleanResults = (data?.items || []).filter(inv => !cartInvoices.some(cartInv => cartInv.id === inv.id));
                 setSearchResults(cleanResults);
+                setSearchHasMore(Boolean(data?.hasMore));
+                setSearchCursor(data?.nextCursor ?? null);
             } catch (error) {
-                console.error("Search failed:", error);
+                if (!(error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError"))) {
+                    console.error("Search failed:", error);
+                    setSearchError(error instanceof Error ? error.message : "Unable to search unpaid invoices.");
+                    setSearchResults([]);
+                }
             } finally {
-                setIsSearching(false);
+                if (searchAbortRef.current === controller) setIsSearching(false);
             }
         }, 300);
 
-        return () => clearTimeout(delayDebounceFn);
-    }, [searchQuery, cartInvoices, isPosted]);
+        return () => {
+            clearTimeout(delayDebounceFn);
+            searchAbortRef.current?.abort();
+        };
+    }, [searchQuery, cartInvoices, isPosted, id]);
+
+    const loadMoreSearchResults = async () => {
+        if (!searchHasMore || !searchCursor || isSearching || !searchQuery.trim() || isPosted) return;
+
+        searchAbortRef.current?.abort();
+        const controller = new AbortController();
+        searchAbortRef.current = controller;
+        setIsSearching(true);
+        setSearchError(null);
+
+        try {
+            const data = await fetchProvider.getOrThrow<UnpaidInvoiceSearchResponse>(
+                `/api/fm/treasury/collections/search-unpaid?query=${encodeURIComponent(searchQuery.trim())}&pouchId=${encodeURIComponent(String(id))}&limit=50&cursor=${encodeURIComponent(String(searchCursor))}`,
+                {signal: controller.signal, timeoutMs: 12_000}
+            );
+            const cleanResults = (data?.items || []).filter(inv => !cartInvoices.some(cartInv => cartInv.id === inv.id));
+            setSearchResults(previous => [...previous, ...cleanResults]);
+            setSearchHasMore(Boolean(data?.hasMore));
+            setSearchCursor(data?.nextCursor ?? null);
+        } catch (error) {
+            if (!(error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError"))) {
+                console.error("Loading more search results failed:", error);
+                setSearchError(error instanceof Error ? error.message : "Unable to load more unpaid invoices.");
+            }
+        } finally {
+            if (searchAbortRef.current === controller) setIsSearching(false);
+        }
+    };
 
     useEffect(() => {
-        if (cartInvoices.length > 0 && !activeInvoiceId) {
-            setActiveInvoiceId(cartInvoices[0].id);
-        } else if (cartInvoices.length === 0) {
+        if (cartInvoices.length === 0) {
             setActiveInvoiceId(null);
+        } else if (!cartInvoices.some(invoice => invoice.id === activeInvoiceId)) {
+            setActiveInvoiceId(cartInvoices[0].id);
         }
     }, [cartInvoices, activeInvoiceId]);
+ 
+    const [autoAdded, setAutoAdded] = useState(false);
+
+    useEffect(() => {
+        if (autoAddInvoiceNo && !isPosted && !autoAdded && cartInvoices.length >= 0) {
+            fetchProvider.getOrThrow<UnpaidInvoiceSearchResponse>(
+                `/api/fm/treasury/collections/search-unpaid?query=${encodeURIComponent(autoAddInvoiceNo.trim())}&pouchId=${encodeURIComponent(String(id))}&limit=50`,
+                {timeoutMs: 12_000}
+            ).then((res) => {
+                const found = res?.items?.find(inv => inv.invoiceNo === autoAddInvoiceNo);
+                if (found) {
+                    addToCart(found);
+                    setAutoAdded(true);
+                    toast.success(`Automatically added ${autoAddInvoiceNo} to active cart.`);
+                }
+            }).catch(err => {
+                console.error("Auto add invoice failed:", err);
+                toast.error(err instanceof Error ? err.message : "Unable to find the invoice.");
+            });
+        }
+    }, [autoAddInvoiceNo, isPosted, autoAdded, cartInvoices, addToCart, id]);
+
+    const handleSmartMatch = () => {
+        if (cartInvoices.length === 0) {
+            toast.error("Please add invoices to the cart first.");
+            return;
+        }
+
+        let matchCount = 0;
+        const tempAllocations = [...allocations];
+
+        const getRemainingInvoiceBal = (invoiceId: number, baseBal: number) => {
+            const applied = tempAllocations
+                .filter(a => a.invoiceId === invoiceId)
+                .reduce((s, a) => s + a.amountApplied, 0);
+            return getInvoiceAllocationCapacity(baseBal, applied);
+        };
+
+        const getRemainingWalletAmt = (sourceId: string, baseAmt: number) => {
+            const used = tempAllocations
+                .filter(a => a.sourceTempId === sourceId)
+                .reduce((s, a) => s + a.amountApplied, 0);
+            return getSourceAllocationCapacity(baseAmt, used);
+        };
+
+        const allocateSim = (invoice: UnpaidInvoice, source: WalletItem, amount: number) => {
+            const sourceUsedElsewhere = tempAllocations
+                .filter(a => a.sourceTempId === source.id && a.invoiceId !== invoice.id)
+                .reduce((sum, allocation) => sum + allocation.amountApplied, 0);
+            const invoiceUsedElsewhere = tempAllocations
+                .filter(a => a.invoiceId === invoice.id && a.sourceTempId !== source.id)
+                .reduce((sum, allocation) => sum + allocation.amountApplied, 0);
+            const finalAmount = capSettlementAllocation(
+                amount,
+                getSourceAllocationCapacity(source.originalAmount, sourceUsedElsewhere),
+                getInvoiceAllocationCapacity(getInvoiceRequiredBalance(invoice), invoiceUsedElsewhere)
+            );
+            if (finalAmount <= SETTLEMENT_BALANCE_TOLERANCE) return;
+            const index = tempAllocations.findIndex(a => a.invoiceId === invoice.id && a.sourceTempId === source.id);
+            if (index > -1) {
+                tempAllocations[index].amountApplied = roundCurrency(
+                    tempAllocations[index].amountApplied + finalAmount
+                );
+            } else {
+                tempAllocations.push({
+                    invoiceId: invoice.id,
+                    invoiceNo: invoice.invoiceNo || "",
+                    customerName: invoice.customerName || "",
+                    amountApplied: finalAmount,
+                    allocationType: source.type || "CASH",
+                    sourceTempId: source.id,
+                    originalAmount: invoice.originalAmount || 0,
+                    remainingBalance: invoice.remainingBalance || 0,
+                    maxSettleableAmount: invoice.maxSettleableAmount,
+                    totalPayments: invoice.totalPayments || 0,
+                    totalMemos: invoice.totalMemos || 0,
+                    totalReturns: invoice.totalReturns || 0,
+                    transactionDate: invoice.transactionDate ? String(invoice.transactionDate) : "",
+                    dueDate: invoice.dueDate ? String(invoice.dueDate) : "",
+                    agingDays: invoice.agingDays || 0,
+                    history: invoice.history || []
+                });
+            }
+            matchCount++;
+        };
+
+        const combinedSources = [...wallet, ...credits];
+
+        // 1. EXACT MATCHES FIRST
+        for (const inv of cartInvoices) {
+            const invBal = getRemainingInvoiceBal(inv.id, getInvoiceRequiredBalance(inv));
+            if (invBal <= 0.01) continue;
+
+            const exactSource = combinedSources.find(src => {
+                const srcAmt = getRemainingWalletAmt(src.id, src.originalAmount);
+                return Math.abs(srcAmt - invBal) <= 0.01 && src.type !== 'EWT';
+            });
+
+            if (exactSource) {
+                const srcAmt = getRemainingWalletAmt(exactSource.id, exactSource.originalAmount);
+                allocateSim(inv, exactSource, srcAmt);
+            }
+        }
+
+        // 2. REFERENCE/NAME MATCHING
+        for (const inv of cartInvoices) {
+            const invBal = getRemainingInvoiceBal(inv.id, getInvoiceRequiredBalance(inv));
+            if (invBal <= 0.01) continue;
+
+            const matchingSource = combinedSources.find(src => {
+                const srcAmt = getRemainingWalletAmt(src.id, src.originalAmount);
+                if (srcAmt <= 0.01) return false;
+                return src.label.toLowerCase().includes(inv.invoiceNo.toLowerCase());
+            });
+
+            if (matchingSource) {
+                const srcAmt = getRemainingWalletAmt(matchingSource.id, matchingSource.originalAmount);
+                const allocationAmt = Math.min(invBal, srcAmt);
+                allocateSim(inv, matchingSource, allocationAmt);
+            }
+        }
+
+        // 3. FIFO / AGING MATCHING
+        const sortedInvoices = [...cartInvoices].sort((a, b) => (b.agingDays || 0) - (a.agingDays || 0));
+        for (const src of combinedSources) {
+            if (src.type === 'EWT' || src.type === 'ADJUSTMENT') continue;
+
+            let srcAmt = getRemainingWalletAmt(src.id, src.originalAmount);
+            if (srcAmt <= 0.01) continue;
+
+            for (const inv of sortedInvoices) {
+                const invBal = getRemainingInvoiceBal(inv.id, getInvoiceRequiredBalance(inv));
+                if (invBal <= 0.01) continue;
+
+                const allocationAmt = Math.min(invBal, srcAmt);
+                allocateSim(inv, src, allocationAmt);
+                srcAmt -= allocationAmt;
+
+                if (srcAmt <= 0.01) break;
+            }
+        }
+
+        if (matchCount > 0) {
+            setAllocations(tempAllocations);
+            toast.success(`Successfully auto-allocated ${matchCount} payment sources!`);
+        } else {
+            toast.info("No matching allocations found.");
+        }
+    };
 
     const pouchTotal = useMemo(() => wallet.filter(w => w.type === 'CASH' || w.type === 'CHECK').reduce((sum, w) => sum + w.originalAmount, 0), [wallet]);
     const ewtTotal = useMemo(() => wallet.filter(w => w.type === 'EWT').reduce((sum, w) => sum + w.originalAmount, 0), [wallet]);
@@ -160,11 +377,32 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
         return source?.balanceTypeId === 1 ? sum - a.amountApplied : sum + a.amountApplied;
     }, 0), [allocations, wallet]);
 
-    const remainingToAllocate = (pouchTotal + ewtTotal + varianceTotal) - totalAllocated;
-    const cartTotalBalance = useMemo(() => cartInvoices.reduce((sum, inv) => sum + (inv.remainingBalance || 0), 0), [cartInvoices]);
-    const cartTotalAppliedSession = useMemo(() => allocations.reduce((sum, a) => sum + a.amountApplied, 0), [allocations]);
+    const remainingToAllocate = Math.round(((pouchTotal + ewtTotal + varianceTotal) - totalAllocated) * 100) / 100;
+    const cartBalanceTotals = getCartBalanceTotals(cartInvoices, allocations);
+    const cartTotalBalance = cartBalanceTotals.required;
+    const cartTotalAppliedSession = cartBalanceTotals.applied;
+    const underAllocatedInvoice = findUnderAllocatedInvoice(cartInvoices, allocations);
+    const overAllocatedInvoice = findOverAllocatedInvoice(cartInvoices, allocations);
+    const isCartBalanced = !underAllocatedInvoice
+        && !overAllocatedInvoice
+        && Math.abs(cartBalanceTotals.difference) <= SETTLEMENT_BALANCE_TOLERANCE;
+    const isPouchBalanced = Math.abs(remainingToAllocate) <= 0.01;
+    const isCommitReady = isPouchBalanced && isCartBalanced;
+    const cartBalanceMessage = underAllocatedInvoice
+        ? `Invoice ${underAllocatedInvoice.invoiceNo} still has ₱${(
+            getInvoiceRequiredBalance(underAllocatedInvoice)
+            - getInvoiceAppliedForSettlement(allocations, underAllocatedInvoice.id)
+        ).toLocaleString(undefined, { minimumFractionDigits: 2 })} unallocated. Apply the balance or remove it from the cart.`
+        : overAllocatedInvoice
+            ? `The allocation for ${overAllocatedInvoice.invoiceNo} exceeds its remaining balance.`
+            : `Settlement cart is not balanced. ₱${Math.abs(cartBalanceTotals.difference).toLocaleString(undefined, { minimumFractionDigits: 2 })} remains unallocated.`;
 
     const handleMasterSave = async () => {
+        if (!isCommitReady) {
+            toast.error(!isCartBalanced ? `Cannot commit: ${cartBalanceMessage}` : "Cannot commit: the pouch allocation is not balanced.");
+            return;
+        }
+
         setIsSubmitting(true);
         const success = await submitSettlement();
         if (success) {
@@ -173,6 +411,22 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
         } else {
             setIsSubmitting(false);
         }
+    };
+
+    const handlePartialSave = async () => {
+        setIsPartialSaving(true);
+        const success = await savePartialSettlement();
+        if (success) {
+            setIsSuccess(true);
+            setTimeout(() => { if (onClose) onClose(true); }, 1200);
+        } else {
+            setIsPartialSaving(false);
+        }
+    };
+
+    const handleClearCart = async () => {
+        const cleared = await clearCart();
+        if (cleared) onChanged?.();
     };
 
     const handleCreateAdjustment = async () => {
@@ -203,7 +457,7 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
 
     const handleInvoiceDiscrepancy = (inv: UnpaidInvoice) => {
         const appliedSession = getInvoiceApplied(inv.id);
-        const remaining = Number(inv.remainingBalance ?? inv.originalAmount ?? 0);
+        const remaining = getInvoiceRequiredBalance(inv);
         const discrepancy = remaining - appliedSession;
         if (discrepancy <= 0.01) return toast.error(`Cannot accept a variance adjustment. Variance: ₱${discrepancy.toFixed(2)}`);
         setAdjAmount(Math.abs(discrepancy).toFixed(2));
@@ -213,7 +467,7 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
     };
 
     const handleAutoCalculateEWT = (inv: UnpaidInvoice) => {
-        const netOfVat = inv.remainingBalance / 1.12;
+        const netOfVat = getInvoiceRequiredBalance(inv) / 1.12;
         const refNo = prompt(`Generate Form 2307 for ${inv.invoiceNo}\n\nEnter Reference Number:`, `2307-${inv.invoiceNo}`);
         if (refNo) createEwt(netOfVat * 0.01, refNo, inv.id);
     };
@@ -237,6 +491,20 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
     const handlePrintAdjustments = () => {
         generateAdjustmentPDF(wallet, findings, allocations, docNo, salesmanName);
     };
+
+    const handlePrintReceipt = () => {
+        printSettlementReceiptA4(wallet, allocations, docNo, salesmanName, collectionDate, isPosted, companyProfile);
+    };
+
+    const filteredWallet = useMemo(() => {
+        if (!poolSearch) return wallet;
+        const searchLower = poolSearch.toLowerCase();
+        return wallet.filter(w => 
+            w.label.toLowerCase().includes(searchLower) ||
+            w.type.toLowerCase().includes(searchLower) ||
+            (w.customerName && w.customerName.toLowerCase().includes(searchLower))
+        );
+    }, [wallet, poolSearch]);
 
     if (isLoading) return <div className="p-10 flex h-full items-center justify-center text-center animate-pulse font-bold text-muted-foreground uppercase tracking-widest">Initializing Command Center...</div>;
 
@@ -303,21 +571,36 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                         </Button>
                     )}
 
-                    {isPosted ? (
-                        <Button onClick={() => window.print()} variant="outline" size="sm" className="flex-1 lg:flex-none font-black text-[10px] uppercase tracking-widest shadow-sm border-primary text-primary hover:bg-primary/10 h-8">
-                            <Printer size={12} className="mr-1.5"/> Print Receipt
+                    <Button onClick={handlePrintReceipt} disabled={isSubmitting} variant="outline" size="sm" className="flex-1 lg:flex-none font-black text-[10px] uppercase tracking-widest shadow-sm border-primary text-primary hover:bg-primary/10 h-8">
+                        <Printer size={12} className="mr-1.5"/> Print Receipt
+                    </Button>
+
+                    {!isPosted && (
+                        <>
+                        <Button
+                            onClick={handlePartialSave}
+                            disabled={!hasPartialChanges || isSubmitting || isPartialSaving || isSuccess}
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 lg:flex-none font-black text-[10px] uppercase tracking-widest shadow-sm border-amber-500 text-amber-700 hover:bg-amber-50 h-8"
+                        >
+                            {isSuccess ? (
+                                <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5"/> Saved!</span>
+                            ) : isPartialSaving ? (
+                                <span className="flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin"/> Saving...</span>
+                            ) : (
+                                <span className="flex items-center gap-1.5"><Save className="w-3.5 h-3.5"/> Save Partial</span>
+                            )}
                         </Button>
-                    ) : (
                         <Button
                             onClick={handleMasterSave}
-                            disabled={remainingToAllocate < -0.01 || isSubmitting || isSuccess}
+                            disabled={!isCommitReady || isSubmitting || isPartialSaving || isSuccess}
                             size="sm"
                             className={cn(
                                 "flex-1 lg:flex-none font-black text-[10px] uppercase tracking-widest shadow-sm transition-all duration-300 h-8 overflow-hidden relative",
                                 isSuccess ? "bg-emerald-500 hover:bg-emerald-600 text-white scale-105 shadow-emerald-500/50" :
                                     isSubmitting ? "bg-primary/80 cursor-wait" :
-                                        remainingToAllocate < -0.01 ? 'bg-destructive hover:bg-destructive/90 text-white' :
-                                            (remainingToAllocate > 0.01 ? 'bg-orange-600 hover:bg-orange-700 text-white' : 'bg-primary')
+                                        !isCommitReady ? 'bg-muted text-muted-foreground' : 'bg-primary'
                             )}
                         >
                             {isSuccess ? (
@@ -327,10 +610,11 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                             ) : (
                                 <span className="flex items-center gap-1.5">
                                     <Save className="w-3.5 h-3.5" />
-                                    {remainingToAllocate < -0.01 ? "Over-Allocated!" : (remainingToAllocate > 0.01 ? "Save Partial" : "Commit")}
+                                    {!isPouchBalanced ? "Balance Pouch" : (!isCartBalanced ? "Balance Cart" : "Commit")}
                                 </span>
                             )}
                         </Button>
+                        </>
                     )}
                 </div>
             </div>
@@ -338,52 +622,55 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
             {/* MAIN WORKSPACE - NOW 3 COLUMNS */}
             <div className={cn(
                 "flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-3 p-3 lg:p-4 overflow-y-auto lg:overflow-hidden transition-all duration-500",
-                (isSubmitting || isSuccess) ? "opacity-60 blur-[1px] pointer-events-none grayscale-[20%]" : "opacity-100"
+                (isSubmitting || isPartialSaving || isSuccess) ? "opacity-60 blur-[1px] pointer-events-none grayscale-[20%]" : "opacity-100"
             )}>
                 {/* LEFT SIDEBAR: WALLET & CREDITS (col-span-3) */}
                 <div className="col-span-1 lg:col-span-3 flex flex-col gap-3 overflow-hidden lg:h-full">
                     <div className="bg-card rounded-xl border border-border shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
-                        <div className="bg-emerald-500/10 py-2 px-3 border-b border-emerald-500/20 flex justify-between items-center shrink-0">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5"><Wallet size={12}/> Liquidation Pool</span>
-                            {!isPosted && (
-                                <div className="flex gap-1.5">
-                                    <Popover open={ewtOpen} onOpenChange={setEwtOpen}>
-                                        <PopoverTrigger asChild><Button size="sm" variant="outline" className="h-5 text-[8px] px-1.5 font-black uppercase tracking-widest text-teal-600 border-teal-200 hover:bg-teal-50 gap-1"><Plus size={8} strokeWidth={3}/> Form 2307</Button></PopoverTrigger>
-                                        <PopoverContent className="w-[280px] p-4 space-y-3 shadow-xl border-teal-200" align="start">
-                                            <div className="space-y-0.5 mb-2 border-b border-border/50 pb-2"><h4 className="font-black text-xs text-foreground flex items-center gap-1.5"><FileText size={14} className="text-teal-500"/> Pooled EWT</h4><p className="text-[9px] font-bold text-muted-foreground leading-tight">Add a Form 2307 that can be distributed across multiple invoices.</p></div>
-                                            <div className="space-y-2">
-                                                <div className="flex flex-col gap-1"><label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Amount (₱)</label><Input type="number" placeholder="0.00" value={globalEwtAmount} onChange={(e) => setGlobalEwtAmount(e.target.value)} className="h-7 text-xs"/></div>
-                                                <div className="flex flex-col gap-1"><label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Reference No.</label><Input placeholder="E.g. 2307-XXX" value={globalEwtRef} onChange={(e) => setGlobalEwtRef(e.target.value)} className="h-7 text-xs"/></div>
-                                                <Button className="w-full mt-1 h-7 text-[9px] font-black uppercase tracking-widest bg-teal-600 hover:bg-teal-700 text-white" onClick={handleCreateGlobalEwt}>Add to Pouch</Button>
-                                            </div>
-                                        </PopoverContent>
-                                    </Popover>
-                                    <Popover open={adjOpen} onOpenChange={setAdjOpen}>
-                                        <PopoverTrigger asChild><Button onClick={() => { setAdjInvoiceId(null); setAdjAmount(""); setAdjRemarks(""); setAdjBalanceType(2); setAdjCoaId(""); }} size="sm" variant="outline" className="h-5 text-[8px] px-1.5 font-black uppercase tracking-widest text-purple-600 border-purple-200 hover:bg-purple-50 gap-1"><Plus size={8} strokeWidth={3}/> Variance</Button></PopoverTrigger>
-                                        <PopoverContent className="w-[280px] p-4 space-y-3 shadow-xl border-purple-200" align="start">
-                                            <div className="space-y-0.5 mb-2 border-b border-border/50 pb-2"><h4 className="font-black text-xs text-foreground flex items-center gap-1.5"><Wallet size={14} className="text-purple-500"/> Record Variance</h4><p className="text-[9px] font-bold text-muted-foreground leading-tight">Select whether this increases assets or decreases them.</p></div>
-                                            <div className="space-y-2">
-                                                <div className="flex flex-col gap-1">
-                                                    <label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Type</label>
-                                                    <div className="flex gap-1.5">
-                                                        <Button variant={adjBalanceType === 2 ? "default" : "outline"} onClick={() => setAdjBalanceType(2)} className={`h-7 w-1/2 text-[10px] font-bold ${adjBalanceType === 2 ? 'bg-purple-600 text-white' : 'text-muted-foreground'}`}>Shortage (Cr)</Button>
-                                                        <Button variant={adjBalanceType === 1 ? "default" : "outline"} onClick={() => setAdjBalanceType(1)} className={`h-7 w-1/2 text-[10px] font-bold ${adjBalanceType === 1 ? 'bg-red-600 text-white' : 'text-muted-foreground'}`}>Overage (Dr)</Button>
-                                                    </div>
+                        <div className="bg-emerald-500/10 py-2 px-3 border-b border-emerald-500/20 flex flex-col gap-1.5 shrink-0">
+                            <div className="flex justify-between items-center">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5"><Wallet size={12}/> Liquidation Pool</span>
+                                {!isPosted && (
+                                    <div className="flex gap-1.5">
+                                        <Popover open={ewtOpen} onOpenChange={setEwtOpen}>
+                                            <PopoverTrigger asChild><Button size="sm" variant="outline" className="h-5 text-[8px] px-1.5 font-black uppercase tracking-widest text-teal-600 border-teal-200 hover:bg-teal-50 gap-1"><Plus size={8} strokeWidth={3}/> Form 2307</Button></PopoverTrigger>
+                                            <PopoverContent className="w-[280px] p-4 space-y-3 shadow-xl border-teal-200" align="start">
+                                                <div className="space-y-0.5 mb-2 border-b border-border/50 pb-2"><h4 className="font-black text-xs text-foreground flex items-center gap-1.5"><FileText size={14} className="text-teal-500"/> Pooled EWT</h4><p className="text-[9px] font-bold text-muted-foreground leading-tight">Add a Form 2307 that can be distributed across multiple invoices.</p></div>
+                                                <div className="space-y-2">
+                                                    <div className="flex flex-col gap-1"><label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Amount (₱)</label><Input type="number" placeholder="0.00" value={globalEwtAmount} onChange={(e) => setGlobalEwtAmount(e.target.value)} className="h-7 text-xs"/></div>
+                                                    <div className="flex flex-col gap-1"><label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Reference No.</label><Input placeholder="E.g. 2307-XXX" value={globalEwtRef} onChange={(e) => setGlobalEwtRef(e.target.value)} className="h-7 text-xs"/></div>
+                                                    <Button className="w-full mt-1 h-7 text-[9px] font-black uppercase tracking-widest bg-teal-600 hover:bg-teal-700 text-white" onClick={handleCreateGlobalEwt}>Add to Pouch</Button>
                                                 </div>
-                                                <div className="flex flex-col gap-1"><label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Category</label><Popover open={adjCoaOpen} onOpenChange={setAdjCoaOpen}><PopoverTrigger asChild><Button variant="outline" role="combobox" className={cn("w-full h-7 justify-between text-xs font-bold bg-background", !adjCoaId && "text-muted-foreground border-dashed border-primary/50")}><span className="truncate flex items-center gap-1.5"><Layers size={12}/>{adjCoaId ? uniqueCategories.find((c) => c.id === adjCoaId)?.title : "Select..."}</span><ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-50"/></Button></PopoverTrigger><PopoverContent className="w-[260px] p-0" align="start"><Command><CommandInput placeholder="Search..." className="text-xs h-7"/><CommandList className="max-h-[200px] overflow-y-auto" onWheelCapture={(e) => e.stopPropagation()}><CommandEmpty>No categories found.</CommandEmpty><CommandGroup>{uniqueCategories.map((coa) => ( <CommandItem key={coa.id} value={coa.title} onSelect={() => { setAdjCoaId(coa.id); setAdjFindingId(""); setAdjCoaOpen(false); }} className="text-[11px] cursor-pointer py-1"><Check className={cn("mr-1.5 h-3 w-3 text-primary", adjCoaId === coa.id ? "opacity-100" : "opacity-0")}/>{coa.title}</CommandItem> ))}</CommandGroup></CommandList></Command></PopoverContent></Popover></div>
-                                                <div className="flex flex-col gap-1"><label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Reason</label><Popover open={adjAccountOpen} onOpenChange={setAdjAccountOpen}><PopoverTrigger asChild><Button variant="outline" role="combobox" disabled={!adjCoaId} className={cn("w-full h-7 justify-between text-xs font-bold bg-background", !adjFindingId && "text-muted-foreground border-dashed border-primary/50")}><span className="truncate pl-5">{adjFindingId ? filteredFindings.find((f) => f.id === adjFindingId)?.findingName : "Select reason..."}</span><ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-50"/></Button></PopoverTrigger><PopoverContent className="w-[260px] p-0" align="start"><Command><CommandInput placeholder="Search reason..." className="text-xs h-7"/><CommandList className="max-h-[250px] overflow-y-auto" onWheelCapture={(e) => e.stopPropagation()}><CommandEmpty>No findings under this category.</CommandEmpty><CommandGroup>{filteredFindings.map((f) => ( <CommandItem key={f.id} value={f.findingName} onSelect={() => { setAdjFindingId(f.id); setAdjAccountOpen(false); }} className="text-[11px] cursor-pointer py-1"><Check className={cn("mr-1.5 h-3 w-3 text-primary", adjFindingId === f.id ? "opacity-100" : "opacity-0")}/>{f.findingName}</CommandItem> ))}</CommandGroup></CommandList></Command></PopoverContent></Popover></div>
-                                                <div className="flex flex-col gap-1"><label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Amount (₱)</label><Input type="number" placeholder="0.00" value={adjAmount} onChange={(e) => setAdjAmount(e.target.value)} className="h-7 text-xs"/></div>
-                                                <div className="flex flex-col gap-1"><label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Remarks</label><Input placeholder="Reason for variance" value={adjRemarks} onChange={(e) => setAdjRemarks(e.target.value)} className="h-7 text-xs"/></div>
-                                                <Button className="w-full mt-1 h-7 text-[9px] font-black uppercase tracking-widest bg-purple-600 hover:bg-purple-700 text-white" disabled={!adjFindingId || adjAmount === "" || parseFloat(adjAmount) === 0 || isNaN(parseFloat(adjAmount)) || isCreatingAdj} onClick={handleCreateAdjustment}>{isCreatingAdj ? <Loader2 size={12} className="animate-spin"/> : "Inject into Pouch"}</Button>
-                                            </div>
-                                        </PopoverContent>
-                                    </Popover>
-                                </div>
-                            )}
+                                            </PopoverContent>
+                                        </Popover>
+                                        <Popover open={adjOpen} onOpenChange={setAdjOpen}>
+                                            <PopoverTrigger asChild><Button onClick={() => { setAdjInvoiceId(null); setAdjAmount(""); setAdjRemarks(""); setAdjBalanceType(2); setAdjCoaId(""); }} size="sm" variant="outline" className="h-5 text-[8px] px-1.5 font-black uppercase tracking-widest text-purple-600 border-purple-200 hover:bg-purple-50 gap-1"><Plus size={8} strokeWidth={3}/> Variance</Button></PopoverTrigger>
+                                            <PopoverContent className="w-[280px] p-4 space-y-3 shadow-xl border-purple-200" align="start">
+                                                <div className="space-y-0.5 mb-2 border-b border-border/50 pb-2"><h4 className="font-black text-xs text-foreground flex items-center gap-1.5"><Wallet size={14} className="text-purple-500"/> Record Variance</h4><p className="text-[9px] font-bold text-muted-foreground leading-tight">Select whether this increases assets or decreases them.</p></div>
+                                                <div className="space-y-2">
+                                                    <div className="flex flex-col gap-1">
+                                                        <label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Type</label>
+                                                        <div className="flex gap-1.5">
+                                                            <Button variant={adjBalanceType === 2 ? "default" : "outline"} onClick={() => setAdjBalanceType(2)} className={`h-7 w-1/2 text-[10px] font-bold ${adjBalanceType === 2 ? 'bg-purple-600 text-white' : 'text-muted-foreground'}`}>Shortage (Cr)</Button>
+                                                            <Button variant={adjBalanceType === 1 ? "default" : "outline"} onClick={() => setAdjBalanceType(1)} className={`h-7 w-1/2 text-[10px] font-bold ${adjBalanceType === 1 ? 'bg-red-600 text-white' : 'text-muted-foreground'}`}>Overage (Dr)</Button>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex flex-col gap-1"><label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Category</label><Popover open={adjCoaOpen} onOpenChange={setAdjCoaOpen}><PopoverTrigger asChild><Button variant="outline" role="combobox" className={cn("w-full h-7 justify-between text-xs font-bold bg-background", !adjCoaId && "text-muted-foreground border-dashed border-primary/50")}><span className="truncate flex items-center gap-1.5"><Layers size={12}/>{adjCoaId ? uniqueCategories.find((c) => c.id === adjCoaId)?.title : "Select..."}</span><ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-50"/></Button></PopoverTrigger><PopoverContent className="w-[260px] p-0" align="start"><Command><CommandInput placeholder="Search..." className="text-xs h-7"/><CommandList className="max-h-[200px] overflow-y-auto" onWheelCapture={(e) => e.stopPropagation()}><CommandEmpty>No categories found.</CommandEmpty><CommandGroup>{uniqueCategories.map((coa) => ( <CommandItem key={coa.id} value={coa.title} onSelect={() => { setAdjCoaId(coa.id); setAdjFindingId(""); setAdjCoaOpen(false); }} className="text-[11px] cursor-pointer py-1"><Check className={cn("mr-1.5 h-3 w-3 text-primary", adjCoaId === coa.id ? "opacity-100" : "opacity-0")}/>{coa.title}</CommandItem> ))}</CommandGroup></CommandList></Command></PopoverContent></Popover></div>
+                                                    <div className="flex flex-col gap-1"><label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Reason</label><Popover open={adjAccountOpen} onOpenChange={setAdjAccountOpen}><PopoverTrigger asChild><Button variant="outline" role="combobox" disabled={!adjCoaId} className={cn("w-full h-7 justify-between text-xs font-bold bg-background", !adjFindingId && "text-muted-foreground border-dashed border-primary/50")}><span className="truncate pl-5">{adjFindingId ? filteredFindings.find((f) => f.id === adjFindingId)?.findingName : "Select reason..."}</span><ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-50"/></Button></PopoverTrigger><PopoverContent className="w-[260px] p-0" align="start"><Command><CommandInput placeholder="Search reason..." className="text-xs h-7"/><CommandList className="max-h-[250px] overflow-y-auto" onWheelCapture={(e) => e.stopPropagation()}><CommandEmpty>No findings under this category.</CommandEmpty><CommandGroup>{filteredFindings.map((f) => ( <CommandItem key={f.id} value={f.findingName} onSelect={() => { setAdjFindingId(f.id); setAdjAccountOpen(false); }} className="text-[11px] cursor-pointer py-1"><Check className={cn("mr-1.5 h-3 w-3 text-primary", adjFindingId === f.id ? "opacity-100" : "opacity-0")}/>{f.findingName}</CommandItem> ))}</CommandGroup></CommandList></Command></PopoverContent></Popover></div>
+                                                    <div className="flex flex-col gap-1"><label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Amount (₱)</label><Input type="number" placeholder="0.00" value={adjAmount} onChange={(e) => setAdjAmount(e.target.value)} className="h-7 text-xs"/></div>
+                                                    <div className="flex flex-col gap-1"><label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Remarks</label><Input placeholder="Reason for variance" value={adjRemarks} onChange={(e) => setAdjRemarks(e.target.value)} className="h-7 text-xs"/></div>
+                                                    <Button className="w-full mt-1 h-7 text-[9px] font-black uppercase tracking-widest bg-purple-600 hover:bg-purple-700 text-white" disabled={!adjFindingId || adjAmount === "" || parseFloat(adjAmount) === 0 || isNaN(parseFloat(adjAmount)) || isCreatingAdj} onClick={handleCreateAdjustment}>{isCreatingAdj ? <Loader2 size={12} className="animate-spin"/> : "Inject into Pouch"}</Button>
+                                                </div>
+                                            </PopoverContent>
+                                        </Popover>
+                                    </div>
+                                )}
+                            </div>
+                            <Input placeholder="Search liquidation pool..." value={poolSearch} onChange={(e) => setPoolSearch(e.target.value)} className="h-6 text-[10px] font-bold shadow-inner bg-background border-emerald-200 focus-visible:ring-emerald-500 px-2"/>
                         </div>
 
                         <div className="p-2 flex-1 overflow-y-auto space-y-1.5 scrollbar-thin">
-                            {wallet.map(w => (
+                            {filteredWallet.map(w => (
                                 <WalletAssetCard
                                     key={w.id} item={w} getUsedAmount={getUsedAmount}
                                     editingId={editingId} setEditingId={setEditingId} editAmt={editAmt} setEditAmt={setEditAmt}
@@ -400,7 +687,14 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                     <div className="bg-card rounded-xl border border-border shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
                         <div className="bg-purple-500/10 py-2 px-3 border-b border-purple-500/20 flex flex-col gap-1.5 shrink-0">
                             <div className="flex justify-between items-center">
-                                <span className="text-[10px] font-black uppercase tracking-widest text-purple-700 dark:text-purple-400 flex items-center gap-1.5"><Percent size={12}/> Available Credits</span>
+                                <span className="text-[10px] font-black uppercase tracking-widest text-purple-700 dark:text-purple-400 flex items-center gap-1.5">
+                                    <Percent size={12}/> Available Credits
+                                    {filteredCredits.length > 0 && (
+                                        <Badge className="ml-1.5 bg-purple-600 hover:bg-purple-700 text-white font-black text-[9px] px-1.5 h-4 py-0 leading-none shrink-0 animate-bounce">
+                                            {filteredCredits.length} Suggested
+                                        </Badge>
+                                    )}
+                                </span>
                                 {!isPosted && (
                                     <Popover>
                                         <PopoverTrigger asChild>
@@ -435,6 +729,14 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                             <Input placeholder="Search local pool..." value={creditSearch} onChange={(e) => setCreditSearch(e.target.value)} className="h-6 text-[10px] font-bold shadow-inner bg-background border-purple-200 focus-visible:ring-purple-500 px-2"/>
                         </div>
                         <div className="p-2 flex-1 overflow-y-auto space-y-1.5 scrollbar-thin">
+                            {creditsError && !isLoadingCredits && (
+                                <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-center dark:border-amber-900/50 dark:bg-amber-950/20">
+                                    <p className="text-[9px] font-bold text-amber-700 dark:text-amber-300">{creditsError}</p>
+                                    <Button type="button" variant="outline" size="sm" className="mt-1 h-6 text-[9px] font-black uppercase tracking-widest text-amber-700 border-amber-300" onClick={retryCredits}>
+                                        Retry
+                                    </Button>
+                                </div>
+                            )}
                             {isLoadingCredits ? (
                                 <div className="flex flex-col items-center justify-center h-full py-8">
                                     <Loader2 size={20} className="animate-spin text-purple-500 mb-2"/>
@@ -443,9 +745,10 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                             ) : filteredCredits.length === 0 ? (
                                 <p className="text-[10px] text-center text-muted-foreground font-bold uppercase pt-6 italic">No matching credits</p>
                             ) : (
-                                filteredCredits.map(c => {
+                                <>
+                                {filteredCredits.map(c => {
                                     const used = c.originalAmount > 0 ? getUsedAmount(c.id) : 0;
-                                    const remaining = c.originalAmount - used;
+                                    const remaining = getSourceAllocationCapacity(c.originalAmount, used);
                                     const isExhausted = c.originalAmount > 0 && remaining <= 0;
                                     return (
                                         <div key={`source-${c.id}`} className={`p-2 rounded-md border shadow-sm transition-all group ${isExhausted ? 'bg-muted/30 border-dashed opacity-60' : 'bg-background border-border border-l-[3px] border-l-purple-500'}`}>
@@ -460,7 +763,21 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                                             </div>
                                         </div>
                                     );
-                                })
+                                })}
+                                {hasMoreCredits && (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="w-full h-7 text-[9px] font-black uppercase tracking-widest text-purple-700 border-purple-200"
+                                        disabled={isLoadingCredits}
+                                        onClick={loadMoreCredits}
+                                    >
+                                        {isLoadingCredits ? <Loader2 size={12} className="mr-1 animate-spin"/> : null}
+                                        Load More Returns
+                                    </Button>
+                                )}
+                                </>
                             )}
                         </div>
                     </div>
@@ -476,6 +793,14 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                             <div className="flex gap-1.5 items-center">
                                 {!isPosted && (
                                     <>
+                                        <Button 
+                                            onClick={handleSmartMatch} 
+                                            variant="outline" 
+                                            size="sm" 
+                                            className="h-6 text-[8px] uppercase font-black tracking-widest border-purple-300 text-purple-700 dark:text-purple-400 hover:bg-purple-500/10 px-2.5"
+                                        >
+                                            <Wand2 size={10} className="mr-1 text-purple-500"/> Smart Match
+                                        </Button>
                                         <Button onClick={loadRouteInvoices} disabled={isLoadingRoute} variant="secondary" size="sm" className="h-6 text-[8px] uppercase font-black tracking-widest bg-blue-100 hover:bg-blue-200 text-blue-700 px-2.5">{isLoadingRoute ? <Loader2 size={10} className="mr-1 animate-spin"/> : <Truck size={10} className="mr-1"/>}Load Route</Button>
                                         <Popover open={routePopoverOpen} onOpenChange={setRoutePopoverOpen}>
                                             <PopoverTrigger asChild><Button variant="outline" size="sm" className="h-6 text-[8px] uppercase font-black tracking-widest border-blue-200 text-blue-700 hover:bg-blue-50 px-2.5">{isLoadingPlans ? <Loader2 size={10} className="mr-1 animate-spin"/> : <MapPin size={10} className="mr-1"/>}Dispatch Plan <ChevronDown size={10} className="ml-1" /></Button></PopoverTrigger>
@@ -503,12 +828,12 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                                         </Popover>
                                     </>
                                 )}
-                                {!isPosted && cartInvoices.length > 0 && <Button onClick={clearCart} variant="ghost" size="sm" className="h-6 text-[8px] uppercase font-black tracking-widest text-destructive hover:bg-destructive/10 px-2.5"><Trash2 size={10} className="mr-1"/> Clear Cart</Button>}
+                    {!isPosted && hasClearableCart && <Button onClick={handleClearCart} disabled={isClearing || isSubmitting || isPartialSaving || isSuccess} variant="ghost" size="sm" className="h-6 text-[8px] uppercase font-black tracking-widest text-destructive hover:bg-destructive/10 px-2.5">{isClearing ? <Loader2 size={10} className="mr-1 animate-spin"/> : <Trash2 size={10} className="mr-1"/>}{isClearing ? "Clearing..." : "Clear Cart"}</Button>}
                             </div>
                         </div>
 
                         {!isPosted && (
-                            <InvoiceSearchPopover searchOpen={searchOpen} setSearchOpen={setSearchOpen} searchQuery={searchQuery} setSearchQuery={setSearchQuery} isSearching={isSearching} searchResults={searchResults} addToCart={addToCart} />
+                            <InvoiceSearchPopover searchOpen={searchOpen} setSearchOpen={setSearchOpen} searchQuery={searchQuery} setSearchQuery={setSearchQuery} isSearching={isSearching} searchResults={searchResults} searchError={searchError} searchHasMore={searchHasMore} addToCart={addToCart} loadMoreSearchResults={loadMoreSearchResults} />
                         )}
                     </div>
 

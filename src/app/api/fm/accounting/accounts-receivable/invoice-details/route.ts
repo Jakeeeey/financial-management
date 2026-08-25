@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import {
+  getCachedDiscountTypes,
+  getCachedUnits,
+  type DiscountTypeMaster,
+  type UnitMaster,
+} from './_masterCache';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,12 +30,8 @@ interface SalesInvoiceHeader {
   discount_amount?: number | null;
   net_amount?: number | null;
   remarks?: string | null;
-  salesman_id?: {
-    salesman_name?: string;
-  } | null;
-  branch_id?: {
-    branch_name?: string;
-  } | null;
+  salesman_id?: { salesman_name?: string } | null;
+  branch_id?: { branch_name?: string } | null;
 }
 
 interface ProductRow {
@@ -60,15 +62,8 @@ interface SalesInvoiceDetail {
   } | number | null;
 }
 
-interface BrandMaster {
-  brand_id: number;
-  brand_name?: string;
-}
-
-interface CategoryMaster {
-  category_id: number;
-  category_name?: string;
-}
+interface BrandMaster { brand_id: number; brand_name?: string; }
+interface CategoryMaster { category_id: number; category_name?: string; }
 
 interface SalesInvoicePayment {
   id: number;
@@ -76,13 +71,8 @@ interface SalesInvoicePayment {
   reference_no?: string | null;
   paid_amount: number;
   date_paid: string;
-  coa_id?: {
-    gl_code?: string;
-    account_title?: string;
-  } | null;
-  bank_id?: {
-    bank_name?: string;
-  } | null;
+  coa_id?: { gl_code?: string; account_title?: string } | null;
+  bank_id?: { bank_name?: string } | null;
 }
 
 interface CustomerMemoInvoice {
@@ -90,12 +80,7 @@ interface CustomerMemoInvoice {
   invoice_id: number;
   amount: number;
   date_applied: string;
-  memo_id?: {
-    memo_number?: string;
-    type?: number | null;
-    reason?: string;
-    status?: string;
-  } | null;
+  memo_id?: { memo_number?: string; type?: number | null; reason?: string; status?: string } | null;
 }
 
 interface SalesInvoiceSalesReturn {
@@ -124,27 +109,9 @@ interface UnfulfilledSalesTransaction {
   created_at?: string | null;
 }
 
-interface UnitMaster {
-  unit_id: number;
-  unit_name?: string;
-  unit_shortcut?: string;
-  order?: number | null;
-  sku_code?: string | null;
-}
-
-interface DiscountTypeMaster {
-  id: number;
-  discount_type?: string;
-  total_percent?: string | number;
-}
-
 async function directusFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  if (!DIRECTUS_URL) {
-    throw new Error('DIRECTUS_URL is not configured.');
-  }
-  if (!DIRECTUS_STATIC_TOKEN) {
-    throw new Error('DIRECTUS_STATIC_TOKEN is not configured.');
-  }
+  if (!DIRECTUS_URL) throw new Error('DIRECTUS_URL is not configured.');
+  if (!DIRECTUS_STATIC_TOKEN) throw new Error('DIRECTUS_STATIC_TOKEN is not configured.');
 
   const res = await fetch(url, {
     ...init,
@@ -160,8 +127,21 @@ async function directusFetch<T>(url: string, init?: RequestInit): Promise<T> {
     const text = await res.text();
     throw new Error(`Directus responded with status ${res.status}: ${text}`);
   }
-
   return res.json() as Promise<T>;
+}
+
+async function fetchUnitsByIds(ids: number[]): Promise<UnitMaster[]> {
+  if (ids.length === 0) return [];
+  const url = `${DIRECTUS_URL}/items/units?filter[unit_id][_in]=${ids.join(',')}&fields=unit_id,unit_name,unit_shortcut,order,sku_code&limit=-1`;
+  const res = await directusFetch<{ data: UnitMaster[] }>(url).catch(() => ({ data: [] }));
+  return res.data || [];
+}
+
+async function fetchDiscountTypesByIds(ids: number[]): Promise<DiscountTypeMaster[]> {
+  if (ids.length === 0) return [];
+  const url = `${DIRECTUS_URL}/items/discount_type?filter[id][_in]=${ids.join(',')}&fields=id,discount_type,total_percent&limit=-1`;
+  const res = await directusFetch<{ data: DiscountTypeMaster[] }>(url).catch(() => ({ data: [] }));
+  return res.data || [];
 }
 
 export async function GET(request: NextRequest) {
@@ -169,41 +149,41 @@ export async function GET(request: NextRequest) {
   const token = cookieStore.get(COOKIE_NAME)?.value;
 
   if (!token) {
-    return NextResponse.json(
-      { ok: false, message: 'Unauthorized: Missing access token' },
-      { status: 401 }
-    );
+    return NextResponse.json({ ok: false, message: 'Unauthorized: Missing access token' }, { status: 401 });
   }
 
   const { searchParams } = new URL(request.url);
   const invoiceIdStr = searchParams.get('invoiceId');
 
   if (!invoiceIdStr) {
-    return NextResponse.json(
-      { ok: false, message: 'Bad Request: Missing invoiceId parameter' },
-      { status: 400 }
-    );
+    return NextResponse.json({ ok: false, message: 'Bad Request: Missing invoiceId parameter' }, { status: 400 });
   }
 
   const invoiceId = parseInt(invoiceIdStr, 10);
   if (isNaN(invoiceId)) {
-    return NextResponse.json(
-      { ok: false, message: 'Bad Request: Invalid invoiceId parameter' },
-      { status: 400 }
-    );
+    return NextResponse.json({ ok: false, message: 'Bad Request: Invalid invoiceId parameter' }, { status: 400 });
   }
 
   try {
-    // 1. Fetch parent sales_invoice
     const headerUrl = `${DIRECTUS_URL}/items/sales_invoice/${invoiceId}?fields=*,salesman_id.salesman_name,branch_id.branch_name`;
-    const headerRes = await directusFetch<{ data: SalesInvoiceHeader }>(headerUrl);
-    const rawHeader = headerRes.data;
+    const detailsUrl = `${DIRECTUS_URL}/items/sales_invoice_details?filter[invoice_no][_eq]=${invoiceId}&fields=detail_id,order_id,serial_no,unit_price,quantity,discount_amount,gross_amount,total_amount,unit,discount_type,product_id.*&limit=-1`;
+    const paymentsUrl = `${DIRECTUS_URL}/items/sales_invoice_payments?filter[invoice_id][_eq]=${invoiceId}&fields=*,coa_id.gl_code,coa_id.account_title,bank_id.bank_name&limit=-1`;
+    const memosUrl = `${DIRECTUS_URL}/items/customer_memo_invoices?filter[invoice_id][_eq]=${invoiceId}&fields=*,memo_id.*&limit=-1`;
+    const returnsUrl = `${DIRECTUS_URL}/items/sales_invoice_sales_return?filter[invoice_no][_eq]=${invoiceId}&fields=*,return_no.*&limit=-1`;
+    const unfulfilledUrl = `${DIRECTUS_URL}/items/unfulfilled_sales_transaction?filter[sales_invoice_id][_eq]=${invoiceId}&fields=*&limit=-1`;
 
+    const [headerRes, detailsRes, paymentsRes, memosRes, returnsRes, unfulfilledRes] = await Promise.all([
+      directusFetch<{ data: SalesInvoiceHeader }>(headerUrl),
+      directusFetch<{ data: SalesInvoiceDetail[] }>(detailsUrl),
+      directusFetch<{ data: SalesInvoicePayment[] }>(paymentsUrl).catch(() => ({ data: [] })),
+      directusFetch<{ data: CustomerMemoInvoice[] }>(memosUrl).catch(() => ({ data: [] })),
+      directusFetch<{ data: SalesInvoiceSalesReturn[] }>(returnsUrl).catch(() => ({ data: [] })),
+      directusFetch<{ data: UnfulfilledSalesTransaction[] }>(unfulfilledUrl).catch(() => ({ data: [] })),
+    ]);
+
+    const rawHeader = headerRes.data;
     if (!rawHeader) {
-      return NextResponse.json(
-        { ok: false, message: `Invoice with ID ${invoiceId} not found` },
-        { status: 404 }
-      );
+      return NextResponse.json({ ok: false, message: `Invoice with ID ${invoiceId} not found` }, { status: 404 });
     }
 
     const header = {
@@ -220,18 +200,18 @@ export async function GET(request: NextRequest) {
       total_amount: rawHeader.total_amount !== null && rawHeader.total_amount !== undefined ? Number(rawHeader.total_amount) : undefined,
       gross_amount: rawHeader.gross_amount !== null && rawHeader.gross_amount !== undefined ? Number(rawHeader.gross_amount) : undefined,
       discount_amount: rawHeader.discount_amount !== null && rawHeader.discount_amount !== undefined ? Number(rawHeader.discount_amount) : undefined,
-      net_amount: rawHeader.net_amount !== null && rawHeader.net_amount !== undefined ? Number(rawHeader.net_amount) : (rawHeader.gross_amount !== null && rawHeader.gross_amount !== undefined && rawHeader.discount_amount !== null && rawHeader.discount_amount !== undefined ? (Number(rawHeader.gross_amount) - Number(rawHeader.discount_amount)) : undefined),
+      net_amount: rawHeader.net_amount !== null && rawHeader.net_amount !== undefined
+        ? Number(rawHeader.net_amount)
+        : (rawHeader.gross_amount != null && rawHeader.discount_amount != null
+          ? Number(rawHeader.gross_amount) - Number(rawHeader.discount_amount)
+          : undefined),
       remarks: rawHeader.remarks || undefined,
       salesman_id: rawHeader.salesman_id ? { salesman_name: rawHeader.salesman_id.salesman_name } : undefined,
       branch_id: rawHeader.branch_id ? { branch_name: rawHeader.branch_id.branch_name } : undefined,
     };
 
-    // 2. Fetch sales_invoice_details
-    const detailsUrl = `${DIRECTUS_URL}/items/sales_invoice_details?filter[invoice_no][_eq]=${invoiceId}&fields=detail_id,order_id,serial_no,unit_price,quantity,discount_amount,gross_amount,total_amount,unit,discount_type,product_id.*&limit=-1`;
-    const detailsRes = await directusFetch<{ data: SalesInvoiceDetail[] }>(detailsUrl);
     const rawDetails = detailsRes.data || [];
 
-    // Extract product IDs and fetch product details in a separate lookup
     const productIds = Array.from(
       new Set(
         rawDetails
@@ -240,121 +220,93 @@ export async function GET(request: NextRequest) {
       )
     );
 
+    const unitIds = Array.from(
+      new Set(rawDetails.map(d => d.unit).filter((id): id is number => typeof id === 'number'))
+    );
+    const discountTypeIds = Array.from(
+      new Set(rawDetails.map(d => d.discount_type).filter((id): id is number => typeof id === 'number'))
+    );
+
     const productsRes = productIds.length > 0
       ? await directusFetch<{ data: ProductRow[] }>(
           `${DIRECTUS_URL}/items/products?filter[product_id][_in]=${productIds.join(',')}&fields=product_id,product_name,description,product_brand,product_category&limit=-1`
         ).catch(() => ({ data: [] }))
       : { data: [] };
+
     const productsList = productsRes.data || [];
-    const productsMap = new Map<number, ProductRow>(productsList.map((p) => [p.product_id, p]));
+    const productsMap = new Map(productsList.map((p) => [p.product_id, p]));
 
-    // Collect unique brand/category IDs from the fetched products for batch lookup
-    const brandIds    = Array.from(new Set(productsList.map((p) => p.product_brand).filter((v): v is number => typeof v === 'number')));
-    const categoryIds = Array.from(new Set(productsList.map((p) => p.product_category).filter((v): v is number => typeof v === 'number')));
+    const brandIds = Array.from(new Set(productsList.map(p => p.product_brand).filter((v): v is number => typeof v === 'number')));
+    const categoryIds = Array.from(new Set(productsList.map(p => p.product_category).filter((v): v is number => typeof v === 'number')));
 
-    const brandUrl    = brandIds.length    > 0 ? `${DIRECTUS_URL}/items/brand?filter[brand_id][_in]=${brandIds.join(',')}&fields=brand_id,brand_name&limit=-1`    : null;
-    const categoryUrl = categoryIds.length > 0 ? `${DIRECTUS_URL}/items/categories?filter[category_id][_in]=${categoryIds.join(',')}&fields=category_id,category_name&limit=-1` : null;
-
-    const paymentsUrl   = `${DIRECTUS_URL}/items/sales_invoice_payments?filter[invoice_id][_eq]=${invoiceId}&fields=*,coa_id.gl_code,coa_id.account_title,bank_id.bank_name&limit=-1`;
-    const memosUrl      = `${DIRECTUS_URL}/items/customer_memo_invoices?filter[invoice_id][_eq]=${invoiceId}&fields=*,memo_id.*&limit=-1`;
-    const returnsUrl    = `${DIRECTUS_URL}/items/sales_invoice_sales_return?filter[invoice_no][_eq]=${invoiceId}&fields=*,return_no.*&limit=-1`;
-    const unfulfilledUrl= `${DIRECTUS_URL}/items/unfulfilled_sales_transaction?filter[sales_invoice_id][_eq]=${invoiceId}&fields=*&limit=-1`;
-    const unitsUrl      = `${DIRECTUS_URL}/items/units?limit=-1`;
-    const discountTypesUrl = `${DIRECTUS_URL}/items/discount_type?limit=-1`;
-
-    const [paymentsRes, memosRes, returnsRes, unfulfilledRes, unitsRes, discountTypesRes, brandsRes, categoriesRes] = await Promise.all([
-      directusFetch<{ data: SalesInvoicePayment[]   }>(paymentsUrl).catch(() => ({ data: [] })),
-      directusFetch<{ data: CustomerMemoInvoice[]   }>(memosUrl).catch(() => ({ data: [] })),
-      directusFetch<{ data: SalesInvoiceSalesReturn[]}>(returnsUrl).catch(() => ({ data: [] })),
-      directusFetch<{ data: UnfulfilledSalesTransaction[] }>(unfulfilledUrl).catch(() => ({ data: [] })),
-      directusFetch<{ data: UnitMaster[]            }>(unitsUrl).catch(() => ({ data: [] })),
-      directusFetch<{ data: DiscountTypeMaster[]    }>(discountTypesUrl).catch(() => ({ data: [] })),
-      brandUrl    ? directusFetch<{ data: BrandMaster[]    }>(brandUrl).catch(() => ({ data: [] }))    : Promise.resolve({ data: [] as BrandMaster[] }),
-      categoryUrl ? directusFetch<{ data: CategoryMaster[] }>(categoryUrl).catch(() => ({ data: [] })) : Promise.resolve({ data: [] as CategoryMaster[] }),
+    const [unitsMap, discountTypesMap, brandsRes, categoriesRes] = await Promise.all([
+      getCachedUnits(unitIds, fetchUnitsByIds),
+      getCachedDiscountTypes(discountTypeIds, fetchDiscountTypesByIds),
+      brandIds.length > 0
+        ? directusFetch<{ data: BrandMaster[] }>(`${DIRECTUS_URL}/items/brand?filter[brand_id][_in]=${brandIds.join(',')}&fields=brand_id,brand_name&limit=-1`).catch(() => ({ data: [] }))
+        : Promise.resolve({ data: [] as BrandMaster[] }),
+      categoryIds.length > 0
+        ? directusFetch<{ data: CategoryMaster[] }>(`${DIRECTUS_URL}/items/categories?filter[category_id][_in]=${categoryIds.join(',')}&fields=category_id,category_name&limit=-1`).catch(() => ({ data: [] }))
+        : Promise.resolve({ data: [] as CategoryMaster[] }),
     ]);
 
-    const rawPayments   = paymentsRes.data   || [];
-    const rawMemos      = memosRes.data      || [];
-    const rawReturns    = returnsRes.data    || [];
-    const rawUnfulfilled= unfulfilledRes.data|| [];
+    const brandMap = new Map((brandsRes.data || []).map(b => [b.brand_id, b.brand_name || '']));
+    const categoryMap = new Map((categoriesRes.data || []).map(c => [c.category_id, c.category_name || '']));
 
-    // Build brand and category lookup maps
-    const brandMap    = new Map<number, string>((brandsRes.data    || []).map(b => [b.brand_id,    b.brand_name    || '']));
-    const categoryMap = new Map<number, string>((categoriesRes.data|| []).map(c => [c.category_id, c.category_name || '']));
+    const rawPayments = paymentsRes.data || [];
+    const rawMemos = memosRes.data || [];
+    const rawReturns = returnsRes.data || [];
+    const rawUnfulfilled = unfulfilledRes.data || [];
 
-    const unitsMap = new Map<number, UnitMaster>();
-    (unitsRes.data || []).forEach((u) => {
-      if (u.unit_id !== undefined && u.unit_id !== null) {
-        unitsMap.set(u.unit_id, u);
-      }
-    });
-
-    const discountTypesMap = new Map<number, DiscountTypeMaster>();
-    (discountTypesRes.data || []).forEach((dt) => {
-      if (dt.id !== undefined && dt.id !== null) {
-        discountTypesMap.set(dt.id, dt);
-      }
-    });
-
-    // 8. Transform and map details — join brand/category from lookup maps
     const items = rawDetails.map((item) => {
-      const unitDetailsRaw         = item.unit         ? unitsMap.get(Number(item.unit))         : null;
-      const discountTypeDetailsRaw = item.discount_type ? discountTypesMap.get(Number(item.discount_type)) : null;
-
+      const unitDetailsRaw = item.unit ? unitsMap.get(Number(item.unit)) ?? null : null;
+      const discountTypeDetailsRaw = item.discount_type ? discountTypesMap.get(Number(item.discount_type)) ?? null : null;
       const prodId = item.product_id && typeof item.product_id === 'object' ? item.product_id.product_id : Number(item.product_id);
       const prodDetails = productsMap.get(prodId);
-
-      const brandName    = prodDetails?.product_brand    != null ? (brandMap.get(Number(prodDetails.product_brand))    || undefined) : undefined;
+      const brandName = prodDetails?.product_brand != null ? (brandMap.get(Number(prodDetails.product_brand)) || undefined) : undefined;
       const categoryName = prodDetails?.product_category != null ? (categoryMap.get(Number(prodDetails.product_category)) || undefined) : undefined;
 
       return {
-        detail_id:       item.detail_id,
-        order_id:        item.order_id,
-        serial_no:       item.serial_no   || undefined,
-        unit_price:      Number(item.unit_price  || 0),
-        quantity:        Number(item.quantity    || 0),
+        detail_id: item.detail_id,
+        order_id: item.order_id,
+        serial_no: item.serial_no || undefined,
+        unit_price: Number(item.unit_price || 0),
+        quantity: Number(item.quantity || 0),
         discount_amount: item.discount_amount != null ? Number(item.discount_amount) : undefined,
-        gross_amount:    item.gross_amount    != null ? Number(item.gross_amount)    : undefined,
-        total_amount:    Number(item.total_amount || 0),
+        gross_amount: item.gross_amount != null ? Number(item.gross_amount) : undefined,
+        total_amount: Number(item.total_amount || 0),
         product_id: prodId ? {
-          product_id:   prodId,
-          product_name: prodDetails?.product_name  || undefined,
-          description:  prodDetails?.description   || undefined,
-          product_brand:    brandName    ? { brand_name:    brandName    } : undefined,
+          product_id: prodId,
+          product_name: prodDetails?.product_name || undefined,
+          description: prodDetails?.description || undefined,
+          product_brand: brandName ? { brand_name: brandName } : undefined,
           product_category: categoryName ? { category_name: categoryName } : undefined,
         } : undefined,
         unit_details: unitDetailsRaw ? {
-          unit_id:      unitDetailsRaw.unit_id,
-          unit_name:    unitDetailsRaw.unit_name    || undefined,
-          unit_shortcut:unitDetailsRaw.unit_shortcut|| undefined,
-          order:        unitDetailsRaw.order        || undefined,
-          sku_code:     unitDetailsRaw.sku_code     || undefined,
+          unit_id: unitDetailsRaw.unit_id,
+          unit_name: unitDetailsRaw.unit_name || undefined,
+          unit_shortcut: unitDetailsRaw.unit_shortcut || undefined,
+          order: unitDetailsRaw.order || undefined,
+          sku_code: unitDetailsRaw.sku_code || undefined,
         } : null,
         discount_type_details: discountTypeDetailsRaw ? {
-          id:             discountTypeDetailsRaw.id,
-          discount_type:  discountTypeDetailsRaw.discount_type  || undefined,
-          total_percent:  discountTypeDetailsRaw.total_percent  || undefined,
+          id: discountTypeDetailsRaw.id,
+          discount_type: discountTypeDetailsRaw.discount_type || undefined,
+          total_percent: discountTypeDetailsRaw.total_percent || undefined,
         } : null,
       };
     });
 
-    // 9. Transform and map payments
     const payments = rawPayments.map((p) => ({
       id: p.id,
       order_id: p.order_id,
       reference_no: p.reference_no || undefined,
       paid_amount: Number(p.paid_amount || 0),
       date_paid: p.date_paid,
-      coa_id: p.coa_id ? {
-        gl_code: p.coa_id.gl_code || undefined,
-        account_title: p.coa_id.account_title || undefined,
-      } : null,
-      bank_id: p.bank_id ? {
-        bank_name: p.bank_id.bank_name || undefined,
-      } : null,
+      coa_id: p.coa_id ? { gl_code: p.coa_id.gl_code || undefined, account_title: p.coa_id.account_title || undefined } : null,
+      bank_id: p.bank_id ? { bank_name: p.bank_id.bank_name || undefined } : null,
     }));
 
-    // 10. Transform and map memos
     const memos = rawMemos.map((m) => ({
       id: m.id,
       invoice_id: m.invoice_id,
@@ -368,7 +320,6 @@ export async function GET(request: NextRequest) {
       } : null,
     }));
 
-    // 11. Transform and map returns
     const returns = rawReturns.map((r) => ({
       id: r.id,
       invoice_no: r.invoice_no,
@@ -381,13 +332,12 @@ export async function GET(request: NextRequest) {
         return_date: r.return_no.return_date || undefined,
         remarks: r.return_no.remarks || undefined,
         status: r.return_no.status || undefined,
-        total_amount: r.return_no.total_amount !== null && r.return_no.total_amount !== undefined ? Number(r.return_no.total_amount) : undefined,
-        discount_amount: r.return_no.discount_amount !== null && r.return_no.discount_amount !== undefined ? Number(r.return_no.discount_amount) : undefined,
-        gross_amount: r.return_no.gross_amount !== null && r.return_no.gross_amount !== undefined ? Number(r.return_no.gross_amount) : undefined,
+        total_amount: r.return_no.total_amount != null ? Number(r.return_no.total_amount) : undefined,
+        discount_amount: r.return_no.discount_amount != null ? Number(r.return_no.discount_amount) : undefined,
+        gross_amount: r.return_no.gross_amount != null ? Number(r.return_no.gross_amount) : undefined,
       } : null,
     }));
 
-    // 12. Transform and map unfulfilled transactions
     const unfulfilled = rawUnfulfilled.map((u) => ({
       id: u.id,
       sales_invoice_id: u.sales_invoice_id,
@@ -405,17 +355,14 @@ export async function GET(request: NextRequest) {
       memos,
       returns,
       unfulfilled,
+    }, {
+      headers: { 'Cache-Control': 'private, max-age=30' },
     });
   } catch (err: unknown) {
     console.error('[AR Invoice Details API Error]:', err);
     return NextResponse.json(
-      {
-        ok: false,
-        message: 'Failed to retrieve invoice details',
-        details: err instanceof Error ? err.message : String(err),
-      },
+      { ok: false, message: 'Failed to retrieve invoice details', details: err instanceof Error ? err.message : String(err) },
       { status: 500 }
     );
   }
 }
-

@@ -114,7 +114,11 @@ export default function DeliveryTermsTable(props: {
             </TableRow>
           ) : (
             rows.map((r, index) => (
-              <TableRow key={r.id} className="hover:bg-primary/5 transition-colors group">
+              <TableRow 
+                key={r.id} 
+                className="cursor-pointer hover:bg-primary/5 transition-colors group"
+                onClick={() => onView(r)}
+              >
                 <TableCell className="font-medium text-sm group-hover:text-primary transition-colors">{index + 1}</TableCell>
                 <TableCell className="font-medium truncate max-w-[200px] group-hover:text-primary transition-colors" title={r.delivery_name}>
                   {r.delivery_name}
@@ -134,15 +138,10 @@ export default function DeliveryTermsTable(props: {
                       variant="outline"
                       size="sm"
                       className="cursor-pointer hover:border-primary hover:text-primary hover:bg-primary/10 transition-colors"
-                      onClick={() => onView(r)}
-                    >
-                      View
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="cursor-pointer hover:border-primary hover:text-primary hover:bg-primary/10 transition-colors"
-                      onClick={() => onEdit(r)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEdit(r);
+                      }}
                     >
                       Edit
                     </Button>

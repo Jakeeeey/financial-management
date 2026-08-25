@@ -23,7 +23,12 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
-import { FormEvent, useState } from "react";
+import {
+  type ClipboardEvent,
+  type FormEvent,
+  type KeyboardEvent,
+  useState,
+} from "react";
 import type {
   BankTransferBank,
   BankTransferFormValues,
@@ -81,6 +86,21 @@ function formatMoney(value: number) {
 
 function formatAmountInput(value: number) {
   return (Math.round(value * 100) / 100).toFixed(2);
+}
+
+function sanitizeMoneyInput(value: string) {
+  const cleaned = value.replace(/[^\d.]/g, "");
+  const dotIndex = cleaned.indexOf(".");
+
+  if (dotIndex === -1) return cleaned;
+
+  const integerPart = cleaned.slice(0, dotIndex) || "0";
+  const decimalPart = cleaned
+    .slice(dotIndex + 1)
+    .replace(/\./g, "")
+    .slice(0, 2);
+
+  return `${integerPart}.${decimalPart}`;
 }
 
 function validateForm(
@@ -335,6 +355,37 @@ function BankTransferForm({
     });
   }
 
+  function updateMoneyValue(
+    id: "amount" | "transferFee",
+    value: string,
+  ) {
+    updateFormValue(id, sanitizeMoneyInput(value));
+  }
+
+  function preventInvalidMoneyKey(event: KeyboardEvent<HTMLInputElement>) {
+    if (["e", "E", "+", "-"].includes(event.key)) {
+      event.preventDefault();
+    }
+  }
+
+  function pasteMoneyValue(
+    id: "amount" | "transferFee",
+    event: ClipboardEvent<HTMLInputElement>,
+  ) {
+    event.preventDefault();
+
+    const input = event.currentTarget;
+    const selectionStart = input.selectionStart ?? input.value.length;
+    const selectionEnd = input.selectionEnd ?? input.value.length;
+    const pastedText = event.clipboardData.getData("text");
+    const nextValue =
+      input.value.slice(0, selectionStart) +
+      pastedText +
+      input.value.slice(selectionEnd);
+
+    updateMoneyValue(id, nextValue);
+  }
+
   async function submitForm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const validationError = validateForm(
@@ -420,12 +471,13 @@ function BankTransferForm({
               <Label htmlFor="amount">Amount *</Label>
               <Input
                 id="amount"
-                type="number"
-                min="0"
-                step="0.01"
+                type="text"
+                inputMode="decimal"
                 value={formValues.amount}
                 disabled={saving}
-                onChange={(event) => updateFormValue("amount", event.target.value)}
+                onKeyDown={preventInvalidMoneyKey}
+                onPaste={(event) => pasteMoneyValue("amount", event)}
+                onChange={(event) => updateMoneyValue("amount", event.target.value)}
               />
             </div>
             <div className="grid min-w-0 gap-1.5">
@@ -454,12 +506,13 @@ function BankTransferForm({
               <Label htmlFor="transferFee">Transfer Fee</Label>
               <Input
                 id="transferFee"
-                type="number"
-                min="0"
-                step="0.01"
+                type="text"
+                inputMode="decimal"
                 value={formValues.transferFee}
                 disabled={saving}
-                onChange={(event) => updateFormValue("transferFee", event.target.value)}
+                onKeyDown={preventInvalidMoneyKey}
+                onPaste={(event) => pasteMoneyValue("transferFee", event)}
+                onChange={(event) => updateMoneyValue("transferFee", event.target.value)}
               />
             </div>
             <div className="grid gap-1.5">

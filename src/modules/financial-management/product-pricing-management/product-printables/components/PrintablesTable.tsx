@@ -12,6 +12,7 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { PRICE_MAX_DECIMAL_PLACES } from "../../shared/pricePrecision";
 
 type Props = {
     rows: ProductRow[];
@@ -19,6 +20,14 @@ type Props = {
     priceTypes: PriceType[];
     units: Unit[];
 };
+
+function formatPrice(value: number | string | null | undefined) {
+    if (value === null || value === undefined || !Number.isFinite(Number(value))) return "\u2014";
+    return Number(value).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: PRICE_MAX_DECIMAL_PLACES,
+    });
+}
 
 export default function PrintablesTable({ rows, loading, priceTypes, units }: Props) {
     if (loading) return <div className="p-8 text-center text-muted-foreground animate-pulse">Loading products...</div>;
@@ -48,11 +57,11 @@ export default function PrintablesTable({ rows, loading, priceTypes, units }: Pr
                             <TableCell className="font-medium sticky left-0 bg-background/50 backdrop-blur-sm z-10">{row.product_name}</TableCell>
                             <TableCell className="font-mono text-xs">{row.product_code || "—"}</TableCell>
                             <TableCell>{unitMap.get(Number(row.unit_of_measurement)) || row.unit_of_measurement || "—"}</TableCell>
-                            <TableCell className="text-right">{row.priceA ? Number(row.priceA).toLocaleString(undefined, { minimumFractionDigits: 2 }) : "—"}</TableCell>
-                            <TableCell className="text-right">{row.priceB ? Number(row.priceB).toLocaleString(undefined, { minimumFractionDigits: 2 }) : "—"}</TableCell>
-                            <TableCell className="text-right">{row.priceC ? Number(row.priceC).toLocaleString(undefined, { minimumFractionDigits: 2 }) : "—"}</TableCell>
-                            <TableCell className="text-right">{row.priceD ? Number(row.priceD).toLocaleString(undefined, { minimumFractionDigits: 2 }) : "—"}</TableCell>
-                            <TableCell className="text-right">{row.priceE ? Number(row.priceE).toLocaleString(undefined, { minimumFractionDigits: 2 }) : "—"}</TableCell>
+                            <TableCell className="text-right">{formatPrice(row.priceA)}</TableCell>
+                            <TableCell className="text-right">{formatPrice(row.priceB)}</TableCell>
+                            <TableCell className="text-right">{formatPrice(row.priceC)}</TableCell>
+                            <TableCell className="text-right">{formatPrice(row.priceD)}</TableCell>
+                            <TableCell className="text-right">{formatPrice(row.priceE)}</TableCell>
                             <TableCell className="text-center">
                                 <Badge variant={row.isActive === 1 ? "default" : "secondary"} className="text-[10px] h-5">
                                     {row.isActive === 1 ? "Active" : "Inactive"}

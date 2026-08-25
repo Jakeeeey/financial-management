@@ -30,6 +30,8 @@ interface DataTableProps<TData, TValue> {
   onColumnFiltersChange?: OnChangeFn<ColumnFiltersState>;
   data: TData[];
   tableMeta?: Record<string, unknown>; // expects { onView?: (row: TData) => void }
+  sorting?: SortingState;
+  onSortingChange?: OnChangeFn<SortingState>;
 }
 
 export function DiscountTypeDataTable<TData, TValue>({
@@ -38,18 +40,23 @@ export function DiscountTypeDataTable<TData, TValue>({
   columnFilters,
   onColumnFiltersChange,
   tableMeta,
+  sorting,
+  onSortingChange,
 }: DataTableProps<TData, TValue>) {
   const [pagination, setPagination] = React.useState({ pageIndex: 0, pageSize: 10 });
-  const [sorting, setSorting] = React.useState<SortingState>([]);
+  const [localSorting, setLocalSorting] = React.useState<SortingState>([]);
+
+  const activeSorting = sorting !== undefined ? sorting : localSorting;
+  const activeOnSortingChange = onSortingChange !== undefined ? onSortingChange : setLocalSorting;
 
   // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data,
-    state: { pagination, sorting, columnFilters },
+    state: { pagination, sorting: activeSorting, columnFilters },
     columns,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    onSortingChange: setSorting,
+    onSortingChange: activeOnSortingChange,
     onColumnFiltersChange: onColumnFiltersChange,
     getFilteredRowModel: getFilteredRowModel(),
     onPaginationChange: setPagination,

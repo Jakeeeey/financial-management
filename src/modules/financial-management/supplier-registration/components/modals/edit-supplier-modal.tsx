@@ -33,7 +33,7 @@ export function EditSupplierModal({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto" showCloseButton={false}>
         <DialogHeader>
           <div className="flex items-start justify-between">
             <div>
