@@ -41,6 +41,7 @@ export type DisbursementPaymentState =
 
 export interface Disbursement {
     id: number;
+    source?: "live" | "draft";
     docNo: string;
     payeeId?: number;
     transactionTypeName?: string;

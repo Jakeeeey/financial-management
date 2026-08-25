@@ -68,7 +68,7 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
     const [batchLoading, setBatchLoading] = useState(false);
 
     const handleBatchApprove = async () => {
-        if (selectedIds.length === 0) return;
+        if (selectedIds.length === 0 || activeType === "WER") return;
         setBatchLoading(true);
         try {
             await Promise.all(selectedIds.map(id => disbursementProvider.updateStatus(id, "Approved")));
@@ -84,7 +84,7 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
     };
 
     const handleBatchReject = async () => {
-        if (selectedIds.length === 0) return;
+        if (selectedIds.length === 0 || activeType === "WER") return;
         setBatchLoading(true);
         try {
             await Promise.all(selectedIds.map(id => disbursementProvider.updateStatus(id, "Returned for Revision")));
@@ -106,6 +106,10 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
         setSelectedIds([]); // Clear selection when subModule changes
     }, [subModule, setStatusFilter, setPage]);
 
+    React.useEffect(() => {
+        setSelectedIds([]);
+    }, [activeType]);
+
     // Sync initialSubModule prop changes to state
     React.useEffect(() => {
         setSubModule(initialSubModule);
@@ -114,7 +118,13 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
     const addPayeeSupplierType = activeType === "Non-Trade" ? "NON-TRADE" : "TRADE";
 
     const handleView = (d: Disbursement) => { setSelectedDisbursement(d); setIsViewOpen(true); };
-    const handleEdit = (d: Disbursement) => { setSelectedDisbursement(d); setFormMode("edit"); setIsViewOpen(false); setIsCreateOpen(true); };
+    const handleEdit = (d: Disbursement) => {
+        if (d.source === "draft") return;
+        setSelectedDisbursement(d);
+        setFormMode("edit");
+        setIsViewOpen(false);
+        setIsCreateOpen(true);
+    };
     const handleNewVoucherClick = () => { setSelectedDisbursement(null); setFormMode("create"); setIsCreateOpen(true); };
 
     const handleAddPayeeSuccess = () => {
@@ -167,7 +177,7 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
                     </div>
 
                     <div className="flex items-center gap-3 shrink-0">
-                        {subModule === "approval" && selectedIds.length > 0 && (
+                        {subModule === "approval" && activeType !== "WER" && selectedIds.length > 0 && (
                             <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-2 duration-300">
                                 <Button
                                     variant="ghost"
@@ -476,6 +486,7 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
                 onEdit={handleEdit}
                 loading={actionLoading}
                 subModule={subModule}
+                readOnly={selectedDisbursement?.source === "draft"}
             />
 
             <AddPayeeModal

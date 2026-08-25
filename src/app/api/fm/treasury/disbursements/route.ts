@@ -77,8 +77,25 @@ export type DisbursementRow = {
     supporting_documents_url?: unknown;
 };
 
-type DisbursementDraftDocRow = {
+export type DisbursementDraftRow = {
+    id?: unknown;
     doc_no?: unknown;
+    transaction_type?: unknown;
+    payee?: RelationValue;
+    remarks?: unknown;
+    total_amount?: unknown;
+    encoder_id?: RelationValue;
+    approver_id?: RelationValue;
+    isPosted?: unknown;
+    transaction_date?: unknown;
+    date_created?: unknown;
+    date_updated?: unknown;
+    date_submitted?: unknown;
+    date_approved?: unknown;
+    division_id?: RelationValue;
+    department_id?: RelationValue;
+    supporting_documents_url?: unknown;
+    status?: unknown;
 };
 
 export type DisbursementPaymentState =
@@ -150,6 +167,7 @@ export type PaymentRow = {
 
 type SupplierRow = {
     id?: unknown;
+    supplier_name?: unknown;
 };
 
 export interface PayableInput {
@@ -422,22 +440,80 @@ async function getSupplierIds(search: string) {
         .filter((id): id is number => Boolean(id));
 }
 
-async function getWerDocumentNumbers() {
-    const res = await directusFetch<DirectusList<DisbursementDraftDocRow>>(
-        "/items/disbursement_draft?fields=doc_no&limit=-1",
-    );
+async function getSupplierMap(supplierIds: number[]) {
+    const map = new Map<number, string>();
+    if (supplierIds.length === 0) return map;
 
-    return Array.from(new Set(
-        (res.data ?? [])
-            .map((row) => asString(row.doc_no).trim().toUpperCase())
-            .filter(Boolean),
-    ));
+    try {
+        const params = new URLSearchParams();
+        params.set("limit", "-1");
+        params.set("fields", "id,supplier_name");
+        params.set("filter[id][_in]", supplierIds.join(","));
+        const res = await directusFetch<DirectusList<SupplierRow>>(`/items/suppliers?${params.toString()}`);
+        (res.data ?? []).forEach((supplier) => {
+            const id = asNumber(supplier.id);
+            if (id) map.set(id, asString(supplier.supplier_name));
+        });
+    } catch (error) {
+        console.warn("Failed to fetch supplier names for WER drafts:", error);
+    }
+
+    return map;
 }
 
-function buildDisbursementParams(
+const LIVE_DISBURSEMENT_FIELDS = [
+    "id",
+    "doc_no",
+    "transaction_type",
+    "payee.id",
+    "payee.supplier_name",
+    "remarks",
+    "total_amount",
+    "paid_amount",
+    "encoder_id",
+    "submitted_by",
+    "approver_id",
+    "released_by",
+    "posted_by",
+    "isPosted",
+    "transaction_date",
+    "date_created",
+    "date_submitted",
+    "date_approved",
+    "date_released",
+    "date_posted",
+    "division_id.division_id",
+    "division_id.division_name",
+    "department_id.department_id",
+    "department_id.department_name",
+    "fund_source_id",
+    "supporting_documents_url",
+    "status",
+].join(",");
+
+const WER_DRAFT_FIELDS = [
+    "id",
+    "doc_no",
+    "transaction_type",
+    "payee",
+    "remarks",
+    "total_amount",
+    "encoder_id",
+    "approver_id",
+    "isPosted",
+    "transaction_date",
+    "date_created",
+    "date_updated",
+    "division_id",
+    "department_id",
+    "supporting_documents_url",
+    "status",
+].join(",");
+
+function buildListParams(
     searchParams: URLSearchParams,
     supplierIds: number[],
-    werDocumentNumbers: string[] = [],
+    fields: string,
 ) {
     const page = normalizePage(searchParams.get("page"));
     const size = normalizeSize(searchParams.get("size"));
@@ -448,7 +524,6 @@ function buildDisbursementParams(
     const divisionId = searchParams.get("divisionId") || "";
     const departmentId = searchParams.get("departmentId") || "";
     const docNo = searchParams.get("docNo") || "";
-    const source = searchParams.get("source") || "";
     const isPosted = searchParams.get("isPosted") || "";
     const params = new URLSearchParams();
     let filterIndex = 0;
@@ -459,44 +534,13 @@ function buildDisbursementParams(
     params.set("sort", "-date_created,-id");
     params.set(
         "fields",
-        [
-            "id",
-            "doc_no",
-            "transaction_type",
-            "payee.id",
-            "payee.supplier_name",
-            "remarks",
-            "total_amount",
-            "paid_amount",
-            "encoder_id",
-            "submitted_by",
-            "approver_id",
-            "released_by",
-            "posted_by",
-            "isPosted",
-            "transaction_date",
-            "date_created",
-            "date_submitted",
-            "date_approved",
-            "date_released",
-            "date_posted",
-            "division_id.division_id",
-            "division_id.division_name",
-            "department_id.department_id",
-            "department_id.department_name",
-            "fund_source_id",
-            "supporting_documents_url",
-            "status",
-        ].join(","),
+        fields,
     );
 
     if (type === "Trade") {
         filterIndex = appendFilter(params, filterIndex, "transaction_type", "_eq", "1");
     } else if (type === "Non-Trade") {
         filterIndex = appendFilter(params, filterIndex, "transaction_type", "_eq", "2");
-    }
-    if (source.trim().toUpperCase() === "WER") {
-        filterIndex = appendFilter(params, filterIndex, "doc_no", "_in", werDocumentNumbers.join(","));
     }
     if (status && status !== "All") {
         const op = status.includes(",") ? "_in" : "_eq";
@@ -527,6 +571,14 @@ function buildDisbursementParams(
     }
 
     return { page, size, params };
+}
+
+function buildDisbursementParams(searchParams: URLSearchParams, supplierIds: number[]) {
+    return buildListParams(searchParams, supplierIds, LIVE_DISBURSEMENT_FIELDS);
+}
+
+function buildWerDraftParams(searchParams: URLSearchParams, supplierIds: number[]) {
+    return buildListParams(searchParams, supplierIds, WER_DRAFT_FIELDS);
 }
 
 function groupByDisbursementId<T extends { disbursement_id?: unknown }>(rows: T[]) {
@@ -573,6 +625,24 @@ export async function getLineItems(disbursementIds: number[]) {
         payables: groupByDisbursementId(payablesRes.data ?? []),
         payments: groupByDisbursementId(paymentsRes.data ?? []),
     };
+}
+
+export async function getDraftLineItems(disbursementIds: number[]) {
+    const ids = disbursementIds.filter(Boolean);
+    if (ids.length === 0) {
+        return { payables: new Map<number, PayableRow[]>() };
+    }
+
+    const payableParams = new URLSearchParams();
+    payableParams.set("limit", "-1");
+    payableParams.set("fields", "id,disbursement_id,division_id,reference_no,date,coa_id,amount,remarks");
+    payableParams.set("filter[disbursement_id][_in]", ids.join(","));
+
+    const payablesRes = await directusFetch<DirectusList<PayableRow>>(
+        `/items/disbursement_payables_draft?${payableParams.toString()}`,
+    );
+
+    return { payables: groupByDisbursementId(payablesRes.data ?? []) };
 }
 
 export async function loadNormalizedDisbursement(row: DisbursementRow, token: string) {
@@ -701,6 +771,7 @@ export function normalizeDisbursement(
     coaMap?: Map<number, string>,
     divisionMap?: Map<number, string>,
     bankMap?: Map<number, { bankName: string; accountNumber: string }>,
+    source: "live" | "draft" = "live",
 ) {
     const id = asNumber(row.id) ?? 0;
 
@@ -729,6 +800,7 @@ export function normalizeDisbursement(
 
     return {
         id,
+        source,
         docNo: asString(row.doc_no),
         payeeId: relationId(row.payee),
         transactionTypeId: resolveTransactionTypeId(row.transaction_type, row.doc_no) ?? undefined,
@@ -775,6 +847,55 @@ export function normalizeDisbursement(
     };
 }
 
+function normalizeDraftDisbursement(
+    row: DisbursementDraftRow,
+    payablesMap: Map<number, PayableRow[]>,
+    userMap: Map<string, string>,
+    supplierMap: Map<number, string>,
+    coaMap: Map<number, string>,
+    divisionMap: Map<number, string>,
+    departmentMap: Map<number, string>,
+) {
+    const payeeId = relationId(row.payee);
+    const divisionId = relationId(row.division_id, "division_id");
+    const departmentId = relationId(row.department_id, "department_id");
+    const supplierName = relationLabel(row.payee, "supplier_name") || (payeeId ? supplierMap.get(payeeId) : "");
+    const divisionName = relationLabel(row.division_id, "division_name") || (divisionId ? divisionMap.get(divisionId) : "");
+    const departmentName = relationLabel(row.department_id, "department_name") || (departmentId ? departmentMap.get(departmentId) : "");
+
+    const normalizedRow: DisbursementRow = {
+        id: row.id,
+        doc_no: row.doc_no,
+        transaction_type: row.transaction_type,
+        payee: { id: payeeId, supplier_name: supplierName },
+        remarks: row.remarks,
+        total_amount: row.total_amount,
+        paid_amount: 0,
+        encoder_id: row.encoder_id,
+        approver_id: row.approver_id,
+        isPosted: 0,
+        transaction_date: row.transaction_date,
+        date_created: row.date_created,
+        date_submitted: row.date_submitted,
+        date_approved: row.date_approved,
+        division_id: { division_id: divisionId, division_name: divisionName },
+        department_id: { department_id: departmentId, department_name: departmentName },
+        supporting_documents_url: row.supporting_documents_url,
+        status: row.status,
+    };
+
+    return normalizeDisbursement(
+        normalizedRow,
+        payablesMap,
+        new Map<number, PaymentRow[]>(),
+        userMap,
+        coaMap,
+        divisionMap,
+        new Map<number, { bankName: string; accountNumber: string }>(),
+        "draft",
+    );
+}
+
 export async function getCoaMap() {
     const map = new Map<number, string>();
     try {
@@ -809,6 +930,23 @@ export async function getDivisionMap() {
         }
     } catch (e) {
         console.warn("Failed to fetch divisions map:", e);
+    }
+    return map;
+}
+
+export async function getDepartmentMap() {
+    const map = new Map<number, string>();
+    try {
+        const departmentRes = await directusFetch<DirectusList<{ department_id?: unknown; department_name?: unknown }>>(
+            "/items/department?limit=-1&fields=department_id,department_name",
+        );
+        (departmentRes.data ?? []).forEach((department) => {
+            const id = asNumber(department.department_id);
+            const name = asString(department.department_name);
+            if (id && name) map.set(id, name);
+        });
+    } catch (error) {
+        console.warn("Failed to fetch departments map:", error);
     }
     return map;
 }
@@ -938,21 +1076,55 @@ export async function GET(request: NextRequest) {
         }
 
         const source = searchParams.get("source")?.trim().toUpperCase() || "";
-        const werDocumentNumbers = source === "WER"
-            ? await getWerDocumentNumbers()
-            : [];
 
-        if (source === "WER" && werDocumentNumbers.length === 0) {
+        if (source === "WER") {
+            const query = buildWerDraftParams(searchParams, supplierIds);
+            const draftsRes = await directusFetch<DirectusList<DisbursementDraftRow>>(
+                `/items/disbursement_draft?${query.params.toString()}`,
+            );
+            const rows = draftsRes.data ?? [];
+            const ids = rows.map((row) => asNumber(row.id) ?? 0).filter(Boolean);
+            const lineItems = await getDraftLineItems(ids);
+            const totalElements = asNumber(draftsRes.meta?.filter_count) ?? rows.length;
+
+            const userIdsToFetch: number[] = [];
+            const supplierIdsToFetch: number[] = [];
+            const addId = (collection: number[], value: number | undefined) => {
+                if (typeof value === "number" && Number.isFinite(value)) collection.push(value);
+            };
+
+            rows.forEach((row) => {
+                addId(userIdsToFetch, relationId(row.encoder_id, "user_id"));
+                addId(userIdsToFetch, relationId(row.approver_id, "user_id"));
+                addId(supplierIdsToFetch, relationId(row.payee));
+            });
+
+            const [userMap, supplierMap, coaMap, divisionMap, departmentMap] = await Promise.all([
+                getUserMap(token, userIdsToFetch),
+                getSupplierMap(Array.from(new Set(supplierIdsToFetch))),
+                getCoaMap(),
+                getDivisionMap(),
+                getDepartmentMap(),
+            ]);
+
             return NextResponse.json({
-                content: [],
-                totalElements: 0,
-                totalPages: 0,
-                number: normalizePage(searchParams.get("page")),
-                size: normalizeSize(searchParams.get("size")),
+                content: rows.map((row) => normalizeDraftDisbursement(
+                    row,
+                    lineItems.payables,
+                    userMap,
+                    supplierMap,
+                    coaMap,
+                    divisionMap,
+                    departmentMap,
+                )),
+                totalElements,
+                totalPages: Math.ceil(totalElements / query.size),
+                number: query.page,
+                size: query.size,
             });
         }
 
-        const query = buildDisbursementParams(searchParams, supplierIds, werDocumentNumbers);
+        const query = buildDisbursementParams(searchParams, supplierIds);
         const disbursementsRes = await directusFetch<DirectusList<DisbursementRow>>(
             `/items/disbursement?${query.params.toString()}`,
         );

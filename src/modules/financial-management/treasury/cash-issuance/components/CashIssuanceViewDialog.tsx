@@ -27,6 +27,7 @@ interface CashIssuanceViewDialogProps {
     onEdit?: (d: Disbursement) => void;
     loading: boolean;
     subModule?: "preparation" | "approval" | "releasing" | "posting" | "all" | "dashboard";
+    readOnly?: boolean;
 }
 
 function AttachmentPreview({ docUrl }: { docUrl: string }) {
@@ -105,7 +106,7 @@ function AttachmentPreview({ docUrl }: { docUrl: string }) {
     );
 }
 
-export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpdateStatus, onEdit, loading, subModule = "preparation" }: CashIssuanceViewDialogProps) {
+export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpdateStatus, onEdit, loading, subModule = "preparation", readOnly = false }: CashIssuanceViewDialogProps) {
     const [showPrintOptions, setShowPrintOptions] = useState(false);
     const [banks, setBanks] = useState<BankAccountDto[]>([]);
     const [coas, setCoas] = useState<COADto[]>([]);
@@ -131,6 +132,7 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
     const isEncoder = disbursement.encoderId != null && currentUserId != null && String(disbursement.encoderId) === String(currentUserId);
 
     const handleAction = async (status: string) => {
+        if (readOnly) return;
         setStatusError(null);
         const result = await onUpdateStatus(disbursement.id, status);
         if (result.success) {
@@ -476,7 +478,7 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                         </div>
 
                         {/* Dynamic Edit Button */}
-                        {(((subModule === "preparation" && (
+                        {!readOnly && (((subModule === "preparation" && (
                             disbursement.status === "Draft" || 
                             disbursement.status === "Returned for Revision"
                           )) || 
@@ -488,7 +490,7 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                         )}
 
                         {/* Revert Tool */}
-                        {disbursement.status !== "Draft" && disbursement.status !== "Returned for Revision" && disbursement.status !== "Posted" &&
+                        {!readOnly && disbursement.status !== "Draft" && disbursement.status !== "Returned for Revision" && disbursement.status !== "Posted" &&
                          (disbursement.status !== "Submitted" || subModule === "approval") &&
                          (subModule === "preparation" || subModule === "approval" || subModule === "releasing") && (
                             <Button variant="ghost" onClick={() => handleAction(subModule === "preparation" ? "Draft" : "Returned for Revision")} disabled={loading} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 text-destructive hover:bg-destructive/10 flex">
@@ -500,14 +502,14 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
 
                     {/* RIGHT SIDE: Dynamic Primary Action Pipeline */}
                     <div className="flex gap-2">
-                        {(disbursement.status === "Draft" || disbursement.status === "Returned for Revision") && subModule === "preparation" && (
+                        {!readOnly && (disbursement.status === "Draft" || disbursement.status === "Returned for Revision") && subModule === "preparation" && (
                             <Button onClick={() => handleAction("Submitted")} disabled={loading} className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-blue-600 hover:bg-blue-700 text-white shadow-md disabled:opacity-50">
                                 {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <SendIcon className="w-4 h-4 sm:mr-2" />}
                                 Submit for Approval
                             </Button>
                         )}
 
-                        {disbursement.status === "Submitted" && subModule === "approval" && (
+                        {!readOnly && disbursement.status === "Submitted" && subModule === "approval" && (
                             <Button 
                                 onClick={() => handleAction("Approved")} 
                                 disabled={loading || isEncoder} 
@@ -518,7 +520,7 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                             </Button>
                         )}
 
-                        {(disbursement.status === "Approved" || disbursement.status === "Partially Released") && subModule === "releasing" && (
+                        {!readOnly && (disbursement.status === "Approved" || disbursement.status === "Partially Released") && subModule === "releasing" && (
                             <Button
                                 onClick={() => handleAction("Released")}
                                 disabled={loading || !disbursement.payments || disbursement.payments.length === 0}
@@ -528,7 +530,7 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                             </Button>
                         )}
 
-                        {disbursement.status === "Released" && subModule === "posting" && (
+                        {!readOnly && disbursement.status === "Released" && subModule === "posting" && (
                             <div className="flex flex-col items-end gap-1">
                                 <Button 
                                     onClick={() => handleAction("Posted")} 

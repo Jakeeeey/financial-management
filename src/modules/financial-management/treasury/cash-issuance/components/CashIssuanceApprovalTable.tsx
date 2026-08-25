@@ -33,6 +33,7 @@ export function CashIssuanceApprovalTable({
 
     const selectables = useMemo(() => {
         return data.filter((d) => {
+            if (d.source === "draft") return false;
             const isEncoder = d.encoderId != null && currentUserId != null && String(d.encoderId) === String(currentUserId);
             return !isEncoder;
         });
@@ -68,7 +69,7 @@ export function CashIssuanceApprovalTable({
                 ) : (
                     data.map((d) => {
                         const isEncoder = d.encoderId != null && currentUserId != null && String(d.encoderId) === String(currentUserId);
-                        const isSelectable = !isEncoder;
+                        const isSelectable = d.source !== "draft" && !isEncoder;
 
                         return (
                             <div key={d.id} className="p-4 bg-card border border-border rounded-xl shadow-sm space-y-3 relative group hover:border-primary/30 transition-all">
@@ -150,7 +151,7 @@ export function CashIssuanceApprovalTable({
                         ) : (
                             data.map((d) => {
                                 const isEncoder = d.encoderId != null && currentUserId != null && String(d.encoderId) === String(currentUserId);
-                                const isSelectable = !isEncoder;
+                                const isSelectable = d.source !== "draft" && !isEncoder;
 
                                 return (
                                     <TableRow key={d.id} className="group hover:bg-primary/[0.04] transition-all duration-200 border-border even:bg-muted/15">
