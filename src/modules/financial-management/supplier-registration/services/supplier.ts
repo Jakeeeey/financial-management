@@ -23,11 +23,14 @@ const getHeaders = () => ({
  */
 export async function fetchAllSuppliers(): Promise<Supplier[]> {
   try {
-    const response = await fetch(`${API_BASE}/suppliers?limit=-1&fields=*`, {
-      method: "GET",
-      headers: getHeaders(),
-      cache: "no-store", // Ensure fresh data
-    });
+    const response = await fetch(
+      `${API_BASE}/suppliers?limit=-1&fields=*&filter[supplier_type][_eq]=Trade`,
+      {
+        method: "GET",
+        headers: getHeaders(),
+        cache: "no-store", // Ensure fresh data
+      },
+    );
 
     if (!response.ok) {
       throw new Error(`Failed to fetch suppliers: ${response.statusText}`);
@@ -126,12 +129,17 @@ export async function updateSupplier(
  */
 export async function searchSuppliers(query: string): Promise<Supplier[]> {
   try {
-    // Build filter for multiple fields
+    // Build filter: Must be Trade AND match query
     const filter = {
-      _or: [
-        { supplier_name: { _contains: query } },
-        { tin_number: { _contains: query } },
-        { contact_person: { _contains: query } },
+      _and: [
+        { supplier_type: { _eq: "Trade" } },
+        {
+          _or: [
+            { supplier_name: { _contains: query } },
+            { tin_number: { _contains: query } },
+            { contact_person: { _contains: query } },
+          ],
+        },
       ],
     };
 

@@ -13,8 +13,12 @@ export function BankDepositModule() {
     return (
         <div className="p-4 sm:p-8 space-y-6 max-w-[1600px] mx-auto">
             <div>
-                <h1 className="text-3xl font-black uppercase flex items-center gap-3"><Landmark className="text-primary h-8 w-8" /> Treasury Bank Deposit</h1>
-                <p className="text-muted-foreground font-bold text-sm uppercase mt-1">Manage vault assets and reconcile bank statements</p>
+                <h1 className="text-3xl font-black uppercase flex items-center gap-3">
+                    <Landmark className="text-primary h-8 w-8" /> Treasury Bank Deposit
+                </h1>
+                <p className="text-muted-foreground font-bold text-sm uppercase mt-1">
+                    Manage vault assets and reconcile bank statements
+                </p>
             </div>
 
             <Tabs defaultValue="prepare" className="w-full">
@@ -35,6 +39,14 @@ export function BankDepositModule() {
                         activeBanks={hookData.activeBanks}
                         isLoading={hookData.isLoading}
                         isSubmitting={hookData.isSubmitting}
+
+                        // 🚀 FIXED: Passed the missing pagination props down to the tab!
+                        page={hookData.page}
+                        totalPages={hookData.totalPages}
+                        totalElements={hookData.totalElements}
+                        pageSize={hookData.pageSize}
+                        fetchPage={hookData.fetchVaultPage}
+
                         onPrepare={hookData.prepareDeposit}
                         fetchData={hookData.fetchVaultAndBanks}
                     />

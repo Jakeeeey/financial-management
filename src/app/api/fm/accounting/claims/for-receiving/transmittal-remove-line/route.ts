@@ -36,10 +36,12 @@ async function fetchDirectus<T>(url: string, init?: RequestInit): Promise<T> {
 type BodyPayload = { detail_id?: unknown };
 
 type MemoRel = { id?: number | string | null } | number | string | null;
+type TransmittalRel = { id?: number | string | null } | number | string | null;
 
 type DetailData = {
     id?: number | string | null;
     customer_memo_id?: MemoRel;
+    claims_transmittal_id?: TransmittalRel;
 };
 
 type DirectusItemResponse<T> = { data?: T };
@@ -61,7 +63,7 @@ export async function POST(req: Request) {
 
         // 1) Fetch detail to know which customer_memo_id to release
         const detail = await fetchDirectus<DirectusItemResponse<DetailData>>(
-            `${DIRECTUS_URL}/items/${DETAILS_COLLECTION}/${detail_id}?fields=id,customer_memo_id.id,customer_memo_id`,
+            `${DIRECTUS_URL}/items/${DETAILS_COLLECTION}/${detail_id}?fields=id,customer_memo_id.id,customer_memo_id,claims_transmittal_id.id,claims_transmittal_id`,
             {
                 method: "GET",
                 headers: directusHeaders(),
@@ -69,11 +71,16 @@ export async function POST(req: Request) {
         );
 
         const rawMemo: MemoRel | undefined = detail?.data?.customer_memo_id;
-
         const memoId =
             rawMemo && typeof rawMemo === "object"
                 ? Number((rawMemo as { id?: unknown }).id ?? 0)
                 : Number(rawMemo ?? 0);
+
+        const rawTransmittal: TransmittalRel | undefined = detail?.data?.claims_transmittal_id;
+        const transmittalId =
+            rawTransmittal && typeof rawTransmittal === "object"
+                ? Number((rawTransmittal as { id?: unknown }).id ?? 0)
+                : Number(rawTransmittal ?? 0);
 
         // 2) Delete the detail line
         await fetchDirectus<unknown>(`${DIRECTUS_URL}/items/${DETAILS_COLLECTION}/${detail_id}`, {
@@ -94,8 +101,35 @@ export async function POST(req: Request) {
             });
         }
 
+        // 4) Recompute total and update header.total_amount
+        if (transmittalId && Number.isFinite(transmittalId)) {
+            const aggParams = new URLSearchParams();
+            aggParams.set("filter[claims_transmittal_id][_eq]", String(transmittalId));
+            aggParams.set("aggregate[sum]", "amount");
+
+            try {
+                const aggJson = await fetchDirectus<{ data?: Array<{ sum?: { amount?: number | string | null } }> }>(
+                    `${DIRECTUS_URL}/items/${DETAILS_COLLECTION}?${aggParams.toString()}`,
+                    {
+                        method: "GET",
+                        headers: directusHeaders(),
+                    }
+                );
+                
+                const total = Number(aggJson?.data?.[0]?.sum?.amount ?? 0);
+                
+                await fetchDirectus<unknown>(`${DIRECTUS_URL}/items/claims_transmittal/${transmittalId}`, {
+                    method: "PATCH",
+                    headers: directusHeaders(),
+                    body: JSON.stringify({ total_amount: total }),
+                });
+            } catch (err) {
+                console.error("Failed to update transmittal total_amount:", err);
+            }
+        }
+
         return NextResponse.json(
-            { data: { ok: true, released_memo_id: memoId || null } },
+            { data: { ok: true, released_memo_id: memoId || null, transmittal_id: transmittalId || null } },
             { status: 200 }
         );
     } catch (err: unknown) {

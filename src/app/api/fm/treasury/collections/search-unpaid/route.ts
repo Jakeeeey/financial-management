@@ -17,16 +17,15 @@ export async function GET(request: NextRequest) {
 
     // 2. Extract Query Parameters
     const { searchParams } = new URL(request.url);
-    const salesmanId = searchParams.get("salesmanId");
     const query = searchParams.get("query");
 
-    if (!salesmanId || !query) {
-        return NextResponse.json({ message: "Missing salesmanId or search query" }, { status: 400 });
+    if (!query) {
+        return NextResponse.json({ message: "Missing search query" }, { status: 400 });
     }
 
     // 3. Construct Spring Boot Target URL
     // ⚠️ Adjust this path if you put the search endpoint in SalesInvoiceController instead of CollectionController
-    const targetUrl = `${getSpringBaseUrl()}/api/v1/collections/search-unpaid?salesmanId=${salesmanId}&query=${encodeURIComponent(query)}`;
+    const targetUrl = `${getSpringBaseUrl()}/api/v1/collections/search-unpaid?query=${encodeURIComponent(query)}`;
 
     try {
         const springRes = await fetch(targetUrl, {

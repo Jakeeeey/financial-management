@@ -1,6 +1,145 @@
-// src/modules/financial-management/treasury/bulk-approval/type.ts
+// src/modules/financial-management/treasury/bulk-approval/services/bulkApproval.types.ts
 
-export interface DraftRow {
+export type VoteStatus = "APPROVED" | "REJECTED" | "WITH_CONCERN";
+export type DraftLifecycleStatus =
+  | "Submitted"
+  | `Pending_L${number}`
+  | "With Concern"
+  | "Rejected"
+  | "Approved";
+
+export type DirectusListResponse<T> = {
+  data?: T[];
+};
+
+export type DirectusItemResponse<T> = {
+  data?: T;
+};
+
+export type DirectusAggregateCountResponse = {
+  data?: {
+    count?: string | number;
+  }[];
+};
+
+export type DirectusUserRow = {
+  user_id?: number | string;
+  user_fname?: string | null;
+  user_mname?: string | null;
+  user_lname?: string | null;
+  suffix_name?: string | null;
+  nickname?: string | null;
+  user_email?: string | null;
+};
+
+export type DirectusSupplierRow = {
+  id?: number | string;
+  user_id?: number | string | null;
+  division_id?: number | string | null;
+  supplier_name?: string | null;
+  supplier_shortcut?: string | null;
+  contact_person?: string | null;
+  email_address?: string | null;
+  phone_number?: string | null;
+  isActive?: number | string | boolean | null;
+};
+
+export type DirectusDivisionRow = {
+  division_id?: number | string;
+  division_name?: string | null;
+  division_description?: string | null;
+  division_code?: string | null;
+};
+
+export type DirectusCoaRow = {
+  coa_id?: number | string;
+  gl_code?: string | null;
+  account_title?: string | null;
+};
+
+export type ApproverRecord = {
+  id: number;
+  approver_id: number;
+  division_id: number;
+  division_name?: string | null;
+  approver_heirarchy: number;
+};
+
+export type DirectusApproverRow = {
+  id?: number | string;
+  approver_id?: number | string | DirectusUserRow | null;
+  division_id?: number | string | DirectusDivisionRow | null;
+  approver_heirarchy?: number | string | null;
+};
+
+export type DisbursementDraftRow = {
+  id: number | string;
+  doc_no?: string | null;
+  payee?: number | string | DirectusSupplierRow | null;
+  total_amount?: number | string | null;
+  remarks?: string | null;
+  status?: string | null;
+  approval_version?: number | string | null;
+  version?: number | string | null;
+  transaction_date?: string | null;
+  division_id?: number | string | DirectusDivisionRow | null;
+  department_id?: number | string | null;
+  encoder_id?: number | string | DirectusUserRow | null;
+  transaction_type?: number | string | null;
+  supporting_documents_url?: string | null;
+  date_created?: string | null;
+  date_updated?: string | null;
+};
+
+export type DisbursementPayableDraftRow = {
+  id: number | string;
+  disbursement_id?: number | string | null;
+  division_id?: number | string | null;
+  coa_id?: number | string | DirectusCoaRow | null;
+  amount?: number | string | null;
+  reference_no?: string | null;
+  remarks?: string | null;
+  date?: string | null;
+  expense_id?:
+  | number
+  | string
+  | {
+    id?: number | string;
+    status?: string | null;
+    feedback?: string | null;
+    header_id?: number | string | null;
+    attachment_url?: string | number | { id?: string; uuid?: string; directus_files_id?: string } | null;
+  }
+  | null;
+};
+
+export type ExpenseDraftRow = {
+  id: number | string;
+  amount?: number | string | null;
+  remarks?: string | null;
+  transaction_date?: string | null;
+  division_id?: number | string | null;
+  encoded_by?: number | string | null;
+  payee?: string | null;
+  return_to?: string | null;
+  particulars?: number | string | DirectusCoaRow | null;
+  attachment_url?: string | number | { id?: string; uuid?: string; directus_files_id?: string } | null;
+  feedback?: string | null;
+  status?: string | null;
+  header_id?: number | string | null;
+};
+
+export type ApprovalVoteRow = {
+  id?: number | string;
+  draft_id?: number | string | null;
+  approver_id?: number | string | DirectusUserRow | null;
+  status?: string | null;
+  remarks?: string | null;
+  version?: number | string | null;
+  created_at?: string | null;
+};
+
+export type DraftRow = {
   id: number;
   doc_no: string;
   payee_user_id: number;
@@ -9,18 +148,26 @@ export interface DraftRow {
   total_amount: number;
   remarks: string | null;
   status: string;
+  division_id: number;
   division_name?: string;
+  requires_final_top_sheet?: boolean;
   approval_version: number;
   transaction_date: string | null;
   date_created: string;
   current_tier: number;
   max_level: number;
   approvers_per_level: Record<number, number>;
-  my_vote: { status: string; created_at: string; version: number } | null;
+  my_vote: {
+    status: string;
+    created_at: string;
+    version: number;
+  } | null;
   can_vote: boolean;
-}
+  has_concern?: boolean;
+};
+export type DraftRowResponse = DraftRow;
 
-export interface DraftPayable {
+export type PayableResponse = {
   id: number;
   coa_id: number;
   coa_name: string;
@@ -29,42 +176,217 @@ export interface DraftPayable {
   date: string | null;
   reference_no: string | null;
   attachment_url: string | null;
-}
+  is_concern?: boolean;
+  is_rejected?: boolean;
+  feedback?: string | null;
+};
 
-export interface ApproverVote {
+export type ConcernItemResponse = {
+  expense_id: number;
+  status: string;
+  feedback: string | null;
+  return_to: string | null;
+  amount: number;
+  coa_id: number;
+  coa_name: string;
+  remarks: string | null;
+  transaction_date: string | null;
+  attachment_url: string | null;
+  reference_no?: string | null;
+};
+
+export type LogVoteResponse = {
   approver_id: number;
   name: string;
   level: number;
-  vote: {
-    status: string;
-    remarks: string | null;
-    created_at: string;
-    version: number;
-  } | null;
-}
-
-/** A single vote entry in an approval round */
-export interface LogVote {
-  approver_id: number;
-  name: string;
-  /** Approval hierarchy level (1 = first, N = last) */
-  level: number;
-  status: string; // APPROVED | REJECTED
+  status: string;
   remarks: string | null;
   created_at: string;
-}
+};
 
-/** All votes in one approval round */
-export interface LogRound {
+export type LogRound = {
   version: number;
   is_current: boolean;
-  /** FINAL_APPROVED | REJECTED | SUPERSEDED | IN_PROGRESS */
   outcome: string;
-  votes: LogVote[];
-}
+  votes: LogVoteResponse[];
+};
+export type LogRoundResponse = LogRound;
 
-/** Draft-centric log record returned by the logs resource */
-export interface LogDraft {
+export type ActivityLogDetail = {
+  id: number;
+  coa_name: string;
+  amount: number;
+  remarks: string | null;
+  date: string | null;
+};
+export type ActivityLogDetailResponse = ActivityLogDetail;
+
+export type DraftRevisionLog = {
+  id: number;
+  payable_draft_id: number;
+  coa_name: string | null;
+  editor_name: string;
+  original_amount: number | null;
+  new_amount: number | null;
+  amount: number;
+  remarks: string | null;
+  version: number;
+  created_at: string;
+};
+export type DraftRevisionLogResponse = DraftRevisionLog;
+
+export type ExpenseRevisionLog = {
+  log_id: number;
+  expense_id: number;
+  action: string;
+  editor_name: string;
+  changed_at: string;
+  amount: number;
+  remarks: string | null;
+  particulars: string | null;
+  status: string;
+  version: number;
+};
+export type ExpenseRevisionLogResponse = ExpenseRevisionLog;
+
+export type DisbursementPayableDraftLogRow = {
+  id?: number | string;
+  log_id?: number | string | null;
+  payable_draft_id?: number | string | null;
+  disbursement_id?: number | string | null;
+  coa_id?: number | string | DirectusCoaRow | null;
+  reference_no?: string | null;
+  amount?: number | string | null;
+  original_amount?: number | string | null;
+  new_amount?: number | string | null;
+  remarks?: string | null;
+  date?: string | null;
+  version?: number | string | null;
+  updated_by?: number | string | DirectusUserRow | null;
+  log_date?: string | null;
+};
+
+export type ExpenseDraftLogRow = {
+  log_id?: number | string;
+  expense_id?: number | string | null;
+  action?: string | null;
+  changed_by?: number | string | DirectusUserRow | null;
+  changed_at?: string | null;
+  amount?: number | string | null;
+  remarks?: string | null;
+  particulars?: number | string | DirectusCoaRow | null;
+  status?: string | null;
+  version?: number | string | null;
+};
+
+export type ExpenseDraftHeaderRow = {
+  id?: number | string;
+  division_id?: number | string | DirectusDivisionRow | null;
+  period_from?: string | null;
+  period_to?: string | null;
+  created_by?: number | string | DirectusUserRow | null;
+  created_at?: string | null;
+};
+
+export type DirectusSalesmanRow = {
+  id?: number | string;
+  employee_id?: number | string | null;
+  salesman_code?: string | null;
+  salesman_name?: string | null;
+};
+
+export type ApprovalContextResponse = {
+  division_id: number;
+  division_name: string | null;
+  approver_level: number;
+  is_final_approver: boolean;
+};
+export type ApprovalContext = ApprovalContextResponse;
+
+export type FinalHeaderGroupResponse = {
+  group_key: string;
+  division_id: number;
+  division_name: string | null;
+  period_from: string;
+  period_to: string;
+  header_id: number;
+  header_count: number;
+  salesman_count: number;
+  coa_count: number;
+  expense_count: number;
+  total_amount: number;
+  is_final_ready: boolean;
+  draft_ids?: number[];
+  draft_statuses?: string[];
+  can_act?: boolean;
+  is_waiting?: boolean;
+  current_tier?: number;
+  required_approver_level?: number;
+};
+export type FinalHeaderGroup = FinalHeaderGroupResponse;
+
+export type FinalTopSheetSalesmanResponse = {
+  employee_id: number;
+  salesman_id: number | null;
+  salesman_code: string | null;
+  salesman_name: string;
+  total_amount: number;
+};
+
+export type FinalTopSheetCellResponse = {
+  employee_id: number;
+  amount: number;
+  count: number;
+  expense_ids: number[];
+  has_concern?: boolean;
+  has_rejected?: boolean;
+};
+
+export type FinalTopSheetCoaRowResponse = {
+  coa_id: number;
+  account_title: string;
+  gl_code: string | null;
+  row_total: number;
+  cells: FinalTopSheetCellResponse[];
+};
+
+export type FinalTopSheetDetail = {
+  expense_id: number;
+  header_id: number;
+  employee_id: number;
+  salesman_name: string;
+  coa_id: number;
+  account_title: string;
+  transaction_date: string;
+  amount: number;
+  payee: string | null;
+  remarks: string | null;
+  status: string;
+  attachment_url: string | null;
+};
+export type FinalTopSheetDetailResponse = FinalTopSheetDetail;
+
+export type FinalTopSheetResponse = {
+  group: FinalTopSheetGroupMetaResponse;
+  salesmen: FinalTopSheetSalesmanResponse[];
+  coa_rows: FinalTopSheetCoaRowResponse[];
+  details: FinalTopSheetDetail[];
+  grand_total: number;
+  attachments?: {
+    header_id: number;
+    file_url: string;
+    file_name: string;
+  }[];
+};
+
+export type FinalDecisionTarget = {
+  scope: "all" | "encoder" | "coa" | "cell" | "expense_ids";
+  employee_id?: number;
+  coa_id?: number;
+  expense_ids?: number[];
+};
+
+export type LogDraft = {
   id: number;
   doc_no: string;
   payee_name: string;
@@ -72,91 +394,91 @@ export interface LogDraft {
   total_amount: number;
   remarks: string | null;
   status: string;
-  approval_version: number;
-  transaction_date: string | null;
-  date_created: string;
   rounds: LogRound[];
-}
+  revisions: DraftRevisionLog[];
+  logs?: DraftRevisionLog[]; // Alias for revisions
+  expense_logs: ExpenseRevisionLog[];
+};
 
-/** One round per approvers_by_level tier in the draft-detail response */
-export interface VoteRound {
-  version: number;
-  is_current: boolean;
-  outcome: string;
-  votes: LogVote[];
-}
+export type FinalTopSheetGroupMetaResponse = {
+  division_id: number;
+  division_name: string | null;
+  period_from: string;
+  period_to: string;
+  header_count: number;
+  total_amount: number;
+  draft_statuses?: string[];
+  can_act?: boolean;
+  is_waiting?: boolean;
+  current_tier?: number;
+  required_approver_level?: number;
+};
 
-export interface DraftPayableLog {
-  coa_id: number;
-  coa_name: string;
-  original_amount: number;
-  new_amount: number;
-  remarks: string | null;
-  date: string | null;
-  reference_no: string | null;
-}
+export type DraftPayable = PayableResponse;
 
-export interface DraftLog {
-  id: number;
-  editor_name: string;
-  edit_reason: string;
-  old_total: number;
-  new_total: number;
-  created_at: string;
-  payables: DraftPayableLog[];
-}
-
-export interface ExpenseLog {
-  id: number;
-  expense_id: number;
-  action: string;
-  editor_name: string;
-  changed_at: string;
-  amount: number;
-  remarks: string | null;
-  particulars: string;
-  status: string;
-}
-
-export interface DraftDetail {
-  draft: {
-    id: number;
-    doc_no: string;
-    payee_name: string;
-    encoder_name: string;
-    total_amount: number;
-    remarks: string | null;
-    status: string;
-    approval_version: number;
-    transaction_date: string | null;
-    date_created: string;
-    current_tier: number;
-    max_level: number;
-  };
+export type DraftDetail = {
+  draft: DraftRow;
   payables: DraftPayable[];
-  approvers_by_level: Record<number, ApproverVote[]>;
-  vote_history: VoteRound[];
-  logs?: DraftLog[];
-  expense_logs?: ExpenseLog[];
-  my_level: number;
-  my_vote: { status: string; remarks: string | null; created_at: string; version: number } | null;
+  concern_items?: ConcernItemResponse[];
+  attachments?: { file_url: string; file_name: string }[];
+  my_vote: { status: string; created_at: string; version: number } | null;
   can_vote: boolean;
-}
+};
 
-export interface ActivityLogDetail {
-  id: number;
-  coa_name: string;
-  amount: number;
-  remarks: string | null;
-  date: string | null;
-}
+export type FinalHeaderDecisionStatus = "Approved" | "Rejected" | "With Concern";
 
-export interface VotePayload {
+export type FinalHeaderDecisionBody = {
+  resource: "final-header-decision";
+  division_id: number;
+  period_from: string;
+  period_to: string;
+  status: FinalHeaderDecisionStatus;
+  remarks?: string;
+  target_scope: "all" | "encoder" | "coa" | "cell" | "expense_ids";
+  employee_id?: number;
+  coa_id?: number;
+  expense_ids?: number[];
+  concern_expense_ids?: number[]; // Legacy field, keeping for compatibility
+};
+export type FinalHeaderDecisionPayload = FinalHeaderDecisionBody;
+
+
+
+
+export type ItemDecision = {
+  status: VoteStatus;
+  remarks: string;
+};
+
+export type PostBody = {
   draft_id: number;
-  status: "APPROVED" | "REJECTED";
+  status: VoteStatus;
   remarks?: string;
   edited_payables?: {
     id: number;
     amount: string | number;
   }[];
-}
+  item_decisions?: Record<string, ItemDecision>;
+};
+export type VotePayload = PostBody;
+
+export type DirectusResponse<T = unknown> = {
+  ok: boolean;
+  status: number;
+  data: T;
+};
+
+export type BulkApprovalContext = {
+  currentUserId: number;
+  approverRecords: ApproverRecord[];
+  myDivisionIds: number[];
+  levelsByDivision: Record<number, number[]>;
+  myLevel: number;
+  allApprovers: ApproverRecord[];
+  maxLevelByDivision: Record<number, number>;
+  approversPerLevelByDivision: Record<number, Record<number, number>>;
+};
+
+export type AuthContextResult =
+  | { ok: true; context: BulkApprovalContext }
+  | { ok: false; status: number; body: { error: string; message?: string } };

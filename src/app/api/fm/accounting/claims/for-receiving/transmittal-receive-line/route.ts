@@ -63,6 +63,7 @@ type ReceivePayload = {
 type DetailRow = {
     id?: number | string | null;
     customer_memo_id?: number | string | { id?: number | string | null } | null;
+    claims_transmittal_id?: number | string | { id?: number | string | null } | null;
 };
 
 type PatchBody = { received_at: string };
@@ -151,12 +152,12 @@ export async function DELETE(req: NextRequest) {
             return NextResponse.json({ error: "detail_id is required" }, { status: 400 });
         }
 
-        // ✅ 1) fetch the detail first to get customer_memo_id
+        // ✅ 1) fetch the detail first to get customer_memo_id AND claims_transmittal_id
         // We request both forms because Directus can return relation as:
         // - number (id)
         // - object { id: number }
         const detailJson = await directusJson<DirectusItemResponse<DetailRow>>(
-            `/items/${DETAILS_COLLECTION}/${detail_id}?fields=id,customer_memo_id,customer_memo_id.id`
+            `/items/${DETAILS_COLLECTION}/${detail_id}?fields=id,customer_memo_id,customer_memo_id.id,claims_transmittal_id,claims_transmittal_id.id`
         );
 
         const row = detailJson?.data ?? null;
@@ -166,6 +167,12 @@ export async function DELETE(req: NextRequest) {
             cmRaw && typeof cmRaw === "object"
                 ? Number((cmRaw as { id?: unknown }).id ?? 0)
                 : Number(cmRaw ?? 0);
+
+        const tRaw = row?.claims_transmittal_id;
+        const transmittalId =
+            tRaw && typeof tRaw === "object"
+                ? Number((tRaw as { id?: unknown }).id ?? 0)
+                : Number(tRaw ?? 0);
 
         // ✅ 2) delete the detail line
         await directusJson<unknown>(`/items/${DETAILS_COLLECTION}/${detail_id}`, {
@@ -180,6 +187,29 @@ export async function DELETE(req: NextRequest) {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(releaseBody),
             });
+        }
+
+        // ✅ 4) Recompute total and update transmittal
+        if (transmittalId && Number.isFinite(transmittalId)) {
+            const aggParams = new URLSearchParams();
+            aggParams.set("filter[claims_transmittal_id][_eq]", String(transmittalId));
+            aggParams.set("aggregate[sum]", "amount");
+
+            try {
+                const aggJson = await directusJson<{ data?: Array<{ sum?: { amount?: number | string | null } }> }>(
+                    `/items/${DETAILS_COLLECTION}?${aggParams.toString()}`
+                );
+                
+                const total = Number(aggJson?.data?.[0]?.sum?.amount ?? 0);
+                
+                await directusJson<unknown>(`/items/${TRANSMITTAL_COLLECTION}/${transmittalId}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ total_amount: total }),
+                });
+            } catch (err) {
+                console.error("Failed to update transmittal total_amount:", err);
+            }
         }
 
         return NextResponse.json(

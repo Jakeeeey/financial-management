@@ -248,16 +248,28 @@ export function SupplierDetailsModal({
                     <MapPin className="h-4 w-4 text-muted-foreground" />
                     Location
                   </span>
-                  <span className="gap-2 capitalize">
-                    <p>
+                  <div className="flex flex-col gap-1 capitalize">
+                    <p className="text-sm">
                       {supplier.address ? (
                         supplier.address
                       ) : (
                         <EmptyInfo message="No address has been registered" />
                       )}
-                      {supplier.postal_code}
                     </p>
-                  </span>
+                    <p className="text-xs text-muted-foreground italic">
+                      {[
+                        supplier.brgy,
+                        supplier.city,
+                        supplier.state_province,
+                        supplier.country,
+                      ]
+                        .filter((val) => val && val !== "null")
+                        .join(", ")}
+                      {supplier.postal_code &&
+                        supplier.postal_code !== "null" &&
+                        ` ${supplier.postal_code}`}
+                    </p>
+                  </div>
                 </div>
                 <div className="flex flex-col gap-2 text-sm uppercase">
                   <span className="flex items-center gap-2 text-xs font-semibold">

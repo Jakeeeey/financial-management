@@ -12,7 +12,7 @@ import { NavUser } from "@/components/shared/app-sidebar/nav-user";
 
 import { cookies } from "next/headers";
 
-import ComingSoon from "@/app/(financial-management)/fm/_components/ComingSoon";
+import AccountManagementModule from "@/modules/financial-management/treasury/bank-management/account-management";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -122,7 +122,7 @@ export default async function Page() {
 
             {/* ✅ UI ONLY: remove ScrollArea so the page doesn't scroll; the table card handles scrolling */}
             <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4">
-                <ComingSoon />
+                <AccountManagementModule />
             </main>
         </div>
     );

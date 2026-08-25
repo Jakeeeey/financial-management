@@ -1,76 +1,59 @@
 // components/CWTBarChart.tsx
-// Dual-axis bar chart comparing EWT amount and transaction count per customer.
+// Bar chart showing CWT amounts per customer (top 8).
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
-import { BarChart2 } from 'lucide-react';
-import { formatPeso } from '../utils';
-import type { BarEntry } from '../types';
+import type { AggregatedEntry } from '../types';
 
 interface CWTBarChartProps {
-  data: BarEntry[];
+  data: AggregatedEntry[];
 }
 
 export function CWTBarChart({ data }: CWTBarChartProps) {
   return (
-    <Card className="shadow-none border-border">
-      <CardHeader className="border-b border-border/50 pb-3 flex flex-row items-center justify-between">
-        <CardTitle className="text-sm font-bold">Supplier-wise CWT Comparison</CardTitle>
-        <span className="text-xs text-purple-500 flex items-center gap-1 font-semibold">
-          <BarChart2 className="w-3 h-3" /> Top Suppliers
-        </span>
+    <Card className="shadow-none">
+      <CardHeader className="border-b border-border/50 pb-3">
+        <CardTitle className="text-sm font-semibold">CWT by Customer</CardTitle>
       </CardHeader>
-      <CardContent className="pt-4 pb-2">
-        <ResponsiveContainer width="100%" height={280}>
-          <BarChart
-            data={data}
-            margin={{ top: 10, right: 16, left: 0, bottom: 100 }}
-            barCategoryGap="30%"
-            barGap={4}
-          >
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.1)" vertical={false} />
-            <XAxis dataKey="name" tick={{ fontSize: 10 }} angle={-30} textAnchor="end" interval={0} />
-            <YAxis yAxisId="left" tickFormatter={formatPeso} tick={{ fontSize: 11 }} width={80} />
-            <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} width={30} tickFormatter={(v) => `${v}x`} />
+      <CardContent className="pt-4 h-[300px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data.slice(0, 8)} margin={{ bottom: 40 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(128,128,128,0.1)" />
+            <XAxis
+              dataKey="name"
+              axisLine={false}
+              tickLine={false}
+              tick={{ fill: 'currentColor', fontSize: 10, opacity: 0.5 }}
+              angle={-30}
+              textAnchor="end"
+              interval={0}
+              tickFormatter={(v) => v.length > 12 ? v.slice(0, 12) + '…' : v}
+            />
+            <YAxis
+              axisLine={false}
+              tickLine={false}
+              tick={{ fill: 'currentColor', fontSize: 11, opacity: 0.5 }}
+              tickFormatter={(v) => `₱${(v / 1000).toFixed(0)}k`}
+              width={55}
+            />
             <Tooltip
               content={({ active, payload, label }) => {
                 if (!active || !payload?.length) return null;
                 return (
-                  <div className="bg-popover border border-border rounded-lg shadow-lg px-3 py-2 text-xs space-y-1">
+                  <div className="bg-popover border border-border rounded-lg shadow-lg px-3 py-2 text-xs">
                     <p className="font-bold text-foreground mb-1">{label}</p>
-                    {payload.map((p, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: p.fill }} />
-                        <span className="text-muted-foreground">{p.name}:</span>
-                        <span className="font-semibold text-foreground">
-                          {p.name === 'CWT Amount'
-                            ? formatPeso(Number(p.value ?? 0))
-                            : `${p.value} transaction${(p.value as number) !== 1 ? 's' : ''}`}
-                        </span>
-                      </div>
-                    ))}
+                    <p className="text-blue-500 font-semibold">
+                      ₱{(payload[0].value as number).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </p>
                   </div>
                 );
               }}
             />
-            <Bar yAxisId="left" dataKey="amount" name="CWT Amount" fill="#a78bfa" radius={[4, 4, 0, 0]} maxBarSize={56} />
-            <Bar yAxisId="right" dataKey="count" name="Transactions" fill="#f97316" radius={[4, 4, 0, 0]} maxBarSize={20} />
+            <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={36} />
           </BarChart>
         </ResponsiveContainer>
-
-        {/* Legend */}
-        <div className="flex items-center gap-5 mt-2 pl-20">
-          <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: '#a78bfa' }} />
-            <span className="text-xs font-medium text-muted-foreground">CWT Amount</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: '#f97316' }} />
-            <span className="text-xs font-medium text-muted-foreground">Transactions</span>
-          </div>
-        </div>
       </CardContent>
     </Card>
   );

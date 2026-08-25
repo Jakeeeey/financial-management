@@ -50,14 +50,21 @@ export function ManageProductsModal({
 
   // Get list of assigned product IDs for filtering in AddProductsModal
   const assignedProductIds = useMemo(
-    () => products.map((p) => Number(p.product_id)),
+    () =>
+      products
+        .map((p) =>
+          Number(
+            p.product_id || (p as { id?: number; product_id?: number }).id,
+          ),
+        )
+        .filter((id) => !isNaN(id)),
     [products],
   );
 
   return (
     <>
       <Dialog open={open} onOpenChange={onClose}>
-        <DialogContent className="sm:max-w-[600px] max-h-[80vh] gap-0 p-0 flex flex-col">
+        <DialogContent className="sm:max-w-[800px] max-h-[80vh] gap-0 p-0 flex flex-col">
           {/* Header */}
           <DialogHeader className="px-6 py-4 border-b shrink-0">
             <DialogTitle>Manage Products</DialogTitle>

@@ -42,13 +42,19 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
             const names = filters.supplier_ids.map(id => suppliers.find(s => String(s.id) === String(id))?.supplier_name).filter(Boolean);
             if (names.length) parts.push(`Suppliers: ${names.join(", ")}`);
         }
+
         if (filters.brand_ids.length) {
             const names = filters.brand_ids.map(id => brands.find(b => String(b.brand_id) === String(id))?.brand_name).filter(Boolean);
             if (names.length) parts.push(`Brands: ${names.join(", ")}`);
+        } else {
+            parts.push(`Brands: All Brands`);
         }
+
         if (filters.category_ids.length) {
             const names = filters.category_ids.map(id => categories.find(c => String(c.category_id) === String(id))?.category_name).filter(Boolean);
             if (names.length) parts.push(`Categories: ${names.join(", ")}`);
+        } else {
+            parts.push(`Categories: All Categories`);
         }
         
         return parts.join("\n");

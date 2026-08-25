@@ -16,10 +16,15 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const salesmanId = searchParams.get("salesmanId");
+    const customerNames = searchParams.get("customerNames");
 
-    if (!salesmanId) return NextResponse.json({ message: "Missing salesmanId" }, { status: 400 });
+    // 🚀 THE FIX: It now accepts EITHER salesmanId OR customerNames!
+    if (!salesmanId && !customerNames) {
+        return NextResponse.json({ message: "Missing salesmanId or customerNames" }, { status: 400 });
+    }
 
-    const targetUrl = `${getSpringBaseUrl()}/api/v1/collections/memos/available?salesmanId=${salesmanId}`;
+    // 🚀 Pass along the exact query parameters we received!
+    const targetUrl = `${getSpringBaseUrl()}/api/v1/collections/memos/available?${searchParams.toString()}`;
 
     try {
         const springRes = await fetch(targetUrl, {

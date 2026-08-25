@@ -81,7 +81,7 @@ export default async function Page() {
 
     return (
         // ✅ UI ONLY: avoid page-level scroll container; prevent horizontal overflow
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-50/30">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
             {/* 📌 Topbar is fixed in place because ONLY <main> scrolls */}
             <header className="relative z-10 flex h-14 shrink-0 items-center justify-between border-b shadow-sm bg-background sm:h-16 overflow-hidden">
                 <div className="flex h-full min-w-0 items-center gap-2 px-3 sm:px-4 overflow-hidden">

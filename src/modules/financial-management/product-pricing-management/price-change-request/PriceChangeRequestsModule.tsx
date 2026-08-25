@@ -5,36 +5,30 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Loader2, RefreshCw, Plus, CheckCheck, X } from "lucide-react";
+import { Loader2, RefreshCw, CheckCheck, X, Calendar as CalendarIcon } from "lucide-react";
 
 import RequestsTable from "./components/RequestsTable";
 import { RejectDialog } from "./components/RejectDialog";
-import CreateRequestDialog from "./components/CreateRequestsDialog";
-import { PriceTypeRef } from "./types";
 
 import { usePCRList } from "./hooks/usePCR";
 import { usePCRActions } from "./hooks/usePCRActions";
+import { getLookups, SupplierOption } from "./providers/pcrApi";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 export function PriceChangeRequestsModule() {
-    const priceTypes = React.useMemo(
-        () => [
-            { price_type_id: 16, price_type_name: "A" },
-            { price_type_id: 17, price_type_name: "B" },
-            { price_type_id: 18, price_type_name: "C" },
-            { price_type_id: 19, price_type_name: "D" },
-            { price_type_id: 20, price_type_name: "E" },
-        ],
-        [],
-    );
+    const [suppliers, setSuppliers] = React.useState<SupplierOption[]>([]);
+    React.useEffect(() => {
+        getLookups().then(res => setSuppliers(res.suppliers)).catch(() => {});
+    }, []);
 
     return (
         <div className="space-y-3">
             <Card className="rounded-2xl">
                 <CardHeader className="flex flex-row items-center justify-between gap-3">
                     <div className="space-y-1">
-                        <CardTitle>Price Change Requests</CardTitle>
+                        <CardTitle>Price Change Approvals</CardTitle>
                         <div className="text-sm text-muted-foreground">
-                            Create requests and approve/reject to apply price updates.
+                            Approve or reject price updates.
                         </div>
                     </div>
                 </CardHeader>
@@ -47,11 +41,11 @@ export function PriceChangeRequestsModule() {
                         </TabsList>
 
                         <TabsContent value="price">
-                            <RequestManager type="price" priceTypes={priceTypes} />
+                            <RequestManager type="price" suppliers={suppliers} />
                         </TabsContent>
 
                         <TabsContent value="cost">
-                            <RequestManager type="cost" />
+                            <RequestManager type="cost" suppliers={suppliers} />
                         </TabsContent>
                     </Tabs>
                 </CardContent>
@@ -60,17 +54,16 @@ export function PriceChangeRequestsModule() {
     );
 }
 
-function RequestManager({ type, priceTypes }: { type: "price" | "cost"; priceTypes?: PriceTypeRef[] }) {
+function RequestManager({ type, suppliers }: { type: "price" | "cost", suppliers: SupplierOption[] }) {
     const inbox = usePCRList({ status: "PENDING", page_size: 50, page: 1, requestType: type });
-    const mine = usePCRList({ status: "", page_size: 50, page: 1, requestType: type });
 
-    const [createOpen, setCreateOpen] = React.useState(false);
+    const statusTab = inbox.query.status || "PENDING";
+
     const [rejectingId, setRejectingId] = React.useState<number | null>(null);
     const [selectedIds, setSelectedIds] = React.useState<number[]>([]);
 
     const actions = usePCRActions(() => {
         inbox.refresh();
-        mine.refresh();
     }, type);
 
     const pendingInboxIds = React.useMemo(
@@ -134,14 +127,16 @@ function RequestManager({ type, priceTypes }: { type: "price" | "cost"; priceTyp
     return (
         <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
-                <div>
-                    {type === "price" && (
-                        <Button size="sm" onClick={() => setCreateOpen(true)}>
-                            <Plus className="mr-2 h-4 w-4" />
-                            New Request
-                        </Button>
-                    )}
-                </div>
+                <Tabs value={statusTab as string} onValueChange={(v) => {
+                    clearSelection();
+                    inbox.setQuery((q) => ({ ...q, status: v as import("./types").PCRStatus, page: 1 }));
+                }} className="w-full">
+                    <TabsList>
+                        <TabsTrigger value="PENDING">Pending</TabsTrigger>
+                        <TabsTrigger value="APPROVED">Approved</TabsTrigger>
+                        <TabsTrigger value="REJECTED">Rejected</TabsTrigger>
+                    </TabsList>
+                </Tabs>
 
                 <Button
                     variant="outline"
@@ -149,11 +144,10 @@ function RequestManager({ type, priceTypes }: { type: "price" | "cost"; priceTyp
                     onClick={() => {
                         clearSelection();
                         inbox.refresh();
-                        mine.refresh();
                     }}
-                    disabled={inbox.loading || mine.loading}
+                    disabled={inbox.loading}
                 >
-                    {inbox.loading || mine.loading ? (
+                    {inbox.loading ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     ) : (
                         <RefreshCw className="mr-2 h-4 w-4" />
@@ -162,29 +156,69 @@ function RequestManager({ type, priceTypes }: { type: "price" | "cost"; priceTyp
                 </Button>
             </div>
 
-            <Tabs defaultValue="inbox">
-                <TabsList>
-                    <TabsTrigger value="inbox">Approvals Inbox</TabsTrigger>
-                    <TabsTrigger value="mine">My Requests</TabsTrigger>
-                </TabsList>
+            <div className="space-y-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
+                    <Input
+                        placeholder={`Search ${type === "cost" ? "CCR" : "PCR"} # / product...`}
+                        value={inbox.query.q ?? ""}
+                        onChange={(e) =>
+                            inbox.setQuery((q) => ({
+                                ...q,
+                                q: e.target.value,
+                                page: 1,
+                            }))
+                        }
+                        className="w-full sm:max-w-[200px]"
+                    />
 
-                <TabsContent value="inbox" className="space-y-3">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <Input
-                            placeholder={`Search ${type === "cost" ? "CCR" : "PCR"} # / product...`}
-                            value={inbox.query.q ?? ""}
+                    <SearchableSelect
+                        className="w-full sm:max-w-[200px]"
+                        placeholder="All Suppliers"
+                        value={String(inbox.query.supplier_id ?? "")}
+                        onValueChange={(val) =>
+                            inbox.setQuery((q) => ({
+                                ...q,
+                                supplier_id: val ? Number(val) : "",
+                                page: 1,
+                            }))
+                        }
+                        options={[
+                            { value: "", label: "All Suppliers" },
+                            ...suppliers.map((s) => ({
+                                value: String(s.id),
+                                label: s.supplier_name,
+                            })),
+                        ]}
+                    />
+
+                    <div className="flex items-center gap-2 h-9 rounded-md border border-input bg-background px-3 shadow-sm focus-within:ring-1 focus-within:ring-ring transition-colors w-full sm:w-auto">
+                        <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">Date:</span>
+                        <input
+                            type="date"
+                            value={inbox.query.date_from ?? ""}
                             onChange={(e) =>
-                                inbox.setQuery((q) => ({
-                                    ...q,
-                                    q: e.target.value,
-                                    page: 1,
-                                }))
+                                inbox.setQuery((q) => ({ ...q, date_from: e.target.value, page: 1 }))
                             }
-                            className="sm:max-w-md"
+                            title="Start Date"
+                            className="bg-transparent text-sm outline-none w-[115px] text-muted-foreground focus:text-foreground [&::-webkit-calendar-picker-indicator]:opacity-50"
                         />
-                        <div className="text-sm text-muted-foreground">Total: {inbox.total.toLocaleString()}</div>
+                        <span className="text-muted-foreground text-sm">-</span>
+                        <input
+                            type="date"
+                            value={inbox.query.date_to ?? ""}
+                            onChange={(e) =>
+                                inbox.setQuery((q) => ({ ...q, date_to: e.target.value, page: 1 }))
+                            }
+                            title="End Date"
+                            className="bg-transparent text-sm outline-none w-[115px] text-muted-foreground focus:text-foreground [&::-webkit-calendar-picker-indicator]:opacity-50"
+                        />
                     </div>
 
+                    <div className="text-sm text-muted-foreground ml-auto">Total: {inbox.total.toLocaleString()}</div>
+                </div>
+
+                {statusTab === "PENDING" && (
                     <div className="flex flex-col gap-2 rounded-xl border bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="text-sm text-muted-foreground">
                             {selectedIds.length > 0 ? (
@@ -219,80 +253,37 @@ function RequestManager({ type, priceTypes }: { type: "price" | "cost"; priceTyp
                             </Button>
                         </div>
                     </div>
+                )}
 
-                    <RequestsTable
-                        rows={inbox.rows}
-                        mode="approver"
-                        requestType={type}
-                        acting={actions.acting}
-                        onApprove={(id) => actions.approve(id)}
-                        onReject={(id) => setRejectingId(id)}
-                        meta={{ total_count: inbox.total }}
-                        page={Number(inbox.query.page ?? 1)}
-                        pageSize={Number(inbox.query.page_size ?? 50)}
-                        onPageChange={(page) =>
-                            inbox.setQuery((q) => ({
-                                ...q,
-                                page,
-                            }))
-                        }
-                        onPageSizeChange={(page_size) =>
-                            inbox.setQuery((q) => ({
-                                ...q,
-                                page_size,
-                                page: 1,
-                            }))
-                        }
-                        footerItemLabel="requests"
-                        selectedIds={selectedIds}
-                        onToggleSelect={toggleSelect}
-                        onToggleSelectAllPage={toggleSelectAllPage}
-                    />
-                </TabsContent>
-
-                <TabsContent value="mine" className="space-y-3">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <Input
-                            placeholder={`Search ${type === "cost" ? "CCR" : "PCR"} # / product...`}
-                            value={mine.query.q ?? ""}
-                            onChange={(e) =>
-                                mine.setQuery((q) => ({
-                                    ...q,
-                                    q: e.target.value,
-                                    page: 1,
-                                }))
-                            }
-                            className="sm:max-w-md"
-                        />
-                        <div className="text-sm text-muted-foreground">Total: {mine.total.toLocaleString()}</div>
-                    </div>
-
-                    <RequestsTable
-                        rows={mine.rows}
-                        mode="mine"
-                        requestType={type}
-                        acting={actions.acting}
-                        onCancel={(id) => actions.cancel(id)}
-                        meta={{ total_count: mine.total }}
-                        page={Number(mine.query.page ?? 1)}
-                        pageSize={Number(mine.query.page_size ?? 50)}
-                        onPageChange={(page) =>
-                            mine.setQuery((q) => ({
-                                ...q,
-                                page,
-                            }))
-                        }
-                        onPageSizeChange={(page_size) =>
-                            mine.setQuery((q) => ({
-                                ...q,
-                                page_size,
-                                page: 1,
-                            }))
-                        }
-                        footerItemLabel="requests"
-                    />
-                </TabsContent>
-            </Tabs>
+                <RequestsTable
+                    rows={inbox.rows}
+                    mode={statusTab === "PENDING" ? "approver" : "all"}
+                    requestType={type}
+                    acting={actions.acting}
+                    onApprove={(id) => actions.approve(id)}
+                    onReject={(id) => setRejectingId(id)}
+                    meta={{ total_count: inbox.total }}
+                    page={Number(inbox.query.page ?? 1)}
+                    pageSize={Number(inbox.query.page_size ?? 50)}
+                    onPageChange={(page) =>
+                        inbox.setQuery((q) => ({
+                            ...q,
+                            page,
+                        }))
+                    }
+                    onPageSizeChange={(page_size) =>
+                        inbox.setQuery((q) => ({
+                            ...q,
+                            page_size,
+                            page: 1,
+                        }))
+                    }
+                    footerItemLabel="requests"
+                    selectedIds={selectedIds}
+                    onToggleSelect={toggleSelect}
+                    onToggleSelectAllPage={toggleSelectAllPage}
+                />
+            </div>
 
             <RejectDialog
                 open={rejectingId != null}
@@ -302,16 +293,6 @@ function RequestManager({ type, priceTypes }: { type: "price" | "cost"; priceTyp
                     if (!rejectingId) return;
                     actions.reject(rejectingId, reason);
                     setRejectingId(null);
-                }}
-            />
-
-            <CreateRequestDialog
-                open={createOpen}
-                onOpenChange={setCreateOpen}
-                priceTypes={priceTypes || []}
-                onCreated={() => {
-                    inbox.refresh();
-                    mine.refresh();
                 }}
             />
         </div>

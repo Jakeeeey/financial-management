@@ -1,3 +1,11 @@
+export interface PaginatedResponse<T> {
+    content: T[];
+    totalPages: number;
+    totalElements: number;
+    size: number;
+    number: number;
+}
+
 export interface VaultAsset {
     detailId: number;
     sourcePouchNo: string;
@@ -6,6 +14,7 @@ export interface VaultAsset {
     checkNo: string;
     amount: number;
     collectionDate: string;
+    chequeDate: string | null;
 }
 
 export interface ActiveBankAccount {
@@ -17,6 +26,7 @@ export interface ActiveBankAccount {
     isActive: boolean;
     displayName: string;
 }
+
 export interface DepositAsset {
     detailId: number;
     assetType: "CASH" | "CHECK";
@@ -25,6 +35,7 @@ export interface DepositAsset {
     amount: number;
     status: "IN_TRANSIT" | "CLEARED" | "BOUNCED";
 }
+
 export interface CheckBreakdown {
     bankName: string;
     checkCount: number;
@@ -42,8 +53,9 @@ export interface DepositSlip {
     totalChecks: number;
     grandTotal: number;
     checkBreakdown?: CheckBreakdown[];
-    depositedAssets: DepositAsset[]; // 🚀 NEW
+    depositedAssets: DepositAsset[];
 }
+
 export interface PrepareDepositPayload {
     assetIds: number[];
     targetBankId: number;

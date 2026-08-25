@@ -6,6 +6,7 @@ export const dynamic = "force-dynamic";
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 const CCR = "cost_change_requests";
+const PRODUCT_PER_SUPPLIER = "product_per_supplier";
 
 type DirectusMeta = {
     total_count?: number;
@@ -45,6 +46,10 @@ type DirectusListCCRResponse = {
 
 type DirectusDupResponse = {
     data: Array<{ request_id?: number | string | null }>;
+};
+
+type DirectusSupplierProductRow = {
+    product_id?: number | string | { product_id?: number | string | null } | null;
 };
 
 type JwtPayload = {
@@ -130,6 +135,12 @@ function unwrapErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
+function nowManila(): string {
+    return new Date()
+        .toLocaleString("sv-SE", { timeZone: "Asia/Manila" })
+        .replace(" ", "T");
+}
+
 function parseWrappedError(message: string): DirectusWrappedError | null {
     try {
         const parsed: unknown = JSON.parse(message);
@@ -153,6 +164,30 @@ function parseWrappedError(message: string): DirectusWrappedError | null {
     }
 }
 
+async function getSupplierProductIds(supplierId: string): Promise<number[]> {
+    const sp = new URLSearchParams();
+    sp.set("limit", "-1");
+    sp.set("fields", "product_id,product_id.product_id");
+    sp.set("filter[supplier_id][_eq]", supplierId);
+
+    const url = `${mustBase()}/items/${PRODUCT_PER_SUPPLIER}?${sp.toString()}`;
+    const res = await fetchDirectus<{ data?: DirectusSupplierProductRow[] }>(url, { headers: directusHeaders() });
+
+    const ids: number[] = [];
+    for (const row of res.data ?? []) {
+        let n: number | null = null;
+        if (typeof row.product_id === "number") {
+            n = row.product_id;
+        } else if (isRecord(row.product_id) && typeof row.product_id.product_id === "number") {
+            n = row.product_id.product_id;
+        }
+        if (n !== null && Number.isFinite(n) && n > 0) {
+            ids.push(n);
+        }
+    }
+    return Array.from(new Set(ids));
+}
+
 export async function GET(req: NextRequest) {
     try {
         mustBase();
@@ -165,6 +200,9 @@ export async function GET(req: NextRequest) {
         const q = norm(searchParams.get("q"));
         const product_id = norm(searchParams.get("product_id"));
         const requested_by = norm(searchParams.get("requested_by"));
+        const supplier_id = norm(searchParams.get("supplier_id"));
+        const date_from = norm(searchParams.get("date_from"));
+        const date_to = norm(searchParams.get("date_to"));
 
         const page = Math.max(1, Number(searchParams.get("page") ?? 1));
         const page_size = Math.min(100, Math.max(10, Number(searchParams.get("page_size") ?? 50)));
@@ -194,6 +232,9 @@ export async function GET(req: NextRequest) {
                 "product_id.product_id",
                 "product_id.product_code",
                 "product_id.product_name",
+                "product_id.unit_of_measurement.unit_id",
+                "product_id.unit_of_measurement.unit_name",
+                "product_id.unit_of_measurement.unit_shortcut",
             ].join(","),
         );
 
@@ -206,6 +247,16 @@ export async function GET(req: NextRequest) {
         if (status) addAnd("[status][_eq]", status);
         if (product_id) addAnd("[product_id][_eq]", product_id);
         if (requested_by) addAnd("[requested_by][_eq]", requested_by);
+        if (date_from) addAnd("[requested_at][_gte]", date_from);
+        if (date_to) addAnd("[requested_at][_lte]", date_to);
+
+        if (supplier_id) {
+            const supplierProductIds = await getSupplierProductIds(supplier_id);
+            if (supplierProductIds.length === 0) {
+                return NextResponse.json({ data: [], meta: { total_count: 0 } });
+            }
+            addAnd("[product_id][_in]", supplierProductIds.join(","));
+        }
 
         if (q) {
             addAnd("[_or][0][product_id][product_name][_contains]", q);
@@ -291,6 +342,7 @@ export async function POST(req: NextRequest) {
                 proposed_cost,
                 status: "PENDING",
                 requested_by: userId,
+                requested_at: nowManila(),
             }),
         });
 

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { FileText, Building2, Wallet, Lock } from "lucide-react";
+import { StickyTableWrapper } from "./StickyTableWrapper";
 
 interface DisbursementTableProps {
     data: Disbursement[];
@@ -31,9 +32,9 @@ export function DisbursementTable({ data, loading, onView }: DisbursementTablePr
     };
 
     return (
-        <div className="rounded-md border border-border bg-card shadow-sm overflow-hidden">
+        <StickyTableWrapper className="rounded-md border border-border bg-card shadow-sm overflow-auto max-h-[65vh]">
             <Table>
-                <TableHeader className="bg-muted/50">
+                <TableHeader className="bg-muted/80 backdrop-blur-md sticky top-0 z-10 shadow-[0_1px_0_0_hsl(var(--border))]">
                     <TableRow className="border-border">
                         <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground w-[180px]">Voucher Info</TableHead>
                         <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Payee & Particulars</TableHead>
@@ -50,7 +51,7 @@ export function DisbursementTable({ data, loading, onView }: DisbursementTablePr
                         <TableRow><TableCell colSpan={6} className="h-48 text-center text-sm font-medium text-muted-foreground">No disbursements found in this category.</TableCell></TableRow>
                     ) : (
                         data.map((d) => (
-                            <TableRow key={d.id} className="group hover:bg-muted/50 transition-colors border-border">
+                            <TableRow key={d.id} className="group hover:bg-primary/[0.04] transition-all duration-200 border-border even:bg-muted/20">
                                 <TableCell className="align-top py-4">
                                     <div className="flex flex-col gap-1">
                                         <div className="flex items-center gap-1.5 text-foreground">
@@ -99,6 +100,6 @@ export function DisbursementTable({ data, loading, onView }: DisbursementTablePr
                     )}
                 </TableBody>
             </Table>
-        </div>
+        </StickyTableWrapper>
     );
 }

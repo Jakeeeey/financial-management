@@ -4,11 +4,28 @@
 
 // Main module
 export { default } from './CWTModule';
-export * from './types';
-export * from './utils';
-export * from '../cwt/hooks/useCWT';
-export * from '../cwt/components/MetricCard';
-export * from './components/CWTPieChart';
-export * from './components/CWTTrendChart';
-export * from './components/CWTBarChart';
-export * from '../cwt/components/TransactionTable';
+
+// Types
+export type {
+  RawCWTRow,
+  CWTRecord,
+  AggregatedEntry,
+  CWTMetrics,
+} from './types';
+
+// Utils
+export {
+  formatPeso,
+  transformCWTRows,
+  aggregateByCustomer,
+  deriveMetrics,
+  getPageNumbers,
+} from './utils';
+
+// Hook
+export { useCWT } from './hooks/useCWT';
+
+// Components
+export { CWTBarChart } from './components/CWTBarChart';
+export { CWTPieChart } from './components/CWTPieChart';
+export { CWTRecordsTable } from './components/CTRecordsTable';

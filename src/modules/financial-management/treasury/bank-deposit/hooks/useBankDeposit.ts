@@ -8,20 +8,51 @@ export function useBankDeposit() {
     const [vaultAssets, setVaultAssets] = useState<VaultAsset[]>([]);
     const [activeBanks, setActiveBanks] = useState<ActiveBankAccount[]>([]);
     const [history, setHistory] = useState<DepositSlip[]>([]);
+
     const [isLoading, setIsLoading] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    // 🚀 NEW: Standard Pagination States
+    const [page, setPage] = useState(0);
+    const [totalPages, setTotalPages] = useState(0);
+    const [totalElements, setTotalElements] = useState(0);
+    const pageSize = 50;
+
+    // Initial load: Fetch Page 0 and Banks
     const fetchVaultAndBanks = useCallback(async () => {
         setIsLoading(true);
         try {
-            const [vaultData, banksData] = await Promise.all([
-                BankDepositClientService.getVaultAssets(),
+            const [vaultRes, banksData] = await Promise.all([
+                BankDepositClientService.getVaultAssets(0, pageSize),
                 BankDepositClientService.getActiveBanks()
             ]);
-            setVaultAssets(vaultData);
+
+            if (vaultRes) {
+                setVaultAssets(vaultRes.content);
+                setPage(vaultRes.number);
+                setTotalPages(vaultRes.totalPages);
+                setTotalElements(vaultRes.totalElements);
+            }
             setActiveBanks(banksData);
         } catch (err) {
             console.error("Failed to fetch vault data", err);
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+
+    const fetchVaultPage = useCallback(async (targetPage: number, search: string = "") => {
+        setIsLoading(true);
+        try {
+            const vaultRes = await BankDepositClientService.getVaultAssets(targetPage, pageSize, search);
+            if (vaultRes) {
+                setVaultAssets(vaultRes.content);
+                setPage(vaultRes.number);
+                setTotalPages(vaultRes.totalPages);
+                setTotalElements(vaultRes.totalElements);
+            }
+        } catch (err) {
+            console.error("Failed to load page", err);
         } finally {
             setIsLoading(false);
         }
@@ -43,7 +74,7 @@ export function useBankDeposit() {
         setIsSubmitting(true);
         try {
             const slip = await BankDepositClientService.prepareDeposit({ assetIds, targetBankId, remarks });
-            await fetchVaultAndBanks();
+            await fetchVaultAndBanks(); // Refresh from page 0 after successful deposit
             if (!slip) {
                 throw new Error("Failed to generate deposit slip");
             }
@@ -70,6 +101,7 @@ export function useBankDeposit() {
     return {
         vaultAssets, activeBanks, history,
         isLoading, isSubmitting,
-        fetchVaultAndBanks, fetchHistory, prepareDeposit, clearDeposit
+        page, totalPages, totalElements, pageSize, // 🚀 Exported Pagination States
+        fetchVaultAndBanks, fetchVaultPage, fetchHistory, prepareDeposit, clearDeposit
     };
 }

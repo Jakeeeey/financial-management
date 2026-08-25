@@ -28,7 +28,7 @@ export function useProducts() {
 
       // CALL THE BRIDGE, NOT THE SERVICE
       const url = new URL(
-        "/api/supplier-registration/products",
+        "/api/fm/supplier-registration/products",
         window.location.origin,
       );
       if (search) url.searchParams.append("search", search);

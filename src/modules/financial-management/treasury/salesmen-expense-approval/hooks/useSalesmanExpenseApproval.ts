@@ -3,10 +3,8 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { startOfMonth, endOfMonth, format } from "date-fns";
-import type { DateRange } from "react-day-picker";
 
-import type { SalesmanExpenseRow, SalesmanExpenseDetail, ApprovalLog } from "../type";
+import type { SalesmanExpenseRow, SalesmanExpenseDetail, ApprovalLog, ExpenseHeader } from "../type";
 import * as api from "../providers/fetchProvider";
 
 export function useSalesmanExpenseApproval() {
@@ -16,29 +14,20 @@ export function useSalesmanExpenseApproval() {
   const [logsLoading, setLogsLoading] = React.useState(false);
   const [unauthorized, setUnauthorized] = React.useState(false);
 
-  // Date filter
-  const [dateRange, setDateRange] = React.useState<DateRange | undefined>({
-    from: startOfMonth(new Date()),
-    to: endOfMonth(new Date()),
-  });
+  // Two-step modal flow
+  const [selectedSalesman, setSelectedSalesman] = React.useState<SalesmanExpenseRow | null>(null);
+  const [salesmanDetail, setSalesmanDetail] = React.useState<SalesmanExpenseDetail | null>(null);
+  const [detailLoading, setDetailLoading] = React.useState(false);
+  const [selectedHeader, setSelectedHeader] = React.useState<ExpenseHeader | null>(null);
+
+  // Modal state (only opens after header is chosen)
+  const [modalOpen, setModalOpen] = React.useState(false);
+  const [modalLoading, setModalLoading] = React.useState(false);
 
   // Search & Pagination state
   const [q, setQ] = React.useState("");
   const [page, setPage] = React.useState(1);
-  const pageSize = 5; // User requested 5 rows height
-
-  const startDateStr = React.useMemo(() => 
-    dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined
-  , [dateRange]);
-
-  const endDateStr = React.useMemo(() => 
-    dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined
-  , [dateRange]);
-
-  const [modalOpen, setModalOpen] = React.useState(false);
-  const [modalLoading, setModalLoading] = React.useState(false);
-  const [selectedSalesman, setSelectedSalesman] = React.useState<SalesmanExpenseRow | null>(null);
-  const [salesmanDetail, setSalesmanDetail] = React.useState<SalesmanExpenseDetail | null>(null);
+  const pageSize = 5;
 
   const loadLogs = React.useCallback(async () => {
     try {
@@ -60,7 +49,7 @@ export function useSalesmanExpenseApproval() {
     try {
       setLoading(true);
       const [data] = await Promise.all([
-        api.listSalesmenWithExpenses(startDateStr, endDateStr),
+        api.listSalesmenWithExpenses(),
         loadLogs(),
       ]);
       setRows(data);
@@ -74,15 +63,11 @@ export function useSalesmanExpenseApproval() {
     } finally {
       setLoading(false);
     }
-  }, [loadLogs, startDateStr, endDateStr]);
+  }, [loadLogs]);
 
   React.useEffect(() => {
     load();
   }, [load]);
-
-  React.useEffect(() => {
-    setPage(1);
-  }, [dateRange]);
 
   // Client-side filtering
   const filteredRows = React.useMemo(() => {
@@ -104,29 +89,51 @@ export function useSalesmanExpenseApproval() {
   const totalItems = filteredRows.length;
   const pageCount = Math.ceil(totalItems / pageSize) || 1;
 
-  async function openModal(row: SalesmanExpenseRow) {
+  // Step 1: Select a salesman → load detail & show header panel
+  async function selectSalesman(row: SalesmanExpenseRow) {
+    if (selectedSalesman?.id === row.id) {
+      // Clicking the same row dismisses the panel
+      setSelectedSalesman(null);
+      setSalesmanDetail(null);
+      setSelectedHeader(null);
+      return;
+    }
     setSelectedSalesman(row);
-    setModalOpen(true);
-    setModalLoading(true);
+    setSelectedHeader(null);
+    setDetailLoading(true);
     try {
-      const detail = await api.getSalesmanExpenses(row.id, startDateStr, endDateStr);
+      const detail = await api.getSalesmanExpenses(row.id);
       setSalesmanDetail(detail);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to load expenses");
       setSalesmanDetail(null);
     } finally {
-      setModalLoading(false);
+      setDetailLoading(false);
     }
+  }
+
+  // Step 2: Pick a header → open modal
+  function openModalForHeader(header: ExpenseHeader) {
+    setSelectedHeader(header);
+    setModalOpen(true);
+    setModalLoading(false);
   }
 
   function closeModal() {
     setModalOpen(false);
+    setSelectedHeader(null);
+  }
+
+  function closePanel() {
     setSelectedSalesman(null);
     setSalesmanDetail(null);
+    setSelectedHeader(null);
+    setModalOpen(false);
   }
 
   async function onConfirmed() {
     closeModal();
+    closePanel();
     await load();
   }
 
@@ -139,18 +146,23 @@ export function useSalesmanExpenseApproval() {
     setPage,
     pageCount,
     loading,
-    modalOpen,
-    modalLoading,
+    // Panel state
     selectedSalesman,
     salesmanDetail,
-    logs,
-    logsLoading,
-    openModal,
+    detailLoading,
+    selectSalesman,
+    closePanel,
+    // Header selection
+    selectedHeader,
+    openModalForHeader,
+    // Modal state
+    modalOpen,
+    modalLoading,
     closeModal,
     onConfirmed,
+    // Logs
+    logs,
+    logsLoading,
     unauthorized,
-    dateRange,
-    setDateRange,
   };
 }
-

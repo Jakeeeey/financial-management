@@ -1,6 +1,3 @@
-// hooks/useAccountsReceivable.ts
-// Fetches ALL records by passing a wide date range, filtering is done client-side.
-
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { transformInvoices, deriveMetrics, mapToSortedArray } from '../utils';
@@ -11,6 +8,8 @@ import type {
   NamedValue,
   ARMetrics,
   RawInvoiceRow,
+  OperationBreakdown,
+  ARApiResponse,
 } from '../types';
 
 interface UseARResult {
@@ -18,22 +17,25 @@ interface UseARResult {
   error: string | null;
   invoices: Invoice[];
   agingData: AgingBucket[];
-  branchData: NamedAmount[];
   salesmanData: NamedValue[];
+  customerData: NamedAmount[];
   metrics: ARMetrics;
+  operationData: OperationBreakdown[];
 }
 
 export function useAccountsReceivable(): UseARResult {
-  const [loading, setLoading]         = useState(true);
-  const [error, setError]             = useState<string | null>(null);
-  const [invoices, setInvoices]       = useState<Invoice[]>([]);
-  const [agingData, setAgingData]     = useState<AgingBucket[]>([
-    { range: '0-30 Days', amount: 0 },
-    { range: '30-60 Days', amount: 0 },
-    { range: '60+ Days', amount: 0 },
+  const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState<string | null>(null);
+  const [invoices, setInvoices]         = useState<Invoice[]>([]);
+  const [agingData, setAgingData]       = useState<AgingBucket[]>([
+    { range: '0-30 Days',  amount: 0 },
+    { range: '31-60 Days', amount: 0 },
+    { range: '61-90 Days', amount: 0 },
+    { range: '90+ Days',   amount: 0 },
   ]);
-  const [branchData, setBranchData]     = useState<NamedAmount[]>([]);
   const [salesmanData, setSalesmanData] = useState<NamedValue[]>([]);
+  const [customerData, setCustomerData] = useState<NamedAmount[]>([]);
+  const [operationData, setOperationData] = useState<OperationBreakdown[]>([]);
   const [metrics, setMetrics]           = useState<ARMetrics>({
     totalReceivable: 0,
     totalOutstanding: 0,
@@ -43,32 +45,27 @@ export function useAccountsReceivable(): UseARResult {
 
   useEffect(() => {
     async function fetchData() {
-      const toastId = toast.loading('Loading accounts receivable data...');
+      const toastId = toast.loading('Loading accounts receivable…');
       try {
-        // Pass a wide range so all historical records are returned from the backend
-        const params = new URLSearchParams({
-          startDate: '2020-01-01',
-          endDate:   new Date().toISOString().split('T')[0],
+        // No date params — the API filters by isPosted=false and payment_status≠Paid
+        const res = await fetch('/api/fm/accounting/accounts-receivable', {
+          credentials: 'include',
         });
-
-        const res = await fetch(
-          `/api/fm/accounting/accounts-receivable?${params}`,
-          { credentials: 'include' }
-        );
         if (!res.ok) throw new Error(`Request failed: ${res.status} ${res.statusText}`);
         const contentType = res.headers.get('content-type');
         if (!contentType?.includes('application/json')) {
           throw new Error('Backend did not return JSON');
         }
 
-        const result = await res.json();
+        const result: ARApiResponse = await res.json();
         const rows: RawInvoiceRow[] = Array.isArray(result)
           ? result
-          : (result.data ?? result.content ?? result.transactions ?? []);
+          : (result.rows ?? (result as unknown as { data?: RawInvoiceRow[] }).data ?? []);
+        const opData = Array.isArray(result) ? [] : (result.operationData ?? []);
 
-        const { invoices, agingData, branchMap, salesmanMap } = transformInvoices(rows);
-        const metrics      = deriveMetrics(invoices, branchMap);
-        const branchData   = mapToSortedArray(branchMap, 8);
+        const { invoices, agingData, salesmanMap, customerMap } = transformInvoices(rows);
+        const metrics      = deriveMetrics(invoices);
+        const customerData = mapToSortedArray(customerMap, 10);
         const salesmanData = Object.entries(salesmanMap)
           .map(([name, value]) => ({ name, value }))
           .sort((a, b) => b.value - a.value)
@@ -76,11 +73,12 @@ export function useAccountsReceivable(): UseARResult {
 
         setInvoices(invoices);
         setAgingData(agingData);
-        setBranchData(branchData);
         setSalesmanData(salesmanData);
+        setCustomerData(customerData);
+        setOperationData(opData);
         setMetrics(metrics);
         setError(null);
-        toast.success('Data loaded successfully', { id: toastId });
+        toast.success(`Loaded ${invoices.length} invoices`, { id: toastId });
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
         setError(msg);
@@ -92,5 +90,5 @@ export function useAccountsReceivable(): UseARResult {
     fetchData();
   }, []);
 
-  return { loading, error, invoices, agingData, branchData, salesmanData, metrics };
+  return { loading, error, invoices, agingData, salesmanData, customerData, metrics, operationData };
 }

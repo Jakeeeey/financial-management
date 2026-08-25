@@ -3,10 +3,14 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { startOfMonth, endOfMonth, format } from "date-fns";
-import type { DateRange } from "react-day-picker";
 
-import type { DraftRow, DraftDetail, LogDraft } from "../type";
+import type {
+  ApprovalContext,
+  DraftDetail,
+  DraftRow,
+  FinalHeaderGroup,
+  LogDraft,
+} from "../type";
 import * as api from "../providers/fetchProvider";
 
 export function useBulkApproval() {
@@ -16,33 +20,65 @@ export function useBulkApproval() {
   const [levelsByDivision, setLevelsByDivision] = React.useState<Record<number, number[]>>({});
   const [unauthorized, setUnauthorized] = React.useState(false);
 
+  const [approvalContexts, setApprovalContexts] = React.useState<ApprovalContext[]>([]);
+  const [contextsLoading, setContextsLoading] = React.useState(true);
+
+  const [finalHeaderGroups, setFinalHeaderGroups] = React.useState<FinalHeaderGroup[]>([]);
+  const [finalHeaderGroupsLoading, setFinalHeaderGroupsLoading] = React.useState(false);
+
   const [logs, setLogs] = React.useState<LogDraft[]>([]);
   const [logsLoading, setLogsLoading] = React.useState(false);
 
-  // Date filter
-  const [dateRange, setDateRange] = React.useState<DateRange | undefined>({
-    from: startOfMonth(new Date()),
-    to: endOfMonth(new Date()),
-  });
-
-  // Search & pagination
   const [q, setQ] = React.useState("");
   const [page, setPage] = React.useState(1);
   const pageSize = 8;
 
-  const startDateStr = React.useMemo(() => 
-    dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined
-  , [dateRange]);
-
-  const endDateStr = React.useMemo(() => 
-    dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined
-  , [dateRange]);
-
-  // Vote modal
   const [modalOpen, setModalOpen] = React.useState(false);
   const [modalLoading, setModalLoading] = React.useState(false);
   const [draftDetail, setDraftDetail] = React.useState<DraftDetail | null>(null);
   const [selectedDraftId, setSelectedDraftId] = React.useState<number | null>(null);
+
+  const [selectedDivisionId, setSelectedDivisionId] = React.useState<number | undefined>(undefined);
+
+  const normalApprovalContexts = React.useMemo(
+    () => approvalContexts.filter((context) => !context.is_final_approver),
+    [approvalContexts]
+  );
+
+  const finalApprovalContexts = React.useMemo(
+    () => approvalContexts.filter((context) => context.is_final_approver),
+    [approvalContexts]
+  );
+
+  const canDoNormalApproval = normalApprovalContexts.length > 0;
+  const canDoFinalApproval = finalApprovalContexts.length > 0;
+
+  const availableDivisions = React.useMemo(
+    () =>
+      normalApprovalContexts.map((context) => ({
+        id: context.division_id,
+        name: context.division_name ?? `Division #${context.division_id}`,
+      })),
+    [normalApprovalContexts]
+  );
+
+  const loadApprovalContexts = React.useCallback(async () => {
+    try {
+      setContextsLoading(true);
+      const contexts = await api.getMyApprovalContexts();
+      setApprovalContexts(contexts);
+      if (contexts.length === 0) setUnauthorized(true);
+    } catch (e: unknown) {
+      if (e instanceof Error && e.message === "403_UNAUTHORIZED") {
+        setUnauthorized(true);
+      } else {
+        console.error("Failed to load approval contexts", e);
+      }
+      setApprovalContexts([]);
+    } finally {
+      setContextsLoading(false);
+    }
+  }, []);
 
   const loadLogs = React.useCallback(async () => {
     try {
@@ -60,12 +96,31 @@ export function useBulkApproval() {
     }
   }, []);
 
+  const loadFinalHeaderGroups = React.useCallback(async (): Promise<FinalHeaderGroup[]> => {
+    try {
+      setFinalHeaderGroupsLoading(true);
+      const groups = await api.getFinalHeaderGroups();
+      setFinalHeaderGroups(groups);
+      return groups;
+    } catch (e: unknown) {
+      if (e instanceof Error && e.message === "403_UNAUTHORIZED") {
+        setFinalHeaderGroups([]);
+      } else {
+        console.error("Failed to load final top-sheet groups", e);
+      }
+      return [];
+    } finally {
+      setFinalHeaderGroupsLoading(false);
+    }
+  }, []);
+
   const load = React.useCallback(async () => {
     try {
       setLoading(true);
       const [result] = await Promise.all([
-        api.listDrafts(startDateStr, endDateStr),
+        api.listDrafts(selectedDivisionId),
         loadLogs(),
+        loadFinalHeaderGroups(),
       ]);
       setDrafts(result.data);
       setMyLevel(result.myLevel);
@@ -80,33 +135,44 @@ export function useBulkApproval() {
     } finally {
       setLoading(false);
     }
-  }, [loadLogs, startDateStr, endDateStr]);
+  }, [loadFinalHeaderGroups, loadLogs, selectedDivisionId]);
 
   React.useEffect(() => {
-    load();
+    void loadApprovalContexts();
+  }, [loadApprovalContexts]);
+
+  React.useEffect(() => {
+    void load();
   }, [load]);
 
   React.useEffect(() => {
     setPage(1);
-  }, [dateRange]);
+  }, [selectedDivisionId]);
 
-  // Client-side filter
+  React.useEffect(() => {
+    if (!selectedDivisionId) return;
+    const stillAllowed = availableDivisions.some((division) => division.id === selectedDivisionId);
+    if (!stillAllowed) setSelectedDivisionId(undefined);
+  }, [availableDivisions, selectedDivisionId]);
+
   const filteredDrafts = React.useMemo(() => {
     const query = q.toLowerCase().trim();
     if (!query) return drafts;
+
     return drafts.filter(
-      (d) =>
-        d.doc_no.toLowerCase().includes(query) ||
-        d.payee_name.toLowerCase().includes(query) ||
-        (d.remarks ?? "").toLowerCase().includes(query)
+      (draft) =>
+        draft.doc_no.toLowerCase().includes(query) ||
+        draft.payee_name.toLowerCase().includes(query) ||
+        draft.encoder_name.toLowerCase().includes(query) ||
+        (draft.division_name ?? "").toLowerCase().includes(query) ||
+        (draft.remarks ?? "").toLowerCase().includes(query)
     );
   }, [drafts, q]);
 
-  // Client-side pagination
   const paginatedDrafts = React.useMemo(() => {
     const start = (page - 1) * pageSize;
     return filteredDrafts.slice(start, start + pageSize);
-  }, [filteredDrafts, page, pageSize]);
+  }, [filteredDrafts, page]);
 
   const totalItems = filteredDrafts.length;
   const pageCount = Math.ceil(totalItems / pageSize) || 1;
@@ -115,12 +181,27 @@ export function useBulkApproval() {
     setSelectedDraftId(draft.id);
     setModalOpen(true);
     setModalLoading(true);
+
     try {
       const detail = await api.getDraftDetail(draft.id);
       setDraftDetail(detail);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to load draft details");
       setDraftDetail(null);
+    } finally {
+      setModalLoading(false);
+    }
+  }
+
+  async function refreshDetail() {
+    if (!selectedDraftId) return;
+
+    setModalLoading(true);
+    try {
+      const detail = await api.getDraftDetail(selectedDraftId);
+      setDraftDetail(detail);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to refresh draft details");
     } finally {
       setModalLoading(false);
     }
@@ -137,6 +218,10 @@ export function useBulkApproval() {
     await load();
   }
 
+  async function refreshAll() {
+    await Promise.all([loadApprovalContexts(), load()]);
+  }
+
   return {
     drafts: paginatedDrafts,
     totalItems,
@@ -148,6 +233,9 @@ export function useBulkApproval() {
     loading,
     myLevel,
     levelsByDivision,
+    selectedDivisionId,
+    setSelectedDivisionId,
+    availableDivisions,
     unauthorized,
     logs,
     logsLoading,
@@ -155,10 +243,19 @@ export function useBulkApproval() {
     modalLoading,
     draftDetail,
     selectedDraftId,
+    approvalContexts,
+    contextsLoading,
+    normalApprovalContexts,
+    finalApprovalContexts,
+    canDoNormalApproval,
+    canDoFinalApproval,
+    finalHeaderGroups,
+    finalHeaderGroupsLoading,
+    loadFinalHeaderGroups,
     openVoteModal,
     closeModal,
     onVoteComplete,
-    dateRange,
-    setDateRange,
+    refreshDetail,
+    refreshAll,
   };
 }

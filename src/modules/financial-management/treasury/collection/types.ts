@@ -7,6 +7,17 @@ export interface CurrentUser {
     email: string;
 }
 
+// 🚀 NEW: Simplified UserDto for the UI
+export interface UserDto {
+    id: number | string;
+    firstName: string;
+    lastName: string;
+    email?: string;
+    position?: string;
+    department?: number;
+    name?: string; // Optional: Combines first & last for easy dropdown rendering
+}
+
 // --- MASTER DATA ---
 export interface Bank {
     id: number;
@@ -33,6 +44,20 @@ export interface Denomination {
     amount: number; // Face value (1000, 500, etc.)
 }
 
+export interface PaymentMethod {
+    methodId: number | string;
+    methodName: string;
+    coaId?: number | string;
+}
+
+export interface Customer {
+    id: number | string;
+    customerCode?: string;
+    code?: string;
+    customerName?: string;
+    name?: string;
+}
+
 // --- CASHIERING / POUCH MODULE ---
 export interface CollectionSummary {
     id: number;
@@ -52,9 +77,11 @@ export interface CheckDetail {
     checkNo: string;
     amount: string;
     chequeDate: string;
+    paymentMethodId?: string;
+    customerId?: string;
+    invoiceId?: string;
 }
 
-// 🚀 NEW: Strict interface to replace the 'any' in CashieringRequestDto
 export interface CashBucketDto {
     amount?: number;
     paymentMethod?: string;
@@ -69,36 +96,39 @@ export interface CashBucketDto {
 export interface CashieringRequestDto {
     id?: number;
     salesmanId: number | string;
+    collectedBy?: number | string; // 🚀 Added
+    crNo?: string;                 // 🚀 Added
     collectionDate: string;
     remarks: string;
-    cashBuckets: CashBucketDto[]; // 🚀 FIX: Typed array instead of any[]
-    allocations: SettlementAllocation[]; // The "Cart" of invoices
+    cashBuckets: CashBucketDto[];
+    allocations: SettlementAllocation[];
 }
 
 // --- AR SETTLEMENT & FORENSICS ---
 export interface PaymentHistory {
     date: string;
-    type: string;      // "CASH/CHECK", "MEMO", "RETURN"
+    type: string;
     reference: string;
     amount: number;
 }
 
 export interface UnpaidInvoice {
     id: number;
+    invoiceId?: number; // Added for backwards compatibility in UI
     invoiceNo: string;
     customerName: string;
     transactionDate: string;
     dueDate: string;
     agingDays: number;
 
-    // 🚀 FORENSIC TOTALS
+    // FORENSIC TOTALS
     originalAmount: number;
     totalPayments: number;
     totalMemos: number;
     totalReturns: number;
     remainingBalance: number;
 
-    // 🚀 AUDIT TRAIL
+    // AUDIT TRAIL
     history?: PaymentHistory[];
 }
 
@@ -110,20 +140,20 @@ export interface SettlementAllocation {
     dueDate: string;
     agingDays: number;
 
-    // 🚀 FORENSIC DATA (Populated when loading existing pouches)
+    // FORENSIC DATA
     originalAmount: number;
     totalPayments: number;
     totalMemos: number;
     totalReturns: number;
     remainingBalance: number;
 
-    // 🚀 HISTORY POPUP
+    // HISTORY POPUP
     history?: PaymentHistory[];
 
     // CURRENT SESSION DATA
     amountApplied: number;
-    allocationType: string; // "CASH", "CHECK", "MEMO", "RETURN"
-    sourceTempId: string;   // Maps to the specific Check/Memo/Return ID
+    allocationType: string;
+    sourceTempId: string;
 }
 
 // --- STATE & PAYLOADS ---
@@ -136,10 +166,23 @@ export interface CashieringState {
     editingId: number | null;
     masterList: CollectionSummary[];
     salesmen: Salesman[];
+    users: UserDto[];                // 🚀 Added: List of users for the dropdown
     banks: Bank[];
     coas: COA[];
+    paymentMethods: PaymentMethod[];
+    customers: Customer[];
+    customerInvoices: Record<string, UnpaidInvoice[]>;
+    routeInvoices: UnpaidInvoice[];
+
     salesmanId: string;
     setSalesmanId: (id: string) => void;
+
+    collectedBy: string;             // 🚀 Added
+    setCollectedBy: (id: string) => void; // 🚀 Added
+
+    crNo: string;                    // 🚀 Added
+    setCrNo: (val: string) => void;  // 🚀 Added
+
     collectionDate: string;
     setCollectionDate: (date: string) => void;
     remarks: string;
@@ -151,6 +194,9 @@ export interface CashieringState {
     addCheck: () => void;
     updateCheck: (index: number, field: keyof CheckDetail, value: string) => void;
     removeCheck: (index: number) => void;
+    handlePaymentMethodSelect: (index: number, methodId: string) => void;
+    handleCustomerSelect: (index: number, customerId: string) => void;
+    handleInvoiceSelect: (index: number, invoiceId: string) => void;
     totalCash: number;
     totalChecks: number;
     grandTotal: number;
@@ -159,7 +205,6 @@ export interface CashieringState {
     resetForm: () => void;
 }
 
-// 🚀 NEW: Strict interfaces to replace the 'any's in SettlementPayload
 export interface NewAdjustmentDto {
     findingId?: number;
     amount: number;
@@ -175,9 +220,8 @@ export interface NewEwtDto {
     tempId: string;
 }
 
-// --- SETTLEMENT PAYLOAD ---
 export interface SettlementPayload {
-    newAdjustments: NewAdjustmentDto[]; // 🚀 FIX: Typed array instead of any[]
-    newEwts: NewEwtDto[];               // 🚀 FIX: Typed array instead of any[]
+    newAdjustments: NewAdjustmentDto[];
+    newEwts: NewEwtDto[];
     allocations: SettlementAllocation[];
 }

@@ -16,9 +16,10 @@ export const SupplierSchema = z.object({
   supplier_type: z.string().min(1, "Supplier type is required"),
   tin_number: z
     .string()
-    .regex(/^\d{9,12}$/, "TIN must be 9-12 digits")
-    .min(9, "TIN must be at least 9 digits")
-    .max(12, "TIN cannot exceed 12 digits"),
+    .transform((val) => val.replace(/\D/g, "")) // Strip non-digits
+    .refine((val) => val.length >= 9 && val.length <= 12, {
+      message: "TIN must be 9-12 digits",
+    }),
   contact_person: z.string().min(2, "Contact person name is required"),
   email_address: z
     .string()
@@ -61,8 +62,10 @@ export const SupplierFormSchema = z.object({
   supplier_type: z.string().min(1, "Supplier type is required"),
   tin_number: z
     .string()
-    .regex(/^\d{9,12}$/, "TIN must be 9-12 digits")
-    .min(9, "TIN must be at least 9 digits"),
+    .transform((val) => val.replace(/\D/g, "")) // Strip non-digits
+    .refine((val) => val.length >= 9 && val.length <= 12, {
+      message: "TIN must be 9-12 digits",
+    }),
   contact_person: z.string().min(2, "Contact person name is required"),
   email_address: z
     .string()

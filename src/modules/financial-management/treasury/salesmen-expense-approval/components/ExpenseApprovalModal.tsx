@@ -2,17 +2,30 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, ExternalLink, CheckSquare, Square, AlertCircle, FileText, User, Briefcase, Hash, Wallet, Info, X } from "lucide-react";
+import {
+  Loader2,
+  ExternalLink,
+  ShieldCheck,
+  X,
+  Check,
+  MessageSquareWarning,
+  Receipt,
+  User,
+  Building2,
+  Wallet,
+  CheckCircle2,
+  Send,
+  Calendar,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -24,479 +37,1104 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
-import type { SalesmanExpenseDetail, ExpenseDraftRow } from "../type";
+import type {
+  SalesmanExpenseDetail,
+  ExpenseDraftRow,
+  ItemDecision,
+  ExpenseHeader,
+} from "../type";
 import * as api from "../providers/fetchProvider";
 
 interface Props {
   open: boolean;
   loading: boolean;
   detail: SalesmanExpenseDetail | null;
+  selectedHeader: ExpenseHeader | null;
   onClose: () => void;
   onConfirmed: () => void;
 }
 
+type UiDecisionStatus = ItemDecision["status"] | "PENDING";
+
 function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(amount);
+  return new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+  }).format(amount);
 }
 
 function formatDate(d: string | null) {
   if (!d) return "—";
+
   try {
-    return new Date(d + "T00:00:00").toLocaleDateString("en-PH", {
-      year: "numeric", month: "short", day: "numeric",
+    return new Date(`${d}T00:00:00`).toLocaleDateString("en-PH", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
     });
   } catch {
     return d;
   }
 }
 
-function statusBadge(status: ExpenseDraftRow["status"]) {
-  if (status === "Drafts")
-    return <Badge className="bg-amber-100 text-amber-800 border-amber-200 shadow-sm transition-all hover:scale-105">Draft</Badge>;
-  if (status === "Rejected")
-    return <Badge className="bg-red-100 text-red-700 border-red-200 shadow-sm transition-all hover:scale-105">Rejected</Badge>;
-  return <Badge variant="outline">{status}</Badge>;
+function normalizeStatus(status: string | null | undefined) {
+  return String(status ?? "").trim().toLowerCase();
 }
 
-export default function ExpenseApprovalModal({ open, loading, detail, onClose, onConfirmed }: Props) {
-  const [selectedIds, setSelectedIds] = React.useState<Set<number>>(new Set());
+function isDraftExpense(expense: ExpenseDraftRow) {
+  return normalizeStatus(expense.status) === "drafts";
+}
+
+function needsFeedback(status: UiDecisionStatus) {
+  return status === "Rejected" || status === "With Concern";
+}
+
+function getStatusBadgeClass(status: UiDecisionStatus) {
+  if (status === "Approved") return "bg-emerald-100 text-emerald-700 border-emerald-200";
+  if (status === "Rejected") return "bg-rose-100 text-rose-700 border-rose-200";
+  if (status === "With Concern") return "bg-amber-100 text-amber-700 border-amber-200";
+  return "bg-slate-100 text-slate-600 border-slate-200";
+}
+
+export default function ExpenseApprovalModal({
+  open,
+  loading,
+  detail,
+  selectedHeader,
+  onClose,
+  onConfirmed,
+}: Props) {
+  const [itemDecisions, setItemDecisions] = React.useState<Record<number, UiDecisionStatus>>({});
+  const [itemRemarks, setItemRemarks] = React.useState<Record<number, string>>({});
   const [remarks, setRemarks] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
   const [localAmounts, setLocalAmounts] = React.useState<Record<number, string>>({});
+  const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
+  const [processingItem, setProcessingItem] = React.useState<number | null>(null);
 
-  // Reset selections when detail changes (new salesman loaded)
+  const headerExpenses = React.useMemo(() => {
+    if (!detail || !selectedHeader) return [];
+    return detail.expenses.filter((expense) => Number(expense.header_id) === selectedHeader.id);
+  }, [detail, selectedHeader]);
+
+  const editableHeaderExpenses = React.useMemo(() => {
+    return headerExpenses.filter(isDraftExpense);
+  }, [headerExpenses]);
+
+  const hasEditableHeaderExpenses = editableHeaderExpenses.length > 0;
+  const viewOnlyHeaderExpensesCount = headerExpenses.length - editableHeaderExpenses.length;
+
+  const groupedExpenses = React.useMemo(() => {
+    const groups: Record<
+      string,
+      { particulars_name: string; particulars: number; items: ExpenseDraftRow[] }
+    > = {};
+
+    headerExpenses.forEach((expense) => {
+      const key = String(expense.particulars);
+
+      if (!groups[key]) {
+        groups[key] = {
+          particulars_name: expense.particulars_name || "Uncategorized",
+          particulars: expense.particulars,
+          items: [],
+        };
+      }
+
+      groups[key].items.push(expense);
+    });
+
+    return Object.values(groups)
+      .sort((a, b) => a.particulars_name.localeCompare(b.particulars_name))
+      .map((group) => ({
+        ...group,
+        items: group.items.sort(
+          (a, b) =>
+            new Date(b.transaction_date).getTime() - new Date(a.transaction_date).getTime()
+        ),
+      }));
+  }, [headerExpenses]);
+
+  const activeGroup = React.useMemo(() => {
+    if (!selectedGroupId) return null;
+    return groupedExpenses.find((group) => String(group.particulars) === selectedGroupId) || null;
+  }, [selectedGroupId, groupedExpenses]);
+
   React.useEffect(() => {
-    setSelectedIds(new Set());
+    if (!open || !detail) return;
+
     setRemarks("");
-    if (detail) {
-      const initial: Record<number, string> = {};
-      detail.expenses.forEach(e => {
-        initial[e.id] = String(e.amount);
-      });
-      setLocalAmounts(initial);
+    setConfirmOpen(false);
+    setProcessingItem(null);
+
+    const initialAmounts: Record<number, string> = {};
+    const initialDecisions: Record<number, UiDecisionStatus> = {};
+    const initialRemarks: Record<number, string> = {};
+
+    detail.expenses.forEach((expense) => {
+      initialAmounts[expense.id] = String(expense.amount);
+      initialDecisions[expense.id] = isDraftExpense(expense) ? "PENDING" : (expense.status as UiDecisionStatus);
+      initialRemarks[expense.id] = expense.feedback || "";
+    });
+
+    setLocalAmounts(initialAmounts);
+    setItemDecisions(initialDecisions);
+    setItemRemarks(initialRemarks);
+
+    if (groupedExpenses.length > 0) {
+      setSelectedGroupId(String(groupedExpenses[0].particulars));
     } else {
-      setLocalAmounts({});
+      setSelectedGroupId(null);
     }
-  }, [detail]);
+  }, [open, detail, groupedExpenses]);
 
-  function handleAmountChange(id: number, val: string) {
-    if (/^\d*\.?\d*$/.test(val)) {
-      setLocalAmounts(prev => ({ ...prev, [id]: val }));
+  const setItemStatus = (expense: ExpenseDraftRow, status: UiDecisionStatus) => {
+    if (!isDraftExpense(expense)) {
+      toast.info("This expense is already processed and is view-only.");
+      return;
     }
-  }
 
-  function toggle(id: number) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+    setItemDecisions((prev) => ({
+      ...prev,
+      [expense.id]: prev[expense.id] === status ? "PENDING" : status,
+    }));
+  };
+
+  const toggleGroupStatus = (groupItems: ExpenseDraftRow[], status: UiDecisionStatus) => {
+    const editableItems = groupItems.filter(isDraftExpense);
+
+    if (editableItems.length === 0) {
+      toast.info("This group has no Drafts items to approve.");
+      return;
+    }
+
+    setItemDecisions((prev) => {
+      const next = { ...prev };
+      editableItems.forEach((item) => {
+        next[item.id] = status;
+      });
       return next;
     });
-  }
+  };
 
-  function toggleAll() {
-    if (!detail) return;
-    const allIds = detail.expenses.map((e) => e.id);
-    if (selectedIds.size === allIds.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(allIds));
-    }
-  }
-
-  const totalSelected = detail?.expenses
-    .filter((e) => selectedIds.has(e.id))
-    .reduce((sum, e) => sum + Number(localAmounts[e.id] || 0), 0) ?? 0;
-
-  const expenseLimit = detail?.expense_limit ?? 0;
-  const allIds = detail?.expenses.map((e) => e.id) ?? [];
-  const allSelected = allIds.length > 0 && selectedIds.size === allIds.length;
-
-  // Check if the total of selected items exceeds the batch limit
-  const isOverBatchLimit = expenseLimit > 0 && totalSelected > expenseLimit;
-
-  function rowBgClass(expense: ExpenseDraftRow): string {
-    if (!selectedIds.has(expense.id)) return "";
-    if (isOverBatchLimit) {
-      return "bg-red-100/80 dark:bg-red-900/40 border-l-4 border-l-red-600 font-medium";
-    }
-    return "bg-green-50/80 dark:bg-green-900/20 border-l-4 border-l-green-500";
-  }
-
-  async function handleConfirm() {
-    if (!detail) return;
-    if (selectedIds.size === 0) {
-      toast.warning("Please select at least one expense to approve.");
-      return;
-    }
-    if (!remarks.trim()) {
-      toast.warning("Remarks are required for the disbursement record.");
+  const approveAll = () => {
+    if (!hasEditableHeaderExpenses) {
+      toast.info("This submittal is view-only because there are no Drafts items.");
       return;
     }
 
-    // Identify edited amounts
-    const editedMap: Record<number, number> = {};
-    detail.expenses.forEach(e => {
-      const newVal = Number(localAmounts[e.id] || 0);
-      if (newVal !== Number(e.amount)) {
-        editedMap[e.id] = newVal;
-      }
+    setItemDecisions((prev) => {
+      const next = { ...prev };
+      editableHeaderExpenses.forEach((item) => {
+        next[item.id] = "Approved";
+      });
+      return next;
     });
+  };
 
-    setSubmitting(true);
+  const uncheckAll = () => {
+    if (!hasEditableHeaderExpenses) {
+      toast.info("This submittal is view-only because there are no Drafts items.");
+      return;
+    }
+
+    setItemDecisions((prev) => {
+      const next = { ...prev };
+      editableHeaderExpenses.forEach((item) => {
+        next[item.id] = "PENDING";
+      });
+      return next;
+    });
+  };
+
+  const approvedCount = React.useMemo(() => {
+    return editableHeaderExpenses.filter((expense) => itemDecisions[expense.id] === "Approved")
+      .length;
+  }, [editableHeaderExpenses, itemDecisions]);
+
+  const totalSelected = React.useMemo(() => {
+    return editableHeaderExpenses.reduce((acc, expense) => {
+      if (itemDecisions[expense.id] !== "Approved") return acc;
+
+      const value = localAmounts[expense.id];
+      const amount = value !== undefined && value !== "" ? Number(value) : Number(expense.amount);
+
+      return acc + (Number.isFinite(amount) ? amount : 0);
+    }, 0);
+  }, [editableHeaderExpenses, localAmounts, itemDecisions]);
+
+  const hasPendingItems = React.useMemo(() => {
+    return editableHeaderExpenses.some((expense) => itemDecisions[expense.id] === "PENDING");
+  }, [editableHeaderExpenses, itemDecisions]);
+
+  const itemsMissingFeedback = React.useMemo(() => {
+    return editableHeaderExpenses.filter((expense) => {
+      const decision = itemDecisions[expense.id];
+      return needsFeedback(decision) && !itemRemarks[expense.id]?.trim();
+    });
+  }, [editableHeaderExpenses, itemDecisions, itemRemarks]);
+
+  const hasMissingFeedback = itemsMissingFeedback.length > 0;
+
+  const hasAnyEditableDecision = React.useMemo(() => {
+    return editableHeaderExpenses.some((expense) => itemDecisions[expense.id] !== "PENDING");
+  }, [editableHeaderExpenses, itemDecisions]);
+
+  const handleSingleItemSubmit = async (expense: ExpenseDraftRow) => {
+    if (!detail) return;
+
+    if (!isDraftExpense(expense)) {
+      toast.info("This expense is already processed and is view-only.");
+      return;
+    }
+
+    const status = itemDecisions[expense.id];
+    const feedback = itemRemarks[expense.id];
+
+    if (status === "PENDING" || !status) return;
+
+    if (needsFeedback(status) && !feedback?.trim()) {
+      return toast.warning("Feedback is required for rejected or concern items.");
+    }
+
+    setProcessingItem(expense.id);
+
     try {
-      const result = await api.confirmExpenses({
-        selected_ids: [...selectedIds],
-        all_ids: allIds,
-        remarks: remarks.trim(),
-        salesman_user_id: detail.salesman.employee_id,
+      const payloadDecisions: Record<number, ItemDecision> = {
+        [expense.id]: {
+          status: status as ItemDecision["status"],
+          remarks: needsFeedback(status) ? feedback.trim() : "Approved.",
+        },
+      };
+
+      await api.submitBatchApproval({
         salesman_id: detail.salesman.id,
-        device_time: new Date().toLocaleString("sv-SE").replace(" ", "T"),
-        edited_amounts: Object.keys(editedMap).length > 0 ? editedMap : undefined,
+        remarks: `Individual decision for item #${expense.id}: ${status}`,
+        item_decisions: payloadDecisions,
+        all_ids: headerExpenses.map((e) => e.id),
       });
 
-      if (result.doc_no) {
-        toast.success(`Transaction confirmed! Doc No: ${result.doc_no}`, {
-          description: `Disbursement draft ${result.doc_no} has been created.`
-        });
-      } else {
-        toast.info("Process complete. No expenses were approved.");
-      }
+      toast.success(`Decision for item #${expense.id} submitted.`);
       onConfirmed();
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Process failed");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Failed to submit decision.");
+    } finally {
+      setProcessingItem(null);
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (!detail) return;
+
+    if (!hasEditableHeaderExpenses) {
+      return toast.info("This submittal is view-only because there are no Drafts items.");
+    }
+
+    if (!hasAnyEditableDecision) {
+      return toast.warning(
+        "Please make at least one decision for a Drafts item before finalizing."
+      );
+    }
+
+    if (!remarks.trim()) {
+      return toast.warning("Submission remarks are required.");
+    }
+
+    if (itemsMissingFeedback.length > 0) {
+      return toast.error(
+        `Please provide feedback for the ${itemsMissingFeedback.length} rejected/concern item(s).`
+      );
+    }
+
+    setSubmitting(true);
+    setConfirmOpen(false);
+
+    try {
+      const payloadDecisions: Record<number, ItemDecision> = {};
+      const payloadEdited: { id: number; amount: number }[] = [];
+
+      editableHeaderExpenses.forEach((expense) => {
+        const status = itemDecisions[expense.id];
+        if (status === "PENDING") return;
+
+        payloadDecisions[expense.id] = {
+          status: status as ItemDecision["status"],
+          remarks: needsFeedback(status)
+            ? itemRemarks[expense.id]?.trim() || "Feedback provided."
+            : itemRemarks[expense.id]?.trim() || "Approved.",
+        };
+
+        const currentAmount = Number(localAmounts[expense.id]);
+        if (
+          status === "Approved" &&
+          Number.isFinite(currentAmount) &&
+          currentAmount !== Number(expense.amount)
+        ) {
+          payloadEdited.push({ id: expense.id, amount: currentAmount });
+        }
+      });
+
+      await api.submitBatchApproval({
+        salesman_id: detail.salesman.id,
+        remarks: remarks.trim(),
+        item_decisions: payloadDecisions,
+        edited_amounts: payloadEdited.length > 0 ? payloadEdited : undefined,
+        all_ids: headerExpenses.map((e) => e.id),
+      });
+
+      toast.success("Approvals submitted successfully.");
+      onConfirmed();
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Failed to submit approvals.");
     } finally {
       setSubmitting(false);
     }
-  }
+  };
 
-  const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
-
-  const salesman = detail?.salesman;
-  const userName = salesman?.user
-    ? [salesman.user.user_fname, salesman.user.user_mname, salesman.user.user_lname]
-      .filter(Boolean).join(" ")
-    : salesman?.salesman_name ?? "—";
+  const headerTotalAmount = React.useMemo(() => {
+    return headerExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+  }, [headerExpenses]);
 
   return (
-    <>
-      <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-        <DialogContent className="sm:!max-w-[45vw] max-h-[85vh] flex flex-col gap-0 p-0 overflow-hidden border-none shadow-2xl">
-          <DialogHeader className="px-6 py-4 bg-primary text-primary-foreground shrink-0 relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
-              <FileText size={120} />
-            </div>
-            <DialogTitle className="text-xl font-bold flex items-center gap-2">
-              Expense Approval & Disbursement Generation
-            </DialogTitle>
-            <p className="text-primary-foreground/80 text-sm">
-              Review salesmen submittals and convert approved items into treasury disbursements.
-            </p>
-          </DialogHeader>
+    <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
+      <DialogContent className="sm:!max-w-[95vw] sm:!w-[95vw] h-[95vh] flex flex-col gap-0 p-0 overflow-hidden border-none shadow-2xl rounded-2xl">
+        <DialogTitle className="sr-only">Salesman Expense Verification</DialogTitle>
+        <DialogDescription className="sr-only">
+          Batch review and disbursement processing
+        </DialogDescription>
 
-          {loading ? (
-            <div className="flex flex-col items-center justify-center py-32 gap-4 text-muted-foreground animate-pulse">
-              <Loader2 className="h-10 w-10 animate-spin text-primary" />
-              <span className="font-medium">Retrieving encoded records...</span>
+        <div className="px-[2vw] py-[2.5vh] bg-[#1a4f95] text-white shrink-0 relative overflow-hidden">
+          <div className="flex items-center justify-between relative z-10">
+            <div className="space-y-1">
+              <h2 className="text-2xl font-black tracking-tight flex items-center gap-3">
+                <div className="p-2 bg-white/20 rounded-xl backdrop-blur-sm">
+                  <ShieldCheck size={26} />
+                </div>
+                Salesman Expense Verification & Approval
+              </h2>
+              <p className="text-[10px] text-white/70 font-black uppercase tracking-[0.2em]">
+                Review salesman submittals and convert approved Drafts items into treasury
+                disbursements.
+              </p>
             </div>
-          ) : !detail ? (
-            <div className="flex flex-col items-center justify-center py-24 text-muted-foreground gap-4">
-              <AlertCircle size={48} className="opacity-20" />
-              <p>Salesman details could not be loaded.</p>
-              <Button variant="outline" onClick={onClose}>Close</Button>
-            </div>
-          ) : (
-            <div className="flex flex-col flex-1 min-h-0 overflow-hidden bg-muted/20">
-              {/* Extended Salesman Info */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 px-6 py-4 bg-background border-b items-start">
-                <div className="space-y-1">
-                  <p className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
-                    <User size={10} /> Salesman
-                  </p>
-                  <p className="font-bold text-sm leading-tight">{userName}</p>
-                  <p className="text-[10px] text-muted-foreground truncate italic font-mono uppercase tracking-tight">
-                    ID: {salesman?.salesman_code ?? "N/A"}
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
-                    <Briefcase size={10} /> Position & Department
-                  </p>
-                  <p className="font-semibold text-sm leading-tight text-foreground/80 truncate">
-                    {salesman?.user?.user_position ?? "N/A"}
-                  </p>
-                  <p className="text-[10px] text-muted-foreground truncate">
-                    {salesman?.department_name || "N/A"} / {salesman?.division_name || "N/A"}
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
-                    <Wallet size={10} /> Budget Ceiling
-                  </p>
-                  <p className={`font-black text-sm leading-tight ${expenseLimit > 0 ? 'text-primary' : 'text-muted-foreground'}`}>
-                    {expenseLimit > 0 ? formatCurrency(expenseLimit) : "Unlimited"}
-                  </p>
-                  <p className="text-[10px] text-muted-foreground italic tracking-tight leading-none pt-1">Applied to total selection</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
-                    <Hash size={10} /> Pending Items
-                  </p>
-                  <div className="flex gap-2">
-                    <Badge variant="secondary" className="text-[10px] h-4 px-1.5 bg-amber-50 text-amber-700 border-amber-200">
-                      {detail.expenses.filter(e => e.status === "Drafts").length} Draft
-                    </Badge>
-                    <Badge variant="secondary" className="text-[10px] h-4 px-1.5 bg-red-50 text-red-700 border-red-200">
-                      {detail.expenses.filter(e => e.status === "Rejected").length} Rejected
-                    </Badge>
-                  </div>
-                </div>
-              </div>
-
-              {isOverBatchLimit && (
-                <div className="px-6 py-2 bg-red-50 dark:bg-red-950/20 border-b border-red-100 flex items-center gap-3">
-                  <AlertCircle className="h-4 w-4 text-red-600 animate-bounce" />
-                  <p className="text-xs font-bold text-red-700 uppercase tracking-tight">
-                    Warning: The total selected amount exceeds this user&apos;s expense ceiling for this batch.
-                  </p>
+            <div className="flex flex-col items-end gap-2 text-right">
+              <Badge className="bg-white/20 text-white border-white/30 px-4 py-1.5 text-[10px] font-black uppercase tracking-widest backdrop-blur-sm shadow-xl">
+                {hasEditableHeaderExpenses ? "Treasury Audit Phase" : "View Only Mode"}
+              </Badge>
+              {selectedHeader && (
+                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-white/90 bg-white/10 px-3 py-1 rounded-full border border-white/10">
+                  <Calendar size={12} className="text-white/60" />
+                  {formatDate(selectedHeader.period_from)} — {formatDate(selectedHeader.period_to)}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
 
-              {/* Main Content Area */}
-              <div className="flex-1 overflow-hidden flex flex-col px-6 py-4 gap-4">
-                <div className="flex items-center justify-between shrink-0">
-                  <h3 className="text-sm font-bold flex items-center gap-2">
-                    <FileText className="h-4 w-4 text-primary" />
-                    Encoded Expense Drafts
-                  </h3>
-                  <div className="flex items-center gap-4 text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">
-                    <span className="flex items-center gap-1.5 font-mono">
-                      <span className="w-2 h-2 rounded-full bg-green-500 shadow-sm" /> NORMAL
-                    </span>
-                    <span className="flex items-center gap-1.5 font-mono">
-                      <span className="w-2 h-2 rounded-full bg-red-600 shadow-sm animate-pulse" /> OVER LIMIT
-                    </span>
+        <div className="grid grid-cols-4 gap-6 px-[2vw] py-[2vh] bg-white dark:bg-slate-900 border-b dark:border-slate-800 shadow-sm shrink-0">
+          <div className="flex items-center gap-4">
+            <div className="h-12 w-12 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 border border-blue-100 shadow-inner">
+              <User size={24} />
+            </div>
+            <div>
+              <p className="text-[9px] uppercase font-black text-muted-foreground tracking-widest leading-none mb-1">
+                Salesman
+              </p>
+              <p className="font-black text-sm text-foreground">
+                {detail?.salesman.salesman_name || "Loading..."}
+              </p>
+              <p className="text-[10px] text-muted-foreground font-mono">
+                ID: {detail?.salesman.salesman_code || "N/A"}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4 pl-6 border-l border-muted/50">
+            <div className="h-12 w-12 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600 border border-purple-100 shadow-inner">
+              <Building2 size={24} />
+            </div>
+            <div>
+              <p className="text-[9px] uppercase font-black text-muted-foreground tracking-widest leading-none mb-1">
+                Position & Department
+              </p>
+              <p className="font-black text-sm text-foreground">
+                {detail?.salesman.user?.user_position || "Field Representative"}
+              </p>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-tighter">
+                {detail?.salesman.department_name || "Sales & Distribution"}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4 pl-6 border-l border-muted/50">
+            <div className="h-12 w-12 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 border border-emerald-100 shadow-inner">
+              <Wallet size={24} />
+            </div>
+            <div>
+              <p className="text-[9px] uppercase font-black text-muted-foreground tracking-widest leading-none mb-1">
+                Budget Ceiling
+              </p>
+              <p className="font-black text-sm text-emerald-700">
+                {formatCurrency(detail?.expense_limit || 0)}
+              </p>
+              <p className="text-[10px] text-muted-foreground italic">
+                Applied to current submittal
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4 pl-6 border-l border-muted/50">
+            <div className="flex flex-col gap-1 w-full">
+              <p className="text-[9px] uppercase font-black text-muted-foreground tracking-widest leading-none mb-1 text-right">
+                Selected Submittal
+              </p>
+              <div className="flex justify-end gap-2 flex-wrap">
+                <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[10px] font-black">
+                  {headerExpenses.length} Items
+                </Badge>
+                <Badge className="bg-blue-100 text-blue-700 border-blue-200 text-[10px] font-black">
+                  {editableHeaderExpenses.length} Drafts
+                </Badge>
+                {viewOnlyHeaderExpensesCount > 0 && (
+                  <Badge className="bg-slate-100 text-slate-600 border-slate-200 text-[10px] font-black">
+                    {viewOnlyHeaderExpensesCount} View Only
+                  </Badge>
+                )}
+                <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px] font-black">
+                  {formatCurrency(headerTotalAmount)}
+                </Badge>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-4 animate-pulse">
+            <Loader2 className="h-10 w-10 animate-spin text-primary" />
+            <span className="font-black text-xs uppercase tracking-[0.3em] text-muted-foreground">
+              Syncing Details...
+            </span>
+          </div>
+        ) : (
+          <>
+            <div className="px-[2vw] py-4 bg-muted/5 dark:bg-slate-800/50 border-b dark:border-slate-800 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-8">
+                <h3 className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-3 text-slate-800 dark:text-slate-200">
+                  <Receipt className="h-4 w-4 text-primary" />
+                  Line-Item Expense Breakdown
+                </h3>
+
+                {hasEditableHeaderExpenses ? (
+                  <div className="flex items-center gap-6">
+                    <button
+                      type="button"
+                      className="flex items-center gap-2 cursor-pointer group disabled:cursor-not-allowed disabled:opacity-50"
+                      onClick={approveAll}
+                      disabled={submitting}
+                    >
+                      <span className="h-4 w-4 rounded border-2 border-primary flex items-center justify-center group-hover:bg-primary/10 transition-colors">
+                        <Check className="h-3 w-3 text-primary" />
+                      </span>
+                      <span className="text-[10px] font-black uppercase tracking-widest">
+                        Approve All Drafts
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      className="flex items-center gap-2 cursor-pointer group disabled:cursor-not-allowed disabled:opacity-50"
+                      onClick={uncheckAll}
+                      disabled={submitting}
+                    >
+                      <span className="h-4 w-4 rounded border-2 border-slate-300 flex items-center justify-center group-hover:border-primary transition-colors" />
+                      <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                        Uncheck Drafts
+                      </span>
+                    </button>
                   </div>
-                </div>
+                ) : (
+                  <Badge className="bg-slate-100 text-slate-600 border-slate-200 text-[10px] font-black uppercase tracking-widest">
+                    No Drafts items. This modal is view-only.
+                  </Badge>
+                )}
+              </div>
 
-                <div className="flex-1 overflow-auto rounded-xl border bg-background shadow-inner">
-                  <Table className="relative">
-                    <TableHeader className="sticky top-0 z-10 bg-muted/80 backdrop-blur-md">
-                      <TableRow className="hover:bg-transparent border-b">
-                        <TableHead className="w-10 text-center">
-                          <TooltipProvider delayDuration={0}>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <button
-                                  onClick={toggleAll}
-                                  className="cursor-pointer flex items-center justify-center p-1 rounded-md hover:bg-muted transition-all"
-                                >
-                                  {allSelected
-                                    ? <CheckSquare className="h-5 w-5 text-primary" />
-                                    : <Square className="h-5 w-5 text-muted-foreground" />}
-                                </button>
-                              </TooltipTrigger>
-                              <TooltipContent>Select All Items</TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
+              <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-widest">
+                <span className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm" />
+                  Approved
+                </span>
+                <span className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-sm" />
+                  Draft Editable
+                </span>
+                <span className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-slate-300 shadow-sm" />
+                  View Only
+                </span>
+              </div>
+            </div>
+
+            <div className="flex-1 flex min-h-0 bg-slate-50/50 dark:bg-slate-950/50">
+              <div className="w-[25vw] border-r dark:border-slate-800 bg-white dark:bg-slate-900 overflow-y-auto shadow-[5px_0_15px_rgba(0,0,0,0.02)] dark:shadow-none">
+                <Table>
+                  <TableHeader className="bg-slate-50 dark:bg-slate-900 sticky top-0 z-10 shadow-sm dark:shadow-none border-b dark:border-slate-800">
+                    <TableRow>
+                      <TableHead className="text-[10px] font-black uppercase tracking-widest py-4 pl-8">
+                        Particulars / COA
+                      </TableHead>
+                      <TableHead className="text-[10px] font-black uppercase tracking-widest py-4 text-right pr-4">
+                        Amount
+                      </TableHead>
+                      <TableHead className="text-[10px] font-black uppercase tracking-widest py-4 text-center w-24">
+                        Batch Approve
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {groupedExpenses.map((group) => {
+                      const groupId = String(group.particulars);
+                      const isSelected = selectedGroupId === groupId;
+                      const total = group.items.reduce(
+                        (acc, expense) => acc + Number(localAmounts[expense.id] || 0),
+                        0
+                      );
+                      const editableGroupItems = group.items.filter(isDraftExpense);
+                      const allEditableApproved =
+                        editableGroupItems.length > 0 &&
+                        editableGroupItems.every(
+                          (item) => itemDecisions[item.id] === "Approved"
+                        );
+                      const allGroupItemsProcessed = group.items.every(
+                        (item) => !isDraftExpense(item)
+                      );
+
+                      return (
+                        <TableRow
+                          key={groupId}
+                          className={`cursor-pointer group transition-all ${
+                            isSelected ? "bg-blue-50/80 dark:bg-blue-900/20" : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                          }`}
+                          onClick={() => setSelectedGroupId(groupId)}
+                        >
+                          <TableCell className="pl-8 py-4 relative">
+                            {isSelected && (
+                              <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600 shadow-[2px_0_5px_rgba(37,99,235,0.3)]" />
+                            )}
+                            <div className="flex items-center gap-3">
+                              <div
+                                className={`h-8 w-8 rounded-lg flex items-center justify-center text-[10px] font-black shadow-sm transition-all ${
+                                  isSelected
+                                    ? "bg-blue-600 text-white scale-110 shadow-blue-200"
+                                    : "bg-slate-100 text-slate-500"
+                                }`}
+                              >
+                                #
+                              </div>
+                              <div>
+                                <p className="text-[11px] font-black uppercase tracking-tight text-slate-800 dark:text-slate-200 leading-none mb-1 line-clamp-1">
+                                  {group.particulars_name}
+                                </p>
+                                <p className="text-[9px] font-bold text-muted-foreground uppercase">
+                                  {group.items.length} line item{group.items.length !== 1 ? "s" : ""}
+                                  {editableGroupItems.length > 0
+                                    ? ` • ${editableGroupItems.length} Drafts`
+                                    : " • View only"}
+                                </p>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right py-4 pr-4">
+                            <p className="text-xs font-black tabular-nums text-slate-800 dark:text-slate-200">
+                              {formatCurrency(total)}
+                            </p>
+                            <p className="text-[9px] text-muted-foreground font-bold italic">
+                              {allGroupItemsProcessed
+                                ? "Already processed"
+                                : allEditableApproved
+                                  ? "Drafts verified"
+                                  : "Pending Drafts review"}
+                            </p>
+                          </TableCell>
+                          <TableCell className="text-center py-4">
+                            <Button
+                              variant={allEditableApproved ? "default" : "outline"}
+                              size="sm"
+                              disabled={submitting || editableGroupItems.length === 0}
+                              className={`h-7 px-3 rounded-full text-[9px] font-black uppercase tracking-tighter transition-all ${
+                                allEditableApproved
+                                  ? "bg-emerald-500 hover:bg-emerald-600 text-white border-none shadow-md shadow-emerald-200 dark:shadow-none"
+                                  : "bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400 border-slate-200 dark:border-slate-700"
+                              } disabled:opacity-50 disabled:cursor-not-allowed`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                toggleGroupStatus(group.items, "Approved");
+                              }}
+                            >
+                              {allEditableApproved ? (
+                                <div className="flex items-center gap-1">
+                                  <CheckCircle2 size={10} />
+                                  <span>Approved</span>
+                                </div>
+                              ) : editableGroupItems.length === 0 ? (
+                                "Locked"
+                              ) : (
+                                "Approve"
+                              )}
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div className="flex-1 bg-white dark:bg-slate-900 flex flex-col overflow-hidden">
+                <div className="flex-1 overflow-auto p-8 pt-0">
+                  <Table className="border dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm dark:shadow-none">
+                    <TableHeader className="bg-slate-50/50 dark:bg-slate-900/80 sticky top-0 z-10 backdrop-blur-sm border-b dark:border-slate-800">
+                      <TableRow>
+                        <TableHead className="w-12 text-center text-[10px] font-black">
+                          #
                         </TableHead>
-                        <TableHead className="w-12 text-center text-xs font-bold uppercase tracking-tighter italic">#</TableHead>
-                        <TableHead className="text-xs font-bold uppercase tracking-tight">Particulars / COA</TableHead>
-                        <TableHead className="text-right text-xs font-bold uppercase tracking-tight">Amount</TableHead>
-                        <TableHead className="text-center text-xs font-bold uppercase tracking-tight">Docs</TableHead>
-                        <TableHead className="text-center text-xs font-bold uppercase tracking-tight">Date</TableHead>
-                        <TableHead className="text-xs font-bold uppercase tracking-tight">Encoded Remarks</TableHead>
-                        <TableHead className="text-center text-xs font-bold uppercase tracking-tight">Status</TableHead>
+                        <TableHead className="text-[10px] font-black uppercase tracking-widest py-4">
+                          Encoded Particulars & Remarks
+                        </TableHead>
+                        <TableHead className="text-center text-[10px] font-black uppercase tracking-widest py-4">
+                          Verify Amount
+                        </TableHead>
+                        <TableHead className="text-center text-[10px] font-black uppercase tracking-widest py-4 w-16">
+                          Docs
+                        </TableHead>
+                        <TableHead className="text-center text-[10px] font-black uppercase tracking-widest py-4 w-28">
+                          Date
+                        </TableHead>
+                        <TableHead className="text-center text-[10px] font-black uppercase tracking-widest py-4 w-40">
+                          Status Decision
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {detail.expenses.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={8} className="text-center py-20">
-                            <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                              <Briefcase size={40} className="opacity-10" />
-                              <p className="font-medium">No pending expenses found for this period.</p>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        detail.expenses.map((expense, idx) => (
-                          <TableRow
-                            key={expense.id}
-                            className={`group cursor-pointer transition-all border-b-muted/40 ${rowBgClass(expense)}`}
-                            onClick={() => toggle(expense.id)}
-                          >
-                            <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
-                              <Checkbox
-                                checked={selectedIds.has(expense.id)}
-                                onCheckedChange={() => toggle(expense.id)}
-                                className="w-5 h-5 shadow-sm border-2 border-muted-foreground/30 data-[state=checked]:bg-primary"
-                              />
-                            </TableCell>
-                            <TableCell className="text-center text-[11px] font-mono text-muted-foreground">
-                              {idx + 1}
-                            </TableCell>
-                            <TableCell className="max-w-[200px]">
-                              <p className="text-sm font-bold leading-tight truncate">
-                                {expense.particulars_name || "Uncategorized Particular"}
-                              </p>
-                              <p className="text-[10px] text-muted-foreground font-mono">
-                                #{expense.particulars}
-                              </p>
-                            </TableCell>
-                            <TableCell className="text-right whitespace-nowrap">
-                              <div className="flex flex-col items-end gap-1" onClick={(e) => e.stopPropagation()}>
+                      {activeGroup?.items.map((expense, index) => {
+                        const status = itemDecisions[expense.id] || "PENDING";
+                        const isReadOnly = !isDraftExpense(expense);
+                        const isBusy = processingItem === expense.id || submitting;
+
+                        return (
+                          <React.Fragment key={expense.id}>
+                            <TableRow
+                              className={`group hover:bg-slate-50/50 dark:hover:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 transition-all ${
+                                isReadOnly ? "opacity-80" : ""
+                              } ${
+                                status === "Approved"
+                                  ? "bg-emerald-50/20 dark:bg-emerald-900/10"
+                                  : status === "Rejected"
+                                    ? "bg-rose-50/20 dark:bg-rose-900/10"
+                                    : status === "With Concern"
+                                      ? "bg-amber-50/20 dark:bg-amber-900/10"
+                                      : ""
+                              }`}
+                            >
+                              <TableCell className="text-center py-4 text-[10px] font-black text-slate-300 dark:text-slate-600 italic">
+                                {(index + 1).toString().padStart(2, "0")}
+                              </TableCell>
+                              <TableCell className="py-4">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="text-xs font-black text-slate-800 dark:text-slate-200 leading-none mb-1">
+                                      {expense.remarks || "No remarks provided"}
+                                    </p>
+                                    <p className="text-[9px] text-muted-foreground font-mono uppercase">
+                                      Batch: {expense.header_id}
+                                    </p>
+                                  </div>
+                                  <Badge
+                                    variant="outline"
+                                    className={`text-[9px] font-black uppercase tracking-widest ${getStatusBadgeClass(
+                                      status
+                                    )}`}
+                                  >
+                                    {isReadOnly ? expense.status : status === "PENDING" ? "Drafts" : status}
+                                  </Badge>
+                                </div>
+                              </TableCell>
+                              <TableCell className="py-4 text-center">
                                 <Input
-                                  className={`h-8 w-24 text-right font-black tabular-nums transition-all shadow-sm border-2 
-                                    ${Number(localAmounts[expense.id]) !== Number(expense.amount) ? 'border-amber-400 bg-amber-50' : 'border-primary/20 focus:border-primary'}`}
+                                  className={`h-8 w-28 text-center text-xs font-black tabular-nums transition-all ${
+                                    isReadOnly
+                                      ? "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed"
+                                      : Number(localAmounts[expense.id]) !== Number(expense.amount)
+                                        ? "bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-700/50 text-amber-700 dark:text-amber-400 shadow-inner"
+                                        : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                                  }`}
                                   value={localAmounts[expense.id] || ""}
-                                  onChange={(e) => handleAmountChange(expense.id, e.target.value)}
-                                  disabled={submitting}
+                                  disabled={isBusy || isReadOnly}
+                                  onChange={(event) => {
+                                    const value = event.target.value;
+                                    if (/^\d*\.?\d*$/.test(value)) {
+                                      setLocalAmounts((prev) => ({
+                                        ...prev,
+                                        [expense.id]: value,
+                                      }));
+                                    }
+                                  }}
                                 />
-                                {Number(localAmounts[expense.id]) !== Number(expense.amount) && (
-                                  <span className="text-[9px] text-amber-600 font-bold uppercase italic animate-in fade-in slide-in-from-right-1">
-                                    Orig: {formatCurrency(Number(expense.amount))}
-                                  </span>
+                              </TableCell>
+                              <TableCell className="py-4 text-center">
+                                {expense.attachment_url && (
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-8 w-8 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-600 hover:text-white transition-all shadow-sm dark:shadow-none"
+                                    onClick={() =>
+                                      setPreviewUrl(
+                                        `/api/fm/expense-assets?id=${expense.attachment_url}`
+                                      )
+                                    }
+                                    disabled={isBusy}
+                                  >
+                                    <ExternalLink size={14} />
+                                  </Button>
                                 )}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {expense.attachment_url ? (
-                                <TooltipProvider delayDuration={100}>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setPreviewUrl(`/api/fm/expense-assets?id=${expense.attachment_url}`);
-                                        }}
-                                        className="inline-flex p-1.5 rounded-full bg-primary/10 text-primary hover:bg-primary hover:text-white transition-all shadow-sm cursor-pointer"
+                              </TableCell>
+                              <TableCell className="py-4 text-center text-[10px] font-bold text-slate-500 uppercase">
+                                {formatDate(expense.transaction_date)}
+                              </TableCell>
+                              <TableCell className="py-4 text-center">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          size="icon"
+                                          className={`h-8 w-8 rounded-lg shadow-sm transition-all ${
+                                            status === "Approved"
+                                              ? "bg-emerald-500 text-white"
+                                              : "bg-slate-100 text-slate-400 hover:bg-emerald-50"
+                                          } disabled:opacity-50 disabled:cursor-not-allowed`}
+                                          onClick={() => setItemStatus(expense, "Approved")}
+                                          disabled={isBusy || isReadOnly}
+                                        >
+                                          <Check size={16} strokeWidth={3} />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent className="text-[9px] font-black uppercase">
+                                        {isReadOnly ? "View Only" : "Approve Item"}
+                                      </TooltipContent>
+                                    </Tooltip>
+
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          size="icon"
+                                          className={`h-8 w-8 rounded-lg shadow-sm transition-all ${
+                                            status === "With Concern"
+                                              ? "bg-amber-500 text-white"
+                                              : "bg-slate-100 text-slate-400 hover:bg-amber-50"
+                                          } disabled:opacity-50 disabled:cursor-not-allowed`}
+                                          onClick={() => setItemStatus(expense, "With Concern")}
+                                          disabled={isBusy || isReadOnly}
+                                        >
+                                          <MessageSquareWarning size={14} />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent className="text-[9px] font-black uppercase">
+                                        {isReadOnly ? "View Only" : "Raise Concern"}
+                                      </TooltipContent>
+                                    </Tooltip>
+
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          size="icon"
+                                          className={`h-8 w-8 rounded-lg shadow-sm transition-all ${
+                                            status === "Rejected"
+                                              ? "bg-rose-500 text-white"
+                                              : "bg-slate-100 text-slate-400 hover:bg-rose-50"
+                                          } disabled:opacity-50 disabled:cursor-not-allowed`}
+                                          onClick={() => setItemStatus(expense, "Rejected")}
+                                          disabled={isBusy || isReadOnly}
+                                        >
+                                          <X size={16} strokeWidth={3} />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent className="text-[9px] font-black uppercase">
+                                        {isReadOnly ? "View Only" : "Hard Reject"}
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+
+                            {needsFeedback(status) && (
+                              <TableRow
+                                className={
+                                  status === "Rejected" ? "bg-rose-50/30" : "bg-amber-50/30"
+                                }
+                              >
+                                <TableCell colSpan={6} className="px-8 py-3">
+                                  <div className="flex items-center gap-4 pl-12 flex-1">
+                                    <span
+                                      className={`text-[10px] font-black uppercase tracking-widest ${
+                                        status === "Rejected" ? "text-rose-600" : "text-amber-600"
+                                      } shrink-0`}
+                                    >
+                                      Audit Feedback:
+                                    </span>
+                                    <Input
+                                      placeholder="Provide mandatory reason for rejection/concern..."
+                                      className={`h-8 text-xs font-medium border-2 focus:border-primary bg-white shadow-inner flex-1 ${
+                                        isReadOnly ? "cursor-not-allowed text-slate-500" : ""
+                                      }`}
+                                      value={itemRemarks[expense.id] || ""}
+                                      onChange={(event) =>
+                                        setItemRemarks((prev) => ({
+                                          ...prev,
+                                          [expense.id]: event.target.value,
+                                        }))
+                                      }
+                                      disabled={isBusy || isReadOnly}
+                                    />
+
+                                    {!isReadOnly && (
+                                      <Button
+                                        size="sm"
+                                        className="h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-md gap-2"
+                                        disabled={
+                                          processingItem === expense.id ||
+                                          !itemRemarks[expense.id]?.trim()
+                                        }
+                                        onClick={() => handleSingleItemSubmit(expense)}
                                       >
-                                        <ExternalLink className="h-3.5 w-3.5" />
-                                      </button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>Preview Attachment</TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-                              ) : (
-                                <span className="opacity-20">—</span>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-center text-xs whitespace-nowrap font-medium text-muted-foreground">
-                              {formatDate(expense.transaction_date)}
-                            </TableCell>
-                            <TableCell className="text-xs max-w-[240px] italic text-muted-foreground group-hover:text-foreground line-clamp-2 leading-snug">
-                              {expense.remarks || "No encoded remarks."}
-                            </TableCell>
-                            <TableCell className="text-center">{statusBadge(expense.status)}</TableCell>
-                          </TableRow>
-                        ))
-                      )}
+                                        {processingItem === expense.id ? (
+                                          <Loader2 size={12} className="animate-spin" />
+                                        ) : (
+                                          <Send size={12} />
+                                        )}
+                                        Submit Decision
+                                      </Button>
+                                    )}
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
-              </div>
 
-              {/* Footer / Submission Area */}
-              <div className="px-6 py-5 bg-background shadow-[0_-10px_30px_-15px_rgba(0,0,0,0.1)] shrink-0 border-t flex flex-col gap-4">
-                <div className="flex flex-col md:flex-row md:items-end gap-6">
-                  <div className="flex-1 min-w-0 space-y-2">
-                    <div className="flex items-center gap-2">
-                      <label className="text-[11px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                        Disbursement Remarks <span className="text-red-600 font-bold">*</span>
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Info size={12} className="text-muted-foreground/50" />
-                            </TooltipTrigger>
-                            <TooltipContent side="right">This will be printed on the official disbursement form.</TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </label>
-                    </div>
-                    <Textarea
-                      value={remarks}
-                      onChange={(e) => setRemarks(e.target.value)}
-                      placeholder="Provide a justification for this batch of expenses..."
-                      className="min-h-[90px] max-h-[90px] w-full resize-none border-2 focus:border-primary transition-all shadow-sm font-medium break-all"
-                      disabled={submitting}
-                    />
-                    <p className="text-[10px] text-muted-foreground italic">
-                      Unselected expenses will be automatically tagged as <span className="text-red-600 font-bold uppercase italic">Rejected</span>.
-                    </p>
-                  </div>
+                <div className="p-8 border-t dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-center justify-end gap-12 relative shadow-[0_-5px_15px_rgba(0,0,0,0.02)] dark:shadow-none">
+                  <div className="w-80 flex flex-col gap-4">
+                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-xl dark:shadow-none space-y-4">
+                      <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-400">
+                        <span>Consolidation Summary</span>
+                        <span className="text-blue-600">
+                          {approvedCount} Draft Line{approvedCount !== 1 ? "s" : ""} Verified
+                        </span>
+                      </div>
+                      <div className="h-[1px] bg-slate-100 dark:bg-slate-700 w-full" />
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                          Approved Draft Total:
+                        </span>
+                        <span className="text-2xl font-black tabular-nums text-blue-700 dark:text-blue-400 tracking-tighter">
+                          {formatCurrency(totalSelected)}
+                        </span>
+                      </div>
+                      <Button
+                        disabled={submitting || !hasEditableHeaderExpenses}
+                        className="w-full h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black uppercase tracking-[0.2em] shadow-lg shadow-blue-200 gap-3 active:scale-[0.98] transition-all disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed"
+                        onClick={() => {
+                          if (!hasEditableHeaderExpenses) {
+                            return toast.info(
+                              "This submittal is view-only because there are no Drafts items."
+                            );
+                          }
 
-                  <div className="w-full md:w-[320px] bg-muted/40 rounded-xl p-4 border border-muted/60 flex flex-col gap-3 shadow-inner">
-                    <div className="flex items-center justify-between text-[11px] font-bold text-muted-foreground uppercase tracking-wider border-b border-muted pb-2">
-                      <span>Summary</span>
-                      <span className="text-foreground tracking-tighter">{selectedIds.size} Lines Selected</span>
+                          if (!hasAnyEditableDecision) {
+                            return toast.warning(
+                              "Please make at least one decision for a Drafts item before finalizing."
+                            );
+                          }
+
+                          setConfirmOpen(true);
+                        }}
+                      >
+                        {submitting ? (
+                          <Loader2 className="animate-spin" />
+                        ) : (
+                          <ShieldCheck size={20} />
+                        )}
+                        {hasEditableHeaderExpenses ? "Finalize Batch" : "View Only"}
+                      </Button>
                     </div>
-                    <div className="flex items-center justify-between py-1">
-                      <span className="text-xs font-bold text-muted-foreground italic tracking-tighter uppercase line-clamp-1">Grand Total:</span>
-                      <span className="text-2xl font-black tabular-nums tracking-tighter text-primary drop-shadow-sm">
-                        {formatCurrency(totalSelected || 0)}
-                      </span>
-                    </div>
-                    <Button
-                      className="w-full h-12 rounded-lg font-bold shadow-lg hover:shadow-primary/20 active:scale-95 transition-all text-sm uppercase tracking-widest bg-primary hover:bg-primary/90"
-                      onClick={handleConfirm}
-                      disabled={submitting || detail.expenses.length === 0}
-                    >
-                      {submitting ? (
-                        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                      ) : (
-                        <CheckSquare className="mr-2 h-5 w-5" />
-                      )}
-                      Generate Disbursement
-                    </Button>
-                    <Button
-                      variant="link"
-                      size="sm"
-                      className="h-auto py-0 text-muted-foreground text-[10px] font-bold uppercase tracking-widest hover:text-red-600 transition-colors"
+                    <button
+                      type="button"
+                      className="w-full py-2 text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 hover:text-slate-600 transition-colors"
                       onClick={onClose}
-                      disabled={submitting}
                     >
-                      Discard and Close
-                    </Button>
+                      {hasEditableHeaderExpenses ? "Discard Changes" : "Close"}
+                    </button>
                   </div>
                 </div>
               </div>
             </div>
-          )}
-        </DialogContent>
-      </Dialog>
+          </>
+        )}
+      </DialogContent>
 
-      {/* Attachment Preview Modal */}
-      <Dialog open={!!previewUrl} onOpenChange={(v) => !v && setPreviewUrl(null)}>
-        <DialogContent
-          showCloseButton={false}
-          className="max-w-[90vw] max-h-[85vh] w-fit p-0 overflow-hidden bg-black border-none shadow-2xl flex flex-col items-center justify-center rounded-lg"
-        >
-          <DialogTitle className="sr-only">Expense Attachment Preview</DialogTitle>
-          <Button
-            variant="default"
-            size="icon"
-            className="absolute top-4 right-4 rounded-full bg-white text-black hover:bg-white/90 shadow-2xl opacity-100 transition-all active:scale-90 border-none h-10 w-10 flex items-center justify-center z-50"
-            onClick={() => setPreviewUrl(null)}
-          >
-            <X className="h-6 w-6 stroke-[2.5]" />
-          </Button>
-          <div className="relative group flex items-center justify-center">
-            {previewUrl && (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img
-                src={previewUrl}
-                alt="Expense Attachment"
-                className="max-w-[90vw] max-h-[85vh] w-auto h-auto object-contain shadow-2xl transition-all duration-300"
-              />
-            )}
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent className="max-w-lg rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl dark:bg-slate-900">
+          <div className="p-8 space-y-6">
+            <div className="flex flex-col items-center text-center gap-4">
+              <div className="h-16 w-16 bg-blue-50 dark:bg-blue-900/20 rounded-2xl flex items-center justify-center text-blue-600 dark:text-blue-400 shadow-inner dark:shadow-none">
+                <ShieldCheck size={32} />
+              </div>
+              <div>
+                <DialogTitle className="text-xl font-black text-slate-800 dark:text-slate-200 uppercase tracking-tight">
+                  Finalize Batch Submittal
+                </DialogTitle>
+                <DialogDescription className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">
+                  You are about to consolidate {approvedCount} Drafts item
+                  {approvedCount !== 1 ? "s" : ""}.
+                </DialogDescription>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div className="space-y-3">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">
+                  Batch Submission Remarks <span className="text-red-500">*</span>
+                </label>
+                <Textarea
+                  rows={4}
+                  className="rounded-3xl border-slate-200 dark:border-slate-700 text-sm focus:ring-blue-500/20 shadow-inner dark:shadow-none bg-slate-50/30 dark:bg-slate-800 p-5"
+                  placeholder="Provide the final audit justification for this batch..."
+                  value={remarks}
+                  onChange={(event) => setRemarks(event.target.value)}
+                />
+              </div>
+
+              {itemsMissingFeedback.length > 0 ? (
+                <div className="p-6 bg-rose-50/50 rounded-[2rem] border border-rose-100 space-y-4">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-rose-500 flex items-center gap-2">
+                    <MessageSquareWarning size={14} className="animate-pulse" />
+                    Required Line-Item Feedback ({itemsMissingFeedback.length})
+                  </label>
+                  <div className="space-y-3 max-h-[250px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-rose-200">
+                    {itemsMissingFeedback.map((item) => (
+                      <div
+                        key={item.id}
+                        className="p-4 bg-white dark:bg-slate-800 rounded-2xl border border-rose-100/50 dark:border-rose-900/50 shadow-sm space-y-3"
+                      >
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] font-black text-slate-700 dark:text-slate-200 uppercase tracking-tight">
+                            {item.particulars_name}
+                          </span>
+                          <span
+                            className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase ${
+                              itemDecisions[item.id] === "Rejected"
+                                ? "bg-rose-100 text-rose-600"
+                                : "bg-amber-100 text-amber-600"
+                            }`}
+                          >
+                            {itemDecisions[item.id]}
+                          </span>
+                        </div>
+                        <Textarea
+                          rows={2}
+                          className="bg-slate-50/50 dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-[11px] rounded-xl focus:ring-rose-500/10 resize-none shadow-inner dark:shadow-none"
+                          placeholder={`Reason for ${itemDecisions[item.id]}...`}
+                          value={itemRemarks[item.id] || ""}
+                          onChange={(event) =>
+                            setItemRemarks((prev) => ({
+                              ...prev,
+                              [item.id]: event.target.value,
+                            }))
+                          }
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="p-5 bg-emerald-50/50 rounded-[2rem] border border-emerald-100 border-dashed flex items-center gap-4">
+                  <div className="h-10 w-10 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600 shrink-0">
+                    <CheckCircle2 size={20} />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-emerald-700 uppercase leading-none mb-1">
+                      Audit Trails Clear
+                    </p>
+                    <p className="text-[9px] text-emerald-600/70 font-medium">
+                      All required line-item justifications are complete.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <p className="text-[10px] text-center text-muted-foreground font-medium italic px-4">
+                {hasMissingFeedback
+                  ? "Please provide feedback for the flagged items before confirming."
+                  : hasPendingItems
+                    ? "Note: Pending Drafts items will be skipped and remain in the draft pool."
+                    : "This batch is ready for disbursement consolidation."}
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-3 pt-2">
+              <Button
+                className="h-12 rounded-xl font-black uppercase tracking-widest shadow-lg shadow-blue-100"
+                disabled={!remarks.trim() || submitting || hasMissingFeedback}
+                onClick={handleConfirm}
+              >
+                {submitting ? <Loader2 className="animate-spin mr-2" /> : "Confirm Submittal"}
+              </Button>
+              <Button
+                variant="ghost"
+                className="h-10 text-[10px] font-black uppercase tracking-widest text-slate-400"
+                onClick={() => setConfirmOpen(false)}
+              >
+                Back to Workspace
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
-    </>
+
+      <Dialog open={!!previewUrl} onOpenChange={(value) => !value && setPreviewUrl(null)}>
+        <DialogContent className="max-w-[90vw] max-h-[85vh] p-0 overflow-hidden bg-black border-none shadow-2xl flex items-center justify-center">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="absolute top-4 right-4 text-white hover:bg-white/20"
+            onClick={() => setPreviewUrl(null)}
+          >
+            <X size={24} />
+          </Button>
+          {previewUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={previewUrl}
+              alt="Preview"
+              className="max-w-[90vw] max-h-[85vh] object-contain mx-auto"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+    </Dialog>
   );
 }
-
-

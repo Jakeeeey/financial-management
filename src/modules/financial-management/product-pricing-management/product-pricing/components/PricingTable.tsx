@@ -133,6 +133,7 @@ type PricingMatrixLike = {
     setPageSize: (pageSize: number) => void;
 
     getCellValue: (productId: number, tier: ProductTierKey, base: number | null) => number | string | null;
+    getPendingValue: (productId: number, tier: ProductTierKey) => number | null;
     isDirty: (productId: number, tier: ProductTierKey) => boolean;
     getError: (productId: number, tier: ProductTierKey) => string | null | undefined;
     setCell: (productId: number, tier: ProductTierKey, raw: unknown) => void;
@@ -195,7 +196,7 @@ function toErrorString(err: unknown): string | null {
     }
 }
 
-const LEFT_COL_WIDTHS = [400, 150, 150] as const;
+const LEFT_COL_WIDTHS = [100, 100, 450] as const;
 const LEFT_TABLE_WIDTH = LEFT_COL_WIDTHS.reduce((a, b) => a + b, 0);
 const PRICE_COL_WIDTH = 140;
 
@@ -208,12 +209,12 @@ function LoadingLeftBody({ rowCount }: { rowCount: number }) {
         <>
             {Array.from({ length: rowCount }).map((_, i) => (
                 <PTableRow key={`lsk-${i}`} className="hover:bg-transparent">
-                    <PTableCell className="h-[80px] w-[400px]">
+                    <PTableCell className="h-[80px] w-[100px]"><Skeleton className="h-4 w-[80px]" /></PTableCell>
+                    <PTableCell className="h-[80px] w-[100px]"><Skeleton className="h-4 w-[80px]" /></PTableCell>
+                    <PTableCell className="h-[80px] w-[450px]">
                         <Skeleton className="mb-1.5 h-4 w-[260px]" />
                         <Skeleton className="h-3 w-[160px]" />
                     </PTableCell>
-                    <PTableCell className="h-[80px] w-[150px]"><Skeleton className="h-4 w-[120px]" /></PTableCell>
-                    <PTableCell className="h-[80px] w-[150px]"><Skeleton className="h-4 w-[100px]" /></PTableCell>
                 </PTableRow>
             ))}
         </>
@@ -395,7 +396,7 @@ export default function PricingTable({ matrix }: Props) {
     const priceCols = tiers.length * uomCount;
 
     return (
-        <div className="relative z-0 flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border bg-background shadow-sm">
+        <div className="relative z-0 flex min-h-0 min-w-0 flex-col rounded-2xl border bg-background shadow-sm">
             <style>{`
         .pmx-table { border-collapse: separate !important; border-spacing: 0 !important; }
         .pmx-price-x::-webkit-scrollbar { height: 0px; }
@@ -411,11 +412,11 @@ export default function PricingTable({ matrix }: Props) {
                 </div>
             )}
 
-            <div className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+            <div className="relative min-h-0 flex-1">
                 <div className="flex min-w-0">
                     {/* LEFT */}
                     <div className="shrink-0 border-r bg-background" style={{ width: LEFT_TABLE_WIDTH }}>
-                        <div className="sticky top-0 z-10 overflow-hidden bg-background">
+                        <div className="sticky top-0 z-40 overflow-hidden bg-background border-b shadow-md">
                             <PTable className="pmx-table table-fixed" style={{ width: LEFT_TABLE_WIDTH }}>
                                 <colgroup>
                                     <col style={{ width: LEFT_COL_WIDTHS[0] }} />
@@ -426,13 +427,13 @@ export default function PricingTable({ matrix }: Props) {
                                 <PTableHeader>
                                     <PTableRow style={{ height: HEAD_ROW_H }}>
                                         <PTableHead className={headCellBase}>
-                                            <div style={{ height: HEAD_ROW_H }} className="flex items-center px-3">Product</div>
+                                            <div style={{ height: HEAD_ROW_H }} className="flex items-center px-3">Brand</div>
                                         </PTableHead>
                                         <PTableHead className={headCellBase}>
                                             <div style={{ height: HEAD_ROW_H }} className="flex items-center px-3">Category</div>
                                         </PTableHead>
                                         <PTableHead className={cn(headCellBase, "border-r")}>
-                                            <div style={{ height: HEAD_ROW_H }} className="flex items-center px-3">Brand</div>
+                                            <div style={{ height: HEAD_ROW_H }} className="flex items-center px-3">Product</div>
                                         </PTableHead>
                                     </PTableRow>
 
@@ -475,7 +476,17 @@ export default function PricingTable({ matrix }: Props) {
                                                 onMouseEnter={() => setHoverKey(groupKey)}
                                                 onMouseLeave={() => setHoverKey(null)}
                                             >
-                                                <PTableCell className="p-0 border-b" style={{ width: LEFT_COL_WIDTHS[0], height: BODY_ROW_H }}>
+                                                <PTableCell className="p-0 border-b overflow-hidden" style={{ width: LEFT_COL_WIDTHS[0], height: BODY_ROW_H }}>
+                                                    <div style={{ height: BODY_ROW_H }} className="flex items-center px-3 truncate text-[13px] text-muted-foreground">
+                                                        {r.brand_name ?? "—"}
+                                                    </div>
+                                                </PTableCell>
+                                                <PTableCell className="p-0 border-b overflow-hidden" style={{ width: LEFT_COL_WIDTHS[1], height: BODY_ROW_H }}>
+                                                    <div style={{ height: BODY_ROW_H }} className="flex items-center px-3 truncate text-[13px] text-muted-foreground">
+                                                        {r.category_name ?? "—"}
+                                                    </div>
+                                                </PTableCell>
+                                                <PTableCell className="p-0 border-b" style={{ width: LEFT_COL_WIDTHS[2], height: BODY_ROW_H }}>
                                                     <div style={{ height: BODY_ROW_H }} className="flex flex-col justify-center gap-1.5 px-3">
                                                         <span className="text-[13px] font-semibold leading-tight text-foreground/90 whitespace-normal">
                                                             {display.product_name ?? "—"}
@@ -488,16 +499,6 @@ export default function PricingTable({ matrix }: Props) {
                                                                 Barcode: <span className="font-medium text-foreground/80">{display.barcode ?? "—"}</span>
                                                             </span>
                                                         </div>
-                                                    </div>
-                                                </PTableCell>
-                                                <PTableCell className="p-0 border-b overflow-hidden" style={{ width: LEFT_COL_WIDTHS[1], height: BODY_ROW_H }}>
-                                                    <div style={{ height: BODY_ROW_H }} className="flex items-center px-3 truncate text-[13px] text-muted-foreground">
-                                                        {r.category_name ?? "—"}
-                                                    </div>
-                                                </PTableCell>
-                                                <PTableCell className="p-0 border-b overflow-hidden" style={{ width: LEFT_COL_WIDTHS[2], height: BODY_ROW_H }}>
-                                                    <div style={{ height: BODY_ROW_H }} className="flex items-center px-3 truncate text-[13px] text-muted-foreground">
-                                                        {r.brand_name ?? "—"}
                                                     </div>
                                                 </PTableCell>
                                             </PTableRow>
@@ -517,7 +518,7 @@ export default function PricingTable({ matrix }: Props) {
 
                     {/* RIGHT */}
                     <div className="min-w-0 flex-1">
-                        <div className="sticky top-0 z-10 bg-background">
+                        <div className="sticky top-0 z-40 bg-background border-b shadow-md">
                             <div className="overflow-hidden border-b">
                                 <div
                                     className="w-max"
@@ -676,6 +677,7 @@ export default function PricingTable({ matrix }: Props) {
 
                                                                 const base = toNullableNumber(variant.tiers?.[tier]);
                                                                 const val = matrix.getCellValue(variantProductId, tier, base);
+                                                                const pending = matrix.getPendingValue(variantProductId, tier);
                                                                 const dirty = matrix.isDirty(variantProductId, tier);
                                                                 const err = toErrorString(matrix.getError(variantProductId, tier));
 
@@ -689,6 +691,7 @@ export default function PricingTable({ matrix }: Props) {
                                                                             <div className="w-full">
                                                                                 <PriceCell
                                                                                     value={val}
+                                                                                    pendingValue={pending}
                                                                                     dirty={dirty}
                                                                                     error={err}
                                                                                     onChange={(raw) => matrix.setCell(variantProductId, tier, raw)}

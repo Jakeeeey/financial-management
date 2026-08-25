@@ -59,6 +59,7 @@ export default function ViewAssetModal({
                 <div className="aspect-square rounded-xl bg-background border-2 border-muted flex items-center justify-center overflow-hidden">
                   {asset.item_image ? (
                     <Image
+                      unoptimized
                       src={`/api/fm/asset-management/asset-image-view?id=${asset.item_image}`}
                       fill className="object-contain w-full h-full p-6"
                       alt={asset.item_name}

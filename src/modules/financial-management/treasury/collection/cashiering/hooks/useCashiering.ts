@@ -1,25 +1,26 @@
-import {useState, useEffect, useCallback} from "react";
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { fetchProvider } from "../../providers/fetchProvider";
 import {
-    CashieringState,
-    CurrentUser,
-    CollectionSummary,
-    Salesman,
-    CheckDetail,
-    Bank,
-    Denomination,
-    COA
+    CurrentUser, CollectionSummary, Salesman, Bank, Denomination,
+    COA, PaymentMethod, Customer, UnpaidInvoice, CheckDetail, UserDto
 } from "../../types";
-import {fetchProvider} from "../../providers/fetchProvider";
 
 interface PouchDetailResponse {
     id: number;
     salesmanId: number;
+    collectedBy?: number; // 🚀 Added for hydration
+    crNo?: string;        // 🚀 Added for hydration
     collectionDate: string;
     remarks: string;
     cashBuckets: {
         tempId: string;
+        paymentMethodId?: number;
         coaId: number;
         bankId: number | null;
+        customerCode?: string;
+        invoiceId?: number;
         referenceNo: string;
         amount: number;
         quantity: number;
@@ -27,20 +28,29 @@ interface PouchDetailResponse {
     }[];
 }
 
-export function useCashiering(currentUser: CurrentUser): CashieringState {
+export function useCashiering(currentUser: CurrentUser) {
     const [isSheetOpen, setIsSheetOpen] = useState<boolean>(false);
     const [isLoading, setIsLoading] = useState<boolean>(true);
-    const [isSheetLoading, setIsSheetLoading] = useState<boolean>(false); // 🚀 NEW
-    const [isSubmitting, setIsSubmitting] = useState<boolean>(false); // 🚀 NEW
+    const [isSheetLoading, setIsSheetLoading] = useState<boolean>(false);
+    const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
     const [editingId, setEditingId] = useState<number | null>(null);
 
     const [masterList, setMasterList] = useState<CollectionSummary[]>([]);
     const [salesmen, setSalesmen] = useState<Salesman[]>([]);
+    const [users, setUsers] = useState<UserDto[]>([]); // 🚀 NEW: Users state
     const [banks, setBanks] = useState<Bank[]>([]);
     const [coas, setCoas] = useState<COA[]>([]);
     const [denominationMaster, setDenominationMaster] = useState<Denomination[]>([]);
 
+    const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+    const [customers, setCustomers] = useState<Customer[]>([]);
+
+    const [customerInvoices, setCustomerInvoices] = useState<Record<string, UnpaidInvoice[]>>({});
+    const [routeInvoices, setRouteInvoices] = useState<UnpaidInvoice[]>([]);
+
     const [salesmanId, setSalesmanId] = useState<string>("");
+    const [collectedBy, setCollectedBy] = useState<string>(""); // 🚀 NEW: Collected By state
+    const [crNo, setCrNo] = useState<string>("");               // 🚀 NEW: CR No. state
     const [collectionDate, setCollectionDate] = useState<string>(new Date().toISOString().split('T')[0]);
     const [remarks, setRemarks] = useState<string>("");
 
@@ -54,21 +64,37 @@ export function useCashiering(currentUser: CurrentUser): CashieringState {
     const fetchInitialData = useCallback(async () => {
         setIsLoading(true);
         try {
-            const [collectionsData, salesmenData, banksData, denomData, coasData] = await Promise.all([
+            // 🚀 ADDED the users fetch right here!
+            const [collectionsData, salesmenData, banksData, denomData, coasData, pmData, custData, usersData] = await Promise.all([
                 fetchProvider.get<CollectionSummary[]>("/api/fm/treasury/collections"),
                 fetchProvider.get<Salesman[]>("/api/fm/treasury/salesmen"),
                 fetchProvider.get<Bank[]>("/api/fm/treasury/bank-names"),
                 fetchProvider.get<Denomination[]>("/api/fm/treasury/denominations"),
-                fetchProvider.get<COA[]>("/api/fm/treasury/coas")
+                fetchProvider.get<COA[]>("/api/fm/treasury/coas"),
+                fetchProvider.get<PaymentMethod[]>("/api/fm/treasury/payment-methods").catch(() => [] as PaymentMethod[]),
+                fetchProvider.get<Customer[]>("/api/fm/treasury/customers").catch(() => [] as Customer[]),
+                fetchProvider.get<UserDto[]>("/api/fm/treasury/users").catch(() => []) // 🚀 Calling your new BFF route
             ]);
 
-            // 🚀 FIXED: Removed the Regex hack! The Next.js BFF formats this perfectly now.
-            if (collectionsData) {
-                setMasterList(collectionsData);
-            }
-
+            if (collectionsData) setMasterList(collectionsData);
             if (salesmenData) setSalesmen(salesmenData);
             if (banksData) setBanks(banksData);
+            if (custData) setCustomers(custData);
+
+            // 🚀 Map the raw Java DTO to our frontend UserDto interface
+            if (usersData && usersData.length > 0) {
+                const mappedUsers = usersData.map(u => ({
+                    id: u.id,
+                    firstName: u.firstName,
+                    lastName: u.lastName,
+                    name: `${u.firstName || ''} ${u.lastName || ''}`.trim() // Combine name for UI
+                }));
+                setUsers(mappedUsers);
+            }
+
+            if (pmData) {
+                setPaymentMethods(pmData.filter((pm: PaymentMethod) => pm.methodId !== 1 && pm.methodName.toLowerCase() !== "cash"));
+            }
 
             if (coasData) {
                 setCoas(coasData.filter(c => c.isPayment === 1 || c.isPayment === true || c.isPaymentDuplicate));
@@ -76,7 +102,7 @@ export function useCashiering(currentUser: CurrentUser): CashieringState {
 
             if (denomData) {
                 setDenominationMaster(denomData);
-                const initialCounts = denomData.reduce((acc, d) => ({...acc, [d.id]: 0}), {});
+                const initialCounts = denomData.reduce<Record<number, number>>((acc, d) => ({ ...acc, [d.id]: 0 }), {});
                 setDenominations(initialCounts);
             }
         } catch (error) {
@@ -90,50 +116,79 @@ export function useCashiering(currentUser: CurrentUser): CashieringState {
         fetchInitialData();
     }, [fetchInitialData]);
 
+    useEffect(() => {
+        if (salesmanId) {
+            fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/unpaid-invoices?salesmanId=${salesmanId}`)
+                .then(data => setRouteInvoices(data || []))
+                .catch(err => console.error("Failed to load route invoices", err));
+        } else {
+            setRouteInvoices([]);
+        }
+    }, [salesmanId]);
+
     const loadPouchForEdit = useCallback(async (id: number) => {
         if (!id || isNaN(id)) return;
-
-        setIsSheetLoading(true); // 🚀 Use the new state
-        setIsSheetOpen(true);    // 🚀 UX FIX: Open immediately so the user sees the slide-in animation!
+        setIsSheetLoading(true);
+        setIsSheetOpen(true);
 
         try {
             const pouch = await fetchProvider.get<PouchDetailResponse>(`/api/fm/treasury/collections/${id}`);
             if (pouch) {
                 setEditingId(id);
                 setSalesmanId(pouch.salesmanId.toString());
+
+                // 🚀 Hydrate the new fields if backend returns them
+                setCollectedBy(pouch.collectedBy ? pouch.collectedBy.toString() : "");
+                setCrNo(pouch.crNo || "");
+
                 setCollectionDate(pouch.collectionDate.split('T')[0]);
                 setRemarks(pouch.remarks || "");
 
-                const newDenoms: Record<number, number> = denominationMaster.reduce((acc, d) => ({
-                    ...acc,
-                    [d.id]: 0
-                }), {});
+                const newDenoms: Record<number, number> = denominationMaster.reduce<Record<number, number>>((acc, d) => ({ ...acc, [d.id]: 0 }), {});
+
                 pouch.cashBuckets?.filter((b) => b.coaId === 1).forEach((bucket) => {
                     const denomId = parseInt(bucket.tempId.replace("cash-", ""));
                     if (!isNaN(denomId)) newDenoms[denomId] = bucket.quantity;
                 });
 
-                // 🚀 FIXED: Removed the duplicate setDenominations
                 setDenominations(newDenoms);
 
-                setChecks(pouch.cashBuckets?.filter((b) => b.coaId !== 1).map((b) => ({
-                    tempId: b.tempId,
-                    coaId: b.coaId?.toString() || "",
-                    bankId: b.bankId?.toString() || "",
-                    checkNo: b.referenceNo,
-                    amount: b.amount.toString(),
-                    chequeDate: b.chequeDate ? b.chequeDate.split('T')[0] : ""
-                })) || []);
-                setIsSheetOpen(true);
+                const mappedChecks = pouch.cashBuckets?.filter((b) => b.coaId !== 1).map((b) => {
+                    const custObj = customers.find(c => (c.customerCode || c.code) === b.customerCode);
+                    return {
+                        tempId: b.tempId,
+                        paymentMethodId: b.paymentMethodId?.toString() || "",
+                        coaId: b.coaId?.toString() || "",
+                        bankId: b.bankId?.toString() || "",
+                        customerId: custObj ? custObj.id.toString() : "",
+                        invoiceId: b.invoiceId?.toString() || "",
+                        checkNo: b.referenceNo,
+                        amount: b.amount.toString(),
+                        chequeDate: b.chequeDate ? b.chequeDate.split('T')[0] : ""
+                    };
+                }) || [];
+                setChecks(mappedChecks);
+
+                const uniqueCustomerIds = Array.from(new Set(mappedChecks.map(c => c.customerId).filter(Boolean)));
+                await Promise.all(uniqueCustomerIds.map(async (cId) => {
+                    if (cId) {
+                        try {
+                            const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/unpaid-invoices?salesmanId=${pouch.salesmanId}&customerId=${cId}`);
+                            setCustomerInvoices(prev => ({ ...prev, [cId]: data || [] }));
+                        } catch (err) {
+                            console.warn("Could not preload invoices for customer", cId);
+                            console.error(err);
+                        }
+                    }
+                }));
             }
         } catch (err) {
-            // 🚀 FIXED: Logged 'err' to satisfy ESLint
             console.error("Hydration Error:", err);
             alert("Could not load pouch details.");
         } finally {
-            setIsSheetLoading(false); // 🚀 Turn off sheet loading
+            setIsSheetLoading(false);
         }
-    }, [denominationMaster]);
+    }, [denominationMaster, customers]);
 
     const handleDenomChange = (id: number, qty: string) => setDenominations(prev => ({
         ...prev,
@@ -142,8 +197,11 @@ export function useCashiering(currentUser: CurrentUser): CashieringState {
 
     const addCheck = () => setChecks([...checks, {
         tempId: `chk-${Date.now()}`,
-        bankId: "",
+        paymentMethodId: "",
         coaId: "",
+        bankId: "",
+        customerId: "",
+        invoiceId: "",
         checkNo: "",
         amount: "",
         chequeDate: ""
@@ -155,25 +213,72 @@ export function useCashiering(currentUser: CurrentUser): CashieringState {
         setChecks(updated);
     };
 
+    const handlePaymentMethodSelect = (index: number, methodId: string) => {
+        const updated = [...checks];
+        updated[index].paymentMethodId = methodId;
+        const method = paymentMethods.find(m => m.methodId.toString() === methodId);
+        if (method && method.coaId) {
+            updated[index].coaId = method.coaId.toString();
+        }
+        setChecks(updated);
+    };
+
+    const handleCustomerSelect = async (index: number, customerId: string) => {
+        const updated = [...checks];
+        updated[index].customerId = customerId;
+        updated[index].invoiceId = "";
+        setChecks(updated);
+
+        if (salesmanId && customerId && !customerInvoices[customerId]) {
+            try {
+                const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/unpaid-invoices?salesmanId=${salesmanId}&customerId=${customerId}`);
+                setCustomerInvoices(prev => ({ ...prev, [customerId]: data || [] }));
+            } catch (err) {
+                console.error("Failed to load customer invoices", err);
+            }
+        }
+    };
+
+    const handleInvoiceSelect = (index: number, invoiceId: string) => {
+        const updated = [...checks];
+        updated[index].invoiceId = invoiceId;
+
+        if (!updated[index].customerId && routeInvoices.length > 0) {
+            const selectedInv = routeInvoices.find(inv => (inv.invoiceId || inv.id)?.toString() === invoiceId);
+            if (selectedInv) {
+                const custMatch = customers.find(c => (c.customerName || c.name) === selectedInv.customerName);
+                if (custMatch) {
+                    updated[index].customerId = custMatch.id.toString();
+                }
+            }
+        }
+        setChecks(updated);
+    };
+
     const removeCheck = (index: number) => setChecks(checks.filter((_, i) => i !== index));
 
     const resetForm = () => {
         setEditingId(null);
         setSalesmanId("");
+        setCollectedBy(""); // 🚀 Reset
+        setCrNo("");        // 🚀 Reset
         setRemarks("");
-        setDenominations(denominationMaster.reduce((acc, d) => ({...acc, [d.id]: 0}), {}));
+        setDenominations(denominationMaster.reduce<Record<number, number>>((acc, d) => ({ ...acc, [d.id]: 0 }), {}));
         setChecks([]);
+        setCustomerInvoices({});
     };
 
     const handleSubmit = async () => {
-        if (!salesmanId) return alert("Please select a route owner.");
+        if (!salesmanId) return alert("Please select a Collector.");
         if (grandTotal <= 0) return alert("Cannot save an empty pouch.");
+        if (!checks.every(c => c.bankId && c.bankId !== "")) return alert("All non-cash assets require a Target Bank selection.");
 
-        setIsSubmitting(true); // 🚀 Turn on submission loading
+        setIsSubmitting(true);
 
         const payload = {
             salesmanId: parseInt(salesmanId),
-            collectedBy: parseInt(currentUser.id) || 1,
+            collectedBy: collectedBy ? parseInt(collectedBy) : (parseInt(currentUser.id) || 1), // 🚀 Dynamic
+            crNo: crNo || undefined, // 🚀 Payload mapping
             collectionDate: `${collectionDate}T00:00:00`,
             remarks: remarks || "",
             cashBuckets: [
@@ -184,14 +289,20 @@ export function useCashiering(currentUser: CurrentUser): CashieringState {
                     quantity: denominations[d.id],
                     referenceNo: `${d.amount} x ${denominations[d.id]}`
                 })),
-                ...checks.filter(c => parseFloat(c.amount) > 0).map(c => ({
-                    tempId: c.tempId,
-                    coaId: parseInt(c.coaId) || 2,
-                    bankId: c.bankId ? parseInt(c.bankId) : null,
-                    referenceNo: c.checkNo,
-                    amount: parseFloat(c.amount),
-                    chequeDate: c.chequeDate ? `${c.chequeDate}T00:00:00` : null
-                }))
+                ...checks.filter(c => parseFloat(c.amount) > 0).map(c => {
+                    const custObj = customers.find(cust => cust.id.toString() === c.customerId);
+                    return {
+                        tempId: c.tempId,
+                        paymentMethodId: c.paymentMethodId ? parseInt(c.paymentMethodId) : null,
+                        coaId: parseInt(c.coaId) || 2,
+                        bankId: c.bankId ? parseInt(c.bankId) : null,
+                        customerCode: custObj ? (custObj.customerCode || custObj.code) : null,
+                        invoiceId: c.invoiceId ? parseInt(c.invoiceId) || null : null,
+                        referenceNo: c.checkNo,
+                        amount: parseFloat(c.amount),
+                        chequeDate: c.chequeDate ? `${c.chequeDate}T00:00:00` : null
+                    };
+                })
             ]
         };
 
@@ -208,16 +319,17 @@ export function useCashiering(currentUser: CurrentUser): CashieringState {
         } catch (error) {
             console.error("Submission Error:", error);
             alert("Error securing pouch.");
-        }
-        finally {
+        } finally {
             setIsSubmitting(false);
         }
     };
 
     return {
-        isSheetOpen, setIsSheetOpen,isSheetLoading, isSubmitting, masterList, salesmen, isLoading, salesmanId, setSalesmanId,
+        isSheetOpen, setIsSheetOpen, isSheetLoading, isSubmitting, masterList, salesmen, isLoading, salesmanId, setSalesmanId,
+        users, collectedBy, setCollectedBy, crNo, setCrNo, // 🚀 Expose the new states to the component!
         collectionDate, setCollectionDate, remarks, setRemarks, denominations, handleDenomChange,
-        denominationMaster, checks, banks, coas, addCheck, updateCheck, removeCheck, totalCash,
+        denominationMaster, checks, banks, coas, paymentMethods, customers, customerInvoices, routeInvoices,
+        addCheck, updateCheck, handlePaymentMethodSelect, handleCustomerSelect, handleInvoiceSelect, removeCheck, totalCash,
         totalChecks, grandTotal, handleSubmit, loadPouchForEdit, resetForm, editingId
     };
 }

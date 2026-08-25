@@ -6,17 +6,17 @@ import type {
 } from '../types';
 
 export const COLORS = [
-  '#3b82f6','#8b5cf6','#10b981','#f59e0b','#ef4444',
-  '#06b6d4','#ec4899','#84cc16','#f97316','#6366f1',
+  '#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444',
+  '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#6366f1',
 ];
 
 export const STATUS_COLORS: Record<APStatus, string> = {
-  'Paid':                    '#10b981',
-  'Unpaid':                  '#94a3b8',
-  'Partially Paid':          '#f59e0b',
-  'Overdue':                 '#dc2626',
-  'Unpaid | Overdue':        '#ef4444',
-  'Partially Paid | Overdue':'#f97316',
+  'Paid':                     '#10b981',
+  'Unpaid':                   '#94a3b8',
+  'Partially Paid':           '#f59e0b',
+  'Overdue':                  '#dc2626',
+  'Unpaid | Overdue':         '#ef4444',
+  'Partially Paid | Overdue': '#f97316',
 };
 
 export const formatPeso = (v: number): string =>
@@ -25,43 +25,72 @@ export const formatPeso = (v: number): string =>
 export const formatDate = (d?: string): string => {
   if (!d) return '—';
   const date = new Date(d);
-  return isNaN(date.getTime()) ? d : date.toLocaleDateString('en-PH', {
-    year: 'numeric', month: 'short', day: 'numeric',
-  });
+  return isNaN(date.getTime())
+    ? d
+    : date.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
+/**
+ * Computes how many days overdue a record is based on its due date.
+ *
+ * Returns:
+ *   null     — no valid due date; cannot determine overdue state
+ *   negative — due in the future; not yet overdue
+ *   0        — due exactly today; overdue (0 days aged)
+ *   positive — past due; N days overdue
+ *
+ * Uses Math.floor so same-day always yields 0, never 1.
+ */
+function computeAgingDays(dueDateStr: string): number | null {
+  if (!dueDateStr || dueDateStr === '—') return null;
+
+  const due = new Date(dueDateStr);
+  if (isNaN(due.getTime())) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  due.setHours(0, 0, 0, 0);
+
+  return Math.floor((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+}
 
 export function transformAPRows(raw: RawAPRow[]): APRecord[] {
   return raw.map((row, i) => {
-    const amountPayable      = Number(row.totalPayable      ?? 0);
-    const amountPaid         = Number(row.totalPaid         ?? 0);
+    const amountPayable      = Number(row.totalPayable       ?? 0);
+    const amountPaid         = Number(row.totalPaid          ?? 0);
     const outstandingBalance = Number(row.outstandingBalance ?? (amountPayable - amountPaid));
-    const daysOverdue        = Number(row.daysOverdue       ?? 0);
-    const invoiceDate        = String(row.transactionDate   ?? '');
-    const dueDate            = String(row.dueDate           ?? '');
+    const division           = String(row.divisionName       ?? row.division ?? '—');
+    const invoiceDate        = String(row.transactionDate    ?? '');
+    const dueDate            = String(row.dueDate            ?? '');
 
-    // Status logic — Paid is single value; Unpaid/Partially Paid can append | Overdue
+    // null = no due date | negative = future | 0 = today | positive = past due
+    const aging = computeAgingDays(dueDate);
+
+    // Overdue only when: valid due date + today or past + has outstanding balance
+    const isOverdue = aging !== null && aging >= 0 && outstandingBalance > 0;
+
     let status: APStatus;
+
     if (amountPaid >= amountPayable && amountPayable > 0) {
       status = 'Paid';
     } else if (amountPaid === 0) {
-      status = daysOverdue > 0 ? 'Unpaid | Overdue' : 'Unpaid';
+      status = isOverdue ? 'Unpaid | Overdue' : 'Unpaid';
     } else {
-      status = daysOverdue > 0 ? 'Partially Paid | Overdue' : 'Partially Paid';
+      status = isOverdue ? 'Partially Paid | Overdue' : 'Partially Paid';
     }
 
     return {
       id:                 String(row.disbursementId ?? `AP-${i + 1}`),
       refNo:              String(row.docNo          ?? `AP-${i + 1}`),
       supplier:           String(row.supplierName   ?? '—'),
-      // invoiceNo: API has no separate invoice number — use docNo per document spec
       invoiceNo:          String(row.docNo          ?? '—'),
+      division,
       invoiceDate,
       dueDate,
       amountPayable,
       amountPaid,
       outstandingBalance,
-      aging:              daysOverdue,
+      aging,
       status,
     };
   });
@@ -74,13 +103,17 @@ export function buildAgingBuckets(records: APRecord[]): AgingBucket[] {
     { range: '61–90 Days', amount: 0 },
     { range: '91+ Days',   amount: 0 },
   ];
+
   records.forEach((r) => {
     if (r.outstandingBalance <= 0) return;
-    if      (r.aging <= 30)  buckets[0].amount += r.outstandingBalance;
-    else if (r.aging <= 60)  buckets[1].amount += r.outstandingBalance;
-    else if (r.aging <= 90)  buckets[2].amount += r.outstandingBalance;
-    else                     buckets[3].amount += r.outstandingBalance;
+    if (r.aging === null || r.aging < 0) return;
+
+    if      (r.aging <= 30) buckets[0].amount += r.outstandingBalance;
+    else if (r.aging <= 60) buckets[1].amount += r.outstandingBalance;
+    else if (r.aging <= 90) buckets[2].amount += r.outstandingBalance;
+    else                    buckets[3].amount += r.outstandingBalance;
   });
+
   return buckets;
 }
 
@@ -97,7 +130,9 @@ export function buildSupplierData(records: APRecord[]): SupplierEntry[] {
 
 export function buildStatusData(records: APRecord[]): StatusEntry[] {
   const map: Record<string, number> = {};
-  records.forEach((r) => { map[r.status] = (map[r.status] ?? 0) + 1; });
+  records.forEach((r) => {
+    map[r.status] = (map[r.status] ?? 0) + 1;
+  });
   return (Object.entries(map) as [APStatus, number][])
     .filter(([, v]) => v > 0)
     .map(([name, value]) => ({ name, value, color: STATUS_COLORS[name] ?? '#94a3b8' }));
@@ -108,8 +143,12 @@ export function deriveMetrics(records: APRecord[]): APMetrics {
     totalPayable:     records.reduce((s, r) => s + r.amountPayable,      0),
     totalPaid:        records.reduce((s, r) => s + r.amountPaid,         0),
     totalOutstanding: records.reduce((s, r) => s + r.outstandingBalance, 0),
-    overdueCount:     records.filter((r) => r.status === 'Overdue').length,
-    totalRecords:     records.length,
+    overdueCount:     records.filter((r) =>
+      r.status === 'Overdue' ||
+      r.status === 'Unpaid | Overdue' ||
+      r.status === 'Partially Paid | Overdue'
+    ).length,
+    totalRecords: records.length,
   };
 }
 
@@ -117,7 +156,9 @@ export function getPageNumbers(current: number, total: number): (number | 'ellip
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
   const pages: (number | 'ellipsis')[] = [1];
   if (current > 3) pages.push('ellipsis');
-  for (let i = Math.max(2, current - 1); i <= Math.min(total - 1, current + 1); i++) pages.push(i);
+  for (let i = Math.max(2, current - 1); i <= Math.min(total - 1, current + 1); i++) {
+    pages.push(i);
+  }
   if (current < total - 2) pages.push('ellipsis');
   pages.push(total);
   return pages;

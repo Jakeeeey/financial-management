@@ -72,16 +72,16 @@ export const createColumns = ({
       );
     },
   },
-  {
-    accessorKey: "supplier_type",
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} label="Type" />
-    ),
-    cell: ({ row }) => {
-      const type = row.getValue("supplier_type") as string;
-      return <Badge variant="outline">{type}</Badge>;
-    },
-  },
+  // {
+  //   accessorKey: "supplier_type",
+  //   header: ({ column }) => (
+  //     <DataTableColumnHeader column={column} label="Type" />
+  //   ),
+  //   cell: ({ row }) => {
+  //     const type = row.getValue("supplier_type") as string;
+  //     return <Badge variant="outline">{type}</Badge>;
+  //   },
+  // },
   {
     accessorKey: "contact_person",
     header: ({ column }) => (

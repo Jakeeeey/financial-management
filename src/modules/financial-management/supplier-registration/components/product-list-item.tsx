@@ -39,9 +39,9 @@ export function ProductListItem({
       {/* Product info */}
       <div className="min-w-0">
         <p className="text-sm font-medium truncate">{product.product_name}</p>
-        {product.product_code && (
+        {product.unit_of_measurement != null && (
           <p className="text-xs text-muted-foreground font-mono mt-0.5">
-            {product.product_code}
+            {product.unit_of_measurement}
           </p>
         )}
       </div>

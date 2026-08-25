@@ -1,35 +1,35 @@
 // components/CWTPieChart.tsx
-// Pie chart showing CWT distribution by supplier, with a scrollable dropdown legend.
+// Donut pie chart showing CWT distribution by customer with dropdown legend.
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
-import { formatPeso } from '../utils';
-import type { PieEntry } from '../types';
+import type { AggregatedEntry } from '../types';
 
-const COLORS = ['#6366f1', '#a855f7', '#ec4899', '#f97316', '#22c55e', '#06b6d4'];
+const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4'];
 
 interface CWTPieChartProps {
-  data: PieEntry[];
-  totalAmount: number;
+  data: AggregatedEntry[];
+  pieTotal: number;
 }
 
-export function CWTPieChart({ data, totalAmount }: CWTPieChartProps) {
+export function CWTPieChart({ data, pieTotal }: CWTPieChartProps) {
   return (
-    <Card className="shadow-none border-border">
+    <Card className="shadow-none">
       <CardHeader className="border-b border-border/50 pb-3">
-        <CardTitle className="text-sm font-bold">CWT Distribution by Supplier</CardTitle>
+        <CardTitle className="text-sm font-semibold">CWT Distribution</CardTitle>
       </CardHeader>
       <CardContent className="pt-4">
-        <ResponsiveContainer width="100%" height={300}>
+        <ResponsiveContainer width="100%" height={200}>
           <PieChart>
             <Pie
               data={data}
+              dataKey="value"
               cx="50%"
               cy="50%"
-              outerRadius={120}
-              dataKey="value"
-              label={({ percent }) => `${(percent * 100).toFixed(1)}%`}
-              labelLine={false}
+              innerRadius={55}
+              outerRadius={90}
+              paddingAngle={2}
+              stroke="none"
             >
               {data.map((_, i) => (
                 <Cell key={i} fill={COLORS[i % COLORS.length]} />
@@ -42,9 +42,11 @@ export function CWTPieChart({ data, totalAmount }: CWTPieChartProps) {
                 return (
                   <div className="bg-popover border border-border rounded-lg shadow-lg px-3 py-2 text-xs">
                     <p className="font-bold text-foreground">{entry.name}</p>
-                    <p className="text-muted-foreground mt-0.5">{formatPeso(entry.value)}</p>
+                    <p className="text-muted-foreground mt-0.5">
+                      ₱{entry.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </p>
                     <p className="text-muted-foreground">
-                      {((entry.value / totalAmount) * 100).toFixed(1)}% of total
+                      {((entry.value / pieTotal) * 100).toFixed(1)}% of total
                     </p>
                   </div>
                 );
@@ -53,34 +55,30 @@ export function CWTPieChart({ data, totalAmount }: CWTPieChartProps) {
           </PieChart>
         </ResponsiveContainer>
 
-        {/* Scrollable dropdown legend */}
-        <div className="mt-3 border border-border rounded-lg overflow-hidden">
+        {/* Dropdown legend */}
+        <div className="mt-2 border border-border rounded-lg overflow-hidden">
           <details className="group">
             <summary className="flex items-center justify-between px-4 py-2.5 cursor-pointer bg-muted/30 hover:bg-muted/50 transition-colors text-xs font-semibold select-none">
-              <span>View All Suppliers ({data.length})</span>
-              <span className="group-open:rotate-180 transition-transform">▾</span>
+              <span>View All Customers ({data.length})</span>
+              <span className="group-open:rotate-180 transition-transform duration-200">▾</span>
             </summary>
-            <div className="max-h-48 overflow-y-auto divide-y divide-border/40">
-              {data
-                .slice()
-                .sort((a, b) => b.value - a.value)
-                .map((entry, i) => (
-                  <div key={i} className="flex items-center justify-between px-4 py-2 text-xs hover:bg-muted/20 transition-colors">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span
-                        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: COLORS[data.indexOf(entry) % COLORS.length] }}
-                      />
-                      <span className="truncate text-foreground font-medium">{entry.name}</span>
-                    </div>
-                    <div className="flex items-center gap-3 flex-shrink-0 ml-2">
-                      <span className="text-muted-foreground">
-                        {((entry.value / totalAmount) * 100).toFixed(1)}%
-                      </span>
-                      <span className="font-bold text-primary">{formatPeso(entry.value)}</span>
-                    </div>
+            <div className="max-h-44 overflow-y-auto divide-y divide-border/40">
+              {data.map((entry, i) => (
+                <div key={i} className="flex items-center justify-between px-4 py-2 text-xs hover:bg-muted/20 transition-colors">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
+                    <span className="truncate font-medium text-foreground" title={entry.name}>{entry.name}</span>
                   </div>
-                ))}
+                  <div className="flex items-center gap-3 flex-shrink-0 ml-3">
+                    <span className="text-muted-foreground tabular-nums">
+                      {((entry.value / pieTotal) * 100).toFixed(1)}%
+                    </span>
+                    <span className="font-bold text-primary tabular-nums">
+                      ₱{entry.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
           </details>
         </div>

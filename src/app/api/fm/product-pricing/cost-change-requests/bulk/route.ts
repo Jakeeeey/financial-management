@@ -45,6 +45,12 @@ function directusToken() {
     return process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_SERVICE_TOKEN || "";
 }
 
+function nowManila(): string {
+    return new Date()
+        .toLocaleString("sv-SE", { timeZone: "Asia/Manila" })
+        .replace(" ", "T");
+}
+
 function directusHeaders() {
     const token = directusToken();
     const h: Record<string, string> = { "Content-Type": "application/json" };
@@ -202,6 +208,7 @@ export async function POST(req: NextRequest) {
             proposed_cost: item.proposed_cost,
             status: "PENDING",
             requested_by: userId,
+            requested_at: nowManila(),
         }));
 
         const createUrl = `${mustBase()}/items/${CCR}`;

@@ -9,7 +9,7 @@ export function usePaymentTerms() {
   useEffect(() => {
     async function getTerms() {
       try {
-        const response = await fetch("/api/supplier-registration/payment-terms");
+        const response = await fetch("/api/fm/supplier-registration/payment-terms");
         if (!response.ok) throw new Error("Failed to fetch payment terms");
         const result = await response.json();
         setPaymentTerms(result.data || []);
@@ -33,7 +33,7 @@ export function useDeliveryTerms() {
   useEffect(() => {
     async function getTerms() {
       try {
-        const response = await fetch("/api/supplier-registration/delivery-terms");
+        const response = await fetch("/api/fm/supplier-registration/delivery-terms");
         if (!response.ok) throw new Error("Failed to fetch delivery terms");
         const result = await response.json();
         setDeliveryTerms(result.data || []);
