@@ -9,6 +9,10 @@ import {
   isTerminalHeaderStatus,
   type HeaderScope,
 } from "./headerLifecycle";
+import {
+  acquireDocumentNumberLock,
+  findNextAvailableDocumentNumber,
+} from "@/modules/financial-management/treasury/disbursement/document-number";
 
 export const runtime = "nodejs";
 
@@ -1638,28 +1642,29 @@ export async function POST(req: NextRequest) {
         }
       }
     } else {
-      const latestRes = await directusFetch(
-        `/items/disbursement_draft?filter[doc_no][_starts_with]=NT-&sort=-id&limit=1&fields=doc_no`
-      );
-
-      if (!latestRes.ok) {
-        return json(latestRes.data, { status: latestRes.status });
+      const releaseDocumentNumberLock = await acquireDocumentNumberLock(2);
+      try {
+        docNo = await findNextAvailableDocumentNumber(
+          2,
+          async <T>(path: string, init?: RequestInit): Promise<T> => {
+            const response = await directusFetch(path, init);
+            if (!response.ok) {
+              const error = new Error(JSON.stringify(response.data)) as Error & { status?: number };
+              error.status = response.status;
+              throw error;
+            }
+            return response.data as T;
+          },
+        );
+      } catch (error) {
+        const status = typeof error === "object" && error !== null && "status" in error
+          ? Number((error as { status?: unknown }).status)
+          : 500;
+        const message = error instanceof Error ? error.message : "Failed to allocate a unique document number.";
+        return json({ error: message }, { status: Number.isInteger(status) && status >= 400 ? status : 500 });
+      } finally {
+        releaseDocumentNumberLock();
       }
-
-      const latestDoc = getListData<{ doc_no?: string }>(latestRes.data)[0]
-        ?.doc_no;
-
-      let nextNum = 1000;
-
-      if (latestDoc) {
-        const match = latestDoc.match(/NT-(\d+)/);
-
-        if (match) {
-          nextNum = parseInt(match[1], 10) + 1;
-        }
-      }
-
-      docNo = `NT-${nextNum}`;
 
       const firstSelected = selectedExpenses[0];
 

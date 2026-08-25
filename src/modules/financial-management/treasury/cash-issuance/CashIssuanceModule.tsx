@@ -405,6 +405,7 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
                                                      return Math.abs(debit - credit) < 0.01 && debit > 0;
                                                  }) : data} 
                                                  loading={loading} 
+                                                 showPreparedBy={subModule === "preparation"}
                                                  onView={handleView} 
                                             />
                                         )}

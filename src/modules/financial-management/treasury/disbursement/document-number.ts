@@ -113,12 +113,19 @@ export async function findNextAvailableDocumentNumber(
     params.set("fields", "doc_no");
     params.set("limit", "-1");
 
-    const persistedResponse = await directusFetch<DirectusList<DocumentNumberRow>>(
-        `/items/disbursement?${params.toString()}`,
-    );
-    for (const row of persistedResponse.data ?? []) {
-        const parsed = parseDocumentNumber(row.doc_no, prefix);
-        if (parsed != null) highestNumber = Math.max(highestNumber, parsed);
+    const [persistedResponse, draftResponse] = await Promise.all([
+        directusFetch<DirectusList<DocumentNumberRow>>(
+            `/items/disbursement?${params.toString()}`,
+        ),
+        directusFetch<DirectusList<DocumentNumberRow>>(
+            `/items/disbursement_draft?${params.toString()}`,
+        ),
+    ]);
+    for (const response of [persistedResponse, draftResponse]) {
+        for (const row of response.data ?? []) {
+            const parsed = parseDocumentNumber(row.doc_no, prefix);
+            if (parsed != null) highestNumber = Math.max(highestNumber, parsed);
+        }
     }
 
     for (let offset = 1; offset <= MAX_ALLOCATION_ATTEMPTS; offset++) {
@@ -128,10 +135,17 @@ export async function findNextAvailableDocumentNumber(
         exactParams.set("fields", "id");
         exactParams.set("limit", "1");
 
-        const exactResponse = await directusFetch<DirectusList<{ id?: unknown }>>(
-            `/items/disbursement?${exactParams.toString()}`,
-        );
-        if ((exactResponse.data ?? []).length === 0) return candidate;
+        const [exactResponse, exactDraftResponse] = await Promise.all([
+            directusFetch<DirectusList<{ id?: unknown }>>(
+                `/items/disbursement?${exactParams.toString()}`,
+            ),
+            directusFetch<DirectusList<{ id?: unknown }>>(
+                `/items/disbursement_draft?${exactParams.toString()}`,
+            ),
+        ]);
+        if ((exactResponse.data ?? []).length === 0 && (exactDraftResponse.data ?? []).length === 0) {
+            return candidate;
+        }
     }
 
     throw new Error(`Could not allocate an unused ${prefix} document number.`);
