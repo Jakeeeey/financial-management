@@ -53,34 +53,39 @@ export function SearchableSelect({
                     className={cn("w-full justify-between", !value && "text-muted-foreground", className)}
                     disabled={disabled}
                 >
-
-                    {selectedLabel || placeholder}
-
+                    <span className="truncate flex-1 text-left">
+                        {selectedLabel || placeholder}
+                    </span>
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                <Command>
+            <PopoverContent 
+                className="w-[--radix-popover-trigger-width] p-0" 
+                align="start"
+                onWheel={(e) => e.stopPropagation()}
+            >
+                <Command className="max-h-[400px]">
                     <CommandInput placeholder={`Search ${placeholder.toLowerCase()}...`} />
-                    <CommandList>
+                    <CommandList className="max-h-[300px] overflow-y-auto overflow-x-hidden">
                         <CommandEmpty>No results found.</CommandEmpty>
                         <CommandGroup>
                             {options.map((opt) => (
                                 <CommandItem
                                     key={opt.value}
-                                    value={opt.label} // Use label for searching
+                                    value={opt.label}
                                     onSelect={() => {
                                         onValueChange(opt.value);
                                         setOpen(false);
                                     }}
+                                    className="flex items-center"
                                 >
                                     <Check
                                         className={cn(
-                                            "mr-2 h-4 w-4",
+                                            "mr-2 h-4 w-4 shrink-0",
                                             value === opt.value ? "opacity-100" : "opacity-0"
                                         )}
                                     />
-                                    {opt.label}
+                                    <span className="truncate flex-1">{opt.label}</span>
                                 </CommandItem>
                             ))}
                         </CommandGroup>

@@ -60,9 +60,15 @@ export default function CustomerDiscountModule({ userName, userId }: { userName:
         c.customer_name.toLowerCase().includes(search.toLowerCase()) ||
         c.customer_code.toLowerCase().includes(search.toLowerCase());
       
-      const sType = typeof c.store_type === 'object' ? String(c.store_type?.id) : String(c.store_type);
-      const classId = typeof c.classification === 'object' ? String(c.classification?.id) : String(c.classification);
-      const pTerm = typeof c.payment_term === 'object' ? String(c.payment_term?.id) : String(c.payment_term);
+      const getFilterVal = (val: string | number | { id?: number | string } | null | undefined) => {
+        if (!val || val === "null" || val === "undefined") return "none";
+        if (typeof val === 'object') return String(val.id || "none");
+        return String(val);
+      };
+      
+      const sType = getFilterVal(c.store_type);
+      const classId = getFilterVal(c.classification);
+      const pTerm = getFilterVal(c.payment_term);
 
       if (search && !matchesSearch) return false;
       if (storeTypeFilter !== "all" && sType !== storeTypeFilter) return false;
@@ -143,6 +149,7 @@ export default function CustomerDiscountModule({ userName, userId }: { userName:
             placeholder="Store Type"
             options={[
               { value: "all", label: "All Store Types" },
+              { value: "none", label: "No Store Type" },
               ...(data?.storeTypes.map((s) => ({ value: String(s.id), label: s.store_type })) || []),
             ]}
             className="w-full md:w-[180px]"
@@ -154,6 +161,7 @@ export default function CustomerDiscountModule({ userName, userId }: { userName:
             placeholder="Classification"
             options={[
               { value: "all", label: "All Classifications" },
+              { value: "none", label: "No Classification" },
               ...(data?.classifications.map((c) => ({ value: String(c.id), label: c.classification_name })) || []),
             ]}
             className="w-full md:w-[180px]"
@@ -165,6 +173,7 @@ export default function CustomerDiscountModule({ userName, userId }: { userName:
             placeholder="Payment Term"
             options={[
               { value: "all", label: "All Payment Terms" },
+              { value: "none", label: "No Payment Term" },
               ...(data?.paymentTerms.map((p) => ({ value: String(p.id), label: p.payment_name })) || []),
             ]}
             className="w-full md:w-[180px]"
