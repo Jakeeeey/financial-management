@@ -25,6 +25,7 @@ export function CashIssuanceTable({ data, loading, onView }: CashIssuanceTablePr
                     <TableRow className="border-border">
                         <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground w-[180px]">Voucher Info</TableHead>
                         <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Payee & Particulars</TableHead>
+                        <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Prepared By</TableHead>
                         <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Cost Center</TableHead>
                         <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground text-right">Financials</TableHead>
                         <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground text-center w-[120px]">Status</TableHead>
@@ -33,9 +34,9 @@ export function CashIssuanceTable({ data, loading, onView }: CashIssuanceTablePr
                 </TableHeader>
                 <TableBody>
                     {loading ? (
-                        <TableRow><TableCell colSpan={6} className="h-48 text-center text-sm font-medium text-muted-foreground">Loading vouchers...</TableCell></TableRow>
+                        <TableRow><TableCell colSpan={7} className="h-48 text-center text-sm font-medium text-muted-foreground">Loading vouchers...</TableCell></TableRow>
                     ) : data.length === 0 ? (
-                        <TableRow><TableCell colSpan={6} className="h-48 text-center text-sm font-medium text-muted-foreground">No disbursements found in this category.</TableCell></TableRow>
+                        <TableRow><TableCell colSpan={7} className="h-48 text-center text-sm font-medium text-muted-foreground">No disbursements found in this category.</TableCell></TableRow>
                     ) : (
                         data.map((d) => (
                             <TableRow key={d.id} className="group hover:bg-primary/[0.04] transition-all duration-200 border-border even:bg-muted/20">
@@ -57,6 +58,16 @@ export function CashIssuanceTable({ data, loading, onView }: CashIssuanceTablePr
                                     <div className="flex flex-col gap-1 max-w-[300px]">
                                         <span className="text-xs font-black text-foreground uppercase truncate">{d.payeeName || "UNKNOWN PAYEE"}</span>
                                         <span className="text-[10px] font-medium text-muted-foreground truncate" title={d.remarks}>{d.remarks || "No particulars provided"}</span>
+                                    </div>
+                                </TableCell>
+                                <TableCell className="align-top py-4">
+                                    <div className="flex flex-col gap-1 max-w-[220px]">
+                                        <span className="text-xs font-black text-foreground uppercase truncate" title={d.encoderName || "Unknown User"}>
+                                            {d.encoderName || "Unknown User"}
+                                        </span>
+                                        <span className="text-[10px] font-bold text-muted-foreground uppercase truncate" title={d.departmentName || "No Department"}>
+                                            {d.departmentName || "No Department"}
+                                        </span>
                                     </div>
                                 </TableCell>
                                 <TableCell className="align-top py-4">
