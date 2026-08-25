@@ -6,6 +6,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -58,6 +59,9 @@ export function AddDiscountModal({
       <DialogContent className="max-w-md" showCloseButton={false}>
         <DialogHeader>
           <DialogTitle>Add Customer Discount</DialogTitle>
+          <DialogDescription className="sr-only">
+            Select a supplier, category, and discount type to add a new discount for this customer.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
