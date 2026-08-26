@@ -593,6 +593,67 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({ success: true, message: "Cancellation request rejected.", requestId: cancellationRequest?.id ?? null });
 
+    } else if (action === "upload_attachments") {
+      // ── UPLOAD ATTACHMENTS (Admin/Requester) ──
+      if (!requestId) {
+        return NextResponse.json({ message: "requestId is required" }, { status: 400 });
+      }
+      if (attachmentFiles.length === 0) {
+        return NextResponse.json({ message: "At least one attachment is required" }, { status: 400 });
+      }
+
+      const cancellationRequest = await getPendingCancellationRequest(invoiceId, requestId);
+      if (!cancellationRequest) {
+        return NextResponse.json({ message: "Pending cancellation request not found" }, { status: 404 });
+      }
+
+      const createdAttachmentIds: Array<string | number> = [];
+      const uploadedFiles: UploadedDirectusFile[] = [];
+
+      try {
+        for (const file of attachmentFiles) {
+          const isImage = file.type.startsWith("image/");
+          const isPdf = file.type === "application/pdf";
+          if (!isImage && !isPdf) {
+            throw new Error(`Unsupported attachment type: ${file.name}. Upload an image or PDF.`);
+          }
+          if (file.size > 10 * 1024 * 1024) {
+            throw new Error(`${file.name} exceeds the 10 MB attachment limit`);
+          }
+
+          const uploadedFile = await uploadDirectusFile(file);
+          uploadedFiles.push(uploadedFile);
+          const attachmentResponse = await directusFetch<{ data?: DirectusCancellationAttachment }>(
+            `/items/${CANCELLATION_ATTACHMENTS_COLLECTION}`,
+            {
+              method: "POST",
+              body: JSON.stringify({
+                cancellation_request_id: requestId,
+                file_id: uploadedFile.id,
+                filename: uploadedFile.filename,
+                mime_type: uploadedFile.mimeType || file.type,
+                file_size: uploadedFile.size,
+                uploaded_by: username,
+                uploaded_at: new Date().toISOString(),
+              }),
+            }
+          );
+          const attachmentId = attachmentResponse.data?.id;
+          if (attachmentId === undefined || attachmentId === null) {
+            throw new Error("Directus did not return an attachment ID");
+          }
+          createdAttachmentIds.push(attachmentId);
+        }
+      } catch (error) {
+        await cleanupCreatedCancellationData(null, createdAttachmentIds, uploadedFiles);
+        throw error;
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: "Attachments uploaded successfully.",
+        attachmentIds: createdAttachmentIds,
+      });
     } else {
       return NextResponse.json({ message: "Invalid action" }, { status: 400 });
     }
