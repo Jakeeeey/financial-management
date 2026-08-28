@@ -560,10 +560,18 @@ export async function PATCH(req: NextRequest) {
     try {
         const DIRECTUS_URL = getDirectusBase();
         const body = await req.json();
-        const { id, ids, status } = body;
+        const { id, ids, status, reason } = body;
 
         if (!status) {
             return NextResponse.json({ error: "Status required" }, { status: 400 });
+        }
+
+        const dataPayload: Record<string, unknown> = {
+            status,
+            isPending: false
+        };
+        if (reason !== undefined) {
+            dataPayload.reason = reason;
         }
 
         if (ids && Array.isArray(ids)) {
@@ -572,20 +580,14 @@ export async function PATCH(req: NextRequest) {
                 method: "PATCH",
                 body: JSON.stringify({ 
                     keys: ids,
-                    data: {
-                        status,
-                        isPending: false
-                    }
+                    data: dataPayload
                 }),
             });
         } else if (id) {
             // Single update status and ensure isPending stays 0
             await directusFetch(`${DIRECTUS_URL}/items/customers_memo/${id}`, {
                 method: "PATCH",
-                body: JSON.stringify({ 
-                    status,
-                    isPending: false 
-                }),
+                body: JSON.stringify(dataPayload),
             });
         } else {
             return NextResponse.json({ error: "ID or IDs required" }, { status: 400 });
