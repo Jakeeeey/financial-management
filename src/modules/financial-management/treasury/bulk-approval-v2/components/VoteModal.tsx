@@ -181,11 +181,15 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
         }, {}
       ) || {};
 
+      const existingExpenseIds = new Set((detail.payables || []).map((p: DraftPayable) => p.expense_id).filter(Boolean));
+
       const concernInit = (detail.concern_items || []).reduce(
         (acc: Record<number, "APPROVED" | "REJECTED" | "WITH_CONCERN" | "PENDING">, ci: ConcernItemResponse) => {
+          if (existingExpenseIds.has(ci.expense_id)) return acc;
+          
           initialRemarks[-ci.expense_id] = ci.feedback || "";
-          const isStillConcern = ci.status === "With Concern";
-          const defaultStatus = ci.status === "Rejected" ? "REJECTED" : (isDraftApproved ? "APPROVED" : "PENDING");
+          const isStillConcern = ci.status?.toLowerCase() === "with concern";
+          const defaultStatus = ci.status?.toLowerCase() === "rejected" ? "REJECTED" : (isDraftApproved ? "APPROVED" : "PENDING");
           return { ...acc, [-ci.expense_id]: isStillConcern ? ("WITH_CONCERN" as const) : (defaultStatus as "APPROVED" | "REJECTED" | "PENDING") };
         }, {}
       ) || {};
@@ -217,8 +221,8 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
           date: ci.transaction_date,
           reference_no: null,
           attachment_url: ci.attachment_url,
-          is_concern: ci.status === "With Concern",
-          is_rejected: ci.status === "Rejected",
+          is_concern: ci.status?.toLowerCase() === "with concern",
+          is_rejected: ci.status?.toLowerCase() === "rejected",
           feedback: ci.feedback
         });
       }
@@ -260,10 +264,12 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     }, 0);
   }, [combinedItems, editedAmounts, itemDecisions]);
 
-  const approvedCount = React.useMemo(() => {
-    return Object.values(itemDecisions).filter(s => s === "APPROVED").length;
-  }, [itemDecisions]);
-
+  const approvedCount = combinedItems.filter(p => itemDecisions[p.id] === "APPROVED").length;
+  const hasPendingItems = combinedItems.some(p => (itemDecisions[p.id] || "PENDING") === "PENDING");
+  const hasMissingFeedback = combinedItems.some(p => {
+    const status = itemDecisions[p.id] || "PENDING";
+    return (status === "REJECTED" || status === "WITH_CONCERN") && !(showItemRemarks[p.id]?.trim());
+  });
   const setItemStatus = (id: number, status: "APPROVED" | "REJECTED" | "WITH_CONCERN" | "PENDING") => {
     const item = combinedItems.find(i => i.id === id);
     if (item?.is_concern || item?.is_rejected) return; // Hard lock for persistent states
@@ -669,8 +675,9 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                 <div className="flex flex-col gap-1 w-full">
                   <p className="text-[8px] uppercase font-black text-muted-foreground dark:text-slate-500 tracking-widest leading-none mb-1 text-right">Progress</p>
                   <div className="flex justify-end gap-1.5 flex-wrap">
+                    {/* Force Refresh Comment */}
                     <Badge className="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 text-[9px] font-black px-1.5 py-0">Approved: {approvedCount}</Badge>
-                    <Badge className="bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800 text-[9px] font-black px-1.5 py-0">Pending: {Object.values(itemDecisions).filter(v => v === "PENDING").length}</Badge>
+                    <Badge className="bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800 text-[9px] font-black px-1.5 py-0">Pending: {combinedItems.filter(p => (itemDecisions[p.id] || "PENDING") === "PENDING").length}</Badge>
                   </div>
                 </div>
               </div>
