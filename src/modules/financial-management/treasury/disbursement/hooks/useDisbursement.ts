@@ -1,8 +1,9 @@
 "use client";
 
 import {useState, useCallback, useEffect, useRef} from "react";
-import {Disbursement, DisbursementPayload, SupplierDto, DivisionDto, DepartmentDto} from "../types";
-import {disbursementProvider} from "../providers/fetchProvider";
+import {Disbursement, DisbursementPayload, PaymentLine, SupplierDto, DivisionDto, DepartmentDto} from "../types";
+import {disbursementProvider, DisbursementRequestError} from "../providers/fetchProvider";
+import {DisbursementSubmitResult} from "../types";
 import {toast} from "sonner";
 
 export function useDisbursement() {
@@ -29,6 +30,7 @@ export function useDisbursement() {
     const [divisions, setDivisions] = useState<DivisionDto[]>([]);
     const [departments, setDepartments] = useState<DepartmentDto[]>([]);
     const listRequestIdRef = useRef(0);
+    const createRequestLockRef = useRef(false);
 
     useEffect(() => {
         const fetchFilterData = async () => {
@@ -96,32 +98,60 @@ export function useDisbursement() {
         setPage(0);
     };
 
-    const create = async (payload: DisbursementPayload) => {
+    const create = async (payload: DisbursementPayload): Promise<DisbursementSubmitResult> => {
+        if (createRequestLockRef.current) return {success: false};
+        createRequestLockRef.current = true;
         setActionLoading(true);
         try {
             await disbursementProvider.createDisbursement(payload);
             toast.success("Voucher created successfully");
             applyFilters();
-            return true;
-        } catch {
-            toast.error("Creation failed");
-            return false;
+            return {success: true};
+        } catch (error: unknown) {
+            if (error instanceof DisbursementRequestError && error.code === "DOC_NO_CONFLICT") {
+                return {
+                    success: false,
+                    code: error.code,
+                    message: error.message,
+                    nextDocNo: error.nextDocNo,
+                };
+            }
+            const message = error instanceof Error ? error.message : "Creation failed";
+            toast.error(message);
+            return {success: false, message};
         } finally {
+            createRequestLockRef.current = false;
             setActionLoading(false);
         }
     };
 
-    const update = async (id: number, payload: DisbursementPayload) => {
+    const update = async (id: number, payload: DisbursementPayload): Promise<DisbursementSubmitResult> => {
         setActionLoading(true);
         try {
             await disbursementProvider.updateDisbursement(id, payload);
             toast.success("Voucher updated successfully");
             applyFilters();
-            return true;
+            return {success: true};
         } catch (error: unknown) { // 🚀 FIX: Replaced 'any'
             const msg = error instanceof Error ? error.message : "Update failed";
             toast.error(msg);
-            return false;
+            return {success: false, message: msg};
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const updatePaymentAllocation = async (id: number, payments: PaymentLine[]): Promise<DisbursementSubmitResult> => {
+        setActionLoading(true);
+        try {
+            await disbursementProvider.updatePaymentAllocation(id, payments);
+            toast.success("Payment allocation saved successfully");
+            applyFilters();
+            return {success: true};
+        } catch (error: unknown) {
+            const msg = error instanceof Error ? error.message : "Payment allocation update failed";
+            toast.error(msg);
+            return {success: false, message: msg};
         } finally {
             setActionLoading(false);
         }
@@ -181,6 +211,7 @@ export function useDisbursement() {
         refresh: applyFilters,
         create,
         update,
+        updatePaymentAllocation,
         changeStatus
     };
 }

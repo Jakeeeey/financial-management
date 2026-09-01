@@ -1,5 +1,11 @@
 export interface PayableLine {
     id?: number;
+    isMemo?: boolean;
+    memoId?: number;
+    memoType?: number;
+    memoNumber?: string;
+    /** UI-only supplier snapshot used to flag memo lines after a payee change. */
+    memoSupplierId?: number;
     divisionId?: number;
     divisionName?: string;
     referenceNo: string;
@@ -25,6 +31,12 @@ export interface PaymentLine {
     releasedBy?: string | number;
 }
 
+export type DisbursementPaymentState =
+    | "UNPAID"
+    | "ALLOCATED"
+    | "PARTIALLY_RELEASED"
+    | "RELEASED";
+
 export interface Disbursement {
     id: number;
     docNo: string;
@@ -35,6 +47,7 @@ export interface Disbursement {
     remarks?: string;
     totalAmount: number;
     paidAmount: number;
+    paymentState: DisbursementPaymentState;
 
     // Financial Header Aggregates
     totalDebit?: number;
@@ -78,13 +91,24 @@ export interface DisbursementPayload {
     remarks?: string;
     totalAmount: number;
     transactionDate?: string;
-    divisionId?: number;
     departmentId?: number;
     fundSourceId?: number;
     supportingDocumentsUrl?: string;
 
     payables: PayableLine[];
+    payments?: PaymentLine[];
+}
+
+export interface PaymentAllocationPayload {
+    saveScope: "RELEASING_PAYMENT";
     payments: PaymentLine[];
+}
+
+export interface DisbursementSubmitResult {
+    success: boolean;
+    code?: string;
+    message?: string;
+    nextDocNo?: string;
 }
 
 export interface DivisionDto {
@@ -140,12 +164,17 @@ export interface UnpaidPoDto {
 export interface MemoDto {
     id: number;
     memo_number: string;
+    supplier_id?: number;
     type: number;
     memo_type_name: string;
     date: string;
     amount: number;
     applied_amount?: number;
     remaining_amount?: number;
+    is_locked?: boolean;
+    locking_tr_doc_no?: string | null;
+    locking_tr_status?: string | null;
+    locking_tr_count?: number;
     reason: string | null;
     coa_id: number;
     account_title: string;

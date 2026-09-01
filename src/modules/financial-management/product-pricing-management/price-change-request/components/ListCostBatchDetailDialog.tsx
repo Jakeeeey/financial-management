@@ -163,7 +163,7 @@ export function ListCostBatchDetailDialog({
         onRejectScheduled != null;
     const canRetryApplication =
         !readOnly && detail?.application_status === "FAILED" && headerId > 0 && onRetryApplication != null;
-    const displayStatus = detail ? displayPcrStatus(detail.status, detail.application_status) : "";
+    const displayStatus = detail ? displayPcrStatus(detail.status, detail.application_status, detail.effective_at) : "";
     const lineSummary = React.useMemo(() => buildLineSummary(lines), [lines]);
 
     const handleOpenChange = React.useCallback(
@@ -392,7 +392,7 @@ export function ListCostBatchDetailDialog({
                                 <Button
                                     className={pcrApproveButtonClass}
                                     onClick={() => setConfirmingAction("approve")}
-                                    disabled={acting}
+                                    disabled={acting || rejecting}
                                 >
                                     Approve Request
                                 </Button>
@@ -434,7 +434,7 @@ export function ListCostBatchDetailDialog({
                                 <Button
                                     className={pcrApproveButtonClass}
                                     onClick={() => setConfirmingAction("apply_now")}
-                                    disabled={acting}
+                                    disabled={acting || rejecting}
                                 >
                                     Apply Now
                                 </Button>

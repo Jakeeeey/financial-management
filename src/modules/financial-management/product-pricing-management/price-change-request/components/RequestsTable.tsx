@@ -15,8 +15,9 @@ import {
     displayPcrStatus,
     pcrStatusBadgeClass,
 } from "../utils/pcrStatusStyles";
+import { COST_MAX_DECIMAL_PLACES, PRICE_MAX_DECIMAL_PLACES } from "../../shared/pricePrecision";
 
-function fmt(v: number | string | null | undefined, maximumFractionDigits = 2) {
+function fmt(v: number | string | null | undefined, maximumFractionDigits = PRICE_MAX_DECIMAL_PLACES) {
     const n = Number(v);
     if (!Number.isFinite(n)) return "—";
     return new Intl.NumberFormat("en-PH", {
@@ -28,11 +29,11 @@ function fmt(v: number | string | null | undefined, maximumFractionDigits = 2) {
 }
 
 function fmtPrice(v: number | string | null | undefined) {
-    return fmt(v, 4);
+    return fmt(v, PRICE_MAX_DECIMAL_PLACES);
 }
 
 function fmtCost(v: number | string | null | undefined) {
-    return fmt(v, 4);
+    return fmt(v, COST_MAX_DECIMAL_PLACES);
 }
 
 function requestedAtParts(value: string | null | undefined) {
@@ -70,7 +71,7 @@ function getTotalPages(meta: ListMeta | null | undefined, pageSize: number, curr
     return 0;
 }
 
-function approvalKind(row: ApprovalRecordRow): "price_batch" | "cost_batch" | "price_type" | "list_price" {
+function approvalKind(row: ApprovalRecordRow): "price_batch" | "cost_batch" | "mixed_batch" | "price_type" | "list_price" {
     if ("kind" in row) return row.kind;
     return "proposed_cost" in row ? "list_price" : "price_type";
 }
@@ -100,8 +101,9 @@ function supplierText(row: ApprovalRecordRow): string {
 function approvalRecordLabel(row: ApprovalRecordRow) {
     const kind = approvalKind(row);
     if ("record_label" in row && row.record_label) return row.record_label;
-    if (kind === "price_batch" || kind === "cost_batch") {
-        const batch = row as Extract<UnifiedApprovalRow, { kind: "price_batch" | "cost_batch" }>;
+    if (kind === "price_batch" || kind === "cost_batch" || kind === "mixed_batch") {
+        const batch = row as Extract<UnifiedApprovalRow, { kind: "price_batch" | "cost_batch" | "mixed_batch" }>;
+        if (kind === "mixed_batch") return `PCB-${Number(batch.batch_id ?? batch.request_id)}`;
         return kind === "cost_batch"
             ? `CCR-${Number(batch.batch_id ?? batch.request_id)}`
             : `PCB-${Number(batch.batch_id ?? batch.request_id)}`;
@@ -112,8 +114,8 @@ function approvalRecordLabel(row: ApprovalRecordRow) {
 
 function totalProductsText(row: ApprovalRecordRow) {
     const kind = approvalKind(row);
-    if (kind === "price_batch" || kind === "cost_batch") {
-        const batch = row as Extract<UnifiedApprovalRow, { kind: "price_batch" | "cost_batch" }>;
+    if (kind === "price_batch" || kind === "cost_batch" || kind === "mixed_batch") {
+        const batch = row as Extract<UnifiedApprovalRow, { kind: "price_batch" | "cost_batch" | "mixed_batch" }>;
         const totalProducts = Number(batch.total_products ?? 0);
         if (Number.isFinite(totalProducts) && totalProducts > 0) return totalProducts.toLocaleString("en-PH");
         const lineCount = Number(batch.line_count ?? 0);
@@ -122,8 +124,33 @@ function totalProductsText(row: ApprovalRecordRow) {
     return "1";
 }
 
+function mixedProposedValues(row: ApprovalRecordRow) {
+    const batch = row as Extract<UnifiedApprovalRow, { kind: "mixed_batch" }>;
+    const priceMin = batch.price_summary?.proposed_min ?? batch.price_proposed_min;
+    const priceMax = batch.price_summary?.proposed_max ?? batch.price_proposed_max;
+    const costMin = batch.cost_summary?.proposed_min ?? batch.cost_proposed_min;
+    const costMax = batch.cost_summary?.proposed_max ?? batch.cost_proposed_max;
+    const priceMinNumber = priceMin == null ? null : Number(priceMin);
+    const priceMaxNumber = priceMax == null ? null : Number(priceMax);
+    const costMinNumber = costMin == null ? null : Number(costMin);
+    const costMaxNumber = costMax == null ? null : Number(costMax);
+
+    return {
+        price: Number.isFinite(priceMinNumber) && Number.isFinite(priceMaxNumber)
+            ? priceMinNumber === priceMaxNumber ? fmtPrice(priceMinNumber) : `${fmtPrice(priceMinNumber)} - ${fmtPrice(priceMaxNumber)}`
+            : null,
+        cost: Number.isFinite(costMinNumber) && Number.isFinite(costMaxNumber)
+            ? costMinNumber === costMaxNumber ? fmtCost(costMinNumber) : `${fmtCost(costMinNumber)} - ${fmtCost(costMaxNumber)}`
+            : null,
+    };
+}
+
 function proposedText(row: ApprovalRecordRow) {
     const kind = approvalKind(row);
+    if (kind === "mixed_batch") {
+        const { price, cost } = mixedProposedValues(row);
+        return [price ? `Price: ${price}` : null, cost ? `Cost: ${cost}` : null].filter(Boolean).join(" | ") || "-";
+    }
     if (kind === "price_batch") {
         const batch = row as Extract<UnifiedApprovalRow, { kind: "price_batch" }>;
         const min = Number(batch.proposed_min);
@@ -337,7 +364,7 @@ export default function RequestsTable(props: Props) {
                                 </TableHead>
                             ) : null}
                             <TableHead className="w-[110px] px-2">Request #</TableHead>
-                            <TableHead className="w-[84px] px-2">Type</TableHead>
+                            <TableHead className="w-[160px] min-w-[160px] px-2">Type</TableHead>
                             <TableHead className="w-[140px] px-2">Supplier</TableHead>
                             <TableHead className="w-[140px] px-2">Requested By</TableHead>
                             <TableHead className="w-[120px] px-2 text-right">Total Products</TableHead>
@@ -345,7 +372,9 @@ export default function RequestsTable(props: Props) {
                             <TableHead className="w-[102px] px-2">Status</TableHead>
                             <TableHead className="w-[130px] px-2">Requested</TableHead>
                             {showActionsColumn ? (
-                                <TableHead className="w-[188px] px-2 text-right">Actions</TableHead>
+                                <TableHead className="sticky right-0 z-20 w-[96px] min-w-[96px] border-l bg-background px-2 text-right shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.12)] sm:w-[188px] sm:min-w-[188px]">
+                                    Actions
+                                </TableHead>
                             ) : null}
                         </TableRow>
                     </TableHeader>
@@ -354,7 +383,7 @@ export default function RequestsTable(props: Props) {
                         {rows.map((r) => {
                             const selectionKey = resolveSelectionKey(r);
                             const isPending = r.status === "PENDING";
-                            const displayStatus = displayPcrStatus(r.status, r.application_status);
+                            const displayStatus = displayPcrStatus(r.status, r.application_status, r.effective_at);
                             const isSelected = selectedKeySet.has(selectionKey);
                             const canSelect = props.canSelectRow?.(r) ?? true;
                             const canReview = props.canReviewRow?.(r) ?? true;
@@ -381,21 +410,55 @@ export default function RequestsTable(props: Props) {
                                     <TableCell className="truncate px-2 font-medium" title={approvalRecordLabel(r)}>
                                         {approvalRecordLabel(r)}
                                     </TableCell>
-                                    <TableCell className="px-2">
-                                        <Badge variant="outline" className={`${approvalTypeBadgeClass(approvalKind(r))} text-[11px] px-2 whitespace-nowrap uppercase`}>
-                                            {approvalTypeLabel(approvalKind(r))}
+                                    <TableCell className="min-w-0 px-2">
+                                        <Badge
+                                            variant="outline"
+                                            className={`${approvalTypeBadgeClass(approvalKind(r))} max-w-full whitespace-normal break-words px-2 text-center text-[11px] leading-tight uppercase`}
+                                        >
+                                            <span className="min-w-0 max-w-full break-words text-center">
+                                                {approvalTypeLabel(approvalKind(r))}
+                                            </span>
                                         </Badge>
                                     </TableCell>
-                                    <TableCell className="truncate px-2" title={supplierText(r)}>
+                                    <TableCell className="min-w-0 whitespace-normal break-words px-2 align-top" title={supplierText(r)}>
                                         {supplierText(r)}
                                     </TableCell>
-                                    <TableCell className="truncate px-2" title={requestedByText(r)}>
+                                    <TableCell className="min-w-0 whitespace-normal break-words px-2 align-top" title={requestedByText(r)}>
                                         {requestedByText(r)}
                                     </TableCell>
                                     <TableCell className="px-2 text-right">{totalProductsText(r)}</TableCell>
-                                    <TableCell className="px-2 text-right font-semibold">{proposedText(r)}</TableCell>
-                                    <TableCell className="px-2">
-                                        <Badge variant="outline" className={`${pcrStatusBadgeClass(displayStatus)} max-w-full truncate px-2 text-[11px]`}>
+                                    <TableCell className="min-w-0 px-2 text-right align-top font-semibold">
+                                        {approvalKind(r) === "mixed_batch" ? (
+                                            <div className="min-w-0 space-y-0.5 text-xs leading-tight" title={proposedText(r)}>
+                                                {(() => {
+                                                    const { price, cost } = mixedProposedValues(r);
+                                                    return (
+                                                        <>
+                                                            {price ? (
+                                                                <div className="flex min-w-0 items-start justify-end gap-1">
+                                                                    <span className="shrink-0 text-muted-foreground">Price:</span>
+                                                                    <span className="min-w-0 break-words tabular-nums">{price}</span>
+                                                                </div>
+                                                            ) : null}
+                                                            {cost ? (
+                                                                <div className="flex min-w-0 items-start justify-end gap-1">
+                                                                    <span className="shrink-0 text-muted-foreground">Cost:</span>
+                                                                    <span className="min-w-0 break-words tabular-nums">{cost}</span>
+                                                                </div>
+                                                            ) : null}
+                                                            {!price && !cost ? "-" : null}
+                                                        </>
+                                                    );
+                                                })()}
+                                            </div>
+                                        ) : (
+                                            <span className="block min-w-0 break-words tabular-nums" title={proposedText(r)}>
+                                                {proposedText(r)}
+                                            </span>
+                                        )}
+                                    </TableCell>
+                                    <TableCell className="min-w-0 px-2 align-top">
+                                        <Badge variant="outline" className={`${pcrStatusBadgeClass(displayStatus)} inline-flex max-w-full truncate px-2 text-[11px]`}>
                                             {displayStatus}
                                         </Badge>
                                     </TableCell>
@@ -409,7 +472,7 @@ export default function RequestsTable(props: Props) {
                                     </TableCell>
 
                                     {showActionsColumn ? (
-                                        <TableCell className="whitespace-nowrap px-2 text-right">
+                                        <TableCell className="sticky right-0 z-10 min-w-[96px] whitespace-nowrap border-l bg-background px-2 text-right shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.12)] sm:min-w-[188px]">
                                             <div className="inline-flex flex-nowrap items-center justify-end gap-1">
                                                 {props.onReview && canReview ? (
                                                     <Button
@@ -528,7 +591,9 @@ export default function RequestsTable(props: Props) {
                         <TableHead className="w-[102px] px-2">Status</TableHead>
                         <TableHead className="w-[108px] px-2">Requested</TableHead>
                         {showActionsColumn ? (
-                            <TableHead className="w-[188px] px-2 text-right">Actions</TableHead>
+                            <TableHead className="sticky right-0 z-20 w-[96px] min-w-[96px] border-l bg-background px-2 text-right shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.12)] sm:w-[188px] sm:min-w-[188px]">
+                                Actions
+                            </TableHead>
                         ) : null}
                     </TableRow>
                 </TableHeader>
@@ -538,9 +603,9 @@ export default function RequestsTable(props: Props) {
                         const id = Number(r.request_id);
                         const selectionKey = resolveSelectionKey(r);
                         const isPending = r.status === "PENDING";
-                        const displayStatus = displayPcrStatus(r.status, r.application_status);
+                        const displayStatus = displayPcrStatus(r.status, r.application_status, r.effective_at);
                         const isSelected = selectedKeySet.has(selectionKey);
-                        const rowType = "cost";
+                        const rowType = requestType === "cost" ? "cost" : "price";
                         const canSelect = props.canSelectRow?.(r) ?? true;
                         const canReview = props.canReviewRow?.(r) ?? true;
                         const proposedValue = rowType === "cost"
@@ -625,7 +690,7 @@ export default function RequestsTable(props: Props) {
                                 </TableCell>
 
                                 {showActionsColumn ? (
-                                    <TableCell className="whitespace-nowrap px-2 text-right">
+                                    <TableCell className="sticky right-0 z-10 min-w-[96px] whitespace-nowrap border-l bg-background px-2 text-right shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.12)] sm:min-w-[188px]">
                                         <div className="inline-flex flex-nowrap items-center justify-end gap-1">
                                             {props.onReview && canReview ? (
                                                 <Button

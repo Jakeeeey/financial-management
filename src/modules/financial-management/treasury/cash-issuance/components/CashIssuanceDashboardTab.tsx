@@ -43,17 +43,22 @@ const PIE_COLORS = [
 
 function AttachmentPreview({ docUrl }: { docUrl: string }) {
     const [contentType, setContentType] = useState<string>("");
-    const cleanBase = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "");
-    const viewUrl = docUrl.startsWith("http") ? docUrl : `${cleanBase}/assets/${docUrl}`;
+    const fileId = docUrl.split(/[/?#]/).filter(Boolean).pop() || "";
+    const viewUrl = `/api/fm/treasury/disbursements/attachments/${encodeURIComponent(fileId)}`;
 
     useEffect(() => {
         if (!viewUrl) return;
-        fetch(viewUrl, { method: "HEAD" })
+        const controller = new AbortController();
+        fetch(viewUrl, { method: "HEAD", signal: controller.signal })
             .then((res) => {
+                if (!res.ok) return;
                 const type = res.headers.get("content-type");
                 if (type) setContentType(type.toLowerCase());
             })
-            .catch((err) => console.warn("Failed to fetch document headers:", err));
+            .catch(() => {
+                if (!controller.signal.aborted) setContentType("");
+            });
+        return () => controller.abort();
     }, [viewUrl]);
 
     const isPdf = docUrl.toLowerCase().endsWith(".pdf") || viewUrl.toLowerCase().endsWith(".pdf") || contentType.includes("pdf");
@@ -285,7 +290,7 @@ export function CashIssuanceDashboardTab() {
     };
 
     return (
-        <div className="space-y-3.5 animate-in fade-in duration-500">
+        <div className="flex min-h-full min-w-0 flex-col space-y-3.5 animate-in fade-in duration-500">
             {/* 1. PREMIUM FILTER BAR */}
             <Card className="shadow-sm border-border/50 bg-card rounded-2xl overflow-hidden">
                 <CardContent className="p-5 space-y-4 bg-muted/10">
@@ -546,10 +551,10 @@ export function CashIssuanceDashboardTab() {
                 )}
             </Card>
 
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <div className="grid min-w-0 grid-cols-1 items-stretch gap-6 lg:flex-1 lg:min-h-0 lg:grid-cols-3">
 
                 {/* COLUMN 1: CHARTS AND SUMMARIES */}
-                <div className="xl:col-span-1 space-y-6 flex flex-col">
+                <div className="min-w-0 lg:col-span-1 space-y-6 flex flex-col">
                     {/* 3. 🚀 DYNAMIC CHART: EXPENSE DISTRIBUTION (Tabs for COA vs Division) */}
                     <Card className="shadow-sm flex flex-col rounded-2xl border-border/50">
                         <CardHeader className="border-b bg-muted/10 pb-4">
@@ -765,20 +770,20 @@ export function CashIssuanceDashboardTab() {
                 </div>
 
                 {/* 4. MASTER TABLE */}
-                <Card className="xl:col-span-2 shadow-sm flex flex-col rounded-2xl border-border/50">
-                    <CardHeader className="border-b bg-muted/10 flex flex-row items-center justify-between py-4">
+                <Card className="min-w-0 lg:col-span-2 lg:h-full min-h-0 p-0 shadow-sm flex flex-col gap-0 rounded-2xl border-border/50">
+                    <CardHeader className="shrink-0 border-b bg-muted/10 flex flex-row items-center justify-between py-4">
                         <CardTitle className="text-sm font-black uppercase text-foreground">Outflow Register</CardTitle>
                         <Badge variant="outline" className="font-mono bg-background shadow-sm">{data?.vouchers?.length || 0} Records</Badge>
                     </CardHeader>
-                    <CardContent className="p-0 relative">
-                        <StickyTableWrapper className="overflow-auto max-h-[340px] custom-scrollbar">
-                            <Table>
+                    <CardContent className="min-w-0 min-h-0 flex flex-1 flex-col p-0 relative">
+                        <StickyTableWrapper className="w-full max-h-[55vh] min-h-0 overflow-auto custom-scrollbar lg:flex-1 lg:max-h-none [&>[data-slot=table-container]]:h-full">
+                            <Table className="min-w-[720px] table-fixed">
                                 <TableHeader className="bg-muted/80 backdrop-blur-md sticky top-0 z-10 shadow-[0_1px_0_0_hsl(var(--border))]">
                                     <TableRow>
-                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground pl-6">Doc No</TableHead>
-                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Payee & Date</TableHead>
-                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-right">Total Amt</TableHead>
-                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-right pr-6">Paid Amt</TableHead>
+                                        <TableHead className="w-[170px] whitespace-nowrap text-[9px] font-black uppercase tracking-widest text-muted-foreground pl-6">Doc No</TableHead>
+                                        <TableHead className="min-w-[260px] text-[9px] font-black uppercase tracking-widest text-muted-foreground">Payee & Date</TableHead>
+                                        <TableHead className="w-[140px] whitespace-nowrap text-[9px] font-black uppercase tracking-widest text-muted-foreground text-right">Total Amt</TableHead>
+                                        <TableHead className="w-[140px] whitespace-nowrap text-[9px] font-black uppercase tracking-widest text-muted-foreground text-right pr-6">Paid Amt</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -792,7 +797,7 @@ export function CashIssuanceDashboardTab() {
                                             onClick={() => setSelectedVoucher(v)}
                                             className="cursor-pointer hover:bg-primary/[0.04] transition-all duration-200 even:bg-muted/15"
                                         >
-                                            <TableCell className="font-black text-xs text-primary pl-6 py-4">{v.docNo}</TableCell>
+                                            <TableCell className="whitespace-nowrap font-black text-xs text-primary pl-6 py-4">{v.docNo}</TableCell>
                                             <TableCell className="py-4">
                                                 <div className="font-black text-xs uppercase text-foreground">{v.payeeName}</div>
                                                 <div className="flex items-center gap-2 mt-1">
@@ -800,10 +805,10 @@ export function CashIssuanceDashboardTab() {
                                                     <Badge variant="secondary" className="text-[8px] uppercase tracking-wider px-1.5 py-0 bg-muted/50">{v.status}</Badge>
                                                 </div>
                                             </TableCell>
-                                            <TableCell className="text-right font-black text-xs py-4">
+                                            <TableCell className="whitespace-nowrap text-right font-black text-xs py-4">
                                                 {formatMoney(v.totalAmount)}
                                             </TableCell>
-                                            <TableCell className="text-right font-black text-xs text-emerald-600 dark:text-emerald-500 pr-6 py-4">
+                                            <TableCell className="whitespace-nowrap text-right font-black text-xs text-emerald-600 dark:text-emerald-500 pr-6 py-4">
                                                 {formatMoney(v.paidAmount)}
                                             </TableCell>
                                         </TableRow>

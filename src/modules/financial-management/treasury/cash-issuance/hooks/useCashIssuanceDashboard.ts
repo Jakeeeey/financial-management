@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 // 🚀 FIXED: Pointing directly to your existing provider!
 import { disbursementProvider } from "../providers/fetchProvider";
 import { DisbursementDashboardData, DashboardFilters } from "../types";
@@ -10,11 +10,12 @@ export function useCashIssuanceDashboard() {
     const [isLoading, setIsLoading] = useState(false);
 
     // Default filters: Current month up to today
-    const [filters, setFilters] = useState<DashboardFilters>({
+    const [filters, setFilters] = useState<DashboardFilters>(() => ({
         status: "ALL",
         startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
         endDate: new Date().toISOString().split('T')[0],
-    });
+    }));
+    const initialFiltersRef = useRef(filters);
 
     const fetchDashboard = useCallback(async (currentFilters: DashboardFilters) => {
         setIsLoading(true);
@@ -31,10 +32,10 @@ export function useCashIssuanceDashboard() {
         }
     }, []);
 
-    // Initial load and refetch when filters change
+    // Load the initial report once. Filter edits remain local until Generate is clicked.
     useEffect(() => {
-        fetchDashboard(filters);
-    }, [fetchDashboard, filters]);
+        fetchDashboard(initialFiltersRef.current);
+    }, [fetchDashboard]);
 
     const handleApplyFilters = () => {
         fetchDashboard(filters);

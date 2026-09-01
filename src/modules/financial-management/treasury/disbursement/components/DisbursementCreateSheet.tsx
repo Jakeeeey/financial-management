@@ -7,12 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Save, Search, FileText, DownloadCloud } from "lucide-react";
+import { Loader2, Save, Search, FileText, DownloadCloud, LockKeyhole } from "lucide-react";
 import { format } from "date-fns";
-import { cn } from "@/lib/utils";
 import {
-    DisbursementPayload, PayableLine, PaymentLine, SupplierDto, COADto,
-    Disbursement, BankAccountDto, UnpaidPoDto, MemoDto, DivisionDto, DepartmentDto
+    DisbursementPayload, PayableLine, SupplierDto, COADto,
+    Disbursement, UnpaidPoDto, MemoDto, DivisionDto, DepartmentDto, DisbursementSubmitResult
 } from "../types";
 import { disbursementProvider } from "../providers/fetchProvider";
 import { toast } from "sonner";
@@ -21,19 +20,20 @@ import type { Payee } from "@/modules/financial-management/payee-registration/ty
 import { formatCurrency, getManilaDateInput } from "../utils/disbursement-utils";
 import { VoucherDetailsSection } from "./VoucherDetailsSection";
 import { PayablesSection } from "./PayablesSection";
-import { PaymentsSection } from "./PaymentsSection";
 import { StickyTableWrapper } from "./StickyTableWrapper";
+import { replaceEmptyPayablePlaceholders } from "@/modules/financial-management/treasury/components/payable-line-state";
+import { getPendingMemoUsage } from "@/modules/financial-management/treasury/components/memo-cap";
+import { isMemoPayableLine, normalizeMemoReference, stripMemoLineMetadata } from "@/modules/financial-management/treasury/components/memo-payable-line";
 
 export interface ExtendedDisbursement extends Disbursement {
     payeeId?: number;
-    divisionId?: number;
     departmentId?: number;
 }
 
 interface DisbursementCreateSheetProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    onSubmit: (payload: DisbursementPayload) => Promise<boolean>;
+    onSubmit: (payload: DisbursementPayload) => Promise<DisbursementSubmitResult>;
     loading: boolean;
     editData?: ExtendedDisbursement | null;
 }
@@ -62,16 +62,17 @@ export function DisbursementCreateSheet({
     const [transactionDate, setTransactionDate] = useState(today);
 
     const [payables, setPayables] = useState<PayableLine[]>([]);
-    const [payments, setPayments] = useState<PaymentLine[]>([]);
 
     const [suppliers, setSuppliers] = useState<SupplierDto[]>([]);
     const [coas, setCoas] = useState<COADto[]>([]);
-    const [banks, setBanks] = useState<BankAccountDto[]>([]);
     const [loadingData, setLoadingData] = useState(false);
 
     const [unpaidPos, setUnpaidPos] = useState<UnpaidPoDto[]>([]);
     const [loadingPos, setLoadingPos] = useState(false);
     const [isPoModalOpen, setIsPoModalOpen] = useState(false);
+    const poRequestIdRef = useRef(0);
+    const poAbortControllerRef = useRef<AbortController | null>(null);
+    const [poLoadError, setPoLoadError] = useState<string | null>(null);
     const [selectedPoIds, setSelectedPoIds] = useState<string[]>([]);
     const [taxTypes, setTaxTypes] = useState<Record<string, "VAT" | "NON_VAT">>({});
 
@@ -79,8 +80,11 @@ export function DisbursementCreateSheet({
     const [memoAmounts, setMemoAmounts] = useState<Record<string, string>>({});
     const [loadingMemos, setLoadingMemos] = useState(false);
     const [isMemoModalOpen, setIsMemoModalOpen] = useState(false);
+    const [memoSearchQuery, setMemoSearchQuery] = useState("");
+    const [memoLoadError, setMemoLoadError] = useState<string | null>(null);
+    const memoAbortControllerRef = useRef<AbortController | null>(null);
+    const memoRequestIdRef = useRef(0);
 
-    const [divisionId, setDivisionId] = useState<number | "">("");
     const [departmentId, setDepartmentId] = useState<number | "">("");
     const [supportingDocumentsUrl, setSupportingDocumentsUrl] = useState("");
     const [uploadingFile, setUploadingFile] = useState(false);
@@ -97,9 +101,47 @@ export function DisbursementCreateSheet({
     const isBusy = loading || loadingDocNo || localSubmitting;
 
     const totalAmount = useMemo(() => payables.reduce((sum, line) => sum + (Number(line.amount) || 0), 0), [payables]);
-    const totalPayments = useMemo(() => payments.reduce((sum, line) => sum + (Number(line.amount) || 0), 0), [payments]);
-    const paymentDifference = useMemo(() => totalAmount - totalPayments, [totalAmount, totalPayments]);
+    const availableMemos = useMemo(
+        () => memos.filter((memo) =>
+            Number(memo.supplier_id) === Number(payeeId)
+            && [1, 2].includes(Number(memo.type))
+            && (Number(memo.remaining_amount ?? memo.amount) > 0.01
+                || Boolean(memo.is_locked)
+                || payables.some((payable) => normalizeMemoReference(payable.referenceNo) === normalizeMemoReference(memo.memo_number))),
+        ),
+        [memos, payables, payeeId],
+    );
+    const filteredMemos = useMemo(() => {
+        const query = memoSearchQuery.trim().toLowerCase();
+        if (!query) return availableMemos;
 
+        return availableMemos.filter((memo) => [
+            memo.memo_number,
+            memo.memo_type_name,
+            format(new Date(memo.date), "MMM dd, yyyy"),
+            memo.account_title,
+            memo.reason,
+            memo.amount,
+            memo.amount.toLocaleString("en-US", { minimumFractionDigits: 2 }),
+            memo.remaining_amount ?? memo.amount,
+            (memo.remaining_amount ?? memo.amount).toLocaleString("en-US", { minimumFractionDigits: 2 }),
+        ].filter((value) => value !== null && value !== undefined).join(" ").toLowerCase().includes(query));
+    }, [availableMemos, memoSearchQuery]);
+    const memoReferences = useMemo(
+        () => new Set(memos.map((memo) => normalizeMemoReference(memo.memo_number)).filter(Boolean)),
+        [memos],
+    );
+    const memoSupplierMismatchIndices = useMemo(
+        () => new Set(payables
+            .map((line, index) => isMemoPayableLine(line, memoReferences)
+                && line.memoSupplierId != null
+                && payeeId !== ""
+                && Number(line.memoSupplierId) !== Number(payeeId)
+                ? index
+                : -1)
+            .filter((index) => index >= 0)),
+        [payables, memoReferences, payeeId],
+    );
     const isNonTradeVoucher = transactionTypeId === 2;
     const payeeSupplierType = isNonTradeVoucher ? "NON-TRADE" : "TRADE";
     const payeeSupplierTypeLabel = isNonTradeVoucher ? "Non-Trade" : "Trade";
@@ -107,7 +149,6 @@ export function DisbursementCreateSheet({
     useEffect(() => {
         if (open) {
             disbursementProvider.getCOAs().then(res => setCoas(Array.isArray(res) ? res : []));
-            disbursementProvider.getBanks().then(res => setBanks(Array.isArray(res) ? res : []));
             disbursementProvider.getDivisions().then(res => setDivisions(Array.isArray(res) ? res : [])).catch(() => console.warn("No divisions route"));
             disbursementProvider.getDepartments().then(res => setDepartments(Array.isArray(res) ? res : [])).catch(() => console.warn("No departments route"));
         }
@@ -146,7 +187,6 @@ export function DisbursementCreateSheet({
                 setTransactionTypeId(isNonTrade ? 2 : 1);
 
                 setPayeeId(editData.payeeId != null ? Number(editData.payeeId) : "");
-                setDivisionId(editData.divisionId != null ? Number(editData.divisionId) : "");
                 setDepartmentId(editData.departmentId != null ? Number(editData.departmentId) : "");
                 setRemarks(editData.remarks || "");
                 const docUrl = editData.supportingDocumentsUrl || "";
@@ -165,26 +205,14 @@ export function DisbursementCreateSheet({
                     accountTitle: p.accountTitle
                 })));
 
-                setPayments(editData.payments.map(p => ({
-                    id: p.id,
-                    checkNo: p.checkNo || "",
-                    date: p.date ? p.date.split('T')[0] : today,
-                    amount: p.amount,
-                    coaId: p.coaId,
-                    bankId: p.bankId,
-                    remarks: p.remarks,
-                    accountTitle: p.accountTitle
-                })));
             } else {
                 setTransactionTypeId(1);
                 setPayeeId("");
-                setDivisionId("");
                 setDepartmentId("");
                 setRemarks("");
                 setSupportingDocumentsUrl("");
-                // Start with one blank row for payables so the user can begin typing immediately, payments start empty
+                // Start with one blank row for payables so the user can begin typing immediately.
                 setPayables([{referenceNo: "", date: today, amount: 0, remarks: "", divisionId: undefined}]);
-                setPayments([]);
                 setTransactionDate(today);
             }
         }
@@ -198,34 +226,47 @@ export function DisbursementCreateSheet({
     }, [open, editData, payeeId, suppliers]);
 
     useEffect(() => {
-        if (open && editData && !divisionId && editData.divisionName && divisions.length > 0) {
-            const match = divisions.find(d => d.divisionName?.toLowerCase() === editData.divisionName?.toLowerCase());
-            if (match) setDivisionId(match.divisionId);
-        }
-    }, [open, editData, divisionId, divisions]);
-
-    useEffect(() => {
         if (open && editData && !departmentId && editData.departmentName && departments.length > 0) {
             const match = departments.find(d => d.departmentName?.toLowerCase() === editData.departmentName?.toLowerCase());
             if (match) setDepartmentId(match.departmentId);
         }
     }, [open, editData, departmentId, departments]);
 
-    const handleAddPayable = useCallback(() => setPayables((prev) => [...prev, {referenceNo: "", date: "", amount: 0, remarks: "", divisionId: undefined}]), []);
+    useEffect(() => {
+        memoAbortControllerRef.current?.abort();
+        memoRequestIdRef.current += 1;
+        setMemos([]);
+        setMemoAmounts({});
+        setMemoSearchQuery("");
+        setMemoLoadError(null);
 
-    // Pre-fill payment amount with the outstanding balance; auto-select COA if only one payment option exists
-    const handleAddPayment = useCallback(() => {
-        const remaining = Number((totalAmount - totalPayments).toFixed(2));
-        const paymentCoas = coas.filter(isPaymentCOA);
-        const autoCoaId = paymentCoas.length === 1 ? paymentCoas[0].coaId : undefined;
-        setPayments((prev) => [...prev, {
-            checkNo: "",
-            date: today,
-            amount: remaining > 0 ? remaining : 0,
-            remarks: "",
-            coaId: autoCoaId,
-        }]);
-    }, [totalAmount, totalPayments, coas, today]);
+        if (!open || !payeeId) {
+            setLoadingMemos(false);
+            return;
+        }
+
+        const controller = new AbortController();
+        memoAbortControllerRef.current = controller;
+        const requestId = memoRequestIdRef.current;
+        setLoadingMemos(true);
+
+        disbursementProvider.getSupplierMemos(Number(payeeId), controller.signal)
+            .then((fetchedMemos) => {
+                if (requestId !== memoRequestIdRef.current || controller.signal.aborted) return;
+                setMemos(fetchedMemos);
+                setMemoAmounts(Object.fromEntries(fetchedMemos.map((memo) => [String(memo.id), String(memo.remaining_amount ?? memo.amount)])));
+            })
+            .catch((error: unknown) => {
+                if (controller.signal.aborted || requestId !== memoRequestIdRef.current) return;
+                setMemoLoadError(error instanceof Error ? error.message : "Failed to load supplier memos");
+            });
+
+        return () => {
+            controller.abort();
+        };
+    }, [open, payeeId]);
+
+    const handleAddPayable = useCallback(() => setPayables((prev) => [...prev, {referenceNo: "", date: "", amount: 0, remarks: "", divisionId: undefined}]), []);
 
     const handlePayeeCreated = useCallback(async (createdPayee?: Payee) => {
         try {
@@ -253,32 +294,63 @@ export function DisbursementCreateSheet({
         }
     }, [payeeSupplierType, payeeSupplierTypeLabel, setPayeeId, setSuppliers]);
 
-    const handleOpenPoModal = useCallback(async (supplierIdOverride?: number) => {
-        const sid = supplierIdOverride ?? (payeeId ? Number(payeeId) : null);
-        if (!sid) return toast.error("Please select a Payee first.");
+    const handleOpenPoModal = useCallback(async (supplierId: number) => {
+        if (!Number.isInteger(supplierId) || supplierId <= 0) return toast.error("Please select a Payee first.");
+
+        poAbortControllerRef.current?.abort();
+        const controller = new AbortController();
+        poAbortControllerRef.current = controller;
+        const requestId = ++poRequestIdRef.current;
+        setUnpaidPos([]);
+        setSelectedPoIds([]);
+        setTaxTypes({});
+        setPoSearchQuery("");
+        setPoLoadError(null);
         setLoadingPos(true);
         setIsPoModalOpen(true);
         try {
-            const pos = await disbursementProvider.getUnpaidPos(sid);
+            const pos = await disbursementProvider.getUnpaidPos(supplierId, controller.signal);
+            if (requestId !== poRequestIdRef.current) return;
             setUnpaidPos(pos);
-            setSelectedPoIds([]);
-            setTaxTypes({});
-            setPoSearchQuery("");
-        } catch {
-            toast.error("Failed to load unpaid POs");
-            setIsPoModalOpen(false);
+        } catch (error) {
+            if (controller.signal.aborted || requestId !== poRequestIdRef.current) return;
+            setPoLoadError(error instanceof Error ? error.message : "Failed to load unpaid POs");
         } finally {
+            if (requestId === poRequestIdRef.current) setLoadingPos(false);
+        }
+    }, []);
+
+    const handlePoModalOpenChange = useCallback((nextOpen: boolean) => {
+        setIsPoModalOpen(nextOpen);
+        if (!nextOpen) {
+            poAbortControllerRef.current?.abort();
+            poRequestIdRef.current += 1;
             setLoadingPos(false);
         }
-    }, [payeeId]);
+    }, []);
 
     // Auto-open PO modal when a Trade payee is selected (no extra click needed)
     const handlePayeeSelect = useCallback((val: number) => {
+        const previousPayeeId = payeeId === "" ? undefined : Number(payeeId);
+        if (previousPayeeId && previousPayeeId !== val) {
+            setPayables((current) => current.map((line) =>
+                isMemoPayableLine(line, memoReferences) && line.memoSupplierId == null
+                    ? { ...line, memoSupplierId: previousPayeeId }
+                    : line,
+            ));
+        }
+        memoAbortControllerRef.current?.abort();
+        memoRequestIdRef.current += 1;
+        setMemos([]);
+        setMemoAmounts({});
+        setMemoSearchQuery("");
+        setMemoLoadError(null);
+        setIsMemoModalOpen(false);
         setPayeeId(val);
         if (!isNonTradeVoucher && val) {
             handleOpenPoModal(val);
         }
-    }, [isNonTradeVoucher, handleOpenPoModal]);
+    }, [payeeId, memoReferences, isNonTradeVoucher, handleOpenPoModal]);
 
     const calculateTaxedPayables = useCallback((selectedPos: UnpaidPoDto[], currentTaxTypes: Record<string, "VAT" | "NON_VAT">, date: string): PayableLine[] => {
         const newPayables: PayableLine[] = [];
@@ -288,8 +360,6 @@ export function DisbursementCreateSheet({
         selectedPos.forEach(po => {
             const baseRef = `${po.poNo} / ${po.receiptNo}`;
             const taxType = currentTaxTypes[po.uniqueKey] || "VAT";
-            const currentDivId = divisionId || undefined;
-
             if (taxType === "VAT") {
                 const netAmount = po.amountDue / (1 + VAT_RATE);
                 const vatAmount = netAmount * VAT_RATE;
@@ -300,7 +370,7 @@ export function DisbursementCreateSheet({
                     amount: Number(netAmount.toFixed(2)),
                     coaId: 8,
                     remarks: `Principal Net of VAT`,
-                    divisionId: currentDivId
+                    divisionId: undefined
                 });
                 newPayables.push({
                     referenceNo: baseRef,
@@ -308,7 +378,7 @@ export function DisbursementCreateSheet({
                     amount: Number(vatAmount.toFixed(2)),
                     coaId: 9,
                     remarks: `Input VAT (12%)`,
-                    divisionId: currentDivId
+                    divisionId: undefined
                 });
                 newPayables.push({
                     referenceNo: baseRef,
@@ -316,7 +386,7 @@ export function DisbursementCreateSheet({
                     amount: -Number(ewtAmount.toFixed(2)),
                     coaId: 38,
                     remarks: `EWT Deduction (1%)`,
-                    divisionId: currentDivId
+                    divisionId: undefined
                 });
             } else {
                 newPayables.push({
@@ -325,48 +395,59 @@ export function DisbursementCreateSheet({
                     amount: Number(po.amountDue.toFixed(2)),
                     coaId: 8,
                     remarks: `Principal (Non-VAT)`,
-                    divisionId: currentDivId
+                    divisionId: undefined
                 });
             }
         });
         return newPayables;
-    }, [divisionId]);
+    }, []);
 
     const handleImportPos = useCallback(() => {
         const selected = unpaidPos.filter(po => selectedPoIds.includes(po.uniqueKey));
         const newPayables = calculateTaxedPayables(selected, taxTypes, today);
 
-        setPayables((prev) => [...prev, ...newPayables]);
+        setPayables((prev) => replaceEmptyPayablePlaceholders(prev, newPayables));
         setIsPoModalOpen(false);
         toast.success(`Imported ${selected.length} record(s) successfully`);
     }, [unpaidPos, selectedPoIds, taxTypes, today, calculateTaxedPayables]);
 
-    const handleOpenMemoModal = async () => {
+    const handleOpenMemoModal = () => {
         if (!payeeId) return toast.error("Please select a Payee first.");
-        setLoadingMemos(true);
+        setMemoSearchQuery("");
+        setMemoAmounts(Object.fromEntries(availableMemos.map((memo) => [String(memo.id), String(memo.remaining_amount ?? memo.amount)])));
         setIsMemoModalOpen(true);
-        try {
-            const fetchedMemos = await disbursementProvider.getSupplierMemos(Number(payeeId));
-            setMemos(fetchedMemos);
-            setMemoAmounts(Object.fromEntries(fetchedMemos.map((memo) => [String(memo.id), String(memo.remaining_amount ?? memo.amount)])));
-        } catch {
-            toast.error("Failed to load supplier memos");
-            setIsMemoModalOpen(false);
-        } finally {
-            setLoadingMemos(false);
-        }
     };
 
     const handleApplyMemo = (memo: MemoDto) => {
+        const isAlreadyInPayables = payables.some((payable) => normalizeMemoReference(payable.referenceNo) === normalizeMemoReference(memo.memo_number));
+        if (memo.is_locked) {
+            const blocker = memo.locking_tr_doc_no
+                ? `${memo.locking_tr_doc_no} (${memo.locking_tr_status || "unposted"})`
+                : "another unposted TR";
+            const additionalBlockers = (memo.locking_tr_count || 0) > 1
+                ? ` ${(memo.locking_tr_count || 0) - 1} additional TR(s) also use this memo.`
+                : "";
+            return toast.error(`Memo ${memo.memo_number} is locked by ${blocker} and cannot be used until that TR is Posted.${additionalBlockers}`);
+        }
+        if (isAlreadyInPayables) {
+            return toast.error(`Memo ${memo.memo_number} is already applied to this TR.`);
+        }
         const isCredit = memo.type === 1;
         const remainingAmount = Number(memo.remaining_amount ?? memo.amount) || 0;
+        const localPendingUsage = getPendingMemoUsage(payables, memo.memo_number);
+        const locallyRemainingAmount = Math.max(0, remainingAmount - localPendingUsage);
         const requestedAmount = Number(memoAmounts[String(memo.id)] ?? remainingAmount);
-        if (!Number.isFinite(requestedAmount) || requestedAmount <= 0 || requestedAmount > remainingAmount + 0.01) {
-            return toast.error(`Memo ${memo.memo_number} can only use up to ${remainingAmount.toFixed(2)}.`);
+        if (!Number.isFinite(requestedAmount) || requestedAmount <= 0 || requestedAmount > locallyRemainingAmount + 0.01) {
+            return toast.error(`Memo ${memo.memo_number} can only use up to ${locallyRemainingAmount.toFixed(2)}.`);
         }
         const finalAmount = isCredit ? -Math.abs(requestedAmount) : Math.abs(requestedAmount);
 
-        setPayables([...payables, {
+        setPayables((previous) => [...previous, {
+            isMemo: true,
+            memoId: memo.id,
+            memoType: memo.type,
+            memoNumber: memo.memo_number,
+            memoSupplierId: Number(payeeId),
             referenceNo: memo.memo_number,
             date: today,
             amount: finalAmount,
@@ -384,10 +465,8 @@ export function DisbursementCreateSheet({
         if (!payeeId) return toast.error("Please select a Payee.");
         if (!departmentId) return toast.error("Department is required.");
         if (totalAmount <= 0) return toast.error("Voucher total must be greater than 0.");
-
-        const invalidPaymentCoa = payments.some(p => p.coaId == null);
-        if (invalidPaymentCoa) {
-            return toast.error("All payment lines must have a valid GL Account (COA) selected.");
+        if (memoSupplierMismatchIndices.size > 0) {
+            return toast.error("Remove and reapply memo lines that belong to a different supplier.");
         }
 
         submitLockRef.current = true;
@@ -397,33 +476,29 @@ export function DisbursementCreateSheet({
                 docNo: editData ? editData.docNo : (previewDocNo || undefined),
                 transactionTypeId: Number(transactionTypeId),
                 payeeId: Number(payeeId),
-                divisionId: divisionId ? Number(divisionId) : undefined,
                 departmentId: Number(departmentId),
                 remarks,
                 supportingDocumentsUrl: supportingDocumentsUrl ? (supportingDocumentsUrl.includes("/") ? (supportingDocumentsUrl.split("/").pop()?.split("?")[0] || "") : supportingDocumentsUrl) : "",
                 totalAmount: totalAmount,
                 transactionDate,
-                payables: payables.map(p => ({
+                payables: payables.map(p => stripMemoLineMetadata({
                     ...p,
                     coaId: p.coaId ? Number(p.coaId) : undefined,
                     divisionId: p.divisionId ? Number(p.divisionId) : undefined
                 })),
-                payments: payments.map(p => ({
-                    ...p,
-                    coaId: p.coaId ? Number(p.coaId) : undefined,
-                    bankId: p.bankId ? Number(p.bankId) : undefined
-                })),
             };
-            const success = await onSubmit(payload);
-            if (success) {
+            const result = await onSubmit(payload);
+            if (result.code === "DOC_NO_CONFLICT" && result.nextDocNo) {
+                setPreviewDocNo(result.nextDocNo);
+                toast.warning(`Document number was already used. A new number, ${result.nextDocNo}, is ready. Review and submit again.`);
+            }
+            if (result.success) {
                 setTransactionTypeId(1);
                 setPayeeId("");
-                setDivisionId("");
                 setDepartmentId("");
                 setRemarks("");
                 setSupportingDocumentsUrl("");
                 setPayables([]);
-                setPayments([]);
                 setPreviewDocNo("");
                 onOpenChange(false);
             }
@@ -454,19 +529,6 @@ export function DisbursementCreateSheet({
                                 <span className="text-[10px] text-muted-foreground font-semibold uppercase">Total Allocated</span>
                                 <span className="font-bold text-foreground">{formatCurrency(totalAmount)}</span>
                             </div>
-                            <div className="flex flex-col items-end border-l border-border pl-6">
-                                <span className="text-[10px] text-muted-foreground font-semibold uppercase">Total Paid</span>
-                                <span className="font-bold text-foreground">{formatCurrency(totalPayments)}</span>
-                            </div>
-                            <div className="flex flex-col items-end border-l border-border pl-6">
-                                <span className="text-[10px] text-muted-foreground font-semibold uppercase">Difference</span>
-                                <span className={cn("font-bold flex items-center gap-1", paymentDifference === 0 ? "text-emerald-600 dark:text-emerald-500" : "text-amber-600 dark:text-amber-500")}>
-                                    {formatCurrency(paymentDifference)}
-                                    {paymentDifference === 0 && (
-                                        <span className="text-[9px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 px-1 rounded-sm border border-emerald-200">Balanced</span>
-                                    )}
-                                </span>
-                            </div>
                         </div>
                     </DialogHeader>
 
@@ -487,9 +549,6 @@ export function DisbursementCreateSheet({
                                     isNonTradeVoucher={isNonTradeVoucher}
                                     setIsPayeeRegistrationOpen={setIsPayeeRegistrationOpen}
                                     handleOpenPoModal={handleOpenPoModal}
-                                    divisions={divisions}
-                                    divisionId={divisionId}
-                                    setDivisionId={setDivisionId}
                                     departments={departments}
                                     departmentId={departmentId}
                                     setDepartmentId={setDepartmentId}
@@ -500,8 +559,6 @@ export function DisbursementCreateSheet({
                                     uploadingFile={uploadingFile}
                                     setUploadingFile={setUploadingFile}
                                     totalAmount={totalAmount}
-                                    totalPayments={totalPayments}
-                                    paymentDifference={paymentDifference}
                                     disabled={isBusy}
                                 />
                             </div>
@@ -522,21 +579,12 @@ export function DisbursementCreateSheet({
                                     handleOpenMemoModal={handleOpenMemoModal}
                                     handleRemovePayable={(idx) => setPayables(payables.filter((_, i) => i !== idx))}
                                     formatMoney={formatCurrency}
-                                    isAddDisabled={!divisionId || !departmentId}
+                                    memoReferences={memoReferences}
+                                    memoSupplierMismatchIndices={memoSupplierMismatchIndices}
+                                    isAddDisabled={!departmentId}
                                     disabled={isBusy}
                                 />
 
-                                <PaymentsSection
-                                    payments={payments}
-                                    setPayments={setPayments}
-                                    bankAccounts={banks}
-                                    handleAddPayment={handleAddPayment}
-                                    handleRemovePayment={(idx) => setPayments(payments.filter((_, i) => i !== idx))}
-                                    totalPayments={totalPayments}
-                                    formatMoney={formatCurrency}
-                                    isAddDisabled={!divisionId || !departmentId}
-                                    disabled={isBusy}
-                                />
                             </div>
                         </div>
                     </div>
@@ -544,7 +592,7 @@ export function DisbursementCreateSheet({
                     <div className="p-4 bg-muted border-t border-border shrink-0 flex justify-between items-center z-10">
                         <div
                             className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
-                            Lines: {payables.length} Allocated | {payments.length} Paid
+                            Lines: {payables.length} Allocated
                         </div>
                         <div className="flex gap-2">
                             <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isBusy}
@@ -567,7 +615,7 @@ export function DisbursementCreateSheet({
                 supplierType={payeeSupplierType}
             />
 
-            <Dialog open={isPoModalOpen} onOpenChange={setIsPoModalOpen}>
+            <Dialog open={isPoModalOpen} onOpenChange={handlePoModalOpenChange}>
                 <DialogContent className="sm:max-w-[750px] bg-background border-border">
                     <DialogHeader>
                         <DialogTitle className="text-lg font-black uppercase flex items-center gap-2 text-foreground">
@@ -615,6 +663,11 @@ export function DisbursementCreateSheet({
                                                          className="h-24 text-center text-sm font-medium text-muted-foreground"><Loader2
                                         className="w-5 h-5 animate-spin mx-auto mb-2"/> Loading
                                         Records...</TableCell></TableRow>
+                                ) : poLoadError ? (
+                                    <TableRow><TableCell colSpan={5}
+                                                          className="h-24 text-center text-sm font-medium text-destructive">
+                                        {poLoadError}
+                                    </TableCell></TableRow>
                                 ) : unpaidPos.filter(po => {
                                     const matchesSearch = po.poNo.toLowerCase().includes(poSearchQuery.toLowerCase()) ||
                                         (po.receiptNo && po.receiptNo.toLowerCase().includes(poSearchQuery.toLowerCase()));
@@ -701,7 +754,10 @@ export function DisbursementCreateSheet({
                 </DialogContent>
             </Dialog>
 
-            <Dialog open={isMemoModalOpen} onOpenChange={setIsMemoModalOpen}>
+            <Dialog open={isMemoModalOpen} onOpenChange={(open) => {
+                setIsMemoModalOpen(open);
+                if (!open) setMemoSearchQuery("");
+            }}>
                 <DialogContent className="sm:max-w-[700px] bg-background border-border">
                     <DialogHeader>
                         <DialogTitle className="text-lg font-black uppercase flex items-center gap-2 text-foreground">
@@ -710,9 +766,21 @@ export function DisbursementCreateSheet({
                         </DialogTitle>
                         <DialogDescription
                             className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                            Select a Credit or Debit memo to apply to this voucher&apos;s payables.
+                            Locked memos remain visible but cannot be applied until their blocking TR is Posted.
                         </DialogDescription>
                     </DialogHeader>
+
+                    <div className="relative mt-4">
+                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                            type="search"
+                            aria-label="Search supplier memos"
+                            placeholder="Search memo number, type, date, account, reason, or amount..."
+                            value={memoSearchQuery}
+                            onChange={(event) => setMemoSearchQuery(event.target.value)}
+                            className="pl-9"
+                        />
+                    </div>
 
                     <StickyTableWrapper className="max-h-[400px] overflow-auto border border-border rounded-md mt-4 custom-scrollbar">
                         <Table>
@@ -738,15 +806,35 @@ export function DisbursementCreateSheet({
                                                          className="h-24 text-center text-sm font-medium text-muted-foreground"><Loader2
                                         className="w-5 h-5 animate-spin mx-auto mb-2"/> Fetching
                                         Memos...</TableCell></TableRow>
-                                ) : memos.filter(memo => !payables.some(p => p.referenceNo === memo.memo_number)).length === 0 ? (
+                                ) : memoLoadError ? (
+                                    <TableRow><TableCell colSpan={5}
+                                                         className="h-24 text-center text-sm font-medium text-destructive">{memoLoadError}</TableCell></TableRow>
+                                ) : availableMemos.length === 0 ? (
                                     <TableRow><TableCell colSpan={5}
                                                          className="h-24 text-center text-sm font-medium text-muted-foreground">No
                                         available memos found for this supplier.</TableCell></TableRow>
+                                ) : filteredMemos.length === 0 ? (
+                                    <TableRow><TableCell colSpan={5}
+                                                         className="h-24 text-center text-sm font-medium text-muted-foreground">No
+                                        supplier memos match your search.</TableCell></TableRow>
                                 ) : (
-                                    memos.filter(memo => !payables.some(p => p.referenceNo === memo.memo_number)).map(memo => (
-                                        <TableRow key={memo.id} className="hover:bg-muted/50 border-border">
-                                            <TableCell
-                                                className="font-bold text-xs uppercase text-foreground">{memo.memo_number}</TableCell>
+                                    filteredMemos.map(memo => {
+                                        const isMemoLocked = Boolean(memo.is_locked)
+                                            || payables.some((payable) => normalizeMemoReference(payable.referenceNo) === normalizeMemoReference(memo.memo_number));
+                                        const lockDescription = memo.is_locked
+                                            ? `Locked by ${memo.locking_tr_doc_no || "another unposted TR"}${memo.locking_tr_status ? ` (${memo.locking_tr_status})` : ""}${(memo.locking_tr_count || 0) > 1 ? ` · ${(memo.locking_tr_count || 0) - 1} more` : ""}`
+                                            : "Already applied to this TR.";
+
+                                        return (
+                                        <TableRow key={memo.id} className={`hover:bg-muted/50 border-border ${isMemoLocked ? "bg-muted/40" : ""}`}>
+                                            <TableCell className="font-bold text-xs uppercase text-foreground">
+                                                <div>{memo.memo_number}</div>
+                                                {isMemoLocked && (
+                                                    <Badge variant="outline" className="mt-1 text-[9px] uppercase text-amber-700 border-amber-300 bg-amber-50">
+                                                        <LockKeyhole className="mr-1 h-3 w-3" /> Locked
+                                                    </Badge>
+                                                )}
+                                            </TableCell>
                                             <TableCell>
                                                 <Badge variant="outline"
                                                        className={`text-[9px] uppercase ${memo.type === 1 ? 'text-emerald-600 border-emerald-200 bg-emerald-50' : 'text-red-600 border-red-200 bg-red-50'}`}>
@@ -760,6 +848,7 @@ export function DisbursementCreateSheet({
                                                     className="text-[10px] font-black uppercase text-foreground">{memo.account_title}</div>
                                                 <div
                                                     className="text-[10px] text-muted-foreground mt-0.5 truncate max-w-[180px]">{memo.reason || "N/A"}</div>
+                                                {isMemoLocked && <div className="mt-1 text-[9px] font-bold text-amber-700">{lockDescription}</div>}
                                             </TableCell>
                                             <TableCell
                                                 className={`text-xs font-black text-right ${memo.type === 1 ? 'text-emerald-600' : 'text-red-600'}`}>
@@ -772,17 +861,19 @@ export function DisbursementCreateSheet({
                                                     step="0.01"
                                                     value={memoAmounts[String(memo.id)] ?? String(memo.remaining_amount ?? memo.amount)}
                                                     onChange={(event) => setMemoAmounts((current) => ({ ...current, [String(memo.id)]: event.target.value }))}
+                                                    disabled={isMemoLocked}
                                                     className="h-7 w-28 ml-auto mt-1 text-right text-xs"
                                                 />
                                             </TableCell>
                                             <TableCell className="text-right">
-                                                <Button size="sm" onClick={() => handleApplyMemo(memo)}
+                                                <Button size="sm" onClick={() => handleApplyMemo(memo)} disabled={isMemoLocked}
                                                         className="h-7 text-[10px] font-black uppercase tracking-widest bg-purple-600 hover:bg-purple-700 text-white">
                                                     Apply
                                                 </Button>
                                             </TableCell>
                                         </TableRow>
-                                    ))
+                                        );
+                                    })
                                 )}
                             </TableBody>
                         </Table>

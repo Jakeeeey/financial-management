@@ -23,7 +23,9 @@ import {
   RotateCw,
   RotateCcw,
   FileText,
+  Maximize2,
 } from "lucide-react";
+import { motion } from "framer-motion";
 import { toast } from "sonner";
 
 import {
@@ -129,6 +131,47 @@ export default function ExpenseApprovalModal({
   const [currentAttachmentIndex, setCurrentAttachmentIndex] = React.useState(0);
   const [inlineZoom, setInlineZoom] = React.useState(1);
   const [inlineRotation, setInlineRotation] = React.useState(0);
+  const [inlineEl, setInlineEl] = React.useState<HTMLDivElement | null>(null);
+  const [focusedZoom, setFocusedZoom] = React.useState(1);
+  const [focusedRotation, setFocusedRotation] = React.useState(0);
+  const [focusedEl, setFocusedEl] = React.useState<HTMLDivElement | null>(null);
+
+  // Non-passive wheel zoom handler for inline evidence pane
+  React.useEffect(() => {
+    if (!inlineEl) return;
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (e.deltaY < 0) {
+        setInlineZoom((prev) => Math.min(prev + 0.25, 4));
+      } else {
+        setInlineZoom((prev) => Math.max(prev - 0.25, 1));
+      }
+    };
+    inlineEl.addEventListener("wheel", handleWheel, { passive: false });
+    return () => inlineEl.removeEventListener("wheel", handleWheel);
+  }, [inlineEl]);
+
+  // Reset & Non-passive wheel zoom handler for focused preview modal
+  React.useEffect(() => {
+    if (!focusedPreviewUrl) {
+      setFocusedZoom(1);
+      setFocusedRotation(0);
+    }
+  }, [focusedPreviewUrl]);
+
+  React.useEffect(() => {
+    if (!focusedEl) return;
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (e.deltaY < 0) {
+        setFocusedZoom((prev) => Math.min(prev + 0.25, 4));
+      } else {
+        setFocusedZoom((prev) => Math.max(prev - 0.25, 1));
+      }
+    };
+    focusedEl.addEventListener("wheel", handleWheel, { passive: false });
+    return () => focusedEl.removeEventListener("wheel", handleWheel);
+  }, [focusedEl]);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [finalConfirmOpen, setFinalConfirmOpen] = React.useState(false);
   const [processingItem, setProcessingItem] = React.useState<number | null>(null);
@@ -499,21 +542,35 @@ export default function ExpenseApprovalModal({
               </Button>
             </div>
 
-            <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black/30 p-5">
+            <div
+              ref={setInlineEl}
+              className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black/30 p-5 select-none"
+            >
               <div
-                className="flex h-full w-full items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-black/40"
+                className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-black/40"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  key={previewUrl}
-                  src={previewUrl}
-                  alt={attachments[currentAttachmentIndex]?.label || "Supporting evidence"}
-                  className="max-h-full max-w-full object-contain transition-transform duration-200"
+                <motion.div
+                  drag={inlineZoom > 1}
+                  dragMomentum={false}
+                  className={
+                    inlineZoom > 1
+                      ? "relative flex h-full w-full cursor-grab items-center justify-center active:cursor-grabbing select-none"
+                      : "relative flex h-full w-full items-center justify-center select-none"
+                  }
                   style={{
-                    transform: `scale(${inlineZoom}) rotate(${inlineRotation}deg)`,
+                    scale: inlineZoom,
+                    rotate: inlineRotation,
                   }}
-                  draggable={false}
-                />
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    key={previewUrl}
+                    src={previewUrl}
+                    alt={attachments[currentAttachmentIndex]?.label || "Supporting evidence"}
+                    className="max-h-full max-w-full object-contain pointer-events-none"
+                    draggable={false}
+                  />
+                </motion.div>
               </div>
 
               {attachments.length > 1 && (
@@ -521,7 +578,7 @@ export default function ExpenseApprovalModal({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="absolute left-7 rounded-full border border-white/10 bg-black/50 text-white hover:bg-black/70"
+                    className="absolute left-7 rounded-full border border-white/10 bg-black/50 text-white hover:bg-black/70 z-10"
                     onClick={() => showAttachment(currentAttachmentIndex - 1)}
                     title="Previous attachment"
                   >
@@ -530,7 +587,7 @@ export default function ExpenseApprovalModal({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="absolute right-7 rounded-full border border-white/10 bg-black/50 text-white hover:bg-black/70"
+                    className="absolute right-7 rounded-full border border-white/10 bg-black/50 text-white hover:bg-black/70 z-10"
                     onClick={() => showAttachment(currentAttachmentIndex + 1)}
                     title="Next attachment"
                   >
@@ -539,18 +596,24 @@ export default function ExpenseApprovalModal({
                 </>
               )}
 
-              <div className="absolute bottom-7 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-white/10 bg-black/60 p-1.5 backdrop-blur">
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:bg-white/10 hover:text-white" onClick={() => setInlineZoom((value) => Math.min(value + 0.25, 3))} title="Zoom in">
+              <div className="absolute bottom-7 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-white/10 bg-black/60 p-1.5 backdrop-blur">
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:bg-white/10 hover:text-white" onClick={() => setInlineZoom((value) => Math.min(value + 0.25, 4))} title="Zoom in">
                   <ZoomIn size={16} />
                 </Button>
+                <span className="min-w-8 text-center text-[10px] font-black text-white/70">{Math.round(inlineZoom * 100)}%</span>
                 <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:bg-white/10 hover:text-white" onClick={() => setInlineZoom((value) => Math.max(value - 0.25, 1))} title="Zoom out">
                   <ZoomOut size={16} />
                 </Button>
                 <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:bg-white/10 hover:text-white" onClick={() => setInlineRotation((value) => (value + 90) % 360)} title="Rotate">
                   <RotateCw size={16} />
                 </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:bg-white/10 hover:text-white" onClick={() => { setInlineZoom(1); setInlineRotation(0); }} title="Reset view">
-                  <RotateCcw size={16} />
+                {(inlineZoom > 1 || inlineRotation !== 0) && (
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:bg-white/10 hover:text-white" onClick={() => { setInlineZoom(1); setInlineRotation(0); }} title="Reset view">
+                    <RotateCcw size={16} />
+                  </Button>
+                )}
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:bg-white/10 hover:text-white" onClick={() => setFocusedPreviewUrl(previewUrl)} title="Full preview">
+                  <Maximize2 size={16} />
                 </Button>
               </div>
             </div>
@@ -1218,7 +1281,11 @@ export default function ExpenseApprovalModal({
       <Dialog
         open={Boolean(focusedPreviewUrl)}
         onOpenChange={(nextOpen) => {
-          if (!nextOpen) setFocusedPreviewUrl(null);
+          if (!nextOpen) {
+            setFocusedPreviewUrl(null);
+            setFocusedZoom(1);
+            setFocusedRotation(0);
+          }
         }}
       >
         <DialogContent
@@ -1250,15 +1317,86 @@ export default function ExpenseApprovalModal({
                 <X size={20} />
               </Button>
             </div>
-            <div className="flex min-h-0 flex-1 items-center justify-center bg-black/30 p-6">
-              {focusedPreviewUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={focusedPreviewUrl}
-                  alt="Selected supporting evidence"
-                  className="max-h-full max-w-full object-contain"
-                />
-              )}
+            <div
+              ref={setFocusedEl}
+              className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black/30 p-6 select-none"
+            >
+              <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-black/40">
+                {focusedPreviewUrl && (
+                  <motion.div
+                    drag={focusedZoom > 1}
+                    dragMomentum={false}
+                    className={
+                      focusedZoom > 1
+                        ? "relative flex h-full w-full cursor-grab items-center justify-center active:cursor-grabbing select-none"
+                        : "relative flex h-full w-full items-center justify-center select-none"
+                    }
+                    style={{
+                      scale: focusedZoom,
+                      rotate: focusedRotation,
+                    }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={focusedPreviewUrl}
+                      alt="Selected supporting evidence"
+                      className="max-h-full max-w-full object-contain pointer-events-none"
+                      draggable={false}
+                    />
+                  </motion.div>
+                )}
+              </div>
+
+              <div className="absolute bottom-9 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-xl border border-white/10 bg-black/70 p-2 backdrop-blur-md">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-white/70 hover:bg-white/10 hover:text-white"
+                  onClick={() => setFocusedZoom((value) => Math.min(value + 0.25, 4))}
+                  title="Zoom in"
+                >
+                  <ZoomIn size={16} />
+                </Button>
+                <span className="min-w-10 text-center text-[10px] font-black text-white/80">
+                  {Math.round(focusedZoom * 100)}%
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-white/70 hover:bg-white/10 hover:text-white"
+                  onClick={() => setFocusedZoom((value) => Math.max(value - 0.25, 1))}
+                  title="Zoom out"
+                >
+                  <ZoomOut size={16} />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-white/70 hover:bg-white/10 hover:text-white"
+                  onClick={() => setFocusedRotation((value) => (value + 90) % 360)}
+                  title="Rotate"
+                >
+                  <RotateCw size={16} />
+                </Button>
+                {(focusedZoom > 1 || focusedRotation !== 0) && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-white/70 hover:bg-white/10 hover:text-white"
+                    onClick={() => {
+                      setFocusedZoom(1);
+                      setFocusedRotation(0);
+                    }}
+                    title="Reset view"
+                  >
+                    <RotateCcw size={16} />
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         </DialogContent>

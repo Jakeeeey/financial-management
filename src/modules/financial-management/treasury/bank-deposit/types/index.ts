@@ -4,16 +4,30 @@ export interface PaginatedResponse<T> {
     totalElements: number;
     size: number;
     number: number;
+    bankOptions?: string[];
+}
+
+export type VaultAssetFilterType = "ALL" | "CASH" | "CHECK";
+
+export interface VaultAssetFilters {
+    type: VaultAssetFilterType;
+    documentNumber: string;
+    dateFrom: string;
+    dateTo: string;
+    bankName: string;
 }
 
 export interface VaultAsset {
     detailId: number;
+    documentNumber: string;
+    collectionReference: string;
     sourcePouchNo: string;
     assetType: "CASH" | "CHECK";
     bankName: string;
+    bankReferenceValid: boolean;
     checkNo: string;
     amount: number;
-    collectionDate: string;
+    collectionDate: string | null;
     chequeDate: string | null;
 }
 
@@ -29,11 +43,13 @@ export interface ActiveBankAccount {
 
 export interface DepositAsset {
     detailId: number;
+    documentNumber?: string | null;
     assetType: "CASH" | "CHECK";
     bankName: string;
     checkNo: string;
+    chequeDate: string | null;
     amount: number;
-    status: "IN_TRANSIT" | "CLEARED" | "BOUNCED";
+    status: "IN_TRANSIT" | "CLEARED" | "BOUNCED" | "BOUNCED CHECK";
 }
 
 export interface CheckBreakdown {
@@ -46,9 +62,14 @@ export interface DepositSlip {
     id: number;
     depositNo: string;
     depositDate: string;
-    status: "PREPARED" | "CLEARED" | "CANCELLED";
+    targetBankAccount?: string | null;
+    depositReference?: string | null;
+    validationDocumentFileId?: string | null;
+    status: "PREPARED" | "PARTIALLY_BOUNCED" | "BOUNCED" | "CLEARED" | "CANCELLED";
     preparedBy: string;
     datePrepared: string;
+    clearedAt?: string | null;
+    clearedBy?: string | null;
     totalCash: number;
     totalChecks: number;
     grandTotal: number;
@@ -60,4 +81,16 @@ export interface PrepareDepositPayload {
     assetIds: number[];
     targetBankId: number;
     remarks: string;
+}
+
+export interface ClearDepositPayload {
+    depositReference: string;
+    validationDocument: File | null;
+}
+
+export interface ClearDepositResponse {
+    message: string;
+    clearedAt?: string | null;
+    depositReference?: string | null;
+    validationDocumentFileId?: string | null;
 }

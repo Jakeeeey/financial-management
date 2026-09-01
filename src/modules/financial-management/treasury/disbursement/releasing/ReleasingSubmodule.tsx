@@ -14,11 +14,11 @@ import {
     Loader2, AlertTriangle, FileText,
     Search, X, Printer, Plus, Trash2, Check, ChevronsUpDown, ArrowUpFromLine
 } from "lucide-react";
-import { Disbursement, BankAccountDto, COADto, PaymentLine, DisbursementPayload } from "../types";
+import { Disbursement, BankAccountDto, COADto, PaymentLine } from "../types";
 import { useDisbursement } from "../hooks/useDisbursement";
 import { disbursementProvider } from "../providers/fetchProvider";
 import { formatCurrency, getManilaDateInput, numberToWords } from "../utils/disbursement-utils";
-import { isPettyCashAccount, validatePaymentLine } from "@/app/api/fm/treasury/disbursements/_payment-method";
+import { isPettyCashBankAccount, validatePaymentLine } from "@/app/api/fm/treasury/disbursements/_payment-method";
 import { generateDisbursementPDF, generateCheckLeafPDF } from "../utils/pdfGenerator";
 
 import { formatManilaDate } from "../utils/disbursement-utils";
@@ -74,9 +74,17 @@ function SearchSelect<T extends string | number>({ options, value, onSelect, pla
     );
 }
 
+function getBalanceDue(disbursement: Disbursement): number {
+    return Math.max(0, Number((disbursement.totalAmount - disbursement.paidAmount).toFixed(2)));
+}
+
+function isPartiallyPaid(disbursement: Disbursement, balanceDue: number): boolean {
+    return disbursement.paidAmount > 0 && balanceDue > 0.01;
+}
+
 export default function ReleasingSubmodule() {
     const {
-        data, loading, changeStatus, update, actionLoading, refresh,
+        data, loading, changeStatus, updatePaymentAllocation, actionLoading, refresh,
         docNoSearch, setDocNoSearch, applyFilters, clearFilters
     } = useDisbursement();
 
@@ -148,6 +156,11 @@ export default function ReleasingSubmodule() {
         return coas.filter(c => c.isPayment);
     }, [coas]);
 
+    const selectedBalanceDue = selectedDisbursement ? getBalanceDue(selectedDisbursement) : 0;
+    const selectedIsPartiallyPaid = selectedDisbursement
+        ? isPartiallyPaid(selectedDisbursement, selectedBalanceDue)
+        : false;
+
     const handleAddPayment = () => {
         const remaining = Number(((selectedDisbursement?.totalAmount || 0) - totalPaymentsAmount).toFixed(2));
         const autoCoaId = paymentCoas.length === 1 ? paymentCoas[0].coaId : undefined;
@@ -169,11 +182,16 @@ export default function ReleasingSubmodule() {
     const handlePaymentChange = <K extends keyof PaymentLine>(idx: number, key: K, val: PaymentLine[K]) => {
         const copy = [...payments];
         copy[idx] = { ...copy[idx], [key]: val };
+        if (key === "bankId" && isPettyCashBankAccount(
+            banks.find((bank) => bank.bankId === Number(val)),
+        )) {
+            copy[idx].checkNo = "";
+        }
         setPayments(copy);
         setPaymentValidationErrors(previous => {
             const next = new Set(previous);
             next.delete(`${idx}:${key}`);
-            if (key === "coaId") {
+            if (key === "bankId" || key === "coaId") {
                 next.delete(`${idx}:bankId`);
                 next.delete(`${idx}:checkNo`);
             }
@@ -192,16 +210,17 @@ export default function ReleasingSubmodule() {
             for (let i = 0; i < payments.length; i++) {
                 const p = payments[i];
                 const selectedCoa = coas.find(c => c.coaId === p.coaId);
-                const isPettyCash = isPettyCashAccount(selectedCoa?.accountTitle);
+                const selectedBank = banks.find((bank) => bank.bankId === Number(p.bankId));
+                const isPettyCash = isPettyCashBankAccount(selectedBank);
                 if (!p.date) nextErrors.add(`${i}:date`);
                 if (p.amount == null || !Number.isFinite(Number(p.amount)) || Number(p.amount) === 0) {
                     nextErrors.add(`${i}:amount`);
                 }
                 if (!p.coaId) nextErrors.add(`${i}:coaId`);
-                if (!isPettyCash && !p.bankId) nextErrors.add(`${i}:bankId`);
+                if (!p.bankId) nextErrors.add(`${i}:bankId`);
                 if (!isPettyCash && String(p.checkNo ?? "").trim() === "") nextErrors.add(`${i}:checkNo`);
 
-                const validationError = validatePaymentLine(p, selectedCoa?.accountTitle);
+                const validationError = validatePaymentLine(p, selectedCoa?.accountTitle, selectedBank);
                 if (validationError) {
                     validationMessages.push(`${validationError} Payment row ${i + 1}`);
                 }
@@ -212,28 +231,20 @@ export default function ReleasingSubmodule() {
                 return false;
             }
 
-            const payload: DisbursementPayload = {
-                docNo: selectedDisbursement.docNo,
-                payeeId: selectedDisbursement.payeeId || 0,
-                remarks: selectedDisbursement.remarks,
-                totalAmount: selectedDisbursement.totalAmount,
-                transactionDate: selectedDisbursement.transactionDate,
-                divisionId: selectedDisbursement.divisionId,
-                departmentId: selectedDisbursement.departmentId,
-                supportingDocumentsUrl: selectedDisbursement.supportingDocumentsUrl,
-                payables: selectedDisbursement.payables,
-                payments: payments.map(p => {
-                    const pettyCash = isPettyCashAccount(coas.find(c => c.coaId === p.coaId)?.accountTitle);
-                    return {
-                        ...p,
-                        coaId: Number(p.coaId),
-                        bankId: pettyCash ? undefined : Number(p.bankId),
-                        checkNo: pettyCash ? "" : p.checkNo,
-                    };
-                })
-            };
+            const paymentLines = payments.map(p => {
+                const pettyCash = isPettyCashBankAccount(
+                    banks.find((bank) => bank.bankId === Number(p.bankId)),
+                );
+                return {
+                    ...p,
+                    coaId: Number(p.coaId),
+                    bankId: p.bankId ? Number(p.bankId) : undefined,
+                    checkNo: pettyCash ? "" : p.checkNo,
+                };
+            });
 
-            const success = await update(selectedDisbursement.id, payload);
+            const result = await updatePaymentAllocation(selectedDisbursement.id, paymentLines);
+            const success = result.success;
             if (success) {
                 refresh();
                 const updated = data.find(v => v.id === selectedDisbursement.id);
@@ -384,7 +395,11 @@ export default function ReleasingSubmodule() {
                                 No approved vouchers to release
                             </div>
                         ) : (
-                            approvedVouchers.map((v) => (
+                            approvedVouchers.map((v) => {
+                                const balanceDue = getBalanceDue(v);
+                                const partiallyPaid = isPartiallyPaid(v, balanceDue);
+
+                                return (
                                 <button
                                     key={v.id}
                                     onClick={() => setSelectedDisbursement(v)}
@@ -395,9 +410,16 @@ export default function ReleasingSubmodule() {
                                 >
                                     <div className="flex items-center justify-between w-full">
                                         <span className="text-xs font-black text-foreground uppercase tracking-wider">{v.docNo}</span>
-                                        <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-500 font-mono">
-                                            {formatCurrency(v.totalAmount)}
-                                        </span>
+                                        <div className="flex flex-col items-end gap-0.5 font-mono">
+                                            <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-500">
+                                                {formatCurrency(v.totalAmount)}
+                                            </span>
+                                            {partiallyPaid && (
+                                                <span className="text-[9px] font-black text-amber-600 dark:text-amber-400">
+                                                    Balance: {formatCurrency(balanceDue)}
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
                                     <span className="text-[9px] font-bold text-muted-foreground uppercase mt-1 truncate max-w-[340px]">
                                         Payee: {v.payeeName || "N/A"}
@@ -406,12 +428,18 @@ export default function ReleasingSubmodule() {
                                         <span className="text-[9px] font-medium text-muted-foreground/80">
                                             {formatManilaDate(v.transactionDate, "")}
                                         </span>
-                                        <Badge variant="outline" className="text-[8px] px-1.5 py-0 font-bold uppercase bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
-                                            Approved
+                                        <Badge variant="outline" className={cn(
+                                            "text-[8px] px-1.5 py-0 font-bold uppercase",
+                                            partiallyPaid
+                                                ? "bg-amber-500/10 text-amber-600 border-amber-500/20"
+                                                : "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
+                                        )}>
+                                            {partiallyPaid ? "Partially Paid" : "Approved"}
                                         </Badge>
                                     </div>
                                 </button>
-                            ))
+                                );
+                            })
                         )}
                     </div>
                 </Card>
@@ -452,6 +480,12 @@ export default function ReleasingSubmodule() {
                                     <div>
                                         <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest block mb-0.5">Approved Payable Amount</span>
                                         <span className="text-lg font-black text-primary">{formatCurrency(selectedDisbursement.totalAmount)}</span>
+                                        {selectedIsPartiallyPaid && (
+                                            <div className="mt-1 space-y-0.5 text-[9px] font-black uppercase tracking-widest">
+                                                <span className="block text-muted-foreground">Paid to Date: {formatCurrency(selectedDisbursement.paidAmount)}</span>
+                                                <span className="block text-amber-600 dark:text-amber-400">Balance Due: {formatCurrency(selectedBalanceDue)}</span>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="space-y-3">
@@ -490,8 +524,9 @@ export default function ReleasingSubmodule() {
                                         </div>
                                     ) : (
                                         payments.map((line, idx) => {
-                                            const selectedCoa = coas.find(c => c.coaId === line.coaId);
-                                            const isPettyCash = isPettyCashAccount(selectedCoa?.accountTitle);
+                                            const isPettyCash = isPettyCashBankAccount(
+                                                banks.find((bank) => bank.bankId === Number(line.bankId)),
+                                            );
                                             return (
                                                 <div key={idx} className="relative bg-card border border-border/80 rounded-2xl p-6 shadow-md hover:shadow-lg transition-all space-y-5">
                                                     {/* Top control bar: Header */}
@@ -568,21 +603,19 @@ export default function ReleasingSubmodule() {
                                                     </div>
 
                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-border/60">
-                                                        {!isPettyCash && (
-                                                            <div>
-                                                                <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">Draw Bank Account <span className="text-destructive">*</span></label>
-                                                                <SearchSelect<number>
-                                                                    options={banks.map(b => ({
-                                                                        value: b.bankId,
-                                                                        label: `${b.bankName} - ${b.accountNumber}`
-                                                                    }))}
-                                                                    value={line.bankId || ""}
-                                                                    onSelect={val => handlePaymentChange(idx, "bankId", val)}
-                                                                    placeholder="Select Draw Bank Account..."
-                                                                    className={cn("h-9 text-xs font-bold bg-background border-border", paymentValidationErrors.has(`${idx}:bankId`) && "border-rose-500 ring-rose-500/20")}
-                                                                />
-                                                            </div>
-                                                        )}
+                                                        <div>
+                                                            <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">Draw Bank Account <span className="text-destructive">*</span></label>
+                                                            <SearchSelect<number>
+                                                                options={banks.map(b => ({
+                                                                    value: b.bankId,
+                                                                    label: `${b.bankName} - ${b.accountNumber}`
+                                                                }))}
+                                                                value={line.bankId || ""}
+                                                                onSelect={val => handlePaymentChange(idx, "bankId", val)}
+                                                                placeholder="Select Draw Bank Account..."
+                                                                className={cn("h-9 text-xs font-bold bg-background border-border", paymentValidationErrors.has(`${idx}:bankId`) && "border-rose-500 ring-rose-500/20")}
+                                                            />
+                                                        </div>
                                                         <div>
                                                             <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">GL Account (Credit) <span className="text-destructive">*</span></label>
                                                             <SearchSelect<number>
@@ -592,20 +625,6 @@ export default function ReleasingSubmodule() {
                                                                 }))}
                                                                 value={line.coaId || ""}
                                                                 onSelect={val => {
-                                                                    const nextCoa = coas.find(c => c.coaId === val);
-                                                                    if (isPettyCashAccount(nextCoa?.accountTitle)) {
-                                                                        setPayments(prev => prev.map((payment, paymentIndex) => paymentIndex === idx
-                                                                            ? { ...payment, coaId: val, bankId: undefined, checkNo: "" }
-                                                                            : payment));
-                                                                        setPaymentValidationErrors(previous => {
-                                                                            const next = new Set(previous);
-                                                                            [...next].forEach(key => {
-                                                                                if (key.startsWith(`${idx}:`)) next.delete(key);
-                                                                            });
-                                                                            return next;
-                                                                        });
-                                                                        return;
-                                                                    }
                                                                     handlePaymentChange(idx, "coaId", val);
                                                                 }}
                                                                 placeholder="Select GL Account (Credit)..."
@@ -681,46 +700,46 @@ export default function ReleasingSubmodule() {
 
             {/* DYNAMIC MISMATCH PROMPT DIALOG (Condition B) */}
             <Dialog open={releasingPromptOpen} onOpenChange={setReleasingPromptOpen}>
-                <DialogContent className="sm:max-w-[460px] border-border shadow-2xl p-6 bg-background rounded-2xl text-center">
-                    <DialogHeader className="flex flex-col items-center">
+                <DialogContent className="w-[calc(100%-2rem)] max-w-[460px] max-h-[calc(100vh-2rem)] overflow-x-hidden overflow-y-auto border-border shadow-2xl p-6 bg-background rounded-2xl text-center">
+                    <DialogHeader className="flex min-w-0 w-full flex-col items-center">
                         <div className="h-16 w-16 rounded-full bg-amber-500/10 text-amber-600 flex items-center justify-center mb-4">
                             <AlertTriangle className="w-8 h-8 stroke-[2.5]" />
                         </div>
-                        <DialogTitle className="text-lg font-black uppercase tracking-tight text-foreground">Mismatched Allocation Detected</DialogTitle>
-                        <DialogDescription className="text-xs font-bold text-muted-foreground uppercase tracking-wider mt-1">
+                        <DialogTitle className="max-w-full break-words text-base sm:text-lg font-black uppercase tracking-tight text-foreground">Mismatched Allocation Detected</DialogTitle>
+                        <DialogDescription className="max-w-full break-words text-xs font-bold text-muted-foreground uppercase tracking-wider mt-1">
                             Voucher No: {selectedDisbursement?.docNo}
                         </DialogDescription>
                     </DialogHeader>
 
-                    <div className="my-6 p-4 rounded-xl bg-muted/40 border border-border/40 text-xs font-bold text-muted-foreground uppercase tracking-widest leading-relaxed text-left space-y-2">
-                        <p>The combined check lines do not equal the total disbursement payable:</p>
-                        <div className="grid grid-cols-2 gap-1 pt-1 border-t border-border/40">
-                            <span>Voucher Payable:</span>
-                            <span className="text-right text-foreground">{selectedDisbursement ? formatCurrency(selectedDisbursement.totalAmount) : ""}</span>
-                            <span>Total Check Lines:</span>
-                            <span className="text-right text-foreground">{formatCurrency(totalPaymentsAmount)}</span>
+                    <div className="my-6 w-full min-w-0 p-4 rounded-xl bg-muted/40 border border-border/40 text-xs font-bold text-muted-foreground uppercase tracking-wide leading-relaxed text-left space-y-2">
+                        <p className="break-words">The combined check lines do not equal the total disbursement payable:</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 pt-1 border-t border-border/40">
+                            <span className="min-w-0 break-words">Voucher Payable:</span>
+                            <span className="min-w-0 text-right text-foreground whitespace-nowrap tabular-nums">{selectedDisbursement ? formatCurrency(selectedDisbursement.totalAmount) : ""}</span>
+                            <span className="min-w-0 break-words">Total Check Lines:</span>
+                            <span className="min-w-0 text-right text-foreground whitespace-nowrap tabular-nums">{formatCurrency(totalPaymentsAmount)}</span>
                         </div>
                     </div>
 
-                    <DialogFooter className="sm:justify-center flex flex-col sm:flex-row gap-3">
+                    <DialogFooter className="w-full !flex-col gap-2 !justify-stretch">
                         <Button 
                             onClick={() => handleCommitRelease("Released")}
                             disabled={isActionBusy}
-                            className="h-11 px-5 text-xs font-black uppercase bg-destructive hover:bg-destructive/90 text-white"
+                            className="w-full min-w-0 h-auto min-h-11 px-3 py-2 text-xs font-black uppercase whitespace-normal text-center leading-tight break-words bg-destructive hover:bg-destructive/90 text-white"
                         >
                             Force &apos;Released&apos;
                         </Button>
                         <Button 
                             onClick={() => handleCommitRelease("Partially Released")}
                             disabled={isActionBusy}
-                            className="h-11 px-5 text-xs font-black uppercase bg-amber-500 hover:bg-amber-600 text-white"
+                            className="w-full min-w-0 h-auto min-h-11 px-3 py-2 text-xs font-black uppercase whitespace-normal text-center leading-tight break-words bg-amber-500 hover:bg-amber-600 text-white"
                         >
                             Flag &apos;Partially Released&apos;
                         </Button>
                         <Button 
                             variant="outline"
                             onClick={() => setReleasingPromptOpen(false)}
-                            className="h-11 px-5 text-xs font-bold uppercase border-border/60"
+                            className="w-full min-w-0 h-auto min-h-11 px-3 py-2 text-xs font-bold uppercase whitespace-normal text-center leading-tight break-words border-border/60"
                         >
                             Cancel
                         </Button>

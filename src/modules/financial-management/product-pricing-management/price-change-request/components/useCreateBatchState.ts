@@ -456,7 +456,12 @@ export function useCreateBatchState({
                 else { toast.info(`No batch was created.${summarizeCreated(r)}`); }
                 return;
             }
-            const r = await api.createBulkCostChangeRequests({ items: costItems, reference_no: bp.reference_no, remarks: trimmedRemarks });
+            const r = await api.createBulkCostChangeRequests({
+                items: costItems,
+                supplier_id: selectedSupplierId,
+                reference_no: bp.reference_no,
+                remarks: trimmedRemarks,
+            });
             if (Number(r.created ?? 0) > 0) { toast.success(`Created list cost batch with ${r.created} line(s).${summarizeCreated(r)}`); onCreated(); onOpenChange(false); }
             else { toast.info(`No list cost batch was created.${summarizeCreated(r)}`); }
         } catch (error: unknown) {

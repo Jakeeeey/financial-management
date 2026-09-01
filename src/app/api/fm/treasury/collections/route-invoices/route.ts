@@ -15,12 +15,16 @@ export async function GET(request: NextRequest) {
     const {searchParams} = new URL(request.url);
     const salesmanId = searchParams.get("salesmanId");
     const date = searchParams.get("date");
+    const currentPouchId = searchParams.get("currentPouchId");
 
     if (!salesmanId || !date) {
         return NextResponse.json({message: "Missing salesmanId or date"}, {status: 400});
     }
 
-    const targetUrl = `${getSpringBaseUrl()}/api/v1/collections/route-invoices?salesmanId=${salesmanId}&date=${date}`;
+    const targetUrl = new URL(`${getSpringBaseUrl()}/api/v1/collections/route-invoices`);
+    targetUrl.searchParams.set("salesmanId", salesmanId);
+    targetUrl.searchParams.set("date", date);
+    if (currentPouchId) targetUrl.searchParams.set("currentPouchId", currentPouchId);
 
     try {
         const springRes = await fetch(targetUrl, {

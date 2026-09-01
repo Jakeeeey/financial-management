@@ -4,10 +4,15 @@ export type PaymentValidationLine = {
     checkNo?: unknown;
 };
 
+export type PaymentBankAccount = {
+    bankName?: string | null;
+    accountNumber?: string | null;
+};
+
 /**
- * Petty Cash and Revolving Fund are cash disbursements, so they do not have
- * a bank account or check number. Unknown account titles intentionally remain
- * bank/check payments so the validation fails closed.
+ * Petty Cash and Revolving Fund bank/cash accounts do not require a check
+ * number. Unknown account titles intentionally remain check payments so
+ * validation fails closed.
  */
 export function isPettyCashAccount(accountTitle?: string | null): boolean {
     const normalizedTitle = (accountTitle || "").trim().toLowerCase();
@@ -17,20 +22,29 @@ export function isPettyCashAccount(accountTitle?: string | null): boolean {
         normalizedTitle.includes("revolving funds");
 }
 
-export function validatePaymentLine(line: PaymentValidationLine, accountTitle?: string | null): string | null {
+export function isPettyCashBankAccount(bankAccount?: PaymentBankAccount | null): boolean {
+    if (!bankAccount) return false;
+    return isPettyCashAccount([bankAccount.bankName, bankAccount.accountNumber].filter(Boolean).join(" - "));
+}
+
+export function validatePaymentLine(
+    line: PaymentValidationLine,
+    accountTitle?: string | null,
+    bankAccount?: PaymentBankAccount | null,
+): string | null {
     if (line.coaId == null || line.coaId === "") {
         return "Please select a GL COA account.";
     }
 
-    if (isPettyCashAccount(accountTitle)) {
-        return null;
+    if (!accountTitle || accountTitle.trim() === "") {
+        return "Please select a valid GL COA account.";
     }
 
     if (line.bankId == null || line.bankId === "") {
         return "Please select a bank account.";
     }
 
-    if (String(line.checkNo ?? "").trim() === "") {
+    if (!isPettyCashBankAccount(bankAccount) && String(line.checkNo ?? "").trim() === "") {
         return "Please provide a check number.";
     }
 

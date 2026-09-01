@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
-import { findUnpostedPurchaseOrderReferences } from "./_purchase-order-eligibility";
-import { findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "./_payable-split-integrity";
-import { validateSupplierMemoCaps } from "./_memo-cap-integrity";
-import { isPettyCashAccount, validatePaymentLine } from "./_payment-method";
+import {
+    findTaggedPurchaseOrderReferences,
+    findUnpostedPurchaseOrderReferences,
+} from "./_purchase-order-eligibility";
+import { findMissingPayableDivisionError, findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "./_payable-split-integrity";
+import { acquireMemoCapLock, validateSupplierMemoCaps } from "./_memo-cap-integrity";
+import { isPettyCashBankAccount, validatePaymentLine } from "./_payment-method";
+import {
+    acquireDocumentNumberLock,
+    findNextAvailableDocumentNumber,
+    isDocumentNumberConflictError,
+} from "@/modules/financial-management/treasury/disbursement/document-number";
 
 export const runtime = "nodejs";
 
@@ -30,7 +38,7 @@ type DirectusList<T> = {
     };
 };
 
-type RelationValue = number | string | null | {
+export type RelationValue = number | string | null | {
     id?: unknown;
     division_id?: unknown;
     department_id?: unknown;
@@ -69,6 +77,53 @@ export type DisbursementRow = {
     supporting_documents_url?: unknown;
 };
 
+type DisbursementDraftDocRow = {
+    doc_no?: unknown;
+};
+
+export type DisbursementPaymentState =
+    | "UNPAID"
+    | "ALLOCATED"
+    | "PARTIALLY_RELEASED"
+    | "RELEASED";
+
+export function normalizeDisbursementStatus(value: unknown) {
+    switch (asString(value).trim().toUpperCase()) {
+        case "DRAFT": return "Draft";
+        case "SUBMITTED": return "Submitted";
+        case "APPROVED": return "Approved";
+        case "PARTIALLY RELEASED": return "Partially Released";
+        case "RELEASED": return "Released";
+        case "POSTED": return "Posted";
+        case "RETURNED FOR REVISION": return "Returned for Revision";
+        default: return asString(value).trim() || "Draft";
+    }
+}
+
+export function resolveDisbursementPaymentState(input: {
+    status: string;
+    totalAmount: number;
+    paidAmount: number;
+    isPosted: number;
+}): DisbursementPaymentState {
+    const paidAmount = Math.max(0, input.paidAmount);
+    const totalAmount = Math.max(0, input.totalAmount);
+    const normalizedStatus = normalizeDisbursementStatus(input.status);
+
+    if (paidAmount <= 0) return "UNPAID";
+    if (input.isPosted === 1 || normalizedStatus === "Posted") {
+        return totalAmount > 0 && paidAmount + 0.01 < totalAmount
+            ? "PARTIALLY_RELEASED"
+            : "RELEASED";
+    }
+    if (normalizedStatus === "Partially Released") return "PARTIALLY_RELEASED";
+    if (normalizedStatus === "Released") return "RELEASED";
+
+    // Saving payment/check lines is an allocation only. The explicit release
+    // transition is the source of truth for released lifecycle states.
+    return "ALLOCATED";
+}
+
 export type PayableRow = {
     id?: unknown;
     disbursement_id?: unknown;
@@ -97,13 +152,6 @@ type SupplierRow = {
     id?: unknown;
 };
 
-interface DirectusDisbursementNo {
-    id: number;
-    trade_no?: number;
-    "non-trade_no"?: number;
-    [key: string]: unknown;
-}
-
 export interface PayableInput {
     id?: number;
     divisionId?: number;
@@ -112,6 +160,11 @@ export interface PayableInput {
     coaId?: number;
     amount?: number;
     remarks?: string;
+}
+
+export function findMissingPayableDateError(lines: PayableInput[]) {
+    const invalidRow = lines.findIndex((line) => typeof line.date !== "string" || line.date.trim() === "");
+    return invalidRow >= 0 ? `Invoice Date is required on payable row ${invalidRow + 1}.` : null;
 }
 
 export interface PaymentInput {
@@ -143,7 +196,6 @@ type ComparableDisbursement = {
     remarks: string | null;
     totalAmount: number;
     transactionDate: string | null;
-    divisionId: number | null;
     departmentId: number | null;
     fundSourceId: number | null;
     supportingDocumentsUrl: string | null;
@@ -224,7 +276,6 @@ export function canonicalizeDisbursementPayload(input: {
     remarks?: unknown;
     totalAmount?: unknown;
     transactionDate?: unknown;
-    divisionId?: unknown;
     departmentId?: unknown;
     fundSourceId?: unknown;
     supportingDocumentsUrl?: unknown;
@@ -251,7 +302,6 @@ export function canonicalizeDisbursementPayload(input: {
         remarks: comparableText(input.remarks),
         totalAmount: roundMoney(Number(input.totalAmount) || 0),
         transactionDate: comparableDate(input.transactionDate),
-        divisionId: comparableNumber(input.divisionId),
         departmentId: comparableNumber(input.departmentId),
         fundSourceId: comparableNumber(input.fundSourceId),
         supportingDocumentsUrl: cleanSupportingDocsUrl(asString(input.supportingDocumentsUrl)),
@@ -269,7 +319,6 @@ export function canonicalizePersistedDisbursement(row: DisbursementRow, payables
         remarks: row.remarks,
         totalAmount: row.total_amount,
         transactionDate: row.transaction_date,
-        divisionId: relationId(row.division_id, "division_id"),
         departmentId: relationId(row.department_id, "department_id"),
         fundSourceId: relationId(row.fund_source_id as RelationValue),
         supportingDocumentsUrl: row.supporting_documents_url,
@@ -306,12 +355,29 @@ async function directusFetch<T>(path: string, options: RequestInit = {}): Promis
         cache: "no-store",
     });
 
-    if (!res.ok) throw new Error(await res.text());
-    return res.json() as Promise<T>;
+    const responseText = await res.text();
+    if (!res.ok) throw new Error(responseText);
+    if (!responseText.trim()) return undefined as T;
+
+    try {
+        return JSON.parse(responseText) as T;
+    } catch {
+        throw new Error("Directus returned an invalid JSON response.");
+    }
 }
 
-function transactionTypeName(type: unknown) {
+export function resolveTransactionTypeId(type: unknown, docNo?: unknown): 1 | 2 | null {
     const normalizedType = asNumber(type);
+    if (normalizedType === 1 || normalizedType === 2) return normalizedType;
+
+    const normalizedDocNo = asString(docNo).trim().toUpperCase();
+    if (normalizedDocNo.startsWith("TR-")) return 1;
+    if (normalizedDocNo.startsWith("NT-")) return 2;
+    return null;
+}
+
+function transactionTypeName(type: unknown, docNo?: unknown) {
+    const normalizedType = resolveTransactionTypeId(type, docNo);
     if (normalizedType === 1) return "Trade";
     if (normalizedType === 2) return "Non-Trade";
     return "Unknown";
@@ -356,9 +422,22 @@ async function getSupplierIds(search: string) {
         .filter((id): id is number => Boolean(id));
 }
 
+async function getWerDocumentNumbers() {
+    const res = await directusFetch<DirectusList<DisbursementDraftDocRow>>(
+        "/items/disbursement_draft?fields=doc_no&limit=-1",
+    );
+
+    return Array.from(new Set(
+        (res.data ?? [])
+            .map((row) => asString(row.doc_no).trim().toUpperCase())
+            .filter(Boolean),
+    ));
+}
+
 function buildDisbursementParams(
     searchParams: URLSearchParams,
     supplierIds: number[],
+    werDocumentNumbers: string[] = [],
 ) {
     const page = normalizePage(searchParams.get("page"));
     const size = normalizeSize(searchParams.get("size"));
@@ -369,6 +448,7 @@ function buildDisbursementParams(
     const divisionId = searchParams.get("divisionId") || "";
     const departmentId = searchParams.get("departmentId") || "";
     const docNo = searchParams.get("docNo") || "";
+    const source = searchParams.get("source") || "";
     const isPosted = searchParams.get("isPosted") || "";
     const params = new URLSearchParams();
     let filterIndex = 0;
@@ -414,6 +494,9 @@ function buildDisbursementParams(
         filterIndex = appendFilter(params, filterIndex, "transaction_type", "_eq", "1");
     } else if (type === "Non-Trade") {
         filterIndex = appendFilter(params, filterIndex, "transaction_type", "_eq", "2");
+    }
+    if (source.trim().toUpperCase() === "WER") {
+        filterIndex = appendFilter(params, filterIndex, "doc_no", "_in", werDocumentNumbers.join(","));
     }
     if (status && status !== "All") {
         const op = status.includes(",") ? "_in" : "_eq";
@@ -489,59 +572,6 @@ export async function getLineItems(disbursementIds: number[]) {
     return {
         payables: groupByDisbursementId(payablesRes.data ?? []),
         payments: groupByDisbursementId(paymentsRes.data ?? []),
-    };
-}
-
-type DisbursementSnapshot = {
-    header: DisbursementRow;
-    payables: PayableRow[];
-    payments: PaymentRow[];
-};
-
-async function findDisbursementSnapshotByDocNo(docNo: string): Promise<DisbursementSnapshot | null> {
-    const params = new URLSearchParams();
-    params.set("filter[doc_no][_eq]", docNo);
-    params.set("limit", "1");
-    params.set(
-        "fields",
-        [
-            "id",
-            "doc_no",
-            "transaction_type",
-            "payee",
-            "remarks",
-            "total_amount",
-            "paid_amount",
-            "encoder_id",
-            "submitted_by",
-            "approver_id",
-            "released_by",
-            "posted_by",
-            "isPosted",
-            "transaction_date",
-            "date_created",
-            "date_submitted",
-            "date_approved",
-            "date_released",
-            "date_posted",
-            "division_id",
-            "department_id",
-            "fund_source_id",
-            "supporting_documents_url",
-            "status",
-        ].join(","),
-    );
-
-    const response = await directusFetch<DirectusList<DisbursementRow>>(`/items/disbursement?${params.toString()}`);
-    const header = response.data?.[0];
-    const id = header ? asNumber(header.id) : undefined;
-    if (!header || !id) return null;
-
-    const lineItems = await getLineItems([id]);
-    return {
-        header,
-        payables: lineItems.payables.get(id) || [],
-        payments: lineItems.payments.get(id) || [],
     };
 }
 
@@ -691,16 +721,28 @@ export function normalizeDisbursement(
     const releasedByName = releasedByVal ? (userMap?.get(String(releasedByVal)) || `User #${releasedByVal}`) : "";
     const postedByName = postedByVal ? (userMap?.get(String(postedByVal)) || `User #${postedByVal}`) : "";
 
+    const totalAmount = asNumber(row.total_amount) ?? totalDebit;
+    const paidAmount = totalCredit > 0
+        ? totalCredit
+        : (asNumber(row.paid_amount) ?? 0);
+    const status = normalizeDisbursementStatus(row.status);
+
     return {
         id,
         docNo: asString(row.doc_no),
         payeeId: relationId(row.payee),
-        transactionTypeId: asNumber(row.transaction_type),
-        transactionTypeName: transactionTypeName(row.transaction_type),
+        transactionTypeId: resolveTransactionTypeId(row.transaction_type, row.doc_no) ?? undefined,
+        transactionTypeName: transactionTypeName(row.transaction_type, row.doc_no),
         payeeName: relationLabel(row.payee, "supplier_name"),
         remarks: asString(row.remarks),
-        totalAmount: asNumber(row.total_amount) ?? totalDebit,
-        paidAmount: asNumber(row.paid_amount) ?? totalCredit,
+        totalAmount,
+        paidAmount,
+        paymentState: resolveDisbursementPaymentState({
+            status,
+            totalAmount,
+            paidAmount,
+            isPosted: asNumber(row.isPosted) ?? 0,
+        }),
         totalDebit,
         totalCredit,
         balance: roundMoney(totalDebit - totalCredit),
@@ -726,7 +768,7 @@ export function normalizeDisbursement(
         divisionName: relationLabel(row.division_id, "division_name"),
         departmentName: relationLabel(row.department_id, "department_name"),
         fundSourceId: asNumber(row.fund_source_id),
-        status: asString(row.status) || "Draft",
+        status,
         supportingDocumentsUrl: asString(row.supporting_documents_url),
         payables,
         payments,
@@ -858,48 +900,6 @@ export async function resolveEncoderId(emailOrSub: string | null): Promise<numbe
     }
 }
 
-async function getPreviewDocumentNumber(supplierType: string): Promise<string> {
-    const isTrade = supplierType.toLowerCase() === "trade";
-    const prefix = isTrade ? "TR" : "NT";
-    const field = isTrade ? "trade_no" : "non-trade_no";
-
-    try {
-        // 1. Get current sequence row
-        const getRes = await directusFetch<DirectusList<DirectusDisbursementNo>>("/items/disbursement_no?limit=1");
-        const seqRow = getRes.data?.[0];
-        if (seqRow) {
-            const currentSeq = (Number(seqRow[field]) || 0) + 1;
-            const seqStr = String(currentSeq).padStart(6, "0");
-            return `${prefix}-${seqStr}`;
-        }
-    } catch {
-        // Fallback if forbidden
-    }
-
-    // Fallback: Query max doc_no from disbursement table
-    const params = new URLSearchParams();
-    params.set("filter[doc_no][_starts_with]", `${prefix}-`);
-    params.set("limit", "1");
-    params.set("sort", "-id");
-    params.set("fields", "doc_no");
-
-    const fallbackRes = await directusFetch<DirectusList<{ doc_no: string }>>(`/items/disbursement?${params.toString()}`);
-    const latestDocNo = fallbackRes.data?.[0]?.doc_no;
-
-    let nextSeq = 1;
-    if (latestDocNo) {
-        const parts = latestDocNo.split("-");
-        const numericPart = parts[parts.length - 1];
-        const parsed = parseInt(numericPart, 10);
-        if (!isNaN(parsed)) {
-            nextSeq = parsed + 1;
-        }
-    }
-
-    const seqStr = String(nextSeq).padStart(6, "0");
-    return `${prefix}-${seqStr}`;
-}
-
 export async function GET(request: NextRequest) {
     const cookieStore = await cookies();
     const token = cookieStore.get("vos_access_token")?.value;
@@ -910,12 +910,16 @@ export async function GET(request: NextRequest) {
 
     if (searchParams.get("nextDocNo") === "true") {
         const supplierType = searchParams.get("supplierType") || "Trade";
+        const transactionTypeId = supplierType.toLowerCase().startsWith("non") ? 2 : 1;
+        const releaseDocumentNumberLock = await acquireDocumentNumberLock(transactionTypeId);
         try {
-            const nextNo = await getPreviewDocumentNumber(supplierType);
+            const nextNo = await findNextAvailableDocumentNumber(transactionTypeId, directusFetch);
             return NextResponse.json({ nextDocNo: nextNo });
         } catch (err: unknown) {
             const message = err instanceof Error ? err.message : "An unknown error occurred";
             return NextResponse.json({ message }, { status: 500 });
+        } finally {
+            releaseDocumentNumberLock();
         }
     }
 
@@ -933,7 +937,22 @@ export async function GET(request: NextRequest) {
             });
         }
 
-        const query = buildDisbursementParams(searchParams, supplierIds);
+        const source = searchParams.get("source")?.trim().toUpperCase() || "";
+        const werDocumentNumbers = source === "WER"
+            ? await getWerDocumentNumbers()
+            : [];
+
+        if (source === "WER" && werDocumentNumbers.length === 0) {
+            return NextResponse.json({
+                content: [],
+                totalElements: 0,
+                totalPages: 0,
+                number: normalizePage(searchParams.get("page")),
+                size: normalizeSize(searchParams.get("size")),
+            });
+        }
+
+        const query = buildDisbursementParams(searchParams, supplierIds, werDocumentNumbers);
         const disbursementsRes = await directusFetch<DirectusList<DisbursementRow>>(
             `/items/disbursement?${query.params.toString()}`,
         );
@@ -998,13 +1017,16 @@ export async function POST(request: NextRequest) {
     let createdId: number | undefined;
     let createdDocNo = "";
     let creationFinalized = false;
+    let releaseMemoCapLock: (() => void) | undefined;
+    let releaseDocumentNumberLock: (() => void) | undefined;
 
     try {
         const body = await request.json();
-        const transactionTypeId = Number(body.transactionTypeId);
-        if (transactionTypeId !== 1 && transactionTypeId !== 2) {
+        const transactionTypeIdValue = Number(body.transactionTypeId);
+        if (transactionTypeIdValue !== 1 && transactionTypeIdValue !== 2) {
             return NextResponse.json({ message: "Transaction Type must be Trade (1) or Non-Trade (2)." }, { status: 400 });
         }
+        const transactionTypeId: 1 | 2 = transactionTypeIdValue;
         const requestedPayables = (body.payables || []) as PayableInput[];
         const requestedPayments = (body.payments || []) as PaymentInput[];
         const missingPrincipalDivisionError = findMissingVatPrincipalDivisionError(requestedPayables);
@@ -1015,13 +1037,25 @@ export async function POST(request: NextRequest) {
         const payableLinesInput = normalizedPayables.filter((line: PayableInput) =>
             !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.referenceNo && line.referenceNo.trim() !== "")
         );
+        const missingPayableDivisionError = findMissingPayableDivisionError(payableLinesInput);
+        if (missingPayableDivisionError) {
+            return NextResponse.json({ message: missingPayableDivisionError }, { status: 400 });
+        }
+        const missingPayableDateError = findMissingPayableDateError(payableLinesInput);
+        if (missingPayableDateError) {
+            return NextResponse.json({ message: missingPayableDateError }, { status: 400 });
+        }
         const paymentLinesInput = requestedPayments.filter((line: PaymentInput) =>
             !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo != null && String(line.checkNo).trim() !== "")
         );
-        const coaMap = await getCoaMap();
+        const [coaMap, bankMap] = await Promise.all([getCoaMap(), getBankMap()]);
         for (let index = 0; index < paymentLinesInput.length; index++) {
             const line = paymentLinesInput[index];
-            const validationError = validatePaymentLine(line, coaMap.get(Number(line.coaId)));
+            const validationError = validatePaymentLine(
+                line,
+                coaMap.get(Number(line.coaId)),
+                bankMap.get(Number(line.bankId)),
+            );
             if (validationError) {
                 return NextResponse.json({
                     message: validationError,
@@ -1030,65 +1064,46 @@ export async function POST(request: NextRequest) {
             }
         }
         const normalizedPaymentLines = paymentLinesInput.map((line) =>
-            isPettyCashAccount(coaMap.get(Number(line.coaId)))
-                ? { ...line, bankId: undefined, checkNo: "" }
+            isPettyCashBankAccount(bankMap.get(Number(line.bankId)))
+                ? { ...line, checkNo: "" }
                 : line
         );
+
+        releaseMemoCapLock = await acquireMemoCapLock(payableLinesInput);
 
         // 1. Fetch payee supplier type to determine prefix (Trade / Non-Trade)
         if (!body.payeeId) {
             return NextResponse.json({ message: "Payee (Supplier ID) is required." }, { status: 400 });
         }
 
-        const docNo = typeof body.docNo === "string" ? body.docNo.trim() : "";
-        if (!docNo) {
-            return NextResponse.json({
-                message: "Document Number is required for safe submission retries.",
-                detail: "Refresh the voucher form to obtain a document number before submitting."
-            }, { status: 400 });
-        }
-
-        const incomingCanonical = canonicalizeDisbursementPayload({
-            transactionTypeId,
-            payeeId: body.payeeId,
-            remarks: body.remarks,
-            totalAmount: body.totalAmount,
-            transactionDate: body.transactionDate,
-            divisionId: body.divisionId,
-            departmentId: body.departmentId,
-            fundSourceId: body.fundSourceId,
-            supportingDocumentsUrl: body.supportingDocumentsUrl,
-            payables: payableLinesInput,
-            payments: normalizedPaymentLines,
-        });
-
-        const existingSnapshot = await findDisbursementSnapshotByDocNo(docNo);
-        if (existingSnapshot) {
-            const persistedCanonical = canonicalizePersistedDisbursement(
-                existingSnapshot.header,
-                existingSnapshot.payables,
-                existingSnapshot.payments,
-            );
-            if (persistedCanonical !== incomingCanonical) {
-                return NextResponse.json({
-                    message: `Document Number already exists with different transaction data: ${docNo}`,
-                    detail: "Use the existing voucher or refresh the form to obtain a new document number."
-                }, { status: 409 });
-            }
-
-            return NextResponse.json(await loadNormalizedDisbursement(existingSnapshot.header, token));
-        }
-
         const memoCapError = await validateSupplierMemoCaps(Number(body.payeeId), requestedPayables);
         if (memoCapError) {
             return NextResponse.json({
-                message: "Supplier memo amount exceeds its authorized cap.",
+                message: memoCapError.isLocked
+                    ? "Supplier memo is currently locked by an unposted TR."
+                    : "Supplier memo amount exceeds its authorized cap.",
                 detail: memoCapError.message,
                 memoNumber: memoCapError.memoNumber,
                 authorizedAmount: memoCapError.authorizedAmount,
                 appliedAmount: memoCapError.appliedAmount,
                 requestedAmount: memoCapError.requestedAmount,
                 remainingAmount: memoCapError.remainingAmount,
+                isLocked: memoCapError.isLocked || false,
+                lockingTrDocNo: memoCapError.lockingTrDocNo || null,
+                lockingTrStatus: memoCapError.lockingTrStatus || null,
+                lockingTrCount: memoCapError.lockingTrCount || 0,
+            }, { status: 409 });
+        }
+
+        const taggedPoReferences = await findTaggedPurchaseOrderReferences(
+            requestedPayables.map((line) => line.referenceNo),
+            Number(body.payeeId),
+        );
+        if (taggedPoReferences.length > 0) {
+            return NextResponse.json({
+                message: "Disbursement cannot include purchase orders already tagged to an existing TR.",
+                detail: `Already-tagged references: ${taggedPoReferences.join(", ")}`,
+                references: taggedPoReferences,
             }, { status: 409 });
         }
 
@@ -1104,41 +1119,62 @@ export async function POST(request: NextRequest) {
             }, { status: 409 });
         }
 
-        createdDocNo = docNo;
+        const incomingCanonical = canonicalizeDisbursementPayload({
+            transactionTypeId,
+            payeeId: body.payeeId,
+            remarks: body.remarks,
+            totalAmount: body.totalAmount,
+            transactionDate: body.transactionDate,
+            departmentId: body.departmentId,
+            fundSourceId: body.fundSourceId,
+            supportingDocumentsUrl: body.supportingDocumentsUrl,
+            payables: payableLinesInput,
+            payments: normalizedPaymentLines,
+        });
 
-        // 3. Threshold check
-        const APPROVAL_THRESHOLD = 1000.00;
-        const isAutoApprove = Number(body.totalAmount) < APPROVAL_THRESHOLD;
-
-        // 4. Calculate paid amount (sum of payments)
+        // Calculate paid amount (sum of payments)
         const calculatedPaidAmount = normalizedPaymentLines.reduce(
             (sum: number, p: PaymentInput) => sum + (Number(p.amount) || 0),
             0
         );
 
         // 5. Create disbursement header (no nested O2M — Directus doesn't support it)
-        const headerPayload = {
-            doc_no: docNo,
-            transaction_type: transactionTypeId,
-            payee: Number(body.payeeId),
-            remarks: body.remarks || "",
-            total_amount: Number(body.totalAmount) || 0,
-            paid_amount: calculatedPaidAmount,
-            encoder_id: currentUserId,
-            transaction_date: body.transactionDate,
-            division_id: body.divisionId ? Number(body.divisionId) : null,
-            department_id: body.departmentId ? Number(body.departmentId) : null,
-            fund_source_id: body.fundSourceId ? Number(body.fundSourceId) : null,
-            supporting_documents_url: cleanSupportingDocsUrl(body.supportingDocumentsUrl),
-            status: "Draft",
-            approver_id: null,
-            date_approved: null,
-        };
+        releaseDocumentNumberLock = await acquireDocumentNumberLock(transactionTypeId);
+        let createRes: { data: DisbursementRow } | undefined;
+        for (let attempt = 0; attempt < 16; attempt++) {
+            const docNoForCreation = await findNextAvailableDocumentNumber(transactionTypeId, directusFetch);
+            const headerPayload = {
+                doc_no: docNoForCreation,
+                transaction_type: transactionTypeId,
+                payee: Number(body.payeeId),
+                remarks: body.remarks || "",
+                total_amount: Number(body.totalAmount) || 0,
+                paid_amount: calculatedPaidAmount,
+                encoder_id: currentUserId,
+                transaction_date: body.transactionDate,
+                // Header-level Division is deprecated. Payable lines carry Cost Division.
+                division_id: null,
+                department_id: body.departmentId ? Number(body.departmentId) : null,
+                fund_source_id: body.fundSourceId ? Number(body.fundSourceId) : null,
+                supporting_documents_url: cleanSupportingDocsUrl(body.supportingDocumentsUrl),
+                status: "Draft",
+                approver_id: null,
+                date_approved: null,
+            };
 
-        const createRes = await directusFetch<{ data: DisbursementRow }>("/items/disbursement", {
-            method: "POST",
-            body: JSON.stringify(headerPayload)
-        });
+            try {
+                createRes = await directusFetch<{ data: DisbursementRow }>("/items/disbursement", {
+                    method: "POST",
+                    body: JSON.stringify(headerPayload)
+                });
+                createdDocNo = docNoForCreation;
+                break;
+            } catch (error: unknown) {
+                if (!isDocumentNumberConflictError(error) || attempt === 15) throw error;
+            }
+        }
+
+        if (!createRes) throw new Error("Disbursement could not be created with an available document number.");
 
         const createdDisbursement = createRes.data;
         const persistedId = asNumber(createdDisbursement.id);
@@ -1207,17 +1243,6 @@ export async function POST(request: NextRequest) {
             throw new Error("Created disbursement lines failed integrity verification.");
         }
 
-        if (isAutoApprove) {
-            const approvedRes = await directusFetch<{ data: DisbursementRow }>(`/items/disbursement/${persistedId}`, {
-                method: "PATCH",
-                body: JSON.stringify({
-                    status: "Approved",
-                    approver_id: currentUserId,
-                    date_approved: new Date().toISOString(),
-                }),
-            });
-            if (!approvedRes.data) throw new Error("Disbursement was created but automatic approval could not be confirmed.");
-        }
         creationFinalized = true;
 
         // Return the full normalized record
@@ -1246,5 +1271,8 @@ export async function POST(request: NextRequest) {
         }
         const message = err instanceof Error ? err.message : "An unknown error occurred";
         return NextResponse.json({ message: "BFF Error", detail: message }, { status: 502 });
+    } finally {
+        releaseDocumentNumberLock?.();
+        releaseMemoCapLock?.();
     }
 }

@@ -9,6 +9,11 @@ import { DepositLedgerTab } from "./DepositLedgerTab";
 
 export function BankDepositModule() {
     const hookData = useBankDeposit();
+    const { fetchActiveBanks } = hookData;
+
+    React.useEffect(() => {
+        void fetchActiveBanks();
+    }, [fetchActiveBanks]);
 
     return (
         <div className="p-4 sm:p-8 space-y-6 max-w-[1600px] mx-auto">
@@ -37,7 +42,12 @@ export function BankDepositModule() {
                     <PrepareDepositTab
                         vaultAssets={hookData.vaultAssets}
                         activeBanks={hookData.activeBanks}
+                        bankOptions={hookData.bankOptions}
+                        filters={hookData.filters}
+                        onFiltersChange={hookData.updateFilters}
+                        error={hookData.error}
                         isLoading={hookData.isLoading}
+                        isBanksLoading={hookData.isBanksLoading}
                         isSubmitting={hookData.isSubmitting}
 
                         // 🚀 FIXED: Passed the missing pagination props down to the tab!

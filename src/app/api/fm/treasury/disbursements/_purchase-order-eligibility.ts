@@ -19,6 +19,24 @@ type DirectusReceiving = {
     is_reverted?: unknown;
 };
 
+type DirectusDisbursement = {
+    id?: unknown;
+};
+
+type DirectusPayableReference = {
+    reference_no?: unknown;
+};
+
+export const ACTIVE_DISBURSEMENT_STATUSES = [
+    "Draft",
+    "Submitted",
+    "Returned for Revision",
+    "Approved",
+    "Partially Released",
+    "Released",
+    "Posted",
+] as const;
+
 export type PurchaseOrderReference = {
     poNo: string;
     receiptNo: string;
@@ -50,6 +68,93 @@ export function parsePurchaseOrderReference(value: unknown): PurchaseOrderRefere
     return poNo && receiptNo ? { poNo, receiptNo } : null;
 }
 
+export function purchaseOrderReferenceKey(value: unknown): string | null {
+    const parsed = parsePurchaseOrderReference(value);
+    if (!parsed) return null;
+
+    return purchaseOrderReferenceKeyFromParts(parsed.poNo, parsed.receiptNo);
+}
+
+export function purchaseOrderReferenceKeyFromParts(poNo: unknown, receiptNo: unknown): string {
+    return `${asString(poNo).toUpperCase()}::${asString(receiptNo).toUpperCase()}`;
+}
+
+export function isPurchaseOrderReferenceTagged(
+    reference: unknown,
+    taggedReferenceKeys: ReadonlySet<string>,
+): boolean {
+    const key = purchaseOrderReferenceKey(reference);
+    return key !== null && taggedReferenceKeys.has(key);
+}
+
+/**
+ * Returns PO references already used by another active TR for the supplier.
+ * A reference is considered tagged when any payable line uses it; the line
+ * amount is deliberately ignored so tax-split lines cannot leave a remainder
+ * that makes the PO selectable again.
+ */
+export async function findTaggedPurchaseOrderReferences(
+    references: unknown[],
+    supplierId?: number,
+    excludeDisbursementId?: number,
+): Promise<string[]> {
+    const parsedReferences = references
+        .map((reference) => ({ raw: asString(reference), key: purchaseOrderReferenceKey(reference) }))
+        .filter((entry): entry is { raw: string; key: string } => entry.key !== null);
+
+    if (parsedReferences.length === 0) return [];
+
+    const disbursementQuery = new URLSearchParams({
+        "filter[status][_in]": ACTIVE_DISBURSEMENT_STATUSES.join(","),
+        fields: "id",
+        limit: "-1",
+    });
+    if (supplierId !== undefined) {
+        disbursementQuery.set("filter[payee][_eq]", String(supplierId));
+    }
+
+    const disbursementResponse = await fetch(`${DIRECTUS_URL}/items/disbursement?${disbursementQuery.toString()}`, {
+        headers: directusHeaders(),
+        cache: "no-store",
+    });
+    if (!disbursementResponse.ok) {
+        throw new Error(`Unable to verify existing TR purchase-order tags (${disbursementResponse.status}).`);
+    }
+
+    const disbursementRows = (await disbursementResponse.json()).data as DirectusDisbursement[] | undefined;
+    const disbursementIds = (disbursementRows || [])
+        .map((row) => asNumber(row.id))
+        .filter((id): id is number => id !== undefined && id !== excludeDisbursementId);
+
+    if (disbursementIds.length === 0) return [];
+
+    const payableQuery = new URLSearchParams({
+        "filter[disbursement_id][_in]": disbursementIds.join(","),
+        fields: "reference_no",
+        limit: "-1",
+    });
+    const payableResponse = await fetch(`${DIRECTUS_URL}/items/disbursement_payables?${payableQuery.toString()}`, {
+        headers: directusHeaders(),
+        cache: "no-store",
+    });
+    if (!payableResponse.ok) {
+        throw new Error(`Unable to verify existing TR payable references (${payableResponse.status}).`);
+    }
+
+    const payableRows = (await payableResponse.json()).data as DirectusPayableReference[] | undefined;
+    const taggedReferenceKeys = new Set(
+        (payableRows || [])
+            .map((row) => purchaseOrderReferenceKey(row.reference_no))
+            .filter((key): key is string => key !== null),
+    );
+
+    return [...new Set(
+        parsedReferences
+            .filter((entry) => taggedReferenceKeys.has(entry.key))
+            .map((entry) => entry.raw),
+    )];
+}
+
 export function isPostedReceivingAmount(row: DirectusReceiving): boolean {
     return asNumber(row.isPosted) === 1
         && asNumber(row.is_posted_amounts) === 1
@@ -62,6 +167,15 @@ function isActiveReceiving(row: DirectusReceiving): boolean {
 
 function isCwoReference(receiptNo: string): boolean {
     return receiptNo.toUpperCase() === "ADVANCE-CWO";
+}
+
+function receivingReceiptKey(row: DirectusReceiving): string {
+    return asString(row.receipt_no) || "NO-RECEIPT";
+}
+
+function isFullyPostedReceipt(rows: DirectusReceiving[], receiptNo: string): boolean {
+    const receiptRows = rows.filter((row) => receivingReceiptKey(row) === receiptNo);
+    return receiptRows.length > 0 && receiptRows.every(isPostedReceivingAmount);
 }
 
 /**
@@ -145,7 +259,7 @@ export async function findUnpostedPurchaseOrderReferences(
 
         const eligible = isCwoReference(entry.parsed.receiptNo)
             ? activeRows.length > 0 && activeRows.every(isPostedReceivingAmount)
-            : activeRows.some((row) => asString(row.receipt_no) === entry.parsed.receiptNo && isPostedReceivingAmount(row));
+            : isFullyPostedReceipt(activeRows, entry.parsed.receiptNo);
 
         if (!eligible) invalid.push(entry.raw);
     }
@@ -154,14 +268,26 @@ export async function findUnpostedPurchaseOrderReferences(
 }
 
 export function postedReceivingRowsByPurchaseOrder<T extends DirectusReceiving>(rows: T[]): Map<number, T[]> {
-    const result = new Map<number, T[]>();
+    const rowsByPoAndReceipt = new Map<number, Map<string, T[]>>();
+
     for (const row of rows) {
-        if (!isPostedReceivingAmount(row)) continue;
+        if (asNumber(row.is_reverted) === 1) continue;
         const poId = asNumber(row.purchase_order_id);
         if (poId === undefined) continue;
-        const current = result.get(poId) || [];
-        current.push(row);
-        result.set(poId, current);
+
+        const rowsByReceipt = rowsByPoAndReceipt.get(poId) || new Map<string, T[]>();
+        const receiptRows = rowsByReceipt.get(receivingReceiptKey(row)) || [];
+        receiptRows.push(row);
+        rowsByReceipt.set(receivingReceiptKey(row), receiptRows);
+        rowsByPoAndReceipt.set(poId, rowsByReceipt);
+    }
+
+    const result = new Map<number, T[]>();
+    for (const [poId, rowsByReceipt] of rowsByPoAndReceipt) {
+        const fullyPostedRows = [...rowsByReceipt.values()]
+            .filter((receiptRows) => receiptRows.length > 0 && receiptRows.every(isPostedReceivingAmount))
+            .flat();
+        if (fullyPostedRows.length > 0) result.set(poId, fullyPostedRows);
     }
     return result;
 }

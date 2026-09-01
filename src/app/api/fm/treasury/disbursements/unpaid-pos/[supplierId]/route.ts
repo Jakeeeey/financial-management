@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import {
+    ACTIVE_DISBURSEMENT_STATUSES,
     activeReceivingRowsByPurchaseOrder,
     isFullyPostedPurchaseOrder,
+    purchaseOrderReferenceKey,
+    purchaseOrderReferenceKeyFromParts,
     postedReceivingRowsByPurchaseOrder,
 } from "../../_purchase-order-eligibility";
 
@@ -27,6 +30,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     const resolvedParams = await params;
     const supplierId = Number(resolvedParams.supplierId);
+
+    if (!Number.isInteger(supplierId) || supplierId <= 0) {
+        return NextResponse.json({ message: "Invalid supplier ID" }, { status: 400 });
+    }
 
     try {
         const queryParams = new URLSearchParams({
@@ -61,73 +68,56 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         }
 
         // Fetch active disbursements for this supplier (to avoid 403 relational filter issue)
-        const disRes = await fetch(`${DIRECTUS_URL}/items/disbursement?filter[payee][_eq]=${supplierId}&filter[status][_in]=Draft,Submitted,Approved,Released,Posted&fields=id&limit=-1`, {
+        const disbursementQuery = new URLSearchParams({
+            "filter[payee][_eq]": String(supplierId),
+            "filter[status][_in]": ACTIVE_DISBURSEMENT_STATUSES.join(","),
+            fields: "id",
+            limit: "-1",
+        });
+        const disRes = await fetch(`${DIRECTUS_URL}/items/disbursement?${disbursementQuery.toString()}`, {
             headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
             cache: "no-store",
         });
-        const disList = disRes.ok ? (((await disRes.json()).data || []) as Array<{ id: number }>) : [];
-        const disIdsForPaid = disList.map(d => d.id);
+        if (!disRes.ok) throw new Error(`Unable to load existing TRs (${disRes.status}).`);
+        const disList = (((await disRes.json()).data || []) as Array<{ id: number }>);
+        const activeDisbursementIds = disList.map(d => d.id);
 
-        const paidPayablesList: Array<{ reference_no?: string; amount?: number }> = [];
-        if (disIdsForPaid.length > 0) {
-            const paidPayablesParams = new URLSearchParams();
-            paidPayablesParams.set("filter[disbursement_id][_in]", disIdsForPaid.join(","));
-            paidPayablesParams.set("fields", "reference_no,amount");
-            paidPayablesParams.set("limit", "-1");
+        const taggedPayablesList: Array<{ reference_no?: string }> = [];
+        if (activeDisbursementIds.length > 0) {
+            const taggedPayablesParams = new URLSearchParams();
+            taggedPayablesParams.set("filter[disbursement_id][_in]", activeDisbursementIds.join(","));
+            taggedPayablesParams.set("fields", "reference_no");
+            taggedPayablesParams.set("limit", "-1");
 
-            const paidPayablesRes = await fetch(`${DIRECTUS_URL}/items/disbursement_payables?${paidPayablesParams.toString()}`, {
+            const taggedPayablesRes = await fetch(`${DIRECTUS_URL}/items/disbursement_payables?${taggedPayablesParams.toString()}`, {
                 headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
                 cache: "no-store",
             });
-            if (paidPayablesRes.ok) {
-                const json = await paidPayablesRes.json();
-                paidPayablesList.push(...(json.data || []));
-            }
+            if (!taggedPayablesRes.ok) throw new Error(`Unable to load existing TR payable references (${taggedPayablesRes.status}).`);
+            const json = await taggedPayablesRes.json();
+            taggedPayablesList.push(...(json.data || []));
         }
 
-        const paidMap: Record<string, number> = {};
-        for (const p of paidPayablesList) {
-            const ref = (p.reference_no || "").trim();
-            const amt = Number(p.amount) || 0;
-            if (ref) {
-                paidMap[ref] = (paidMap[ref] || 0) + amt;
-            }
-        }
+        const taggedPurchaseOrderKeys = new Set(
+            taggedPayablesList
+                .map((payable) => purchaseOrderReferenceKey(payable.reference_no))
+                .filter((key): key is string => key !== null),
+        );
 
         const poIds = poList.map(po => po.purchase_order_id);
-
-        // Fetch products and receivings in parallel
-        const productsUrl = `${DIRECTUS_URL}/items/purchase_order_products?limit=-1&filter=${encodeURIComponent(
-            JSON.stringify({ purchase_order_id: { _in: poIds } })
-        )}&fields=purchase_order_id,total_amount,ordered_quantity,unit_price`;
 
         const receivingsUrl = `${DIRECTUS_URL}/items/purchase_order_receiving?limit=-1&filter=${encodeURIComponent(
             JSON.stringify({ purchase_order_id: { _in: poIds } })
         )}&fields=purchase_order_id,receipt_no,receipt_date,total_amount,received_quantity,unit_price,isPosted,is_posted_amounts,is_reverted`;
 
-        const [productsRes, receivingsRes] = await Promise.all([
-            fetch(productsUrl, {
-                headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
-                cache: "no-store",
-            }),
-            fetch(receivingsUrl, {
-                headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
-                cache: "no-store",
-            })
-        ]);
+        const receivingsRes = await fetch(receivingsUrl, {
+            headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+            cache: "no-store",
+        });
 
-        if (!productsRes.ok) throw new Error(await productsRes.text());
         if (!receivingsRes.ok) throw new Error(await receivingsRes.text());
 
-        const productsData = (await productsRes.json()).data || [];
         const receivingsData = (await receivingsRes.json()).data || [];
-
-        const productsByPoId: Record<number, Array<{ total_amount?: string | number | null; ordered_quantity?: number; unit_price?: string | number }>> = {};
-        for (const p of productsData) {
-            const poId = Number(p.purchase_order_id);
-            if (!productsByPoId[poId]) productsByPoId[poId] = [];
-            productsByPoId[poId].push(p);
-        }
 
         const activeReceivingsByPoId = activeReceivingRowsByPurchaseOrder(receivingsData);
         const postedReceivingsByPoId = postedReceivingRowsByPurchaseOrder(receivingsData);
@@ -150,73 +140,49 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
                 // CWO (Cash With Order)
                 const activeReceivings = activeReceivingsByPoId.get(poId) || [];
                 // Product lines do not carry the financial posting marker. Keep
-                // CWO amounts hidden until every active receiving row is posted.
+                // CWO receipt rows hidden until every active receiving row is posted.
                 if (!isFullyPostedPurchaseOrder(activeReceivings)) continue;
+                if (taggedPurchaseOrderKeys.has(purchaseOrderReferenceKeyFromParts(poNo, "ADVANCE-CWO"))) continue;
+            }
 
-                const products = productsByPoId[poId] || [];
-                const totalLiability = products.reduce((sum: number, p) => {
-                    const amt = p.total_amount !== null && p.total_amount !== undefined
-                        ? Number(p.total_amount)
-                        : (Number(p.ordered_quantity || 0) * Number(p.unit_price || 0));
-                    return sum + (amt || 0);
-                }, 0);
+            // Only receipt rows posted to inventory and to financial amounts
+            // may contribute to the disbursement selection list.
+            const receivings = postedReceivingsByPoId.get(poId) || [];
+            const grouped: Record<string, { transDate: string | null, totalLiability: number }> = {};
 
-                const refKey = `${poNo} / ADVANCE-CWO`;
-                const alreadyPaid = paidMap[refKey] || 0;
-                const remainingDue = Math.max(0, totalLiability - alreadyPaid);
+            for (const por of receivings) {
+                const rNo = por.receipt_no || "NO-RECEIPT";
+                if (!grouped[rNo]) {
+                    grouped[rNo] = { transDate: null, totalLiability: 0 };
+                }
+                const amt = por.total_amount !== null && por.total_amount !== undefined
+                    ? Number(por.total_amount)
+                    : (Number(por.received_quantity || 0) * Number(por.unit_price || 0));
+                grouped[rNo].totalLiability += amt || 0;
+
+                const currentDateStr = por.receipt_date || null;
+                if (currentDateStr) {
+                    if (!grouped[rNo].transDate || new Date(currentDateStr) > new Date(grouped[rNo].transDate!)) {
+                        grouped[rNo].transDate = currentDateStr.split("T")[0];
+                    }
+                }
+            }
+
+            for (const [receiptNo, data] of Object.entries(grouped)) {
+                const refKey = purchaseOrderReferenceKeyFromParts(poNo, receiptNo);
+                if (taggedPurchaseOrderKeys.has(refKey)) continue;
+                const remainingDue = Math.max(0, data.totalLiability);
 
                 if (remainingDue > 0.01) {
                     unpaidPos.push({
-                        uniqueKey: `${poNo}-ADVANCE-CWO`,
+                        uniqueKey: `${poNo}-${receiptNo}`,
                         poId,
                         poNo,
-                        receiptNo: "ADVANCE-CWO",
-                        date: po.date ? po.date.split("T")[0] : null,
+                        receiptNo,
+                        date: data.transDate || (po.date ? po.date.split("T")[0] : null),
                         amountDue: Number(remainingDue.toFixed(2)),
-                        type: "CWO"
+                        type: Number(po.payment_type) === 1 ? "CWO" : "RECEIPT"
                     });
-                }
-            } else {
-                // Non-CWO (RECEIPT)
-                // Only receipt rows posted to inventory and to financial amounts
-                // may contribute to the disbursement selection list.
-                const receivings = postedReceivingsByPoId.get(poId) || [];
-                const grouped: Record<string, { transDate: string | null, totalLiability: number }> = {};
-
-                for (const por of receivings) {
-                    const rNo = por.receipt_no || "NO-RECEIPT";
-                    if (!grouped[rNo]) {
-                        grouped[rNo] = { transDate: null, totalLiability: 0 };
-                    }
-                    const amt = por.total_amount !== null && por.total_amount !== undefined
-                        ? Number(por.total_amount)
-                        : (Number(por.received_quantity || 0) * Number(por.unit_price || 0));
-                    grouped[rNo].totalLiability += amt || 0;
-
-                    const currentDateStr = por.receipt_date || null;
-                    if (currentDateStr) {
-                        if (!grouped[rNo].transDate || new Date(currentDateStr) > new Date(grouped[rNo].transDate!)) {
-                            grouped[rNo].transDate = currentDateStr.split("T")[0];
-                        }
-                    }
-                }
-
-                for (const [receiptNo, data] of Object.entries(grouped)) {
-                    const refKey = `${poNo} / ${receiptNo}`;
-                    const alreadyPaid = paidMap[refKey] || 0;
-                    const remainingDue = Math.max(0, data.totalLiability - alreadyPaid);
-
-                    if (remainingDue > 0.01) {
-                        unpaidPos.push({
-                            uniqueKey: `${poNo}-${receiptNo}`,
-                            poId,
-                            poNo,
-                            receiptNo,
-                            date: data.transDate || null,
-                            amountDue: Number(remainingDue.toFixed(2)),
-                            type: "RECEIPT"
-                        });
-                    }
                 }
             }
         }

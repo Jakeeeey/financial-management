@@ -25,7 +25,18 @@ type PsgcOption = {
 
 const PSGC_BASE_URL = "https://psgc.gitlab.io/api";
 const CACHE_TTL_MS = 1000 * 60 * 60 * 24;
-const psgcCache = new Map<string, { expiresAt: number; data: PsgcRow[] }>();
+const STALE_CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 7;
+const PSGC_TIMEOUT_MS = 10_000;
+const PSGC_MAX_ATTEMPTS = 2;
+const PSGC_RETRY_DELAY_MS = 250;
+const psgcCache = new Map<string, { expiresAt: number; staleUntil: number; data: PsgcRow[] }>();
+
+class PsgcUpstreamError extends Error {
+  constructor() {
+    super("The address directory is temporarily unavailable. Please retry.");
+    this.name = "PsgcUpstreamError";
+  }
+}
 
 function asString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -94,18 +105,47 @@ async function fetchPsgc(path: string) {
   const cached = psgcCache.get(path);
   if (cached && cached.expiresAt > Date.now()) return cached.data;
 
-  const res = await fetch(`${PSGC_BASE_URL}${path}`, {
-    headers: { Accept: "application/json" },
-    next: { revalidate: 86400 },
-  });
+  for (let attempt = 0; attempt < PSGC_MAX_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), PSGC_TIMEOUT_MS);
 
-  if (!res.ok) {
-    throw new Error(`PSGC request failed (${res.status})`);
+    try {
+      const res = await fetch(`${PSGC_BASE_URL}${path}`, {
+        headers: { Accept: "application/json" },
+        next: { revalidate: 86400 },
+        signal: controller.signal,
+      });
+
+      if (!res.ok) throw new PsgcUpstreamError();
+
+      const data = (await res.json()) as PsgcRow[];
+      const now = Date.now();
+      psgcCache.set(path, {
+        data,
+        expiresAt: now + CACHE_TTL_MS,
+        staleUntil: now + STALE_CACHE_TTL_MS,
+      });
+      return data;
+    } catch (error) {
+      if (attempt === PSGC_MAX_ATTEMPTS - 1 && cached && cached.staleUntil > Date.now()) {
+        psgcCache.set(path, {
+          ...cached,
+          expiresAt: Date.now() + PSGC_RETRY_DELAY_MS * 4,
+        });
+        return cached.data;
+      }
+
+      if (attempt === PSGC_MAX_ATTEMPTS - 1) {
+        throw error instanceof PsgcUpstreamError ? error : new PsgcUpstreamError();
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, PSGC_RETRY_DELAY_MS));
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
-  const data = (await res.json()) as PsgcRow[];
-  psgcCache.set(path, { data, expiresAt: Date.now() + CACHE_TTL_MS });
-  return data;
+  throw new PsgcUpstreamError();
 }
 
 function buildPath(kind: PsgcKind, searchParams: URLSearchParams) {
@@ -142,14 +182,14 @@ export async function GET(request: NextRequest) {
     const rows = await fetchPsgc(buildPath(kind, searchParams));
     return NextResponse.json({ options: normalizeRows(kind, rows) });
   } catch (error) {
+    const isUpstreamError = error instanceof PsgcUpstreamError;
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to load PSGC address data",
+        code: isUpstreamError ? "PSGC_UNAVAILABLE" : "PSGC_LOOKUP_FAILED",
+        retryable: isUpstreamError,
+        error: error instanceof Error ? error.message : "Failed to load PSGC address data",
       },
-      { status: 500 },
+      { status: isUpstreamError ? 503 : 500 },
     );
   }
 }

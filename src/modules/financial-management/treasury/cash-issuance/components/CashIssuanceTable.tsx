@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { FileText, Building2, Wallet, Lock } from "lucide-react";
 import { StickyTableWrapper } from "./StickyTableWrapper";
-import { formatCurrency, getStatusColor } from "../utils/disbursement-utils";
+import { formatCurrency, getPaymentStateLabel, getStatusColor } from "../utils/disbursement-utils";
 
 interface CashIssuanceTableProps {
     data: Disbursement[];
@@ -25,6 +25,7 @@ export function CashIssuanceTable({ data, loading, onView }: CashIssuanceTablePr
                     <TableRow className="border-border">
                         <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground w-[180px]">Voucher Info</TableHead>
                         <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Payee & Particulars</TableHead>
+                        <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Prepared By</TableHead>
                         <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Cost Center</TableHead>
                         <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground text-right">Financials</TableHead>
                         <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground text-center w-[120px]">Status</TableHead>
@@ -33,9 +34,9 @@ export function CashIssuanceTable({ data, loading, onView }: CashIssuanceTablePr
                 </TableHeader>
                 <TableBody>
                     {loading ? (
-                        <TableRow><TableCell colSpan={6} className="h-48 text-center text-sm font-medium text-muted-foreground">Loading vouchers...</TableCell></TableRow>
+                        <TableRow><TableCell colSpan={7} className="h-48 text-center text-sm font-medium text-muted-foreground">Loading vouchers...</TableCell></TableRow>
                     ) : data.length === 0 ? (
-                        <TableRow><TableCell colSpan={6} className="h-48 text-center text-sm font-medium text-muted-foreground">No disbursements found in this category.</TableCell></TableRow>
+                        <TableRow><TableCell colSpan={7} className="h-48 text-center text-sm font-medium text-muted-foreground">No disbursements found in this category.</TableCell></TableRow>
                     ) : (
                         data.map((d) => (
                             <TableRow key={d.id} className="group hover:bg-primary/[0.04] transition-all duration-200 border-border even:bg-muted/20">
@@ -60,19 +61,31 @@ export function CashIssuanceTable({ data, loading, onView }: CashIssuanceTablePr
                                     </div>
                                 </TableCell>
                                 <TableCell className="align-top py-4">
+                                    <div className="flex flex-col gap-1 max-w-[220px]">
+                                        <span className="text-xs font-black text-foreground uppercase truncate" title={d.encoderName || "Unknown User"}>
+                                            {d.encoderName || "Unknown User"}
+                                        </span>
+                                        <span className="text-[10px] font-bold text-muted-foreground uppercase truncate" title={d.departmentName || "No Department"}>
+                                            {d.departmentName || "No Department"}
+                                        </span>
+                                    </div>
+                                </TableCell>
+                                <TableCell className="align-top py-4">
                                     <div className="flex flex-col gap-1">
-                                        <div className="flex items-center gap-1.5 text-foreground/80">
-                                            <Building2 className="w-3 h-3 opacity-50" />
-                                            <span className="text-[10px] font-bold uppercase truncate">{d.divisionName || "No Division"}</span>
-                                        </div>
-                                        <span className="text-[9px] font-bold text-muted-foreground uppercase ml-4.5 truncate">{d.departmentName || "No Department"}</span>
+                                        {d.divisionName && (
+                                            <div className="flex items-center gap-1.5 text-foreground/80">
+                                                <Building2 className="w-3 h-3 opacity-50" />
+                                                <span className="text-[10px] font-bold uppercase truncate">{d.divisionName}</span>
+                                            </div>
+                                        )}
+                                        <span className={`text-[9px] font-bold text-muted-foreground uppercase ${d.divisionName ? "ml-4.5" : ""} truncate`}>{d.departmentName || "No Department"}</span>
                                     </div>
                                 </TableCell>
                                 <TableCell className="align-top py-4 text-right">
                                     <div className="flex flex-col gap-1 items-end">
                                         <span className="text-xs font-black text-foreground">{formatCurrency(d.totalAmount)}</span>
                                         <div className="flex items-center gap-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-500">
-                                            <Wallet className="w-3 h-3" /> Paid: {formatCurrency(d.paidAmount || 0)}
+                                            <Wallet className="w-3 h-3" /> {getPaymentStateLabel(d.paymentState, d.paidAmount)}: {formatCurrency(d.paidAmount || 0)}
                                         </div>
                                     </div>
                                 </TableCell>
