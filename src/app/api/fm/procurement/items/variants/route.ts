@@ -81,6 +81,12 @@ export async function POST(request: NextRequest) {
     if (!name?.trim()) {
       return NextResponse.json({ message: "Variant name is required" }, { status: 400 });
     }
+    if (!Array.isArray(valueIds) || valueIds.length === 0) {
+      return NextResponse.json({ message: "At least one attribute value is required" }, { status: 400 });
+    }
+    if (valueIds.some((v) => typeof v !== "number" || v <= 0)) {
+      return NextResponse.json({ message: "All assigned attributes must have a value" }, { status: 400 });
+    }
 
     const payload: Record<string, unknown> = {
       item_tmpl_id: Number(item_tmpl_id),

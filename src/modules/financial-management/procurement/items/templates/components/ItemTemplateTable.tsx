@@ -44,7 +44,6 @@ export function ItemTemplateTable({ data, loading, error, onEdit }: ItemTemplate
           <TableRow>
             <TableHead className="min-w-[200px] max-w-[250px]">Name</TableHead>
             <TableHead className="min-w-[100px]">UOM</TableHead>
-            <TableHead className="min-w-[100px]">Variants</TableHead>
             <TableHead className="min-w-[100px] text-right">Base Price</TableHead>
             <TableHead className="min-w-[100px]">Status</TableHead>
           </TableRow>
@@ -58,11 +57,6 @@ export function ItemTemplateTable({ data, loading, error, onEdit }: ItemTemplate
             >
               <TableCell className="font-medium truncate max-w-[250px]">{tmpl.name}</TableCell>
               <TableCell className="text-muted-foreground">{tmpl.uom || "\u2014"}</TableCell>
-              <TableCell>
-                <Badge variant="secondary" className="font-mono">
-                  {(tmpl as unknown as Record<string, unknown>)._variant_count as number ?? 0}
-                </Badge>
-              </TableCell>
               <TableCell className="text-right font-mono tabular-nums max-w-[130px] truncate">{formatCurrency(tmpl.base_price)}</TableCell>
               <TableCell>
                 <Badge variant={tmpl.is_active ? "default" : "secondary"}>

@@ -17,18 +17,8 @@ export async function GET(
     if (!res.ok) throw new Error(await res.text());
     const json = await res.json();
 
-    const variantRes = await fetch(
-      `${DIRECTUS_URL}/items/item_variant?filter=${encodeURIComponent(JSON.stringify({ item_tmpl_id: { _eq: Number(id) } }))}&meta=total_count&limit=1`,
-      { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }
-    );
-    let variantCount = 0;
-    if (variantRes.ok) {
-      const vJson = await variantRes.json();
-      variantCount = vJson.meta?.total_count ?? 0;
-    }
-
     return NextResponse.json({
-      data: { ...json.data, _variant_count: variantCount },
+      data: json.data,
     });
   } catch (err) {
     const detail = err instanceof Error ? err.message : "Unknown error";

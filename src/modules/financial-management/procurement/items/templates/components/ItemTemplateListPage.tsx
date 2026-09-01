@@ -1,21 +1,21 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { useTemplates } from "../hooks/useItemTemplates";
 import { ItemTemplateFilters } from "./ItemTemplateFilters";
 import { ItemTemplateTable } from "./ItemTemplateTable";
 import { ItemTemplateEditModal } from "./ItemTemplateEditModal";
+import { ItemTemplateCreateModal } from "./ItemTemplateCreateModal";
 
 export default function ItemTemplateListPage() {
-  const router = useRouter();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   const [editId, setEditId] = useState<number | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const handleSearchChange = useCallback((val: string) => {
     setSearch(val);
@@ -34,7 +34,7 @@ export default function ItemTemplateListPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold tracking-tight">Item Templates</h1>
-        <Button onClick={() => router.push("/fm/procurement/items/templates/create")}>
+        <Button onClick={() => setCreateOpen(true)}>
           <Plus className="mr-2 h-4 w-4" />
           Add Template
         </Button>
@@ -48,6 +48,11 @@ export default function ItemTemplateListPage() {
           setEditOpen(open);
           if (!open) setEditId(null);
         }}
+        onSaved={reload}
+      />
+      <ItemTemplateCreateModal
+        open={createOpen}
+        onOpenChange={setCreateOpen}
         onSaved={reload}
       />
     </div>

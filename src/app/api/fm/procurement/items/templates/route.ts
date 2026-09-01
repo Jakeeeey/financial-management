@@ -57,27 +57,6 @@ export async function GET(request: NextRequest) {
 
     const rows: Record<string, unknown>[] = json.data || [];
 
-    const tmplIds = rows.map((r) => Number(r.id)).filter((id) => !Number.isNaN(id));
-    if (tmplIds.length > 0) {
-      try {
-        const vRes = await fetch(
-          `${DIRECTUS_URL}/items/item_variant?filter=${encodeURIComponent(JSON.stringify({ item_tmpl_id: { _in: tmplIds } }))}&fields=id,item_tmpl_id&limit=-1`,
-          { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }
-        );
-        if (vRes.ok) {
-          const vJson = await vRes.json();
-          const countMap: Record<number, number> = {};
-          for (const v of vJson.data || []) {
-            const tid = Number(v.item_tmpl_id);
-            if (tid) countMap[tid] = (countMap[tid] || 0) + 1;
-          }
-          for (const r of rows) {
-            (r as Record<string, unknown>)._variant_count = countMap[Number(r.id)] || 0;
-          }
-        }
-      } catch { /* variant count is best-effort */ }
-    }
-
     return NextResponse.json({
       data: rows,
       total: json.meta?.total_count ?? rows.length,
@@ -91,7 +70,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, uom, base_price, description } = body;
+    const { name, uom, base_price, description, is_active } = body;
 
     if (!name?.trim()) {
       return NextResponse.json({ message: "Name is required" }, { status: 400 });
@@ -99,7 +78,7 @@ export async function POST(request: NextRequest) {
 
     const payload: Record<string, unknown> = {
       name: name.trim(),
-      is_active: true,
+      is_active: is_active === false ? false : true,
     };
     if (uom != null) payload.uom = uom;
     if (base_price != null) payload.base_price = Number(base_price);

@@ -113,6 +113,14 @@ export function ItemVariantCreateModal({ open, onOpenChange, onSaved }: ItemVari
       toast.error("Variant name is required");
       return;
     }
+    if (selectedAttrs.length === 0) {
+      toast.error("At least one attribute assignment is required");
+      return;
+    }
+    if (selectedAttrs.some((a) => a.valueId <= 0)) {
+      toast.error("All assigned attributes must have a value selected");
+      return;
+    }
 
     setSaving(true);
     try {
@@ -134,6 +142,11 @@ export function ItemVariantCreateModal({ open, onOpenChange, onSaved }: ItemVari
 
   const unselectedAttrs = attributes.filter(
     (a) => !selectedAttrs.some((sa) => sa.attrId === a.id)
+  );
+
+  const uniqueTemplates = templates.filter(
+    (t, i, arr) =>
+      arr.findIndex((x) => (x.name || "").toLowerCase() === (t.name || "").toLowerCase()) === i
   );
 
   return (
@@ -165,7 +178,7 @@ export function ItemVariantCreateModal({ open, onOpenChange, onSaved }: ItemVari
                   <CommandList className="max-h-[200px] overflow-y-auto" onWheel={(e) => e.stopPropagation()}>
                     <CommandEmpty>No results</CommandEmpty>
                     <CommandGroup>
-                      {templates.map((t) => (
+                      {uniqueTemplates.map((t) => (
                         <CommandItem
                           key={t.id}
                           value={t.name || ""}

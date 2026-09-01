@@ -6,7 +6,6 @@ export interface ItemTemplate {
   description?: string | null;
   is_active?: boolean | number | null;
   created_at?: string | null;
-  _variant_count?: number;
 }
 
 export interface Unit {
@@ -21,4 +20,5 @@ export interface CreateTemplateInput {
   uom?: string | null;
   base_price?: number | string | null;
   description?: string | null;
+  is_active?: boolean;
 }
