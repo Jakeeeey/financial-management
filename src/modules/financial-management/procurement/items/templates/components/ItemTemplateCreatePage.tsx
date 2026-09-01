@@ -7,7 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from "@/components/ui/combobox";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { createTemplate, listUnits } from "../providers/item-template-service";
 import type { Unit } from "../utils/types";
@@ -16,10 +23,12 @@ export default function ItemTemplateCreatePage() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [uom, setUom] = useState("");
+  const [uomText, setUomText] = useState("");
   const [basePrice, setBasePrice] = useState("");
   const [description, setDescription] = useState("");
   const [units, setUnits] = useState<Unit[]>([]);
   const [saving, setSaving] = useState(false);
+  const [uomOpen, setUomOpen] = useState(false);
 
   useEffect(() => {
     listUnits().then((res) => setUnits(res.data || [])).catch(() => {});
@@ -73,18 +82,45 @@ export default function ItemTemplateCreatePage() {
 
         <div className="space-y-2">
           <Label htmlFor="uom">Unit of Measure</Label>
-          <Select value={uom} onValueChange={setUom}>
-            <SelectTrigger id="uom" className="h-9">
-              <SelectValue placeholder="Select UOM" />
-            </SelectTrigger>
-            <SelectContent className="!max-h-[160px] !overflow-y-auto" position="popper">
-              {units.map((u) => (
-                <SelectItem key={u.unit_id} value={u.unit_shortcut || u.unit_name}>
-                  {u.unit_name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Combobox
+            open={uomOpen}
+            onOpenChange={(open) => {
+              setUomOpen(open);
+              if (!open) {
+                if (units.some((u) => (u.unit_shortcut || u.unit_name) === uomText)) {
+                  setUom(uomText);
+                } else {
+                  setUomText(uom);
+                }
+              }
+            }}
+            value={uom || null}
+            onValueChange={(v) => {
+              setUom(v ?? "");
+              setUomText(v ?? "");
+            }}
+            items={units.map((u) => u.unit_shortcut || u.unit_name)}
+          >
+            <ComboboxInput
+              id="uom"
+              placeholder="Search UOM..."
+              className="w-full sm:max-w-[200px]"
+              value={uomText}
+              onChange={(val) => {
+                setUomText((val.target as HTMLInputElement).value);
+              }}
+            />
+            <ComboboxContent className="[scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <ComboboxEmpty>No results</ComboboxEmpty>
+              <ComboboxList className="!max-h-[160px]">
+                {(item) => (
+                  <ComboboxItem key={item} value={item}>
+                    {item}
+                  </ComboboxItem>
+                )}
+              </ComboboxList>
+            </ComboboxContent>
+          </Combobox>
         </div>
 
         <div className="space-y-2">

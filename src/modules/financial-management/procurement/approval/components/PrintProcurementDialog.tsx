@@ -20,6 +20,11 @@ type PrintProcurementDialogProps = {
   poNo: number | null;
   details: ProcurementDetail[];
   total: number;
+  preparedByName?: string | null;
+  approvedByName?: string | null;
+  preparedById?: number | null;
+  approvedById?: number | null;
+  generatedBy?: string | null;
   supplier: {
     supplier_name?: string | null;
     address?: string | null;
@@ -33,7 +38,7 @@ type PrintProcurementDialogProps = {
 export default function PrintProcurementDialog({
   open, onOpenChange,
   procurementNo, leadDate, status, isApproved, poNo,
-  details, total, supplier,
+  details, total, preparedByName, approvedByName, preparedById, approvedById, generatedBy, supplier,
 }: PrintProcurementDialogProps) {
   const [templates, setTemplates] = useState<PdfTemplate[]>([]);
   const [selectedTemplateName, setSelectedTemplateName] = useState("");
@@ -80,7 +85,6 @@ export default function PrintProcurementDialog({
     setIsGenerating(true);
     try {
       const { url } = await generateApprovalPdf(
-        procurementNo,
         leadDate,
         status,
         isApproved,
@@ -88,7 +92,7 @@ export default function PrintProcurementDialog({
         details,
         total,
         companyData,
-        { supplier, selectedTemplate: selectedTemplateName }
+        { supplier, selectedTemplate: selectedTemplateName, preparedByName, approvedByName, preparedById, approvedById, generatedBy }
       );
       setPdfUrl(url);
       setIsPreviewOpen(true);

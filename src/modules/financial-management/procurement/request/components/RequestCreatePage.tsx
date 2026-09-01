@@ -76,7 +76,7 @@ export function RequestCreatePage() {
   const [itemOpen, setItemOpen] = React.useState(false);
   const [itemSearchText, setItemSearchText] = React.useState("");
   const [itemTemplateItems, setItemTemplateItems] = React.useState<string[]>([]);
-  const itemTemplateDataRef = React.useRef<Record<string, ItemTemplate>>({});
+  const itemTemplatesByNameRef = React.useRef<Record<string, ItemTemplate[]>>({});
   const itemFetchId = React.useRef(0);
 
   React.useEffect(() => {
@@ -86,10 +86,10 @@ export function RequestCreatePage() {
       try {
         const rows = await listItemTemplates(itemSearchText ?? "", ac.signal);
         if (!ac.signal.aborted && id === itemFetchId.current) {
-          const map: Record<string, ItemTemplate> = {};
-          rows.forEach((r) => { map[r.name] = r; });
-          itemTemplateDataRef.current = map;
-          setItemTemplateItems(rows.map((r) => r.name));
+          const map: Record<string, ItemTemplate[]> = {};
+          rows.forEach((r) => { (map[r.name] ??= []).push(r); });
+          itemTemplatesByNameRef.current = map;
+          setItemTemplateItems([...new Set(rows.map((r) => r.name))]);
         }
       } catch { /* ignore */ }
     }, 150);
@@ -132,12 +132,17 @@ export function RequestCreatePage() {
       setVariantOptions((prev) => { const next = { ...prev }; delete next[lineKey]; return next; });
       return;
     }
-    const t = itemTemplateDataRef.current[templateName];
+    const templates = itemTemplatesByNameRef.current[templateName] ?? [];
+    const t = templates[0];
     if (!t) return;
     updateLine(lineKey, { item_template_id: t.id, uom: t.uom ?? null, unit_price: t.base_price ?? 0, template_name: t.name, item_variant_id: null, variant_name: undefined });
+    await loadVariantsForTemplate(lineKey, t.id);
+  }
+
+  async function loadVariantsForTemplate(lineKey: number, templateId: number) {
     setLoadingVariant((prev) => ({ ...prev, [lineKey]: true }));
     try {
-      const variants = await listItemVariants(t.id);
+      const variants = await listItemVariants(templateId);
       setVariantOptions((prev) => ({ ...prev, [lineKey]: variants || [] }));
       if (variants?.length === 1) {
         updateLine(lineKey, { item_variant_id: variants[0].id, variant_name: variants[0].name });
@@ -174,7 +179,7 @@ export function RequestCreatePage() {
         }),
       });
       toast.success(`Saved! Procurement #${result.procurement_no} created.`);
-      router.push(`/fm/procurement/approval/${result.id}`);
+      router.push(`/fm/procurement/request/${result.id}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to create procurement");
     } finally {
@@ -203,9 +208,9 @@ export function RequestCreatePage() {
                       if (!e.target.value) setSelectedSupplier(null);
                     }}
                   />
-                          <ComboboxContent className="!max-h-[160px] !overflow-y-auto">
+                          <ComboboxContent className="[scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                             <ComboboxEmpty>{supplierSearchText.trim() ? "No results." : ""}</ComboboxEmpty>
-                            <ComboboxList>{(name: string) => <ComboboxItem key={name} value={name}>{name}</ComboboxItem>}</ComboboxList>
+                            <ComboboxList className="!max-h-[160px]">{(name: string) => <ComboboxItem key={name} value={name}>{name}</ComboboxItem>}</ComboboxList>
                           </ComboboxContent>
                 </Combobox>
               </div>
@@ -264,6 +269,12 @@ export function RequestCreatePage() {
                 <tbody>
                   {lineItems.map((line) => {
                     const hasVariants = line.item_template_id && variantOptions[line._key] !== undefined && variantOptions[line._key].length > 0;
+                    const templateUoms = line.template_name
+                      ? [...new Set((itemTemplatesByNameRef.current[line.template_name] ?? []).map((t) => t.uom?.trim()).filter((v): v is string => Boolean(v)))]
+                      : [];
+                    const uomOptions = templateUoms.length
+                      ? templateUoms.map((uom) => ({ value: uom, label: uom }))
+                      : units.map((u) => ({ value: u.unit_shortcut ?? u.unit_name, label: u.unit_shortcut ?? u.unit_name }));
                     return (
                     <tr key={line._key} className="border-b last:border-0">
                       <td className="px-3 py-2 max-w-[240px] min-w-[200px]">
@@ -274,9 +285,9 @@ export function RequestCreatePage() {
                           <ComboboxInput placeholder="Search item template..." showClear className="h-8 text-xs"
                             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setItemSearchText(e.target.value)}
                           />
-                          <ComboboxContent className="!max-h-[160px] !overflow-y-auto">
+                          <ComboboxContent className="[scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                             <ComboboxEmpty>No templates.</ComboboxEmpty>
-                            <ComboboxList>{(name: string) => <ComboboxItem key={name} value={name}><div>{name}</div></ComboboxItem>}</ComboboxList>
+                            <ComboboxList className="!max-h-[160px]">{(name: string) => <ComboboxItem key={name} value={name}><div>{name}</div></ComboboxItem>}</ComboboxList>
                           </ComboboxContent>
                         </Combobox>
                         {loadingVariant[line._key] && <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Loading variants...</div>}
@@ -298,13 +309,25 @@ export function RequestCreatePage() {
                         ) : <span className="text-xs text-muted-foreground">&mdash;</span>}
                       </td>
                       <td className="px-3 py-2">
-                        <Select value={line.uom ?? ""} onValueChange={(v) => updateLine(line._key, { uom: v || null })}>
-                          <SelectTrigger className="h-8 text-xs w-24"><SelectValue placeholder="UOM" /></SelectTrigger>
-                            <SelectContent className="!max-h-[160px] overflow-y-auto" position="popper">{units.map((u) => <SelectItem key={u.unit_id} value={u.unit_shortcut ?? u.unit_name} className="text-xs">{u.unit_shortcut ?? u.unit_name}</SelectItem>)}</SelectContent>
+                        <Select value={line.uom ?? ""} disabled={!line.item_template_id} onValueChange={(v) => {
+                          const next = v || null;
+                          updateLine(line._key, { uom: next });
+                          const match = next ? (itemTemplatesByNameRef.current[line.template_name ?? ""] ?? []).find((t) => (t.uom?.trim() || null) === next) : undefined;
+                          if (match && match.id !== line.item_template_id) {
+                            updateLine(line._key, { item_template_id: match.id, unit_price: match.base_price ?? 0, item_variant_id: null, variant_name: undefined });
+                            void loadVariantsForTemplate(line._key, match.id);
+                          }
+                        }}>
+                          <SelectTrigger className="h-8 text-xs w-24 disabled:cursor-default!"><SelectValue placeholder="UOM" /></SelectTrigger>
+                            <SelectContent className="!max-h-[160px] overflow-y-auto" position="popper">
+                              {uomOptions.map((opt) => (
+                                <SelectItem key={opt.value} value={opt.value} className="text-xs">{opt.label}</SelectItem>
+                              ))}
+                            </SelectContent>
                         </Select>
                       </td>
-                    <td className="px-3 py-2 max-w-[90px]"><Input type="number" min="0" step="1" value={line.qty} onChange={(e) => { if (e.target.value.replace(/\D/g, "").length > 7) return; updateLine(line._key, { qty: Number(e.target.value) || 0 }); }} className="h-8 w-full text-xs text-right" /></td>
-                     <td className="px-3 py-2 max-w-[160px]"><Input type="number" min="0" step="0.01" value={line.unit_price} onChange={(e) => { if (e.target.value.replace(/\D/g, "").length > 9) return; updateLine(line._key, { unit_price: Number(e.target.value) || 0 }); }} className="h-8 w-24 text-xs text-right" /></td>
+                    <td className="px-3 py-2 max-w-[90px]"><Input type="number" min="0" step="1" value={line.qty} disabled={!line.item_template_id} onChange={(e) => { if (e.target.value.replace(/\D/g, "").length > 7) return; updateLine(line._key, { qty: Number(e.target.value) || 0 }); }} className="h-8 w-full text-xs text-right disabled:cursor-default!" /></td>
+                     <td className="px-3 py-2 max-w-[160px]"><Input type="number" min="0" step="0.01" value={line.unit_price} disabled={!line.item_template_id} onChange={(e) => { if (e.target.value.replace(/\D/g, "").length > 9) return; updateLine(line._key, { unit_price: Number(e.target.value) || 0 }); }} className="h-8 w-24 text-xs text-right disabled:cursor-default!" /></td>
                         <td className="px-3 py-2 text-right font-mono text-xs tabular-nums truncate max-w-[160px]">{formatPHP(line.qty * line.unit_price)}</td>
                         <td className="px-3 py-2 whitespace-nowrap">
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => removeLine(line._key)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>
