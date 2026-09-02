@@ -133,7 +133,7 @@ export function RequestCreatePage() {
     const templates = itemTemplatesByNameRef.current[templateName] ?? [];
     const t = templates[0];
     if (!t) return;
-    updateLine(lineKey, { item_template_id: t.id, unit_price: t.base_price ?? 0, template_name: t.name, item_variant_id: null, variant_name: undefined, uom: null });
+    updateLine(lineKey, { item_template_id: t.id, unit_price: 0, template_name: t.name, item_variant_id: null, variant_name: undefined, uom: null });
     await loadVariantsForTemplate(lineKey, t.id);
   }
 
@@ -143,7 +143,7 @@ export function RequestCreatePage() {
       const variants = await listItemVariants(templateId);
       setVariantOptions((prev) => ({ ...prev, [lineKey]: variants || [] }));
       if (variants?.length === 1) {
-        updateLine(lineKey, { item_variant_id: variants[0].id, variant_name: variants[0].name, uom: variants[0].uom ?? null });
+        updateLine(lineKey, { item_variant_id: variants[0].id, variant_name: variants[0].name, uom: variants[0].uom ?? null, unit_price: variants[0].list_price ?? 0 });
       }
     } catch { /* ignore */ }
     setLoadingVariant((prev) => ({ ...prev, [lineKey]: false }));
@@ -154,6 +154,7 @@ export function RequestCreatePage() {
     if (!lineItems.length) { toast.error("Please add at least one item"); return; }
     for (const li of lineItems) {
       if (!li.item_template_id) { toast.error("Each item needs a template"); return; }
+      if (!li.item_variant_id) { toast.error("Each item needs a variant"); return; }
       if (String(li.qty).replace(/\D/g, "").length > 7) { toast.error("Qty cannot exceed 7 digits"); return; }
       if (String(li.unit_price).replace(/\D/g, "").length > 9) { toast.error("Unit price cannot exceed 9 digits"); return; }
       const upStr = String(li.unit_price);
@@ -266,12 +267,11 @@ export function RequestCreatePage() {
                 </thead>
                 <tbody>
                   {lineItems.map((line) => {
-                    const hasVariants = line.item_template_id && variantOptions[line._key] !== undefined && variantOptions[line._key].length > 0;
-                    const selectedVariant = line.item_variant_id != null
-                      ? (variantOptions[line._key] ?? []).find((x) => x.id === line.item_variant_id)
-                      : undefined;
-                    const variantUom = selectedVariant?.uom?.trim() || null;
-                    const uomOptions = variantUom ? [{ value: variantUom, label: variantUom }] : [];
+                    const allVariants = variantOptions[line._key] ?? [];
+                    const hasVariants = line.item_template_id !== null && allVariants.length > 0;
+                    const uniqueVariantNames = [...new Set(allVariants.map((v) => v.name))];
+                    const nameMatches = line.variant_name ? allVariants.filter((v) => v.name === line.variant_name) : [];
+                    const uomOptions = [...new Set(nameMatches.map((v) => v.uom?.trim()).filter((x): x is string => Boolean(x)))].map((u) => ({ value: u, label: u }));
                     return (
                     <tr key={line._key} className="border-b last:border-0">
                       <td className="px-3 py-2 max-w-[240px] min-w-[200px]">
@@ -293,21 +293,27 @@ export function RequestCreatePage() {
                         {hasVariants ? (
                           <Select value={line.variant_name ?? ""}
                             onValueChange={(v: string) => {
-                              const vr = variantOptions[line._key].find((x) => x.name === v);
-                              if (vr) updateLine(line._key, { item_variant_id: vr.id, variant_name: vr.name, unit_price: vr.list_price ?? line.unit_price, uom: vr.uom ?? null });
-                              else updateLine(line._key, { item_variant_id: null, variant_name: undefined, uom: null });
+                              const matches = allVariants.filter((x) => x.name === v);
+                              if (matches.length === 1) {
+                                const vr = matches[0];
+                                updateLine(line._key, { item_variant_id: vr.id, variant_name: vr.name, unit_price: vr.list_price ?? 0, uom: vr.uom ?? null });
+                              } else {
+                                updateLine(line._key, { item_variant_id: null, variant_name: v, unit_price: 0, uom: null });
+                              }
                             }}
                           >
                             <SelectTrigger className="h-8 text-xs w-full"><SelectValue placeholder="Select variant" /></SelectTrigger>
                             <SelectContent position="popper" className="!max-h-[160px] !overflow-y-auto w-[var(--radix-select-trigger-width)]">
-                              {variantOptions[line._key].map((vr) => <SelectItem key={vr.id} value={vr.name} className="text-xs"><span className="min-w-0 flex-1 truncate">{vr.name}</span></SelectItem>)}
+                              {uniqueVariantNames.map((name) => <SelectItem key={name} value={name} className="text-xs"><span className="min-w-0 flex-1 truncate">{name}</span></SelectItem>)}
                             </SelectContent>
                           </Select>
                         ) : <span className="text-xs text-muted-foreground">&mdash;</span>}
                       </td>
                       <td className="px-3 py-2">
-                        <Select value={line.uom ?? ""} disabled={!variantUom} onValueChange={(v) => {
-                          updateLine(line._key, { uom: v || null });
+                        <Select value={line.uom ?? ""} disabled={uomOptions.length === 0} onValueChange={(u) => {
+                          const vr = nameMatches.find((x) => (x.uom?.trim() ?? "") === u);
+                          if (vr) updateLine(line._key, { item_variant_id: vr.id, uom: vr.uom ?? null, unit_price: vr.list_price ?? 0 });
+                          else updateLine(line._key, { item_variant_id: null, uom: u || null, unit_price: 0 });
                         }}>
                           <SelectTrigger className="h-8 text-xs w-24 disabled:cursor-default!"><SelectValue placeholder="UOM" /></SelectTrigger>
                             <SelectContent className="!max-h-[160px] overflow-y-auto" position="popper">

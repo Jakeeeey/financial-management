@@ -30,7 +30,6 @@ interface ItemEditModalProps {
 
 export function ItemEditModal({ id, open, onOpenChange, onSaved }: ItemEditModalProps) {
   const [name, setName] = useState("");
-  const [basePrice, setBasePrice] = useState("");
   const [description, setDescription] = useState("");
   const [active, setActive] = useState("active");
   const [loading, setLoading] = useState(true);
@@ -40,14 +39,12 @@ export function ItemEditModal({ id, open, onOpenChange, onSaved }: ItemEditModal
     if (!open) return;
     setLoading(true);
     setName("");
-    setBasePrice("");
     setDescription("");
     setActive("active");
     getItemById(id)
       .then((res) => {
         const t = res.data;
         setName(t.name || "");
-        setBasePrice(t.base_price != null ? String(t.base_price) : "");
         setDescription(t.description || "");
         setActive(t.is_active === false || t.is_active === 0 ? "inactive" : "active");
       })
@@ -68,7 +65,6 @@ export function ItemEditModal({ id, open, onOpenChange, onSaved }: ItemEditModal
     try {
       await updateItem(id, {
         name: name.trim(),
-        base_price: basePrice ? Number(basePrice) : null,
         description: description.trim() || null,
         is_active: active === "active",
       });
@@ -104,20 +100,6 @@ export function ItemEditModal({ id, open, onOpenChange, onSaved }: ItemEditModal
                 placeholder="Enter item name"
                 required
                 className="w-full sm:max-w-md truncate min-w-0 overflow-hidden"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="edit-basePrice">Base Price</Label>
-              <Input
-                id="edit-basePrice"
-                type="number"
-                step="0.01"
-                min="0"
-                value={basePrice}
-                onChange={(e) => setBasePrice(e.target.value)}
-                placeholder="0.00"
-                className="w-full sm:max-w-[200px] min-w-0 overflow-hidden"
               />
             </div>
 

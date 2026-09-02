@@ -95,10 +95,36 @@ export async function POST(request: NextRequest) {
       );
     }
     const { item_tmpl_id, name, uom_id, list_price, sku, valueIds } = parsed.data;
+    const trimmedName = name.trim();
+
+    const dupParams = new URLSearchParams({
+      fields: "id,name,uom_id",
+      limit: "-1",
+      filter: JSON.stringify({
+        _and: [
+          { item_tmpl_id: { _eq: item_tmpl_id } },
+          { name: { _icontains: trimmedName } },
+        ],
+      }),
+    });
+    const dupRes = await fetch(`${DIRECTUS_URL}/items/item_variant?${dupParams.toString()}`, {
+      headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+      cache: "no-store",
+    });
+    if (dupRes.ok) {
+      const dupJson = await dupRes.json();
+      const existing = (dupJson.data || []) as { id: number; name: string; uom_id: number | null }[];
+      if (existing.some((v) => v.name.toLowerCase() === trimmedName.toLowerCase() && v.uom_id === (uom_id ?? null))) {
+        return NextResponse.json(
+          { ok: false, message: "A variant with this name and UOM already exists" },
+          { status: 409 }
+        );
+      }
+    }
 
     const payload: Record<string, unknown> = {
       item_tmpl_id,
-      name: name.trim(),
+      name: trimmedName,
       active: true,
     };
     if (uom_id !== undefined) payload.uom_id = uom_id;

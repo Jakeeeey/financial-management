@@ -79,9 +79,8 @@ export function ItemTable({ items, variants, onEdit, onEditVariant, onAddVariant
         <TableHeader>
           <TableRow>
             <TableHead className="min-w-[200px] max-w-[250px]">Name</TableHead>
-            <TableHead className="min-w-[100px] text-right">Base Price</TableHead>
-            <TableHead className="min-w-[100px]">Status</TableHead>
-            <TableHead className="w-12" />
+            <TableHead className="w-[130px]">Status</TableHead>
+            <TableHead className="w-16" />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -95,9 +94,8 @@ export function ItemTable({ items, variants, onEdit, onEditVariant, onAddVariant
                   className="group cursor-pointer hover:bg-muted/50"
                   onClick={() => setExpandedId(expanded ? null : tmpl.id)}
                 >
-                  <TableCell className="font-medium truncate max-w-[250px]">{tmpl.name}</TableCell>
-                  <TableCell className="text-right font-mono tabular-nums max-w-[130px] truncate">
-                    {formatCurrency(tmpl.base_price)}
+                  <TableCell className="font-medium">
+                    <span className="block truncate max-w-[250px]">{tmpl.name}</span>
                   </TableCell>
                   <TableCell>
                     <Badge variant={tmpl.is_active ? "default" : "secondary"}>
@@ -128,7 +126,7 @@ export function ItemTable({ items, variants, onEdit, onEditVariant, onAddVariant
 
                 {expanded && (
                   <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={4} className="bg-muted/30 p-4">
+                    <TableCell colSpan={3} className="bg-muted/30 p-4">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-sm font-medium text-muted-foreground">Variants</span>
                         <Button
@@ -150,15 +148,16 @@ export function ItemTable({ items, variants, onEdit, onEditVariant, onAddVariant
                                 <TableHead className="min-w-[80px]">UOM</TableHead>
                                 <TableHead className="min-w-[100px]">SKU</TableHead>
                                 <TableHead className="min-w-[100px] text-right">List Price</TableHead>
-                                <TableHead className="min-w-[100px]">Status</TableHead>
-                                <TableHead className="min-w-[160px]">Attribute Values</TableHead>
+                                <TableHead className="w-[110px]">Status</TableHead>
                                 <TableHead className="w-12" />
                               </TableRow>
                             </TableHeader>
                             <TableBody>
                               {itemVariants.map((v) => (
                                 <TableRow key={v.id} className="hover:bg-muted/50">
-                                  <TableCell className="font-medium truncate max-w-[220px]">{v.name}</TableCell>
+                                  <TableCell className="font-medium">
+                                    <span className="block truncate max-w-[220px]">{v.name}</span>
+                                  </TableCell>
                                   <TableCell className="text-muted-foreground">{v._uom_name || "\u2014"}</TableCell>
                                   <TableCell className="text-muted-foreground font-mono text-xs">
                                     {v.sku || "\u2014"}
@@ -171,7 +170,6 @@ export function ItemTable({ items, variants, onEdit, onEditVariant, onAddVariant
                                       {v.active ? "Active" : "Inactive"}
                                     </Badge>
                                   </TableCell>
-                                  <TableCell className="text-muted-foreground">{"\u2014"}</TableCell>
                                   <TableCell className="text-right">
                                     <Button
                                       type="button"

@@ -80,14 +80,30 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const { name, uom, base_price, description, is_active } = parsed.data;
+    const { name, description, is_active } = parsed.data;
+    const trimmedName = name.trim();
+
+    const dupParams = new URLSearchParams({
+      fields: "id,name",
+      limit: "-1",
+      filter: JSON.stringify({ name: { _icontains: trimmedName } }),
+    });
+    const dupRes = await fetch(`${DIRECTUS_URL}/items/item_template?${dupParams.toString()}`, {
+      headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+      cache: "no-store",
+    });
+    if (dupRes.ok) {
+      const dupJson = await dupRes.json();
+      const existing = (dupJson.data || []) as { id: number; name: string }[];
+      if (existing.some((t) => t.name.toLowerCase() === trimmedName.toLowerCase())) {
+        return NextResponse.json({ ok: false, message: "An item with this name already exists" }, { status: 409 });
+      }
+    }
 
     const payload: Record<string, unknown> = {
-      name: name.trim(),
+      name: trimmedName,
       is_active: is_active === false ? false : true,
     };
-    if (uom != null) payload.uom = uom;
-    if (base_price != null) payload.base_price = base_price;
     if (description?.trim()) payload.description = description.trim();
 
     const res = await fetch(`${DIRECTUS_URL}/items/item_template`, {

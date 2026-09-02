@@ -39,7 +39,6 @@ const nextKey = () => ++variantKey;
 
 export function ItemCreateModal({ open, onOpenChange, onSaved }: ItemCreateModalProps) {
   const [name, setName] = useState("");
-  const [basePrice, setBasePrice] = useState("");
   const [description, setDescription] = useState("");
   const [active, setActive] = useState("active");
   const [units, setUnits] = useState<Unit[]>([]);
@@ -47,12 +46,13 @@ export function ItemCreateModal({ open, onOpenChange, onSaved }: ItemCreateModal
   const [attributeValues, setAttributeValues] = useState<ItemAttributeValue[]>([]);
   const [variants, setVariants] = useState<VariantDraft[]>([]);
   const [addVariants, setAddVariants] = useState(false);
+  const [uomOpenKey, setUomOpenKey] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    setName(""); setBasePrice(""); setDescription(""); setActive("active");
-    setVariants([]); setAddVariants(false);
+    setName(""); setDescription(""); setActive("active");
+    setVariants([]); setAddVariants(false); setUomOpenKey(null);
     listUnits().then((r) => setUnits(r.data || [])).catch(() => {});
     listAttributes().then((r) => setAttributes(r.data || [])).catch(() => {});
     listAttributeValues().then((r) => setAttributeValues(r.data || [])).catch(() => {});
@@ -98,13 +98,14 @@ export function ItemCreateModal({ open, onOpenChange, onSaved }: ItemCreateModal
     e.preventDefault();
     if (!name.trim()) { toast.error("Item name is required"); return; }
     const drafts = addVariants ? variants : [];
-    const invalid = drafts.find((v) => v.selectedAttrs.length === 0 || v.selectedAttrs.some((s) => s.valueId <= 0));
-    if (invalid) { toast.error("Each variant must have at least one attribute with a value selected"); return; }
+    const invalid = drafts.find((v) =>
+      (v.selectedAttrs.length === 0 && !v.uom_id) || v.selectedAttrs.some((s) => s.valueId <= 0)
+    );
+    if (invalid) { toast.error("Each variant needs a UOM when it has no attributes, and every attribute must have a value"); return; }
     setSaving(true);
     try {
       const created = await createItem({
         name: name.trim(),
-        base_price: basePrice ? Number(basePrice) : null,
         description: description.trim() || null,
         is_active: active === "active",
       });
@@ -132,10 +133,6 @@ export function ItemCreateModal({ open, onOpenChange, onSaved }: ItemCreateModal
           <div className="space-y-2">
             <Label htmlFor="create-name">Item Name *</Label>
             <Input id="create-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter item name" required className="w-full sm:max-w-md truncate min-w-0 overflow-hidden" />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="create-basePrice">Base Price</Label>
-            <Input id="create-basePrice" type="number" step="0.01" min="0" value={basePrice} onChange={(e) => setBasePrice(e.target.value)} placeholder="0.00" className="w-full sm:max-w-[200px] min-w-0 overflow-hidden" />
           </div>
           <div className="space-y-2">
             <Label htmlFor="create-description">Description</Label>
@@ -176,8 +173,8 @@ export function ItemCreateModal({ open, onOpenChange, onSaved }: ItemCreateModal
                       <div key={sa.attrId} className="flex items-end gap-2">
                         <div className="flex-1 min-w-0 space-y-1">
                           <p className="text-xs text-muted-foreground truncate">{attr?.name || "Unknown"}</p>
-                          <Popover>
-                            <PopoverTrigger asChild>
+<Popover open={uomOpenKey === draft.key} onOpenChange={(o) => setUomOpenKey(o ? draft.key : null)}>
+                      <PopoverTrigger asChild>
                               <Button type="button" variant="outline" role="combobox" className="w-full justify-between font-normal truncate min-w-0 max-w-full">
                                 <span className="truncate min-w-0">{sa.valueId > 0 ? options.find((o) => o.id === sa.valueId)?.name || "Select value..." : "Select value..."}</span>
                                 <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -255,7 +252,7 @@ export function ItemCreateModal({ open, onOpenChange, onSaved }: ItemCreateModal
                               {units.map((u) => {
                                 const value = u.unit_shortcut || u.unit_name;
                                 return (
-                                  <CommandItem key={u.unit_id} value={value} onSelect={() => updateVariant(draft.key, { uom_id: u.unit_id })} className="w-full">
+                                  <CommandItem key={u.unit_id} value={value} onSelect={() => { updateVariant(draft.key, { uom_id: u.unit_id }); setUomOpenKey(null); }} className="w-full">
                                     <Check className={cn("mr-2 h-4 w-4 shrink-0", draft.uom_id === u.unit_id ? "opacity-100" : "opacity-0")} />
                                     <span className="truncate min-w-0">{value}</span>
                                   </CommandItem>

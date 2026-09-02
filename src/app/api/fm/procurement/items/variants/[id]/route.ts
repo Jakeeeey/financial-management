@@ -71,10 +71,52 @@ export async function PATCH(
       );
     }
     const { item_tmpl_id, name, uom_id, list_price, sku, active, valueIds } = parsed.data;
+    const trimmedName = name?.trim();
+
+    if (trimmedName || item_tmpl_id !== undefined || uom_id !== undefined) {
+      const curRes = await fetch(`${DIRECTUS_URL}/items/item_variant/${id}?fields=item_tmpl_id,uom_id`, {
+        headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+        cache: "no-store",
+      });
+      if (curRes.ok) {
+        const curJson = await curRes.json();
+        const cur = (curJson.data || {}) as { item_tmpl_id?: number; uom_id?: number | null };
+        const effTmplId = item_tmpl_id ?? cur.item_tmpl_id ?? null;
+        const effUomId = uom_id !== undefined ? uom_id : (cur.uom_id ?? null);
+        const effName = trimmedName ?? null;
+
+        if (effTmplId != null && effName) {
+          const dupParams = new URLSearchParams({
+            fields: "id,name,uom_id",
+            limit: "-1",
+            filter: JSON.stringify({
+              _and: [
+                { item_tmpl_id: { _eq: effTmplId } },
+                { name: { _icontains: effName } },
+              ],
+            }),
+          });
+          const dupRes = await fetch(`${DIRECTUS_URL}/items/item_variant?${dupParams.toString()}`, {
+            headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+            cache: "no-store",
+          });
+          if (dupRes.ok) {
+            const dupJson = await dupRes.json();
+            const existing = (dupJson.data || []) as { id: number; name: string; uom_id: number | null }[];
+            if (existing.some((v) => v.id !== Number(id) && v.name.toLowerCase() === effName.toLowerCase() && v.uom_id === effUomId)) {
+              return NextResponse.json(
+                { ok: false, message: "A variant with this name and UOM already exists" },
+                { status: 409 }
+              );
+            }
+          }
+        }
+      }
+    }
 
     const payload: Record<string, unknown> = {};
     if (item_tmpl_id !== undefined) payload.item_tmpl_id = item_tmpl_id;
-    if (name?.trim()) payload.name = name.trim();
+    if (trimmedName) payload.name = trimmedName;
     if (uom_id !== undefined) payload.uom_id = uom_id;
     if (list_price !== undefined) payload.list_price = list_price;
     if (sku !== undefined) payload.sku = sku?.trim() ?? null;

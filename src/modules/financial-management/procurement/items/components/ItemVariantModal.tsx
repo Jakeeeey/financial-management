@@ -46,6 +46,7 @@ export function ItemVariantModal({ itemId, variantId, open, onOpenChange, onSave
   const [listPrice, setListPrice] = useState("");
   const [active, setActive] = useState("active");
   const [uomId, setUomId] = useState<number | null>(null);
+  const [uomOpen, setUomOpen] = useState(false);
   const [selectedAttrs, setSelectedAttrs] = useState<AttrSel[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [attributes, setAttributes] = useState<ItemAttribute[]>([]);
@@ -62,6 +63,7 @@ export function ItemVariantModal({ itemId, variantId, open, onOpenChange, onSave
     setListPrice("");
     setActive("active");
     setUomId(null);
+    setUomOpen(false);
     setSelectedAttrs([]);
     setItemName("");
     Promise.all([
@@ -162,8 +164,12 @@ export function ItemVariantModal({ itemId, variantId, open, onOpenChange, onSave
       toast.error("Variant name is required");
       return;
     }
-    if (selectedAttrs.length === 0 || selectedAttrs.some((s) => s.valueId <= 0)) {
-      toast.error("Each variant must have at least one attribute with a value");
+    if (selectedAttrs.length === 0 && !uomId) {
+      toast.error("A UOM is required when the variant has no attributes");
+      return;
+    }
+    if (selectedAttrs.some((s) => s.valueId <= 0)) {
+      toast.error("Each attribute must have a value selected");
       return;
     }
     setSaving(true);
@@ -220,7 +226,7 @@ export function ItemVariantModal({ itemId, variantId, open, onOpenChange, onSave
 
             <div className="space-y-1">
               <Label className="text-xs">UOM</Label>
-              <Popover>
+              <Popover open={uomOpen} onOpenChange={setUomOpen}>
                 <PopoverTrigger asChild>
                   <Button
                     type="button"
@@ -253,7 +259,7 @@ export function ItemVariantModal({ itemId, variantId, open, onOpenChange, onSave
                             <CommandItem
                               key={u.unit_id}
                               value={value}
-                              onSelect={() => setUomId(u.unit_id)}
+                              onSelect={() => { setUomId(u.unit_id); setUomOpen(false); }}
                               className="w-full"
                             >
                               <Check

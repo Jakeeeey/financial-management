@@ -5,8 +5,6 @@
 export interface ItemTemplate {
   readonly id: number;
   name: string;
-  uom?: string | null;
-  base_price?: number | string | null;
   description?: string | null;
   is_active?: boolean | number | null;
   readonly created_at?: string | null;
@@ -21,8 +19,6 @@ export interface Unit {
 
 export interface CreateTemplateInput {
   name: string;
-  uom?: string | null;
-  base_price?: number | string | null;
   description?: string | null;
   is_active?: boolean;
 }

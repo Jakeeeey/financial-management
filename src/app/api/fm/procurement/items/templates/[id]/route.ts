@@ -43,12 +43,30 @@ export async function PATCH(
         { status: 400 }
       );
     }
-    const { name, uom, base_price, description, is_active } = parsed.data;
+    const { name, description, is_active } = parsed.data;
+    const trimmedName = name?.trim();
+
+    if (trimmedName) {
+      const dupParams = new URLSearchParams({
+        fields: "id,name",
+        limit: "-1",
+        filter: JSON.stringify({ name: { _icontains: trimmedName } }),
+      });
+      const dupRes = await fetch(`${DIRECTUS_URL}/items/item_template?${dupParams.toString()}`, {
+        headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+        cache: "no-store",
+      });
+      if (dupRes.ok) {
+        const dupJson = await dupRes.json();
+        const existing = (dupJson.data || []) as { id: number; name: string }[];
+        if (existing.some((t) => t.id !== Number(id) && t.name.toLowerCase() === trimmedName.toLowerCase())) {
+          return NextResponse.json({ ok: false, message: "An item with this name already exists" }, { status: 409 });
+        }
+      }
+    }
 
     const payload: Record<string, unknown> = {};
-    if (name?.trim()) payload.name = name.trim();
-    if (uom !== undefined) payload.uom = uom;
-    if (base_price !== undefined) payload.base_price = base_price;
+    if (trimmedName) payload.name = trimmedName;
     if (description !== undefined) payload.description = description?.trim() ?? null;
     if (is_active !== undefined) payload.is_active = is_active ? 1 : 0;
 
