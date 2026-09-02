@@ -7,10 +7,10 @@ const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, display_type } = body;
+    const { name } = body;
 
     if (!name?.trim()) {
-      return NextResponse.json({ message: "Attribute name is required" }, { status: 400 });
+      return NextResponse.json({ ok: false, message: "Attribute name is required" }, { status: 400 });
     }
 
     const res = await fetch(`${DIRECTUS_URL}/items/item_attribute`, {
@@ -21,17 +21,17 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         name: name.trim(),
-        display_type: display_type || "select",
       }),
       cache: "no-store",
     });
     if (!res.ok) throw new Error(await res.text());
     const json = await res.json();
 
-    return NextResponse.json({ data: json.data }, { status: 201 });
+    return NextResponse.json({ ok: true, data: json.data }, { status: 201 });
   } catch (err) {
     const detail = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json({ message: "BFF Error", detail }, { status: 502 });
+    console.error("[items/attributes route]", err);
+    return NextResponse.json({ ok: false, message: "BFF Error", detail }, { status: 502 });
   }
 }
 
@@ -80,9 +80,10 @@ export async function GET(request: NextRequest) {
       attribute_values: valuesByAttr[Number(r.id)] || [],
     }));
 
-    return NextResponse.json({ data: merged });
+    return NextResponse.json({ ok: true, data: merged });
   } catch (err) {
     const detail = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json({ message: "BFF Error", detail }, { status: 502 });
+    console.error("[items/attributes route]", err);
+    return NextResponse.json({ ok: false, message: "BFF Error", detail }, { status: 502 });
   }
 }

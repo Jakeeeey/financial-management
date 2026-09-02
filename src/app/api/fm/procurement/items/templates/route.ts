@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { CreateItemSchema } from "@/modules/financial-management/procurement/items/utils/schemas";
 
 export const runtime = "nodejs";
 const DIRECTUS_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "");
@@ -58,30 +59,35 @@ export async function GET(request: NextRequest) {
     const rows: Record<string, unknown>[] = json.data || [];
 
     return NextResponse.json({
+      ok: true,
       data: rows,
       total: json.meta?.total_count ?? rows.length,
     });
   } catch (err) {
     const detail = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json({ message: "BFF Error", detail }, { status: 502 });
+    console.error("[items/templates route]", err);
+    return NextResponse.json({ ok: false, message: "BFF Error", detail }, { status: 502 });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, uom, base_price, description, is_active } = body;
-
-    if (!name?.trim()) {
-      return NextResponse.json({ message: "Name is required" }, { status: 400 });
+    const parsed = CreateItemSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { ok: false, message: "Validation error", errors: parsed.error.issues },
+        { status: 400 }
+      );
     }
+    const { name, uom, base_price, description, is_active } = parsed.data;
 
     const payload: Record<string, unknown> = {
       name: name.trim(),
       is_active: is_active === false ? false : true,
     };
     if (uom != null) payload.uom = uom;
-    if (base_price != null) payload.base_price = Number(base_price);
+    if (base_price != null) payload.base_price = base_price;
     if (description?.trim()) payload.description = description.trim();
 
     const res = await fetch(`${DIRECTUS_URL}/items/item_template`, {
@@ -95,9 +101,10 @@ export async function POST(request: NextRequest) {
     });
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
-    return NextResponse.json({ data: data.data }, { status: 201 });
+    return NextResponse.json({ ok: true, data: data.data }, { status: 201 });
   } catch (err) {
     const detail = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json({ message: "BFF Error", detail }, { status: 502 });
+    console.error("[items/templates route]", err);
+    return NextResponse.json({ ok: false, message: "BFF Error", detail }, { status: 502 });
   }
 }

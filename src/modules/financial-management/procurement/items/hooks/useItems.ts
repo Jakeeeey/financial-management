@@ -1,16 +1,17 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { listTemplates } from "../providers/item-template-service";
-import type { ItemTemplate } from "../utils/types";
+import { listItems } from "@/modules/financial-management/procurement/items/providers/itemService";
+import type { ItemTemplate } from "@/modules/financial-management/procurement/items/utils/types";
 
-interface UseTemplatesOptions {
+interface UseItemsOptions {
   search?: string;
   page?: number;
   limit?: number;
+  activeOnly?: boolean;
 }
 
-interface UseTemplatesResult {
+interface UseItemsResult {
   data: ItemTemplate[];
   loading: boolean;
   error: string | null;
@@ -18,7 +19,7 @@ interface UseTemplatesResult {
   reload: () => void;
 }
 
-export function useTemplates(opts?: UseTemplatesOptions): UseTemplatesResult {
+export function useItems(opts?: UseItemsOptions): UseItemsResult {
   const [data, setData] = useState<ItemTemplate[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -33,7 +34,10 @@ export function useTemplates(opts?: UseTemplatesOptions): UseTemplatesResult {
     const ac = new AbortController();
     abortRef.current = ac;
 
-    listTemplates({ search: opts?.search, page: opts?.page, limit: opts?.limit }, ac.signal)
+    listItems(
+      { search: opts?.search, page: opts?.page, limit: opts?.limit, activeOnly: opts?.activeOnly },
+      ac.signal
+    )
       .then((res) => {
         if (!ac.signal.aborted) {
           setData(res.data || []);
@@ -43,13 +47,13 @@ export function useTemplates(opts?: UseTemplatesOptions): UseTemplatesResult {
       })
       .catch((err: unknown) => {
         if (!ac.signal.aborted) {
-          setError(err instanceof Error ? err.message : "Failed to load templates");
+          setError(err instanceof Error ? err.message : "Failed to load items");
           setLoading(false);
         }
       });
 
     return () => ac.abort();
-  }, [opts?.search, opts?.page, opts?.limit, reloadKey]);
+  }, [opts?.search, opts?.page, opts?.limit, opts?.activeOnly, reloadKey]);
 
   return { data, loading, error, total, reload };
 }

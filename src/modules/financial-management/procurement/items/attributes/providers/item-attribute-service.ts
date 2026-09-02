@@ -1,4 +1,4 @@
-import type { ItemAttribute, ItemAttributeValue } from "../utils/types";
+import type { ItemAttribute, ItemAttributeValue } from "@/modules/financial-management/procurement/items/utils/types";
 
 const BASE = "/api/fm/procurement/items";
 
@@ -25,7 +25,6 @@ export async function listAttributes(): Promise<{ data: ItemAttribute[] }> {
 
 export async function createAttribute(data: {
   name: string;
-  display_type: string;
 }): Promise<{ data: ItemAttribute }> {
   return request<{ data: ItemAttribute }>(`${BASE}/attributes`, {
     method: "POST",
@@ -41,5 +40,41 @@ export async function createAttributeValue(data: {
   return request<{ data: ItemAttributeValue }>(`${BASE}/attribute-values`, {
     method: "POST",
     body: JSON.stringify(data),
+  });
+}
+
+export async function updateAttribute(
+  id: number,
+  data: { name: string }
+): Promise<{ data: ItemAttribute }> {
+  return request<{ data: ItemAttribute }>(`${BASE}/attributes/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteAttribute(
+  id: number
+): Promise<{ data: { id: number } }> {
+  return request<{ data: { id: number } }>(`${BASE}/attributes/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export async function updateAttributeValue(
+  id: number,
+  data: { name: string }
+): Promise<{ data: ItemAttributeValue }> {
+  return request<{ data: ItemAttributeValue }>(`${BASE}/attribute-values/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteAttributeValue(
+  id: number
+): Promise<{ data: { id: number } }> {
+  return request<{ data: { id: number } }>(`${BASE}/attribute-values/${id}`, {
+    method: "DELETE",
   });
 }

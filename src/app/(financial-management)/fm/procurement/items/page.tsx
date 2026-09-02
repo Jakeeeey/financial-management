@@ -12,7 +12,7 @@ import { NavUser } from "@/components/shared/app-sidebar/nav-user";
 
 import { cookies } from "next/headers";
 
-import ItemTemplateListPage from "@/modules/financial-management/procurement/items/templates/components/ItemTemplateListPage";
+import ItemListPage from "@/modules/financial-management/procurement/items/components/ItemListPage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -78,7 +78,7 @@ export default async function Page() {
                 <BreadcrumbSeparator className="hidden md:block shrink-0" />
                 <BreadcrumbItem className="min-w-0 overflow-hidden">
                   <BreadcrumbPage className="truncate max-w-[56vw] sm:max-w-[60vw] md:max-w-none">
-                    Templates
+                    Items
                   </BreadcrumbPage>
                 </BreadcrumbItem>
               </BreadcrumbList>
@@ -90,7 +90,7 @@ export default async function Page() {
         </div>
       </header>
       <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4">
-        <ItemTemplateListPage />
+        <ItemListPage />
       </main>
     </div>
   );

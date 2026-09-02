@@ -21,6 +21,7 @@ export type ItemVariant = {
   id: number;
   item_tmpl_id: number;
   name: string;
+  uom?: string | null;
   list_price: number | null;
 };
 

@@ -29,8 +29,8 @@ import {
 import { CalendarIcon, Loader2, Plus, Trash2 } from "lucide-react";
 import { format, isValid } from "date-fns";
 import { useRouter } from "next/navigation";
-import { createPR, searchSuppliers, listItemTemplates, listItemVariants, listUnits } from "../providers/requestService";
-import type { Supplier, ItemTemplate, ItemVariant, Unit, CreatePRItemInput } from "../utils/types";
+import { createPR, searchSuppliers, listItemTemplates, listItemVariants } from "../providers/requestService";
+import type { Supplier, ItemTemplate, ItemVariant, CreatePRItemInput } from "../utils/types";
 import { formatPHP } from "../utils/format";
 import { toast } from "sonner";
 
@@ -47,8 +47,6 @@ export function RequestCreatePage() {
   const [leadDate, setLeadDate] = React.useState<Date>(new Date());
   const [lineItems, setLineItems] = React.useState<LineItem[]>([]);
   const [submitting, setSubmitting] = React.useState(false);
-  const [units, setUnits] = React.useState<Unit[]>([]);
-  React.useEffect(() => { listUnits().then(setUnits).catch(() => {}); }, []);
 
   const [supplierSearchText, setSupplierSearchText] = React.useState("");
   const [supplierItems, setSupplierItems] = React.useState<string[]>([]);
@@ -135,7 +133,7 @@ export function RequestCreatePage() {
     const templates = itemTemplatesByNameRef.current[templateName] ?? [];
     const t = templates[0];
     if (!t) return;
-    updateLine(lineKey, { item_template_id: t.id, uom: t.uom ?? null, unit_price: t.base_price ?? 0, template_name: t.name, item_variant_id: null, variant_name: undefined });
+    updateLine(lineKey, { item_template_id: t.id, unit_price: t.base_price ?? 0, template_name: t.name, item_variant_id: null, variant_name: undefined, uom: null });
     await loadVariantsForTemplate(lineKey, t.id);
   }
 
@@ -145,7 +143,7 @@ export function RequestCreatePage() {
       const variants = await listItemVariants(templateId);
       setVariantOptions((prev) => ({ ...prev, [lineKey]: variants || [] }));
       if (variants?.length === 1) {
-        updateLine(lineKey, { item_variant_id: variants[0].id, variant_name: variants[0].name });
+        updateLine(lineKey, { item_variant_id: variants[0].id, variant_name: variants[0].name, uom: variants[0].uom ?? null });
       }
     } catch { /* ignore */ }
     setLoadingVariant((prev) => ({ ...prev, [lineKey]: false }));
@@ -269,12 +267,11 @@ export function RequestCreatePage() {
                 <tbody>
                   {lineItems.map((line) => {
                     const hasVariants = line.item_template_id && variantOptions[line._key] !== undefined && variantOptions[line._key].length > 0;
-                    const templateUoms = line.template_name
-                      ? [...new Set((itemTemplatesByNameRef.current[line.template_name] ?? []).map((t) => t.uom?.trim()).filter((v): v is string => Boolean(v)))]
-                      : [];
-                    const uomOptions = templateUoms.length
-                      ? templateUoms.map((uom) => ({ value: uom, label: uom }))
-                      : units.map((u) => ({ value: u.unit_shortcut ?? u.unit_name, label: u.unit_shortcut ?? u.unit_name }));
+                    const selectedVariant = line.item_variant_id != null
+                      ? (variantOptions[line._key] ?? []).find((x) => x.id === line.item_variant_id)
+                      : undefined;
+                    const variantUom = selectedVariant?.uom?.trim() || null;
+                    const uomOptions = variantUom ? [{ value: variantUom, label: variantUom }] : [];
                     return (
                     <tr key={line._key} className="border-b last:border-0">
                       <td className="px-3 py-2 max-w-[240px] min-w-[200px]">
@@ -292,31 +289,25 @@ export function RequestCreatePage() {
                         </Combobox>
                         {loadingVariant[line._key] && <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Loading variants...</div>}
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2 max-w-[240px] min-w-[200px]">
                         {hasVariants ? (
                           <Select value={line.variant_name ?? ""}
                             onValueChange={(v: string) => {
                               const vr = variantOptions[line._key].find((x) => x.name === v);
-                              if (vr) updateLine(line._key, { item_variant_id: vr.id, variant_name: vr.name, unit_price: vr.list_price ?? line.unit_price });
-                              else updateLine(line._key, { item_variant_id: null, variant_name: undefined });
+                              if (vr) updateLine(line._key, { item_variant_id: vr.id, variant_name: vr.name, unit_price: vr.list_price ?? line.unit_price, uom: vr.uom ?? null });
+                              else updateLine(line._key, { item_variant_id: null, variant_name: undefined, uom: null });
                             }}
                           >
                             <SelectTrigger className="h-8 text-xs w-full"><SelectValue placeholder="Select variant" /></SelectTrigger>
-                            <SelectContent className="!max-h-[160px] !overflow-y-auto">
-                              {variantOptions[line._key].map((vr) => <SelectItem key={vr.id} value={vr.name} className="text-xs">{vr.name}</SelectItem>)}
+                            <SelectContent position="popper" className="!max-h-[160px] !overflow-y-auto w-[var(--radix-select-trigger-width)]">
+                              {variantOptions[line._key].map((vr) => <SelectItem key={vr.id} value={vr.name} className="text-xs"><span className="min-w-0 flex-1 truncate">{vr.name}</span></SelectItem>)}
                             </SelectContent>
                           </Select>
                         ) : <span className="text-xs text-muted-foreground">&mdash;</span>}
                       </td>
                       <td className="px-3 py-2">
-                        <Select value={line.uom ?? ""} disabled={!line.item_template_id} onValueChange={(v) => {
-                          const next = v || null;
-                          updateLine(line._key, { uom: next });
-                          const match = next ? (itemTemplatesByNameRef.current[line.template_name ?? ""] ?? []).find((t) => (t.uom?.trim() || null) === next) : undefined;
-                          if (match && match.id !== line.item_template_id) {
-                            updateLine(line._key, { item_template_id: match.id, unit_price: match.base_price ?? 0, item_variant_id: null, variant_name: undefined });
-                            void loadVariantsForTemplate(line._key, match.id);
-                          }
+                        <Select value={line.uom ?? ""} disabled={!variantUom} onValueChange={(v) => {
+                          updateLine(line._key, { uom: v || null });
                         }}>
                           <SelectTrigger className="h-8 text-xs w-24 disabled:cursor-default!"><SelectValue placeholder="UOM" /></SelectTrigger>
                             <SelectContent className="!max-h-[160px] overflow-y-auto" position="popper">

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { UpdateVariantSchema } from "@/modules/financial-management/procurement/items/utils/schemas";
 
 export const runtime = "nodejs";
 const DIRECTUS_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "");
@@ -12,7 +13,7 @@ export async function GET(
     const { id } = await params;
 
     // Fetch the variant
-    const res = await fetch(`${DIRECTUS_URL}/items/item_variant/${id}?fields=*,item_tmpl_id.name`, {
+    const res = await fetch(`${DIRECTUS_URL}/items/item_variant/${id}?fields=*,item_tmpl_id.id,item_tmpl_id.name,uom_id.unit_id,uom_id.unit_name,uom_id.unit_shortcut`, {
       headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
       cache: "no-store",
     });
@@ -20,6 +21,7 @@ export async function GET(
     const json = await res.json();
     const r = json.data as Record<string, unknown>;
     const tmpl = r.item_tmpl_id as Record<string, unknown> | null;
+    const unit = r.uom_id as Record<string, unknown> | null;
 
     // Fetch the variant's attribute value relations
     const relParams = new URLSearchParams({
@@ -40,14 +42,17 @@ export async function GET(
 
     const resolved = {
       ...r,
-      item_tmpl_id: typeof r.item_tmpl_id === "number" ? r.item_tmpl_id : (tmpl?.id ?? r.item_tmpl_id ?? null),
+      item_tmpl_id: typeof r.item_tmpl_id === "number" ? r.item_tmpl_id : (tmpl?.id ?? null),
       _template_name: tmpl?.name ?? "\u2014",
+      uom_id: typeof r.uom_id === "number" ? r.uom_id : (unit?.unit_id ?? null),
+      _uom_name: unit?.unit_name ?? unit?.unit_shortcut ?? null,
       valueIds,
     };
-    return NextResponse.json({ data: resolved });
+    return NextResponse.json({ ok: true, data: resolved });
   } catch (err) {
     const detail = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json({ message: "BFF Error", detail }, { status: 502 });
+    console.error("[items/variants route]", err);
+    return NextResponse.json({ ok: false, message: "BFF Error", detail }, { status: 502 });
   }
 }
 
@@ -58,12 +63,20 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { item_tmpl_id, name, list_price, sku, active, valueIds } = body;
+    const parsed = UpdateVariantSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { ok: false, message: "Validation error", errors: parsed.error.issues },
+        { status: 400 }
+      );
+    }
+    const { item_tmpl_id, name, uom_id, list_price, sku, active, valueIds } = parsed.data;
 
     const payload: Record<string, unknown> = {};
-    if (item_tmpl_id !== undefined) payload.item_tmpl_id = Number(item_tmpl_id);
+    if (item_tmpl_id !== undefined) payload.item_tmpl_id = item_tmpl_id;
     if (name?.trim()) payload.name = name.trim();
-    if (list_price !== undefined) payload.list_price = Number(list_price);
+    if (uom_id !== undefined) payload.uom_id = uom_id;
+    if (list_price !== undefined) payload.list_price = list_price;
     if (sku !== undefined) payload.sku = sku?.trim() ?? null;
     if (active !== undefined) payload.active = active ? 1 : 0;
 
@@ -129,9 +142,33 @@ export async function PATCH(
       }
     }
 
-    return NextResponse.json({ data: json.data });
+    return NextResponse.json({ ok: true, data: json.data });
   } catch (err) {
     const detail = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json({ message: "BFF Error", detail }, { status: 502 });
+    console.error("[items/variants route]", err);
+    return NextResponse.json({ ok: false, message: "BFF Error", detail }, { status: 502 });
+  }
+}
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const res = await fetch(`${DIRECTUS_URL}/items/item_variant/${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+      cache: "no-store",
+    });
+    if (res.status === 404) {
+      return NextResponse.json({ ok: false, message: "Variant not found" }, { status: 404 });
+    }
+    if (!res.ok) throw new Error(await res.text());
+    return NextResponse.json({ ok: true, data: { id: Number(id) } });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : "Unknown error";
+    console.error("[items/variants route]", err);
+    return NextResponse.json({ ok: false, message: "BFF Error", detail }, { status: 502 });
   }
 }
