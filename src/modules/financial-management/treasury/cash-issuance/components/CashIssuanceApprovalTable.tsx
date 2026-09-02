@@ -103,6 +103,12 @@ export function CashIssuanceApprovalTable({
                                     )}
                                 </div>
 
+                                <div className="space-y-1 bg-muted/20 p-2 rounded-lg border border-border/30">
+                                    <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Prepared By</p>
+                                    <p className="text-xs font-black text-foreground uppercase truncate">{d.encoderName || "Unknown User"}</p>
+                                    <p className="text-[9px] font-bold text-muted-foreground uppercase truncate">{d.departmentName || "No Department"}</p>
+                                </div>
+
                                 {/* Audit warnings */}
                                 {isEncoder && (
                                     <div className="space-y-1.5">
@@ -137,6 +143,7 @@ export function CashIssuanceApprovalTable({
                             </TableHead>
                             <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground w-[180px]">Voucher Info</TableHead>
                             <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground w-[220px]">Payee & Cost Center</TableHead>
+                            <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground w-[180px]">Prepared By</TableHead>
                             <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Payables / Debits</TableHead>
                             <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground text-right w-[130px]">Voucher Amount</TableHead>
                             <TableHead className="w-[80px]"></TableHead>
@@ -144,9 +151,9 @@ export function CashIssuanceApprovalTable({
                     </TableHeader>
                     <TableBody>
                         {loading ? (
-                            <TableRow><TableCell colSpan={6} className="h-48 text-center text-sm font-medium text-muted-foreground">Loading pending vouchers...</TableCell></TableRow>
+                            <TableRow><TableCell colSpan={7} className="h-48 text-center text-sm font-medium text-muted-foreground">Loading pending vouchers...</TableCell></TableRow>
                         ) : data.length === 0 ? (
-                            <TableRow><TableCell colSpan={6} className="h-48 text-center text-sm font-medium text-muted-foreground">No disbursements pending approval.</TableCell></TableRow>
+                            <TableRow><TableCell colSpan={7} className="h-48 text-center text-sm font-medium text-muted-foreground">No disbursements pending approval.</TableCell></TableRow>
                         ) : (
                             data.map((d) => {
                                 const isEncoder = d.encoderId != null && currentUserId != null && String(d.encoderId) === String(currentUserId);
@@ -202,6 +209,16 @@ export function CashIssuanceApprovalTable({
                                                         </span>
                                                     )}
                                                 </div>
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="align-top py-4">
+                                            <div className="flex flex-col gap-1.5 max-w-[180px]">
+                                                <span className="text-xs font-black text-foreground uppercase truncate" title={d.encoderName || "Unknown User"}>
+                                                    {d.encoderName || "Unknown User"}
+                                                </span>
+                                                <span className="text-[9px] font-bold text-muted-foreground uppercase truncate" title={d.departmentName || "No Department"}>
+                                                    {d.departmentName || "No Department"}
+                                                </span>
                                             </div>
                                         </TableCell>
                                         <TableCell className="align-top py-4">

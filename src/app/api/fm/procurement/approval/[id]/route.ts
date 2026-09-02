@@ -13,7 +13,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const { id } = await params;
     const [masterRes, detailsRes] = await Promise.all([
-      fetch(`${DIRECTUS_URL}/items/procurement/${id}?fields=*,supplier_id.*,encoder_id.*`, {
+      fetch(`${DIRECTUS_URL}/items/procurement/${id}?fields=*,supplier_id.*,encoder_id.*,approved_by.*`, {
         headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store",
       }),
       fetch(`${DIRECTUS_URL}/items/procurement_details?filter=${encodeURIComponent(JSON.stringify({ procurement_id: { _eq: Number(id) } }))}&fields=*,item_template_id.name,item_variant_id.name`, {
@@ -30,16 +30,17 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const m = masterData.data || {};
     const sid = m.supplier_id as Record<string, unknown> | null | undefined;
     const eid = m.encoder_id as Record<string, unknown> | null | undefined;
+    const abid = m.approved_by as Record<string, unknown> | null | undefined;
 
     const master = {
       id: m.id as number, procurement_no: m.procurement_no as string,
       supplier_id: (sid?.id as number) ?? (m.supplier_id as number),
       lead_date: m.lead_date as string, total_amount: m.total_amount as number,
       created_at: m.created_at as string, updated_at: m.updated_at as string,
-      encoder_id: (eid?.id as number) ?? (m.encoder_id as number),
+      encoder_id: eid ? ((eid.user_id as number) ?? null) : ((m.encoder_id as number) ?? null),
       department_id: m.department_id as number,
       po_no: m.po_no as number, isApproved: m.isApproved as number,
-      approved_by: m.approved_by as number, approved_date: m.approved_date as string,
+      approved_by: abid ? ((abid.user_id as number) ?? null) : ((m.approved_by as number) ?? null), approved_date: m.approved_date as string,
       transaction_type: m.transaction_type as string, status: m.status as string,
       supplier_name: (sid?.supplier_name as string) ?? null,
       supplier_email: (sid?.email_address as string) ?? null,
@@ -47,7 +48,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       supplier_address: (sid?.address as string) ?? null,
       supplier_tin: (sid?.tin_number as string) ?? null,
       supplier_payment_terms: (sid?.payment_terms as string) ?? null,
-      encoder_name: eid ? `${(eid.first_name as string) ?? ""} ${(eid.last_name as string) ?? ""}`.trim() || null : null,
+      encoder_name: eid ? `${(eid.user_fname as string) ?? ""} ${(eid.user_lname as string) ?? ""}`.trim() || null : null,
+      approved_by_name: abid ? `${(abid.user_fname as string) ?? ""} ${(abid.user_lname as string) ?? ""}`.trim() || null : null,
       department_name: null,
     };
 

@@ -29,8 +29,8 @@ import {
 import { CalendarIcon, Loader2, Plus, Trash2 } from "lucide-react";
 import { format, isValid } from "date-fns";
 import { useRouter } from "next/navigation";
-import { createPR, searchSuppliers, listItemTemplates, listItemVariants, listUnits } from "../providers/requestService";
-import type { Supplier, ItemTemplate, ItemVariant, Unit, CreatePRItemInput } from "../utils/types";
+import { createPR, searchSuppliers, listItemTemplates, listItemVariants } from "../providers/requestService";
+import type { Supplier, ItemTemplate, ItemVariant, CreatePRItemInput } from "../utils/types";
 import { formatPHP } from "../utils/format";
 import { toast } from "sonner";
 
@@ -47,8 +47,6 @@ export function RequestCreatePage() {
   const [leadDate, setLeadDate] = React.useState<Date>(new Date());
   const [lineItems, setLineItems] = React.useState<LineItem[]>([]);
   const [submitting, setSubmitting] = React.useState(false);
-  const [units, setUnits] = React.useState<Unit[]>([]);
-  React.useEffect(() => { listUnits().then(setUnits).catch(() => {}); }, []);
 
   const [supplierSearchText, setSupplierSearchText] = React.useState("");
   const [supplierItems, setSupplierItems] = React.useState<string[]>([]);
@@ -76,7 +74,7 @@ export function RequestCreatePage() {
   const [itemOpen, setItemOpen] = React.useState(false);
   const [itemSearchText, setItemSearchText] = React.useState("");
   const [itemTemplateItems, setItemTemplateItems] = React.useState<string[]>([]);
-  const itemTemplateDataRef = React.useRef<Record<string, ItemTemplate>>({});
+  const itemTemplatesByNameRef = React.useRef<Record<string, ItemTemplate[]>>({});
   const itemFetchId = React.useRef(0);
 
   React.useEffect(() => {
@@ -86,10 +84,10 @@ export function RequestCreatePage() {
       try {
         const rows = await listItemTemplates(itemSearchText ?? "", ac.signal);
         if (!ac.signal.aborted && id === itemFetchId.current) {
-          const map: Record<string, ItemTemplate> = {};
-          rows.forEach((r) => { map[r.name] = r; });
-          itemTemplateDataRef.current = map;
-          setItemTemplateItems(rows.map((r) => r.name));
+          const map: Record<string, ItemTemplate[]> = {};
+          rows.forEach((r) => { (map[r.name] ??= []).push(r); });
+          itemTemplatesByNameRef.current = map;
+          setItemTemplateItems([...new Set(rows.map((r) => r.name))]);
         }
       } catch { /* ignore */ }
     }, 150);
@@ -132,15 +130,20 @@ export function RequestCreatePage() {
       setVariantOptions((prev) => { const next = { ...prev }; delete next[lineKey]; return next; });
       return;
     }
-    const t = itemTemplateDataRef.current[templateName];
+    const templates = itemTemplatesByNameRef.current[templateName] ?? [];
+    const t = templates[0];
     if (!t) return;
-    updateLine(lineKey, { item_template_id: t.id, uom: t.uom ?? null, unit_price: t.base_price ?? 0, template_name: t.name, item_variant_id: null, variant_name: undefined });
+    updateLine(lineKey, { item_template_id: t.id, unit_price: 0, template_name: t.name, item_variant_id: null, variant_name: undefined, uom: null });
+    await loadVariantsForTemplate(lineKey, t.id);
+  }
+
+  async function loadVariantsForTemplate(lineKey: number, templateId: number) {
     setLoadingVariant((prev) => ({ ...prev, [lineKey]: true }));
     try {
-      const variants = await listItemVariants(t.id);
+      const variants = await listItemVariants(templateId);
       setVariantOptions((prev) => ({ ...prev, [lineKey]: variants || [] }));
       if (variants?.length === 1) {
-        updateLine(lineKey, { item_variant_id: variants[0].id, variant_name: variants[0].name });
+        updateLine(lineKey, { item_variant_id: variants[0].id, variant_name: variants[0].name, uom: variants[0].uom ?? null, unit_price: variants[0].list_price ?? 0 });
       }
     } catch { /* ignore */ }
     setLoadingVariant((prev) => ({ ...prev, [lineKey]: false }));
@@ -151,6 +154,7 @@ export function RequestCreatePage() {
     if (!lineItems.length) { toast.error("Please add at least one item"); return; }
     for (const li of lineItems) {
       if (!li.item_template_id) { toast.error("Each item needs a template"); return; }
+      if (!li.item_variant_id) { toast.error("Each item needs a variant"); return; }
       if (String(li.qty).replace(/\D/g, "").length > 7) { toast.error("Qty cannot exceed 7 digits"); return; }
       if (String(li.unit_price).replace(/\D/g, "").length > 9) { toast.error("Unit price cannot exceed 9 digits"); return; }
       const upStr = String(li.unit_price);
@@ -174,7 +178,7 @@ export function RequestCreatePage() {
         }),
       });
       toast.success(`Saved! Procurement #${result.procurement_no} created.`);
-      router.push(`/fm/procurement/approval/${result.id}`);
+      router.push(`/fm/procurement/request/${result.id}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to create procurement");
     } finally {
@@ -203,9 +207,9 @@ export function RequestCreatePage() {
                       if (!e.target.value) setSelectedSupplier(null);
                     }}
                   />
-                          <ComboboxContent className="!max-h-[160px] !overflow-y-auto">
+                          <ComboboxContent className="[scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                             <ComboboxEmpty>{supplierSearchText.trim() ? "No results." : ""}</ComboboxEmpty>
-                            <ComboboxList>{(name: string) => <ComboboxItem key={name} value={name}>{name}</ComboboxItem>}</ComboboxList>
+                            <ComboboxList className="!max-h-[160px]">{(name: string) => <ComboboxItem key={name} value={name}>{name}</ComboboxItem>}</ComboboxList>
                           </ComboboxContent>
                 </Combobox>
               </div>
@@ -263,7 +267,11 @@ export function RequestCreatePage() {
                 </thead>
                 <tbody>
                   {lineItems.map((line) => {
-                    const hasVariants = line.item_template_id && variantOptions[line._key] !== undefined && variantOptions[line._key].length > 0;
+                    const allVariants = variantOptions[line._key] ?? [];
+                    const hasVariants = line.item_template_id !== null && allVariants.length > 0;
+                    const uniqueVariantNames = [...new Set(allVariants.map((v) => v.name))];
+                    const nameMatches = line.variant_name ? allVariants.filter((v) => v.name === line.variant_name) : [];
+                    const uomOptions = [...new Set(nameMatches.map((v) => v.uom?.trim()).filter((x): x is string => Boolean(x)))].map((u) => ({ value: u, label: u }));
                     return (
                     <tr key={line._key} className="border-b last:border-0">
                       <td className="px-3 py-2 max-w-[240px] min-w-[200px]">
@@ -274,37 +282,49 @@ export function RequestCreatePage() {
                           <ComboboxInput placeholder="Search item template..." showClear className="h-8 text-xs"
                             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setItemSearchText(e.target.value)}
                           />
-                          <ComboboxContent className="!max-h-[160px] !overflow-y-auto">
+                          <ComboboxContent className="[scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                             <ComboboxEmpty>No templates.</ComboboxEmpty>
-                            <ComboboxList>{(name: string) => <ComboboxItem key={name} value={name}><div>{name}</div></ComboboxItem>}</ComboboxList>
+                            <ComboboxList className="!max-h-[160px]">{(name: string) => <ComboboxItem key={name} value={name}><div>{name}</div></ComboboxItem>}</ComboboxList>
                           </ComboboxContent>
                         </Combobox>
                         {loadingVariant[line._key] && <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Loading variants...</div>}
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2 max-w-[240px] min-w-[200px]">
                         {hasVariants ? (
                           <Select value={line.variant_name ?? ""}
                             onValueChange={(v: string) => {
-                              const vr = variantOptions[line._key].find((x) => x.name === v);
-                              if (vr) updateLine(line._key, { item_variant_id: vr.id, variant_name: vr.name, unit_price: vr.list_price ?? line.unit_price });
-                              else updateLine(line._key, { item_variant_id: null, variant_name: undefined });
+                              const matches = allVariants.filter((x) => x.name === v);
+                              if (matches.length === 1) {
+                                const vr = matches[0];
+                                updateLine(line._key, { item_variant_id: vr.id, variant_name: vr.name, unit_price: vr.list_price ?? 0, uom: vr.uom ?? null });
+                              } else {
+                                updateLine(line._key, { item_variant_id: null, variant_name: v, unit_price: 0, uom: null });
+                              }
                             }}
                           >
                             <SelectTrigger className="h-8 text-xs w-full"><SelectValue placeholder="Select variant" /></SelectTrigger>
-                            <SelectContent className="!max-h-[160px] !overflow-y-auto">
-                              {variantOptions[line._key].map((vr) => <SelectItem key={vr.id} value={vr.name} className="text-xs">{vr.name}</SelectItem>)}
+                            <SelectContent position="popper" className="!max-h-[160px] !overflow-y-auto w-[var(--radix-select-trigger-width)]">
+                              {uniqueVariantNames.map((name) => <SelectItem key={name} value={name} className="text-xs"><span className="min-w-0 flex-1 truncate">{name}</span></SelectItem>)}
                             </SelectContent>
                           </Select>
                         ) : <span className="text-xs text-muted-foreground">&mdash;</span>}
                       </td>
                       <td className="px-3 py-2">
-                        <Select value={line.uom ?? ""} onValueChange={(v) => updateLine(line._key, { uom: v || null })}>
-                          <SelectTrigger className="h-8 text-xs w-24"><SelectValue placeholder="UOM" /></SelectTrigger>
-                            <SelectContent className="!max-h-[160px] overflow-y-auto" position="popper">{units.map((u) => <SelectItem key={u.unit_id} value={u.unit_shortcut ?? u.unit_name} className="text-xs">{u.unit_shortcut ?? u.unit_name}</SelectItem>)}</SelectContent>
+                        <Select value={line.uom ?? ""} disabled={uomOptions.length === 0} onValueChange={(u) => {
+                          const vr = nameMatches.find((x) => (x.uom?.trim() ?? "") === u);
+                          if (vr) updateLine(line._key, { item_variant_id: vr.id, uom: vr.uom ?? null, unit_price: vr.list_price ?? 0 });
+                          else updateLine(line._key, { item_variant_id: null, uom: u || null, unit_price: 0 });
+                        }}>
+                          <SelectTrigger className="h-8 text-xs w-24 disabled:cursor-default!"><SelectValue placeholder="UOM" /></SelectTrigger>
+                            <SelectContent className="!max-h-[160px] overflow-y-auto" position="popper">
+                              {uomOptions.map((opt) => (
+                                <SelectItem key={opt.value} value={opt.value} className="text-xs">{opt.label}</SelectItem>
+                              ))}
+                            </SelectContent>
                         </Select>
                       </td>
-                    <td className="px-3 py-2 max-w-[90px]"><Input type="number" min="0" step="1" value={line.qty} onChange={(e) => { if (e.target.value.replace(/\D/g, "").length > 7) return; updateLine(line._key, { qty: Number(e.target.value) || 0 }); }} className="h-8 w-full text-xs text-right" /></td>
-                     <td className="px-3 py-2 max-w-[160px]"><Input type="number" min="0" step="0.01" value={line.unit_price} onChange={(e) => { if (e.target.value.replace(/\D/g, "").length > 9) return; updateLine(line._key, { unit_price: Number(e.target.value) || 0 }); }} className="h-8 w-24 text-xs text-right" /></td>
+                    <td className="px-3 py-2 max-w-[90px]"><Input type="number" min="0" step="1" value={line.qty} disabled={!line.item_template_id} onChange={(e) => { if (e.target.value.replace(/\D/g, "").length > 7) return; updateLine(line._key, { qty: Number(e.target.value) || 0 }); }} className="h-8 w-full text-xs text-right disabled:cursor-default!" /></td>
+                     <td className="px-3 py-2 max-w-[160px]"><Input type="number" min="0" step="0.01" value={line.unit_price} disabled={!line.item_template_id} onChange={(e) => { if (e.target.value.replace(/\D/g, "").length > 9) return; updateLine(line._key, { unit_price: Number(e.target.value) || 0 }); }} className="h-8 w-24 text-xs text-right disabled:cursor-default!" /></td>
                         <td className="px-3 py-2 text-right font-mono text-xs tabular-nums truncate max-w-[160px]">{formatPHP(line.qty * line.unit_price)}</td>
                         <td className="px-3 py-2 whitespace-nowrap">
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => removeLine(line._key)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>

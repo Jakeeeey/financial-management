@@ -72,10 +72,10 @@ type Props = {
 };
 
 function groupByCoa(details: FinalTopSheetDetail[]) {
-  const map = new Map<number, { coa_id: number; account_title: string; items: FinalTopSheetDetail[] }>();
+  const map = new Map<number, { coa_id: number; account_title: string; gl_code: string | null; items: FinalTopSheetDetail[] }>();
   for (const d of details) {
     if (!map.has(d.coa_id)) {
-      map.set(d.coa_id, { coa_id: d.coa_id, account_title: d.account_title, items: [] });
+      map.set(d.coa_id, { coa_id: d.coa_id, account_title: d.account_title, gl_code: d.gl_code ?? null, items: [] });
     }
     map.get(d.coa_id)!.items.push(d);
   }
@@ -287,7 +287,12 @@ export default function AuditeeDetailSplitModal({
         expenseId: detail.expense_id,
         headerId: detail.header_id,
         url: detail.attachment_url!,
-        label: detail.remarks ? `${detail.remarks} (${detail.account_title})` : `${detail.account_title} (Line Item)`,
+        label: (() => {
+          const code = detail.gl_code || detail.coa_id;
+          return detail.remarks
+            ? `${detail.remarks} ([GL Code - ${code}] ${detail.account_title})`
+            : `[GL Code - ${code}] ${detail.account_title} (Line Item)`;
+        })(),
       }));
   }, [auditeeDetails, data]);
 
@@ -642,7 +647,9 @@ export default function AuditeeDetailSplitModal({
                       <div className="flex items-center justify-between px-5 py-3 bg-slate-900 text-white">
                         <div>
                           <p className="text-[10px] font-black uppercase tracking-widest text-white/50">Account</p>
-                          <p className="text-sm font-black">{group.account_title}</p>
+                          <p className="text-sm font-black">
+                            [GL Code - {group.gl_code || group.coa_id}] {group.account_title}
+                          </p>
                         </div>
                         <div className="flex items-center gap-3">
                           <p className="text-sm font-black text-emerald-400">{formatCurrency(coaTotal)}</p>

@@ -99,6 +99,7 @@ export default function TransactionCancellationModule() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [attachmentsDialogOpen, setAttachmentsDialogOpen] = useState(false);
+  const [addAttachmentDialogOpen, setAddAttachmentDialogOpen] = useState(false);
 
   const [approveDialogOpen, setApproveDialogOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
@@ -219,6 +220,12 @@ export default function TransactionCancellationModule() {
     setAttachmentsDialogOpen(true);
   };
 
+  const handleAddAttachmentClick = (invoice: Invoice) => {
+    setSelectedInvoice(invoice);
+    setSelectedFiles([]);
+    setAddAttachmentDialogOpen(true);
+  };
+
   const handleFileSelection = (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
     const invalidType = files.find((file) => !file.type.startsWith("image/") && file.type !== "application/pdf");
@@ -279,6 +286,11 @@ export default function TransactionCancellationModule() {
       }
       body.reason = reason.trim();
       body.retrievalConfirmed = confirmRetrieval;
+    } else if (action === "upload_attachments") {
+      if (selectedFiles.length === 0) {
+        toast.error("Please select at least one file to attach");
+        return;
+      }
     } else if (action === "reject") {
       if (!rejectReason.trim()) {
         toast.error("Please provide a rejection reason");
@@ -604,16 +616,39 @@ export default function TransactionCancellationModule() {
                                 <Calendar className="h-2.5 w-2.5" />
                                 <span>{reqDetails.date}</span>
                               </div>
-                              {reqDetails.attachments.length > 0 && (
+                              {reqDetails.attachments.length > 0 ? (
+                                <div className="space-y-1 mt-2">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleAttachmentsClick(inv)}
+                                    className="h-7 w-full justify-center text-[10px] font-bold gap-1.5 border-amber-500/20 text-amber-700 hover:bg-amber-500/10 dark:text-amber-400"
+                                  >
+                                    <Paperclip className="h-3 w-3" />
+                                    View attachments ({reqDetails.attachments.length})
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleAddAttachmentClick(inv)}
+                                    className="h-7 w-full justify-center text-[10px] font-bold gap-1.5 border-amber-500/20 text-amber-700 hover:bg-amber-500/10 dark:text-amber-400"
+                                  >
+                                    <Paperclip className="h-3 w-3" />
+                                    Add more
+                                  </Button>
+                                </div>
+                              ) : (
                                 <Button
                                   type="button"
                                   variant="outline"
                                   size="sm"
-                                  onClick={() => handleAttachmentsClick(inv)}
+                                  onClick={() => handleAddAttachmentClick(inv)}
                                   className="h-7 mt-2 w-full justify-center text-[10px] font-bold gap-1.5 border-amber-500/20 text-amber-700 hover:bg-amber-500/10 dark:text-amber-400"
                                 >
                                   <Paperclip className="h-3 w-3" />
-                                  View attachments ({reqDetails.attachments.length})
+                                  Add attachment
                                 </Button>
                               )}
                             </div>
@@ -955,6 +990,93 @@ export default function TransactionCancellationModule() {
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setAttachmentsDialogOpen(false)} className="h-9 text-xs font-semibold">
               Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Dialog: Add Attachments ── */}
+      <Dialog open={addAttachmentDialogOpen} onOpenChange={setAddAttachmentDialogOpen}>
+        <DialogContent className="max-w-md p-6 rounded-2xl border border-border bg-popover text-popover-foreground shadow-2xl">
+          <DialogHeader className="space-y-2">
+            <div className="h-10 w-10 bg-amber-500/10 text-amber-600 rounded-full flex items-center justify-center shrink-0">
+              <Paperclip className="h-5 w-5" />
+            </div>
+            <DialogTitle className="text-sm font-black uppercase tracking-tight text-foreground">
+              Add Attachments
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground leading-normal">
+              You are adding attachments to the cancellation request for Invoice <span className="font-bold text-foreground">{selectedInvoice?.invoiceNo}</span>.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/85">
+                Attachments <span className="font-semibold normal-case tracking-normal text-muted-foreground/60">(multiple)</span>
+              </label>
+              <label
+                htmlFor="add-attachments-input"
+                className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-[10px] font-bold text-foreground shadow-xs transition-colors hover:bg-accent"
+              >
+                <Paperclip className="h-3 w-3" />
+                Select files
+              </label>
+              <input
+                id="add-attachments-input"
+                type="file"
+                multiple
+                accept="image/*,application/pdf"
+                onChange={handleFileSelection}
+                className="sr-only"
+              />
+            </div>
+            {selectedFiles.length > 0 ? (
+              <div className="space-y-1 rounded-lg border border-border/60 bg-muted/20 p-2">
+                {selectedFiles.map((file, index) => (
+                  <div key={`${file.name}-${file.lastModified}-${index}`} className="flex items-center justify-between gap-2 text-[10px]">
+                    <span className="min-w-0 truncate font-medium text-foreground" title={file.name}>{file.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))}
+                      className="shrink-0 rounded p-1 text-muted-foreground hover:bg-background hover:text-destructive"
+                      aria-label={`Remove ${file.name}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[10px] text-muted-foreground/70">Upload images or PDF documents.</p>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setAddAttachmentDialogOpen(false)}
+              className="h-9 text-xs font-semibold"
+              disabled={submitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => submitAction("upload_attachments")}
+              className="h-9 text-xs font-bold gap-1 px-4 bg-amber-600 hover:bg-amber-700 text-white"
+              disabled={submitting || selectedFiles.length === 0}
+            >
+              {submitting ? (
+                <>
+                  <div className="h-3.5 w-3.5 rounded-full border border-current border-t-transparent animate-spin mr-1" />
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <Paperclip className="h-3.5 w-3.5" />
+                  Upload
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

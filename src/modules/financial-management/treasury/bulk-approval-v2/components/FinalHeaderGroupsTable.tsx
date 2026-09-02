@@ -18,6 +18,7 @@ import {
   XCircle,
   Check,
   ChevronsUpDown,
+  AlertTriangle,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -52,8 +53,8 @@ import { formatCurrency, formatDate, formatDateTime } from "../utils/format";
 type Props = {
   groups: FinalHeaderGroup[];
   loading: boolean;
-  statusFilter?: "ready" | "completed";
-  onStatusFilterChange?: (status: "ready" | "completed") => void;
+  statusFilter?: "ready" | "completed" | "all";
+  onStatusFilterChange?: (status: "ready" | "completed" | "all") => void;
   onOpenTopSheet: (group: FinalHeaderGroup) => void;
   onRefresh: () => void;
 };
@@ -69,6 +70,7 @@ type ApprovalAwareGroup = FinalHeaderGroup & {
   current_tier?: number;
   required_approver_level?: number;
   is_completed?: boolean;
+  has_concern?: boolean;
 };
 
 function uniqueStatuses(group: ApprovalAwareGroup) {
@@ -127,7 +129,7 @@ function ApprovalStateBadge({ group }: { group: ApprovalAwareGroup }) {
   );
 }
 
-type SortField = "period" | "division" | "metrics" | "amount" | "status";
+type SortField = "period" | "division" | "amount" | "status";
 type SortOrder = "asc" | "desc";
 
 export default function FinalHeaderGroupsTable({
@@ -220,10 +222,6 @@ export default function FinalHeaderGroupsTable({
           valA = a.division_name ?? "";
           valB = b.division_name ?? "";
           break;
-        case "metrics":
-          valA = a.expense_count;
-          valB = b.expense_count;
-          break;
         case "amount":
           valA = a.total_amount;
           valB = b.total_amount;
@@ -268,6 +266,20 @@ export default function FinalHeaderGroupsTable({
         
         <div className="flex flex-wrap items-center gap-2 flex-1 md:max-w-3xl md:justify-end">
           <div className="flex items-center gap-1 bg-slate-100/80 dark:bg-slate-800/80 p-0.5 rounded-xl border dark:border-slate-800">
+            <Button
+              type="button"
+              size="sm"
+              variant={statusFilter === "all" ? "secondary" : "ghost"}
+              className={`h-7 px-3 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                statusFilter === "all"
+                  ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm"
+                  : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              }`}
+              onClick={() => onStatusFilterChange?.("all")}
+              disabled={loading}
+            >
+              All
+            </Button>
             <Button
               type="button"
               size="sm"
@@ -391,9 +403,8 @@ export default function FinalHeaderGroupsTable({
           <Table className="w-full table-fixed">
             <colgroup>
               <col className="w-[40px]" />
-              <col className="w-[28%]" />
-              <col className="w-[18%]" />
-              <col className="w-[18%]" />
+              <col className="w-[38%]" />
+              <col className="w-[26%]" />
               <col className="w-[18%]" />
               <col className="w-[110px]" />
             </colgroup>
@@ -419,15 +430,6 @@ export default function FinalHeaderGroupsTable({
                   </span>
                 </TableHead>
                 <TableHead 
-                  className="text-center text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 px-4 py-2.5 cursor-pointer hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-                  onClick={() => toggleSort("metrics")}
-                >
-                  <span className="flex items-center justify-center gap-1">
-                    Metrics
-                    {renderSortIndicator("metrics")}
-                  </span>
-                </TableHead>
-                <TableHead 
                   className="text-right text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 px-4 py-2.5 cursor-pointer hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
                   onClick={() => toggleSort("amount")}
                 >
@@ -442,7 +444,7 @@ export default function FinalHeaderGroupsTable({
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-[400px] text-center">
+                  <TableCell colSpan={5} className="h-[400px] text-center">
                     <div className="flex flex-col items-center justify-center gap-4">
                       <div className="relative">
                         <div className="h-12 w-12 rounded-full border-4 border-primary/10 border-t-primary animate-spin" />
@@ -454,7 +456,7 @@ export default function FinalHeaderGroupsTable({
                 </TableRow>
               ) : sortedGroups.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-[400px] text-center">
+                  <TableCell colSpan={5} className="h-[400px] text-center">
                     <div className="flex flex-col items-center justify-center gap-4 animate-in fade-in zoom-in-95 duration-500">
                       <div className="rounded-3xl bg-slate-50 dark:bg-slate-800 p-8">
                         <FolderOpen className="h-16 w-16 text-slate-200 dark:text-slate-600" />
@@ -499,27 +501,17 @@ export default function FinalHeaderGroupsTable({
                             {group.division_name ?? `Division #${group.division_id}`}
                           </Badge>
                           <ApprovalStateBadge group={group as ApprovalAwareGroup} />
+                          {group.has_concern && (
+                            <Badge className="w-fit rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-500/10 dark:bg-amber-900/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-400 hover:bg-amber-500/15 dark:hover:bg-amber-900/40 gap-1 flex items-center">
+                              <AlertTriangle size={10} className="text-amber-600 dark:text-amber-500 animate-pulse" />
+                              <span>With Concern</span>
+                            </Badge>
+                          )}
                         </div>
                         <div className="space-y-0.5">
                           <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
                             Approval Tier: <span className="text-slate-700 dark:text-slate-300">{getApprovalTierText(group as ApprovalAwareGroup)}</span>
                           </p>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="px-4 py-3">
-                      <div className="flex items-center justify-center gap-1">
-                        <div className="flex flex-col items-center gap-0.5 px-2 border-r border-slate-100 dark:border-slate-800 last:border-0" title="Salesmen">
-                          <span className="text-[11px] font-black text-slate-800 dark:text-slate-200">{group.salesman_count}</span>
-                          <span className="text-[7px] font-black uppercase tracking-tighter text-muted-foreground">Users</span>
-                        </div>
-                        <div className="flex flex-col items-center gap-0.5 px-2 border-r border-slate-100 dark:border-slate-800 last:border-0" title="COA">
-                          <span className="text-[11px] font-black text-slate-800 dark:text-slate-200">{group.coa_count}</span>
-                          <span className="text-[7px] font-black uppercase tracking-tighter text-muted-foreground">COA</span>
-                        </div>
-                        <div className="flex flex-col items-center gap-0.5 px-2 border-r border-slate-100 dark:border-slate-800 last:border-0" title="Lines">
-                          <span className="text-[11px] font-black text-slate-800 dark:text-slate-200">{group.expense_count}</span>
-                          <span className="text-[7px] font-black uppercase tracking-tighter text-muted-foreground">Lines</span>
                         </div>
                       </div>
                     </TableCell>

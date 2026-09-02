@@ -35,7 +35,7 @@ function pickString(obj: Record<string, unknown> | null | undefined, keys: strin
 function buildHeaderUserFromToken(token: string | null | undefined) {
   const payload = token ? decodeJwtPayload(token) : null;
   const first = pickString(payload, ["Firstname", "FirstName", "firstName", "firstname", "first_name"]);
-  const last = pickString(payload, ["Lastname", "lastName", "lastname", "last_name"]);
+  const last = pickString(payload, ["LastName", "Lastname", "lastName", "lastname", "last_name"]);
   const email = pickString(payload, ["email", "Email"]);
   const name = [first, last].filter(Boolean).join(" ") || email || "User";
   return { name, email: email || "", avatar: "/avatars/shadcn.jpg" };
@@ -76,7 +76,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         </div>
       </header>
       <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4">
-        <ApprovalDetailPage id={Number(id)} />
+        <ApprovalDetailPage id={Number(id)} currentUserName={headerUser.name} />
       </main>
     </div>
   );

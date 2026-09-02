@@ -330,6 +330,7 @@ export type FinalHeaderGroupResponse = {
   creator_name?: string | null;
   creator_id?: number | null;
   date_submitted?: string | null;
+  has_concern?: boolean;
 };
 
 export type FinalTopSheetSalesmanResponse = {

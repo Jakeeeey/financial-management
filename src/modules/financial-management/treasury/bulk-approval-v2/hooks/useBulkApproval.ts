@@ -26,7 +26,7 @@ export function useBulkApproval() {
 
   const [finalHeaderGroups, setFinalHeaderGroups] = React.useState<FinalHeaderGroup[]>([]);
   const [finalHeaderGroupsLoading, setFinalHeaderGroupsLoading] = React.useState(false);
-  const [finalHeaderStatus, setFinalHeaderStatus] = React.useState<"ready" | "completed">("ready");
+  const [finalHeaderStatus, setFinalHeaderStatus] = React.useState<"ready" | "completed" | "all">("ready");
 
   const [logs, setLogs] = React.useState<LogDraft[]>([]);
   const [logsLoading, setLogsLoading] = React.useState(false);
@@ -99,7 +99,7 @@ export function useBulkApproval() {
     }
   }, []);
 
-  const loadFinalHeaderGroups = React.useCallback(async (status: "ready" | "completed" = "ready"): Promise<FinalHeaderGroup[]> => {
+  const loadFinalHeaderGroups = React.useCallback(async (status: "ready" | "completed" | "all" = "ready"): Promise<FinalHeaderGroup[]> => {
     try {
       setFinalHeaderGroupsLoading(true);
       const groups = await api.getFinalHeaderGroups(status);

@@ -1,4 +1,4 @@
-import type { Supplier, ItemTemplate, ItemVariant, Unit, CreatePRInput } from "../utils/types";
+import type { Supplier, ItemTemplate, ItemVariant, Unit, CreatePRInput, ProcurementRequestPreview, ProcurementDetailPreview } from "../utils/types";
 
 async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(url, { method: "GET", cache: "no-store", signal });
@@ -47,4 +47,14 @@ export async function createPR(input: CreatePRInput, signal?: AbortSignal): Prom
     throw new Error(`Failed to create PR (${res.status}): ${text}`);
   }
   return (await res.json()) as { id: number; procurement_no: string };
+}
+
+export async function fetchPRPreview(id: number, signal?: AbortSignal): Promise<{ master: ProcurementRequestPreview; details: ProcurementDetailPreview[] }> {
+  const url = `/api/fm/procurement/request/${id}`;
+  const res = await fetch(url, { method: "GET", cache: "no-store", signal });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Failed to fetch PR (${res.status}): ${text}`);
+  }
+  return (await res.json()) as { master: ProcurementRequestPreview; details: ProcurementDetailPreview[] };
 }
