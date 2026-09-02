@@ -80,11 +80,11 @@ export const generateDisbursementPDF = (disbursement: Disbursement, paperSize: "
         },
         headStyles: { fillColor: [255, 255, 255], textColor: 0, fontStyle: 'bold', lineColor: 0, lineWidth: 0.2 },
         footStyles: { fillColor: [245, 245, 245], textColor: 0, fontStyle: 'bold', lineColor: 0, lineWidth: 0.2 },
-        // 🚀 SMART LAYOUT: A4 gets 4 columns, 58mm gets 3 columns (Account and Remarks are merged!)
-        head: isA4 ? [['Ref / PO', 'GL Account', 'Remarks', 'Amount']] : [['Ref', 'Account/Rem', 'Amount']],
+        // 🚀 SMART LAYOUT: A4 gets 5 columns, 58mm gets 3 columns (Account and Remarks are merged!)
+        head: isA4 ? [['Ref / PO', 'GL Account', 'Division', 'Remarks', 'Amount']] : [['Ref', 'Account/Rem', 'Amount']],
         body: (disbursement.payables || []).map(p => {
             if (isA4) {
-                return [p.referenceNo || 'N/A', p.accountTitle || `COA: ${p.coaId}`, p.remarks || '-', { content: p.amount.toLocaleString('en-US', {minimumFractionDigits: 2}), styles: { halign: 'right' } }];
+                return [p.referenceNo || 'N/A', p.accountTitle || `COA: ${p.coaId}`, p.divisionName || 'N/A', p.remarks || '-', { content: p.amount.toLocaleString('en-US', {minimumFractionDigits: 2}), styles: { halign: 'right' } }];
             } else {
                 // 58mm Column Merge
                 const acctRem = `${p.accountTitle || `COA: ${p.coaId}`}\n${p.remarks ? `(${p.remarks})` : ''}`;
@@ -93,7 +93,7 @@ export const generateDisbursementPDF = (disbursement: Disbursement, paperSize: "
         }),
         foot: isA4
             ? [[
-                { content: 'TOTAL PAYABLES', colSpan: 3, styles: { halign: 'right', fontStyle: 'bold' } },
+                { content: 'TOTAL PAYABLES', colSpan: 4, styles: { halign: 'right', fontStyle: 'bold' } },
                 { content: formatAmount(totalPayables), styles: { halign: 'right', fontStyle: 'bold' } }
             ]]
             : [[
