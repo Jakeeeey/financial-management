@@ -7,8 +7,17 @@ import { useAttributes } from "../hooks/useItemAttributes";
 import { AttributeCard } from "./AttributeCard";
 import { AttributeCreateModal } from "./AttributeCreateModal";
 export default function ItemAttributeManager() {
-  const { attributes, loading, addAttribute, addAttributeValue } =
-    useAttributes();
+  const {
+    attributes,
+    loading,
+    fetchAll,
+    addAttribute,
+    addAttributeValue,
+    updateAttribute,
+    deleteAttribute,
+    updateAttributeValue,
+    deleteAttributeValue,
+  } = useAttributes();
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   if (loading) {
@@ -42,6 +51,11 @@ export default function ItemAttributeManager() {
               attribute={attr}
               values={attr.attribute_values || []}
               onAddValue={addAttributeValue}
+              onUpdateAttribute={updateAttribute}
+              onDeleteAttribute={deleteAttribute}
+              onUpdateValue={updateAttributeValue}
+              onDeleteValue={deleteAttributeValue}
+              onSaved={fetchAll}
             />
           ))}
         </div>

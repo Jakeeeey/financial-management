@@ -18,9 +18,10 @@ import PrintProcurementDialog from "./PrintProcurementDialog";
 
 type ApprovalDetailPageProps = {
   id: number;
+  currentUserName?: string;
 };
 
-export default function ApprovalDetailPage({ id }: ApprovalDetailPageProps) {
+export default function ApprovalDetailPage({ id, currentUserName }: ApprovalDetailPageProps) {
   const router = useRouter();
   const { master, details, loading, error, reload } = usePRDetail(id);
   const [localDetails, setLocalDetails] = useState<ProcurementDetail[]>([]);
@@ -165,6 +166,11 @@ export default function ApprovalDetailPage({ id }: ApprovalDetailPageProps) {
         poNo={master.po_no}
         details={localDetails}
         total={computedTotal}
+        preparedByName={master.encoder_name}
+        approvedByName={master.approved_by_name}
+        preparedById={master.encoder_id}
+        approvedById={master.approved_by}
+        generatedBy={currentUserName}
         supplier={{
           supplier_name: master.supplier_name,
           address: master.supplier_address,

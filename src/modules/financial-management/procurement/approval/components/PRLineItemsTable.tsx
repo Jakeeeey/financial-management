@@ -101,9 +101,9 @@ function ItemTemplateCombobox({
           value={selectedValue && !searchText ? selectedLabel : searchText}
           onChange={(e) => { setSearchText(e.target.value); if (selectedValue) setSelectedValue(null); }}
         />
-        <ComboboxContent className="!max-h-[160px] !overflow-y-auto">
+        <ComboboxContent className="[scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <ComboboxEmpty>{searchText.trim() ? "No results" : "No items found"}</ComboboxEmpty>
-          <ComboboxList>
+          <ComboboxList className="!max-h-[160px]">
             {(item) => {
               const parts = item.split(":");
               const label = parts[0] === "tmpl" ? parts.slice(2).join(":") : item;

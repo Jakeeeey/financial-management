@@ -142,13 +142,11 @@ export function POReceiveDialog({ open, onOpenChange, poId, poItems, onSaveSucce
         setUsers(loadedUsers.data);
 
         const recMap = await getAlreadyReceivedMap(poId);
-        const computed = baseRows
-          .map((row) => {
-            const receivedSoFar = Number(recMap[row.po_item_id] || 0);
-            const remaining = Math.max(0, row.ordered_qty - receivedSoFar);
-            return { ...row, received_so_far: receivedSoFar, remaining, received_today: 0, splits: [] };
-          })
-          .filter((row) => row.remaining > 0);
+        const computed = baseRows.map((row) => {
+          const receivedSoFar = Number(recMap[row.po_item_id] || 0);
+          const remaining = Math.max(0, row.ordered_qty - receivedSoFar);
+          return { ...row, received_so_far: receivedSoFar, remaining, received_today: 0, splits: [] };
+        });
         setRows(computed);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load data");
@@ -185,7 +183,7 @@ export function POReceiveDialog({ open, onOpenChange, poId, poItems, onSaveSucce
         if (row.key !== key) return row;
         const next = { ...row, ...patch };
         if (patch.received_today !== undefined) {
-          next.received_today = Math.max(0, Math.min(row.remaining, Number(patch.received_today || 0)));
+          next.received_today = Math.max(0, Number(patch.received_today || 0));
         }
         return next;
       })
@@ -241,7 +239,6 @@ export function POReceiveDialog({ open, onOpenChange, poId, poItems, onSaveSucce
 
   const valid = useMemo(() => {
     for (const row of rows) {
-      if (row.received_today > row.remaining) return false;
       if (row.received_today < 0) return false;
       const sum = row.splits.reduce((total, split) => total + (Number(split.qty) || 0), 0);
       if (sum !== Number(row.received_today || 0)) return false;
@@ -366,7 +363,6 @@ export function POReceiveDialog({ open, onOpenChange, poId, poItems, onSaveSucce
                            <Input
                              type="number"
                              min={0}
-                             max={row.remaining}
                              step="0.0001"
                              className="h-8 text-sm font-mono text-right w-full"
                              value={row.received_today || ""}

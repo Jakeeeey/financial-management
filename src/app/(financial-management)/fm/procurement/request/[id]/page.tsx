@@ -6,7 +6,7 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 import { NavUser } from "@/components/shared/app-sidebar/nav-user";
 import { cookies } from "next/headers";
 
-import ApprovalDetailPage from "@/modules/financial-management/procurement/approval/components/ApprovalDetailPage";
+import { RequestDetailPreview } from "@/modules/financial-management/procurement/request/components/RequestDetailPreview";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,15 +57,15 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
             <Breadcrumb>
               <BreadcrumbList className="min-w-0 overflow-hidden">
                 <BreadcrumbItem className="hidden md:block shrink-0">
-                  <BreadcrumbLink href="/fm/procurement/approval">FM</BreadcrumbLink>
+                  <BreadcrumbLink href="/fm/procurement/request">FM</BreadcrumbLink>
                 </BreadcrumbItem>
                 <BreadcrumbSeparator className="hidden md:block shrink-0" />
                 <BreadcrumbItem className="hidden md:block shrink-0">
-                  <BreadcrumbLink href="/fm/procurement/approval">Procurement Approval</BreadcrumbLink>
+                  <BreadcrumbLink href="/fm/procurement/request">Procurement Request</BreadcrumbLink>
                 </BreadcrumbItem>
                 <BreadcrumbSeparator className="hidden md:block shrink-0" />
                 <BreadcrumbItem className="min-w-0 overflow-hidden">
-                  <BreadcrumbPage className="truncate max-w-[56vw] sm:max-w-[60vw] md:max-w-none">Procurement Details</BreadcrumbPage>
+                  <BreadcrumbPage className="truncate max-w-[56vw] sm:max-w-[60vw] md:max-w-none">Procurement Request Details</BreadcrumbPage>
                 </BreadcrumbItem>
               </BreadcrumbList>
             </Breadcrumb>
@@ -76,7 +76,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         </div>
       </header>
       <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4">
-        <ApprovalDetailPage id={Number(id)} currentUserName={headerUser.name} />
+        <RequestDetailPreview id={Number(id)} />
       </main>
     </div>
   );
