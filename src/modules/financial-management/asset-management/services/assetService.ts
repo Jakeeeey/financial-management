@@ -67,4 +67,21 @@ export const assetService = {
         is_active_warning: values.is_active_warning,
       }),
     }),
+
+  getAssetAssignments: (assetId: number) => 
+    apiRequest(`${API_ROUTE}/assignments?asset_id=${assetId}`),
+
+  assignAsset: (data: Record<string, unknown>) =>
+    apiRequest(`${API_ROUTE}/assignments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+
+  returnAsset: (assignmentId: number, data: Record<string, unknown>) =>
+    apiRequest(`${API_ROUTE}/assignments`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assignment_id: assignmentId, ...data }),
+    }),
 };
