@@ -24,6 +24,8 @@ export const assetService = {
 
   getItems: () => apiRequest(`${API_ROUTE}?type=items`),
 
+  getGeneralSetting: (key: string) => apiRequest(`${API_ROUTE}?type=setting&key=${encodeURIComponent(key)}`),
+
   getAssets: () => apiRequest(API_ROUTE),
 
   createAsset: (values: AssetFormValues, encoderId: number) =>

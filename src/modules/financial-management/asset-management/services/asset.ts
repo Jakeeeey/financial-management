@@ -203,6 +203,23 @@ export async function fetchItemClassifications(): Promise<
 }
 
 /**
+ * Fetch General Setting by Key
+ */
+export async function fetchGeneralSetting(key: string): Promise<string | null> {
+  const res = await fetch(
+    `${API_BASE_URL}/items/general_setting?filter[setting_key][_eq]=${encodeURIComponent(key)}`,
+    {
+      headers: AUTH_HEADERS,
+    },
+  );
+  const json = await res.json();
+  if (json.data && json.data.length > 0) {
+    return json.data[0].setting_value;
+  }
+  return null;
+}
+
+/**
  * Fetch unique items with their type and classification names
  */
 export async function fetchItems(): Promise<Record<string, unknown>[]> {

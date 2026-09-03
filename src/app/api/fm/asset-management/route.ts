@@ -7,6 +7,7 @@ import {
   fetchItems,
   fetchUsers,
   updateAsset,
+  fetchGeneralSetting,
 } from "@/modules/financial-management/asset-management/services/asset";
 import { NextResponse } from "next/server";
 
@@ -35,6 +36,11 @@ export async function GET(req: Request) {
         break;
       case "items":
         data = await fetchItems();
+        break;
+      case "setting":
+        const key = searchParams.get("key");
+        if (!key) throw new Error("Setting key is required");
+        data = await fetchGeneralSetting(key);
         break;
       default:
         data = await fetchAssets();
