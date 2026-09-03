@@ -110,8 +110,8 @@ export default function ReturnAssetModal({
       toast.success("Asset returned successfully");
       onSuccess();
       onClose();
-    } catch (error: any) {
-      toast.error(error.message || "Failed to return asset");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Failed to return asset");
     } finally {
       setLoading(false);
     }

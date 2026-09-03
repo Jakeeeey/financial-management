@@ -26,6 +26,7 @@ export default function AssetAssignmentHistoryModal({
 
   useEffect(() => {
     if (isOpen && asset) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLoading(true);
       assetService
         .getAssetAssignments(asset.id)

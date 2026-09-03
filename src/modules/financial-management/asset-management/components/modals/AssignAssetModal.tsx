@@ -36,7 +36,6 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -103,8 +102,8 @@ export default function AssignAssetModal({
       toast.success("Asset assigned successfully");
       onSuccess();
       onClose();
-    } catch (error: any) {
-      toast.error(error.message || "Failed to assign asset");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Failed to assign asset");
     } finally {
       setLoading(false);
     }
