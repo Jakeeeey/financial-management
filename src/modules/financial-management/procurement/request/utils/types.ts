@@ -21,6 +21,7 @@ export type ItemVariant = {
   id: number;
   item_tmpl_id: number;
   name: string;
+  uom?: string | null;
   list_price: number | null;
 };
 
@@ -46,4 +47,48 @@ export type CreatePRInput = {
   department_id?: number | null;
   status: string;
   items: CreatePRItemInput[];
+};
+
+export type ProcurementRequestPreview = {
+  id: number;
+  procurement_no: string;
+  supplier_id: number;
+  lead_date: string;
+  total_amount: number;
+  created_at: string;
+  updated_at: string;
+  encoder_id: number;
+  department_id: number | null;
+  po_no: number | null;
+  isApproved: number;
+  approved_by: number | null;
+  approved_date: string | null;
+  transaction_type: string | null;
+  status: string;
+  supplier_name: string | null;
+  supplier_email: string | null;
+  supplier_phone: string | null;
+  supplier_address: string | null;
+  supplier_tin: string | null;
+  supplier_payment_terms: string | null;
+  encoder_name: string | null;
+  department_name: string | null;
+};
+
+export type ProcurementDetailPreview = {
+  id: number;
+  procurement_id: number;
+  item_template_id: number | null;
+  item_variant_id: number | null;
+  qty: number;
+  unit_price: number;
+  total_amount: number;
+  date_added: string | null;
+  supplier: number | null;
+  link: string | null;
+  created_at: string;
+  updated_at: string;
+  uom: string | null;
+  template_name: string | null;
+  variant_name: string | null;
 };
