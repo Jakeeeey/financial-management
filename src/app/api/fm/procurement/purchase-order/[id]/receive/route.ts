@@ -58,7 +58,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     for (const row of rows) {
       if (!row.received_today || row.received_today <= 0) continue;
 
-      const qtyToSave = Math.max(0, Math.min(row.remaining, Number(row.received_today)));
+      const qtyToSave = Math.max(0, Number(row.received_today));
 
       const lineRes = await fetch(`${DIRECTUS_URL}/items/receiving_item_lines`, {
         method: "POST",

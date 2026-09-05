@@ -28,6 +28,9 @@ import {
   SquarePen,
   Tag,
   Wrench,
+  History,
+  Undo2,
+  UserPlus,
 } from "lucide-react";
 import Image from "next/image";
 import { AssetTableData } from "../../types";
@@ -105,6 +108,9 @@ interface AssetTableMeta {
   setProjectionDate: (date: Date) => void;
   onEdit: (asset: AssetTableData) => void;
   onView: (asset: AssetTableData) => void;
+  onAssign?: (asset: AssetTableData) => void;
+  onReturn?: (asset: AssetTableData) => void;
+  onHistory?: (asset: AssetTableData) => void;
 }
 
 // --- Column Definitions ---
@@ -283,13 +289,32 @@ export const columns: ColumnDef<AssetTableData>[] = [
               <EllipsisVertical className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-40">
+          <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuItem onClick={() => meta?.onEdit(row.original)}>
               <SquarePen className="mr-2 h-4 w-4" /> Edit Details
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => meta?.onView(row.original)}>
               <Eye className="mr-2 h-4 w-4" /> View Details
             </DropdownMenuItem>
+            
+            {meta?.onAssign && !row.original.employee && (
+              <DropdownMenuItem onClick={() => meta.onAssign?.(row.original)}>
+                <UserPlus className="mr-2 h-4 w-4" /> Assign Asset
+              </DropdownMenuItem>
+            )}
+            
+            {meta?.onReturn && row.original.employee && (
+              <DropdownMenuItem onClick={() => meta.onReturn?.(row.original)}>
+                <Undo2 className="mr-2 h-4 w-4" /> Return Asset
+              </DropdownMenuItem>
+            )}
+
+            {meta?.onHistory && (
+              <DropdownMenuItem onClick={() => meta.onHistory?.(row.original)}>
+                <History className="mr-2 h-4 w-4" /> Assignment History
+              </DropdownMenuItem>
+            )}
+            
             {/* <DropdownMenuSeparator /> */}
             {/* <DropdownMenuItem variant="destructive">
               <Trash2 className="mr-2 h-4 w-4" /> Delete Asset

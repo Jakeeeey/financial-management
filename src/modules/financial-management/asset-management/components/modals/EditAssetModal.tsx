@@ -86,6 +86,7 @@ export default function EditAssetModal({
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [rfidTagging, setRfidTagging] = useState<"0" | "1">("1");
 
   // Search states for comboboxes
   const [typeSearch, setTypeSearch] = useState("");
@@ -151,17 +152,19 @@ export default function EditAssetModal({
     if (isOpen) {
       const fetchData = async () => {
         try {
-          const [depData, userData, typeData, classData] = await Promise.all([
+          const [depData, userData, typeData, classData, rfidSetting] = await Promise.all([
             assetService.getDepartments(),
             assetService.getUsers(),
             assetService.getItemTypes(),
             assetService.getItemClassifications(),
+            assetService.getGeneralSetting("rfid_asset_tagging"),
           ]);
 
           setDepartments(depData);
           setUsers(userData);
           setTypes(typeData);
           setClassifications(classData);
+          setRfidTagging((rfidSetting === "0") ? "0" : "1");
         } catch {
           toast.error("Failed to load options");
         }
@@ -199,6 +202,13 @@ export default function EditAssetModal({
 
   const onSubmit = async (values: AssetFormValues) => {
     if (!asset) return;
+
+    if (rfidTagging === "1" && !values.rfid_code?.trim()) {
+      toast.error("RFID Code is required");
+      form.setError("rfid_code", { message: "RFID code is required" });
+      return;
+    }
+
     setLoading(true);
     try {
       let finalImageValue = asset.item_image;
@@ -377,22 +387,25 @@ export default function EditAssetModal({
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name="rfid_code"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>RFID Code</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          value={field.value ?? ""}
-                          placeholder="Enter RFID"
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
+                {rfidTagging === "1" && (
+                  <FormField
+                    control={form.control}
+                    name="rfid_code"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>RFID Code {rfidTagging === "1" && "*"}</FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            value={field.value ?? ""}
+                            placeholder={rfidTagging === "1" ? "Required" : "Optional"}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
                 <FormField
                   control={form.control}
                   name="serial"
@@ -703,8 +716,8 @@ export default function EditAssetModal({
                     <Input
                       type="number"
                       {...field}
-                      disabled
-                      className="bg-muted"
+                      disabled={rfidTagging === "1"}
+                      className={cn(rfidTagging === "1" ? "bg-muted" : "")}
                       onChange={(e) =>
                         field.onChange(parseInt(e.target.value) || 1)
                       }

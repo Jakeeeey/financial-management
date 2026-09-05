@@ -6,11 +6,15 @@ import {
   listAttributes,
   createAttribute,
   createAttributeValue,
+  updateAttribute as updateAttributeRequest,
+  deleteAttribute as deleteAttributeRequest,
+  updateAttributeValue as updateAttributeValueRequest,
+  deleteAttributeValue as deleteAttributeValueRequest,
 } from "../providers/item-attribute-service";
-import type { ItemAttribute, ItemAttributeValue } from "../utils/types";
+import type { ItemAttribute, ItemAttributeValue } from "@/modules/financial-management/procurement/items/utils/types";
 
 export function useAttributes() {
-  const [attributes, setAttributes] = useState<ItemAttribute[]>([]);
+  const [attributes, setAttributes] = useState<Array<ItemAttribute & { attribute_values: ItemAttributeValue[] }>>([]);
   const [loading, setLoading] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -38,7 +42,7 @@ export function useAttributes() {
               };
             }
           ),
-        } as ItemAttribute;
+        } as ItemAttribute & { attribute_values: ItemAttributeValue[] };
       });
       setAttributes(attrs);
     } catch {
@@ -55,7 +59,7 @@ export function useAttributes() {
   }, [fetchAll]);
 
   const addAttribute = useCallback(
-    async (data: { name: string; display_type: string }) => {
+    async (data: { name: string }) => {
       try {
         const res = await createAttribute(data);
         setAttributes((prev) => [
@@ -100,5 +104,103 @@ export function useAttributes() {
     []
   );
 
-  return { attributes, loading, fetchAll, addAttribute, addAttributeValue };
+  const updateAttribute = useCallback(
+    async (id: number, data: { name: string }) => {
+      try {
+        const res = await updateAttributeRequest(id, data);
+        setAttributes((prev) =>
+          prev.map((a) => (a.id === id ? { ...a, ...res.data } : a))
+        );
+        toast.success("Attribute updated");
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Failed to update attribute"
+        );
+        throw err;
+      }
+    },
+    []
+  );
+
+  const deleteAttribute = useCallback(
+    async (id: number) => {
+      try {
+        await deleteAttributeRequest(id);
+        setAttributes((prev) => prev.filter((a) => a.id !== id));
+        toast.success("Attribute deleted");
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Failed to delete attribute"
+        );
+        throw err;
+      }
+    },
+    []
+  );
+
+  const updateAttributeValue = useCallback(
+    async (id: number, data: { name: string }) => {
+      try {
+        const res = await updateAttributeValueRequest(id, data);
+        setAttributes((prev) =>
+          prev.map((a) => ({
+            ...a,
+            attribute_values: (a.attribute_values || []).map((v) =>
+              v.id === id
+                ? {
+                    ...v,
+                    ...res.data,
+                    attribute_id: Number(
+                      res.data.attribute_id ?? v.attribute_id
+                    ),
+                  }
+                : v
+            ),
+          }))
+        );
+        toast.success("Value updated");
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Failed to update value"
+        );
+        throw err;
+      }
+    },
+    []
+  );
+
+  const deleteAttributeValue = useCallback(
+    async (id: number) => {
+      try {
+        await deleteAttributeValueRequest(id);
+        setAttributes((prev) =>
+          prev.map((a) => ({
+            ...a,
+            attribute_values: (a.attribute_values || []).filter(
+              (v) => v.id !== id
+            ),
+          }))
+        );
+        toast.success("Value deleted");
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Failed to delete value"
+        );
+        throw err;
+      }
+    },
+    []
+  );
+
+  return {
+    attributes,
+    loading,
+    fetchAll,
+    addAttribute,
+    addAttributeValue,
+    updateAttribute,
+    deleteAttribute,
+    updateAttributeValue,
+    deleteAttributeValue,
+  };
 }

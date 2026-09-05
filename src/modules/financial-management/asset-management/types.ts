@@ -103,3 +103,42 @@ export type AssetSubmissionData = z.infer<typeof assetSubmissionSchema>;
 export type AssetTableData = z.infer<typeof assetTableDataSchema>;
 export type ItemType = z.infer<typeof itemTypeSchema>;
 export type ItemClassification = z.infer<typeof itemClassificationSchema>;
+
+// --- 6. Assignment Schemas ---
+
+export const assetAssignmentSchema = z.object({
+  assignment_id: z.number(),
+  asset_id: z.number(),
+  user_id: z.number(),
+  assigned_by: z.number().nullable(),
+  assigned_date: z.string(),
+  expected_return_date: z.string().nullable(),
+  actual_return_date: z.string().nullable(),
+  assignment_status: z.enum(['Assigned', 'Returned', 'Lost', 'Damaged']),
+  condition_on_assignment: z.enum(['Good', 'Bad', 'Under Maintenance', 'Discontinued']).nullable(),
+  condition_on_return: z.enum(['Good', 'Bad', 'Under Maintenance', 'Discontinued']).nullable(),
+  notes: z.string().nullable(),
+  // Virtual fields
+  user_name: z.string().optional(),
+  assigned_by_name: z.string().optional(),
+});
+
+export type AssetAssignment = z.infer<typeof assetAssignmentSchema>;
+
+export const assignAssetFormSchema = z.object({
+  user_id: z.number(),
+  expected_return_date: z.date().optional().nullable(),
+  condition_on_assignment: z.enum(['Good', 'Bad', 'Under Maintenance', 'Discontinued']),
+  notes: z.string().optional(),
+});
+
+export type AssignAssetFormValues = z.infer<typeof assignAssetFormSchema>;
+
+export const returnAssetFormSchema = z.object({
+  actual_return_date: z.date(),
+  condition_on_return: z.enum(['Good', 'Bad', 'Under Maintenance', 'Discontinued']),
+  assignment_status: z.enum(['Returned', 'Lost', 'Damaged']),
+  notes: z.string().optional(),
+});
+
+export type ReturnAssetFormValues = z.infer<typeof returnAssetFormSchema>;

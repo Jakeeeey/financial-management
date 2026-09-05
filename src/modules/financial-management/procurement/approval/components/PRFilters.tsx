@@ -76,9 +76,9 @@ export function PRFilters({
         <ComboboxInput placeholder="Any supplier" showClear
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSupplierSearchText(e.target.value)}
         />
-        <ComboboxContent className="!max-h-[160px] !overflow-y-auto">
+        <ComboboxContent className="[scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <ComboboxEmpty>{supplierSearchText.trim() ? "No results." : (tableSupplierOptions.length === 0 ? "No suppliers in table" : "")}</ComboboxEmpty>
-          <ComboboxList>{(name: string) => <ComboboxItem key={name} value={name}>{name}</ComboboxItem>}</ComboboxList>
+          <ComboboxList className="!max-h-[160px]">{(name: string) => <ComboboxItem key={name} value={name}>{name}</ComboboxItem>}</ComboboxList>
         </ComboboxContent>
       </Combobox>
     </div>

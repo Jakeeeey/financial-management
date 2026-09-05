@@ -11,6 +11,7 @@ export type ProcurementRequest = {
   po_no: number | null;
   isApproved: number | null;
   approved_by: number | null;
+  approved_by_name?: string | null;
   approved_date: string | null;
   transaction_type: string | null;
   status: string | null;

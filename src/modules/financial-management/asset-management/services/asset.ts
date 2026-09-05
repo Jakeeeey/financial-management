@@ -203,6 +203,23 @@ export async function fetchItemClassifications(): Promise<
 }
 
 /**
+ * Fetch General Setting by Key
+ */
+export async function fetchGeneralSetting(key: string): Promise<string | null> {
+  const res = await fetch(
+    `${API_BASE_URL}/items/general_setting?filter[setting_key][_eq]=${encodeURIComponent(key)}`,
+    {
+      headers: AUTH_HEADERS,
+    },
+  );
+  const json = await res.json();
+  if (json.data && json.data.length > 0) {
+    return json.data[0].setting_value;
+  }
+  return null;
+}
+
+/**
  * Fetch unique items with their type and classification names
  */
 export async function fetchItems(): Promise<Record<string, unknown>[]> {
@@ -394,4 +411,86 @@ export async function updateAsset(body: Record<string, unknown>) {
     );
 
   return assetResult.data;
+}
+
+/**
+ * Fetch Assignment History for an Asset
+ */
+export async function fetchAssetAssignments(assetId: number) {
+  const res = await fetch(
+    `${API_BASE_URL}/items/asset_assignments?filter[asset_id][_eq]=${assetId}&sort=-assigned_date`,
+    { headers: AUTH_HEADERS }
+  );
+  if (!res.ok) throw new Error("Failed to fetch assignments");
+  const json = await res.json();
+  const assignments = json.data || [];
+
+  // Fetch users to map user names
+  const usersRes = await fetch(`${API_BASE_URL}/items/user?limit=-1`, { headers: AUTH_HEADERS });
+  if (usersRes.ok) {
+    const usersJson = await usersRes.json();
+    const usersMap = new Map((usersJson.data || []).map((u: Record<string, unknown>) => [Number(u.user_id), `${u.user_fname} ${u.user_lname}`.trim()]));
+    
+    return assignments.map((a: Record<string, unknown>) => ({
+      ...a,
+      user_name: usersMap.get(Number(a.user_id)) || "Unknown",
+      assigned_by_name: usersMap.get(Number(a.assigned_by)) || "Unknown",
+    }));
+  }
+
+  return assignments;
+}
+
+/**
+ * Assign an Asset
+ */
+export async function createAssetAssignment(data: Record<string, unknown>) {
+  // 1. Create the assignment record
+  const res = await fetch(`${API_BASE_URL}/items/asset_assignments`, {
+    method: "POST",
+    headers: AUTH_HEADERS,
+    body: JSON.stringify(data),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.errors?.[0]?.message || "Failed to create assignment");
+
+  // 2. Update the asset's employee and condition
+  const assetUpdateRes = await fetch(`${API_BASE_URL}/items/assets_and_equipment/${data.asset_id}`, {
+    method: "PATCH",
+    headers: AUTH_HEADERS,
+    body: JSON.stringify({
+      employee: data.user_id,
+      condition: data.condition_on_assignment,
+    }),
+  });
+  if (!assetUpdateRes.ok) throw new Error("Failed to update asset assignment status");
+
+  return json.data;
+}
+
+/**
+ * Return an Asset
+ */
+export async function returnAssetAssignment(assignmentId: number, data: Record<string, unknown>) {
+  // 1. Update the assignment record
+  const res = await fetch(`${API_BASE_URL}/items/asset_assignments/${assignmentId}`, {
+    method: "PATCH",
+    headers: AUTH_HEADERS,
+    body: JSON.stringify(data),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.errors?.[0]?.message || "Failed to return asset");
+
+  // 2. Clear the asset's employee and update condition
+  const assetUpdateRes = await fetch(`${API_BASE_URL}/items/assets_and_equipment/${json.data.asset_id}`, {
+    method: "PATCH",
+    headers: AUTH_HEADERS,
+    body: JSON.stringify({
+      employee: null,
+      condition: data.condition_on_return,
+    }),
+  });
+  if (!assetUpdateRes.ok) throw new Error("Failed to update asset status after return");
+
+  return json.data;
 }
