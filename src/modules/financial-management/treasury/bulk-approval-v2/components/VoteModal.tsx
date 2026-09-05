@@ -264,9 +264,16 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     }, 0);
   }, [combinedItems, editedAmounts, itemDecisions]);
 
+  console.log("DEBUG_VOTE_MODAL:", { combinedItems, itemDecisions });
   const approvedCount = combinedItems.filter(p => itemDecisions[p.id] === "APPROVED").length;
-  const hasPendingItems = combinedItems.some(p => (itemDecisions[p.id] || "PENDING") === "PENDING");
+  const hasPendingItems = combinedItems.some(p => {
+    if (!!detail?.my_vote && p.id > 0) return false;
+    // Don't count ghost items as pending
+    if (p.id === -1 || p.id === -2 || p.id === -3) return false;
+    return (itemDecisions[p.id] || "PENDING") === "PENDING";
+  });
   const hasMissingFeedback = combinedItems.some(p => {
+    if (p.id < 0) return false;
     const status = itemDecisions[p.id] || "PENDING";
     return (status === "REJECTED" || status === "WITH_CONCERN") && !(showItemRemarks[p.id]?.trim());
   });
@@ -323,24 +330,13 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     return "APPROVED";
   }, [itemDecisions]);
 
-  const hasPendingItems = React.useMemo(() => {
-    return Object.values(itemDecisions).some(s => s === "PENDING");
-  }, [itemDecisions]);
-
-  const hasMissingFeedback = React.useMemo(() => {
-    if (!detail) return false;
-    return combinedItems.some(p =>
-      (itemDecisions[p.id] === "REJECTED" || itemDecisions[p.id] === "WITH_CONCERN") &&
-      !(showItemRemarks[p.id]?.trim())
-    );
-  }, [combinedItems, itemDecisions, showItemRemarks, detail]);
-
   const [processingItem] = React.useState<number | null>(null);
 
   if (!detail) return null;
-  const { draft, payables } = detail;
+  const { draft, payables, concern_items = [] } = detail;
   const currentTier = draft.current_tier || 1;
-  const isInteractionDisabled = !!detail.my_vote || !detail.can_vote;
+  const hasUnvotedConcernItems = concern_items.length > 0;
+  const isInteractionDisabled = (!!detail.my_vote && !hasUnvotedConcernItems) || !detail.can_vote;
 
 
 
@@ -677,7 +673,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                   <div className="flex justify-end gap-1.5 flex-wrap">
                     {/* Force Refresh Comment */}
                     <Badge className="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 text-[9px] font-black px-1.5 py-0">Approved: {approvedCount}</Badge>
-                    <Badge className="bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800 text-[9px] font-black px-1.5 py-0">Pending: {combinedItems.filter(p => (itemDecisions[p.id] || "PENDING") === "PENDING").length}</Badge>
+                    <Badge className="bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800 text-[9px] font-black px-1.5 py-0">Pending: {combinedItems.filter(p => p.id > 0 && (itemDecisions[p.id] || "PENDING") === "PENDING").length}</Badge>
                   </div>
                 </div>
               </div>
@@ -931,7 +927,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                             <span className="ml-2 text-lg font-black tabular-nums text-blue-700 dark:text-blue-400 tracking-tighter">{formatCurrency(currentTotalAmount)}</span>
                           </div>
                           <Button
-                            disabled={submitting || hasPendingItems || hasMissingFeedback || !!detail.my_vote || !detail.can_vote}
+                            disabled={submitting || hasPendingItems || hasMissingFeedback || isInteractionDisabled}
                             className="h-10 shrink-0 bg-blue-600 px-5 hover:bg-blue-700 text-white rounded-xl font-black uppercase tracking-[0.16em] shadow-lg border-t border-white/20 gap-2 active:scale-[0.98] transition-all disabled:bg-slate-100 dark:disabled:bg-slate-850 disabled:text-slate-400 dark:disabled:text-slate-600 disabled:border-none disabled:shadow-none disabled:cursor-not-allowed"
                             onClick={() => setRemarksOpen(true)}
                           >

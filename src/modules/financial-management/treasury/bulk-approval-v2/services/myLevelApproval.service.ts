@@ -266,7 +266,8 @@ export async function handleMyLevelApprovalGetResource(params: {
         })
         .filter((row) => {
           if (row.requires_final_top_sheet) return false;
-          if (row.my_vote !== null) return false;
+          // Show if they haven't voted, OR if there's a concern (returned item) they need to address
+          if (row.my_vote !== null && !row.has_concern) return false;
           return true;
         })
         .sort((a, b) => {

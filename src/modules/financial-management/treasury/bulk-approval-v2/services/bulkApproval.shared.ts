@@ -1573,7 +1573,9 @@ export async function processDraftApproval(params: {
     })
     .map((r) => toNumber(r.approver_heirarchy));
 
-  if (!authorizedLevels.some((lvl) => lvl === currentTier)) {
+  const hasConcernItemsToProcess = item_decisions && Object.keys(item_decisions).some(id => Number(id) < 0 && !handledVirtualExpenseIds.has(Math.abs(Number(id))));
+
+  if (!authorizedLevels.some((lvl) => lvl === currentTier) && !hasConcernItemsToProcess) {
     return {
       ok: false,
       status: 403,
@@ -1590,7 +1592,7 @@ export async function processDraftApproval(params: {
 
   const existingVote = (existingVoteRes.ok ? existingVoteRes.data.data ?? [] : [])[0];
 
-  if (existingVote && existingVote.status && existingVote.status !== "DRAFT") {
+  if (existingVote && existingVote.status && existingVote.status !== "DRAFT" && !hasConcernItemsToProcess) {
     return {
       ok: false,
       status: 409,
@@ -1874,21 +1876,33 @@ export async function processDraftApproval(params: {
     else finalVoteStatus = "REJECTED";
   }
 
-  await directusFetch(`/items/disbursement_draft_approvals`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      draft_id: draftId,
-      approver_id: currentUserId,
-      approver_heirarchy: currentTier,
-      status: finalVoteStatus,
-      remarks: finalRemarks,
-      version: currentVersion,
-      created_at: nowTs,
-      date_created: nowTs,
-      date_updated: nowTs,
-    }),
-  });
+  if (existingVote && existingVote.id) {
+    await directusFetch(`/items/disbursement_draft_approvals/${existingVote.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        status: finalVoteStatus,
+        remarks: finalRemarks,
+        date_updated: nowTs,
+      }),
+    });
+  } else {
+    await directusFetch(`/items/disbursement_draft_approvals`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        draft_id: draftId,
+        approver_id: currentUserId,
+        approver_heirarchy: currentTier,
+        status: finalVoteStatus,
+        remarks: finalRemarks,
+        version: currentVersion,
+        created_at: nowTs,
+        date_created: nowTs,
+        date_updated: nowTs,
+      }),
+    });
+  }
 
   const allItemsRes = await directusFetch<DirectusListResponse<DisbursementPayableDraftRow>>(
     `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,coa_id,amount,reference_no,remarks,date&limit=-1`
@@ -1967,6 +1981,12 @@ export async function processDraftApproval(params: {
     });
 
     return { ok: true, result: finalVoteStatus, message: "Draft updated." };
+  }
+
+  // If the user is voting on concern items and is NOT authorized for the current tier,
+  // do not run consensus logic as they are just processing items into the existing draft.
+  if (!authorizedLevels.some((lvl) => lvl === currentTier)) {
+    return { ok: true, result: finalVoteStatus, message: "Concern items processed." };
   }
 
   const tierApproversRes = await directusFetch<DirectusListResponse<DirectusApproverRow>>(

@@ -136,7 +136,7 @@ function getApprovalInfo(meta: ApprovalMeta) {
 type LineRemarksMap = Record<number, string>;
 
 type PendingRemarksDecision = {
-  status: Extract<FinalHeaderDecisionStatus, "Rejected" | "With Concern">;
+  status: FinalHeaderDecisionStatus;
   target: FinalDecisionTarget;
   affectedDetails: FinalTopSheetDetail[];
 } | null;
@@ -203,7 +203,7 @@ function getDetailsForTarget(
 }
 
 function requiresLineRemarks(status: FinalHeaderDecisionStatus) {
-  return status === "Rejected" || status === "With Concern";
+  return status === "Rejected" || status === "With Concern" || status === "Approved";
 }
 
 function getLineRemark(lineRemarks: LineRemarksMap, expenseId: number) {
@@ -649,9 +649,9 @@ export default function FinalTopSheetModal({
         toast.error("There are no active expense lines available for this action.");
         return;
       }
+      setPendingRemarksDecision({ status, target, affectedDetails });
+      setRemarksDialogOpen(true);
     }
-
-    performStageDecision(status, target);
   }
 
   function handleLineRemarkChange(expenseId: number, value: string) {
@@ -711,7 +711,7 @@ export default function FinalTopSheetModal({
   }
 
   async function submitItemLevelDecisionBatch(
-    status: Extract<FinalHeaderDecisionStatus, "Rejected" | "With Concern">,
+    status: FinalHeaderDecisionStatus,
     affectedDetails: FinalTopSheetDetail[]
   ) {
     if (submitting) return;
@@ -787,21 +787,9 @@ export default function FinalTopSheetModal({
     }
 
     if (requiresLineRemarks(status)) {
-      const missingRemarks = affectedDetails.filter(
-        (detail) => !getLineRemark(lineRemarks, detail.expense_id)
-      );
-
       setAuditeeDetailOpen(false);
-
-      if (missingRemarks.length > 0) {
-        setPendingRemarksDecision({ status, target, affectedDetails });
-        setRemarksDialogOpen(true);
-        toast.warning("Remarks are required per affected expense line.");
-        return;
-      }
-
       setPendingRemarksDecision({ status, target, affectedDetails });
-      setRemarksConfirmOpen(true);
+      setRemarksDialogOpen(true);
       return;
     }
 
@@ -1292,7 +1280,15 @@ export default function FinalTopSheetModal({
           }
         }}
         onLineRemarkChange={handleLineRemarkChange}
-        onSubmit={() => setRemarksConfirmOpen(true)}
+        onSubmit={() => {
+          if (pendingRemarksDecision?.status === "Approved") {
+            performStageDecision(pendingRemarksDecision.status, pendingRemarksDecision.target);
+            setRemarksDialogOpen(false);
+            setPendingRemarksDecision(null);
+          } else {
+            setRemarksConfirmOpen(true);
+          }
+        }}
       />
 
       <Dialog open={remarksConfirmOpen} onOpenChange={(nextOpen) => {

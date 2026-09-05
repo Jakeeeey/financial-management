@@ -688,9 +688,8 @@ export default function AuditeeDetailSplitModal({
                             const isLowerTierLocked = (
                               item.draft_tier !== undefined &&
                               item.draft_tier > 0 &&
-                              salesman?.current_tier !== undefined &&
-                              salesman.current_tier > 0 &&
-                              item.draft_tier !== salesman.current_tier
+                              data?.group?.required_approver_level !== undefined &&
+                              item.draft_tier !== data.group.required_approver_level
                             );
                             const isFinalized = item.draft_tier === 0;
                             const itemTier = item.draft_tier !== undefined ? item.draft_tier : effectiveCurrentTier;

@@ -1539,9 +1539,11 @@ export async function POST(req: NextRequest) {
     let docNo: string | null = null;
     let approvalVersion = 1;
 
-    if (selectedIds.length > 0) {
+    const allSelectedExpenseIds = selectedExpenses.map(e => e.id);
+
+    if (allSelectedExpenseIds.length > 0) {
       const existingPayRes = await directusFetch(
-        `/items/disbursement_payables_draft?filter[expense_id][_in]=${selectedIds.join(
+        `/items/disbursement_payables_draft?filter[expense_id][_in]=${allSelectedExpenseIds.join(
           ","
         )}&fields=disbursement_id&limit=1`
       );
@@ -1599,8 +1601,6 @@ export async function POST(req: NextRequest) {
             total_amount: totalAmount,
             remarks: remarks || null,
             supporting_documents_url: supportingDocs || null,
-            status: "Submitted",
-            approval_version: approvalVersion,
             date_updated: nowTs,
             is_supervisor: hasSupervisor ? 1 : 0,
           }),

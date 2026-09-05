@@ -1190,8 +1190,19 @@ export async function handleFinalHeaderDecision(params: {
     division_id: { _eq: divisionId },
   };
 
-  if (scope !== "expense_ids" && linked.expenseIds.length > 0) {
-    filters.id = { _in: linked.expenseIds };
+  const actionableDraftIds = new Set(
+    linked.visibleDrafts.filter((d) => d.can_act).map((d) => d.id)
+  );
+  
+  const actionableExpenseIds = linked.payables
+    .filter((p) => actionableDraftIds.has(p.draft_id))
+    .map((p) => p.expense_id);
+
+  if (scope !== "expense_ids" && actionableExpenseIds.length > 0) {
+    filters.id = { _in: actionableExpenseIds };
+  } else if (scope !== "expense_ids") {
+    // If there are no actionable expenses in this scope, do not update any.
+    return jsonResponse({ error: "No actionable expenses found for your approval tier." }, { status: 400 });
   }
 
   if (status === "Approved" && scope !== "expense_ids") {
@@ -1212,8 +1223,14 @@ export async function handleFinalHeaderDecision(params: {
         { status: 409 }
       );
     }
+    
+    const actionableExpenseIdSet = new Set(actionableExpenseIds);
+    const validExpenseIds = expenseIds.filter(id => actionableExpenseIdSet.has(id));
+    if (validExpenseIds.length === 0) {
+      return jsonResponse({ error: "None of the selected expenses are actionable at your approval tier." }, { status: 400 });
+    }
 
-    filters.id = { _in: expenseIds };
+    filters.id = { _in: validExpenseIds };
   } else if (scope === "encoder") {
     if (!employeeId) return jsonResponse({ error: "employee_id is required for encoder target scope" }, { status: 400 });
     filters.encoded_by = { _eq: employeeId };
