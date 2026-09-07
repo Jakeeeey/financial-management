@@ -66,13 +66,19 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
         if (action === "approve") {
             const result = await approveUnifiedBatch(headerId, userId, body.effective_at);
-            if ("status" in result) return NextResponse.json({ error: result.error }, { status: result.status });
+            if ("status" in result) {
+                const { status, ...payload } = result;
+                return NextResponse.json(payload, { status });
+            }
                 return NextResponse.json(result, { status: result.failed > 0 || result.retryable ? 202 : 200 });
         }
 
         if (action === "retry_application") {
             const result = await retryUnifiedBatch(headerId, userId);
-            if ("status" in result) return NextResponse.json({ error: result.error }, { status: result.status });
+            if ("status" in result) {
+                const { status, ...payload } = result;
+                return NextResponse.json(payload, { status });
+            }
             return NextResponse.json(result, { status: result.failed > 0 || result.retryable ? 202 : 200 });
         }
 

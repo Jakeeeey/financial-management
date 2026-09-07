@@ -411,10 +411,14 @@ export type PriceSnapshotConflict = {
     price_type_id: number;
     snapshot_price: number | null;
     live_price: number | null;
+    proposed_price: number | null;
     reason: "invalid_snapshot" | "stale_snapshot";
 };
 
 export class PriceSnapshotConflictError extends Error {
+    readonly code = "price_snapshot_conflict";
+    readonly retryable = false;
+
     constructor(public readonly conflict: PriceSnapshotConflict) {
         super(
             `Price changed after submission for product ${conflict.product_id}, price type ${conflict.price_type_id}.`,
@@ -425,6 +429,10 @@ export class PriceSnapshotConflictError extends Error {
 
 export function isPriceSnapshotConflictError(error: unknown): error is PriceSnapshotConflictError {
     return error instanceof PriceSnapshotConflictError;
+}
+
+export function isPriceSnapshotConflictMessage(value: unknown): boolean {
+    return String(value ?? "").toLowerCase().includes("price changed after submission");
 }
 
 function parseSnapshotPrice(value: unknown): { valid: boolean; value: number | null } {
@@ -478,6 +486,7 @@ export async function findPriceSnapshotConflicts(
         product_id: number;
         price_type_id: number;
         current_price: unknown;
+        proposed_price?: unknown;
     }>,
 ): Promise<PriceSnapshotConflict[]> {
     const liveSnapshots = await fetchLivePriceSnapshots(lines);
@@ -493,6 +502,7 @@ export async function findPriceSnapshotConflicts(
                 price_type_id: line.price_type_id,
                 snapshot_price: stored.value,
                 live_price: live,
+                proposed_price: parseSnapshotPrice(line.proposed_price).value,
                 reason: stored.valid ? "stale_snapshot" : "invalid_snapshot",
             });
         }
@@ -506,6 +516,7 @@ export async function assertPriceSnapshotCurrent(args: {
     product_id: number;
     price_type_id: number;
     current_price: unknown;
+    proposed_price?: unknown;
 }) {
     const conflicts = await findPriceSnapshotConflicts([args]);
     if (conflicts[0]) throw new PriceSnapshotConflictError(conflicts[0]);
@@ -1035,6 +1046,7 @@ export async function applyApprovedBatch(headerId: number, userId: number, effec
             product_id: line.productId,
             price_type_id: line.priceTypeId,
             current_price: line.currentPrice,
+            proposed_price: line.proposedPrice,
         })),
     );
     if (conflicts.length > 0) {
@@ -1043,6 +1055,7 @@ export async function applyApprovedBatch(headerId: number, userId: number, effec
                 error: "Batch contains prices that changed after submission.",
                 code: "price_snapshot_conflict",
                 conflicts,
+                retryable: false,
             },
             { status: 409 },
         );
@@ -1065,6 +1078,7 @@ export async function applyApprovedBatch(headerId: number, userId: number, effec
     let failed = 0;
     let warning: string | null = null;
     let retryable = false;
+    const applicationConflicts: PriceSnapshotConflict[] = [];
     if (!staged.scheduled) {
         try {
             const { applyProposedPrice } = await import("../price-change-requests/_actions");
@@ -1085,6 +1099,7 @@ export async function applyApprovedBatch(headerId: number, userId: number, effec
                         await applyProposedPrice({
                             userId,
                             createdBy: readAuditUserId(claimed.requested_by),
+                            requestId: pickId(claimed.request_id),
                             productId,
                             priceTypeId,
                             currentPrice: claimed.current_price,
@@ -1093,7 +1108,10 @@ export async function applyApprovedBatch(headerId: number, userId: number, effec
                     },
                 });
                 if (outcome.state === "applied") applied += 1;
-                if (outcome.state === "failed") failed += 1;
+                if (outcome.state === "failed") {
+                    failed += 1;
+                    if (outcome.conflict) applicationConflicts.push(outcome.conflict);
+                }
             }
         } catch (error: unknown) {
             const notice = postCommitApplicationNotice(error, "pricing application");
@@ -1111,8 +1129,8 @@ export async function applyApprovedBatch(headerId: number, userId: number, effec
         retryable = notice.retryable;
     }
     if (failed > 0) {
-        warning = warning ?? "Approval was saved, but one or more pricing lines failed to apply. Retry application from the batch details.";
-        retryable = true;
+        warning = warning ?? "Approval was saved, but one or more pricing lines failed to apply. Review the failed lines and create a replacement request for any snapshot conflicts.";
+        retryable = retryable || failed > applicationConflicts.length;
     }
     if (applied > 0) {
         try {
@@ -1138,6 +1156,15 @@ export async function applyApprovedBatch(headerId: number, userId: number, effec
         effective_at: staged.effectiveAt,
         warning,
         retryable,
+        conflicts: applicationConflicts,
+        application_summary: {
+            total: affected,
+            applied,
+            failed,
+            scheduled: staged.scheduled ? affected : 0,
+            applying: 0,
+            partial: applied > 0 && failed > 0,
+        },
     }, { status: failed > 0 || retryable ? 202 : 200 });
 }
 

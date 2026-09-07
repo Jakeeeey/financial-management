@@ -2,6 +2,25 @@ export type PCRStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
 export type PriceChangeApplicationStatus = "SCHEDULED" | "APPLYING" | "APPLIED" | "FAILED" | "CANCELLED";
 export type PCRDisplayStatus = PCRStatus | "SCHEDULED" | "APPLYING" | "FAILED";
 
+export type PriceSnapshotConflict = {
+    request_id: number;
+    product_id: number;
+    price_type_id: number;
+    snapshot_price: number | null;
+    live_price: number | null;
+    proposed_price: number | null;
+    reason: "invalid_snapshot" | "stale_snapshot";
+};
+
+export type UnifiedApplicationSummary = {
+    total: number;
+    applied: number;
+    failed: number;
+    scheduled: number;
+    applying: number;
+    partial: boolean;
+};
+
 export type PCRStatusFilter = PCRDisplayStatus | "ALL";
 
 export type ApprovalKind = "price_batch" | "cost_batch" | "mixed_batch" | "price_type" | "list_price";
@@ -91,6 +110,8 @@ export type PriceChangeBatchLine = {
     unit_name?: string | null;
     effective_at?: string | null;
     application_status?: PriceChangeApplicationStatus | string | null;
+    application_attempts?: number | null;
+    application_error?: string | null;
     applied_at?: string | null;
     applied_by?: number | string | null;
 };
@@ -122,6 +143,10 @@ export type PriceChangeBatchHeader = {
 };
 
 export type PriceChangeBatchDetail = PriceChangeBatchHeader & {
+    application_attempts?: number | null;
+    application_error?: string | null;
+    retryable?: boolean;
+    conflicts?: PriceSnapshotConflict[];
     details: PriceChangeBatchLine[];
 };
 
@@ -246,6 +271,8 @@ export type UnifiedBatchDetail = {
     application_attempts?: number;
     application_error?: string | null;
     retryable?: boolean;
+    application_summary?: UnifiedApplicationSummary;
+    conflicts?: PriceSnapshotConflict[];
     applied_at?: string | null;
     applied_by?: number | string | null;
     batch_types: Array<"PRICE_TYPE" | "LIST_COST">;
