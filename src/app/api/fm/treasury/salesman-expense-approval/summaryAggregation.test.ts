@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- Node's strip-types runner resolves the local .ts module through CommonJS. */
-export {};
+import type {} from "node:assert/strict";
 
 const assert: typeof import("node:assert/strict") = require("node:assert/strict");
 const test: typeof import("node:test") = require("node:test");
