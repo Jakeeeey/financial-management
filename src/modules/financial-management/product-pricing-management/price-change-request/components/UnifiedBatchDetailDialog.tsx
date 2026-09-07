@@ -22,6 +22,10 @@ import { getUnifiedBatch } from "../providers/pcrApi";
 import { BatchDecisionSummaryFields } from "./BatchDecisionSummaryFields";
 import { DecisionConfirmationDialog } from "./DecisionConfirmationDialog";
 import { RejectDialog } from "./RejectDialog";
+import {
+    formatPriceSnapshotConflictMessage,
+    PriceSnapshotConflictPanel,
+} from "./PriceSnapshotConflictPanel";
 import { decisionUserLabel } from "../utils/labels";
 import { displayPcrStatus, pcrApproveButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
@@ -224,13 +228,33 @@ export function UnifiedBatchDetailDialog({
     const canAct = !readOnly && isPending && Boolean(onApprove && onReject) && !loading;
     const isScheduled = detail?.status === "APPROVED" && detail.application_status === "SCHEDULED";
     const canApplyScheduledNow = !readOnly && isScheduled && Boolean(onApplyScheduledNow) && !loading && !acting;
-    const canRetry = !readOnly && detail?.application_status === "FAILED" && Boolean(detail.retryable) && Boolean(onRetryApplication) && !loading && !acting;
+    const conflicts = detail?.conflicts ?? [];
+    const canRetry = !readOnly && detail?.application_status === "FAILED" && conflicts.length === 0 && Boolean(detail.retryable) && Boolean(onRetryApplication) && !loading && !acting;
     const displayStatus = detail ? displayPcrStatus(detail.status, detail.application_status, detail.effective_at) : "";
     const lines = React.useMemo(
         () => [...(detail?.price_details ?? []), ...(detail?.cost_details ?? [])],
         [detail?.cost_details, detail?.price_details],
     );
     const lineSummary = React.useMemo(() => buildLineSummary(lines), [lines]);
+    const conflictLabels = React.useMemo(
+        () => Object.fromEntries(
+            lines
+                .filter((line) => line.kind === "price_type" && line.price_type_id != null)
+                .map((line) => [
+                    `${line.product_id}:${line.price_type_id}`,
+                    {
+                        product_name: line.product_name,
+                        product_code: line.product_code,
+                        price_type_name: line.price_type_name,
+                        unit_name: line.unit_name,
+                    },
+                ]),
+        ),
+        [lines],
+    );
+    const applicationError = detail?.application_error
+        ? formatPriceSnapshotConflictMessage(detail.application_error, conflictLabels)
+        : null;
 
     const handleRetryApplication = async () => {
         if (!batchId || !onRetryApplication) return;
@@ -302,15 +326,38 @@ export function UnifiedBatchDetailDialog({
                                 <BatchDecisionSummaryFields detail={detail} />
                             </div>
 
-                            {detail.application_error ? (
-                                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
-                                    <div className="font-medium">Application issue</div>
-                                    <div className="mt-1">{detail.application_error}</div>
-                                    {detail.application_attempts != null ? (
+                            {applicationError ? (
+                               <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+                                   <div className="font-medium">Application issue</div>
+                                    <div className="mt-1 break-words">{applicationError}</div>
+                                   {detail.application_attempts != null ? (
                                         <div className="mt-1 text-xs">Attempts: {detail.application_attempts}</div>
                                     ) : null}
                                 </div>
                             ) : null}
+
+                            {detail.application_summary && detail.application_summary.failed > 0 ? (
+                                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+                                    <div className="font-medium">
+                                        {detail.application_summary.partial ? "Partially applied" : "Application failed"}
+                                    </div>
+                                    <div className="mt-1">
+                                        {detail.application_summary.applied} of {detail.application_summary.total} line(s) applied; {detail.application_summary.failed} failed.
+                                    </div>
+                                </div>
+                            ) : null}
+
+                            <PriceSnapshotConflictPanel
+                                conflicts={conflicts}
+                                supplierId={detail.supplier_id}
+                                supplierName={detail.supplier_name}
+                                batchLabel={`PCB-${detail.header_id}`}
+                                labels={conflictLabels}
+                                onCreated={() => {
+                                    if (!batchId) return;
+                                    void getUnifiedBatch(batchId).then((result) => setDetail(result.data));
+                                }}
+                            />
 
                             <LineTable lines={lines} supplierName={detail.supplier_name} summary={lineSummary} />
                         </div>

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { APPLICATION_MAX_FAILURES } from "../../_applicationEngine";
 import {
     BatchDetailRow,
     applyApprovedBatch,
@@ -7,6 +8,8 @@ import {
     fetchUserNamesById,
     getDetails,
     getHeader,
+    findPriceSnapshotConflicts,
+    isPriceSnapshotConflictMessage,
     isRecord,
     normalizeHeaderId,
     normalizePriceTypeId,
@@ -103,6 +106,11 @@ function mapDetail(line: BatchDetailRow) {
         percent_change: percentChange,
         unit_name: productUomLabel(line.product_id),
         status: line.status ?? "PENDING",
+        application_status: line.application_status ?? null,
+        application_attempts: Number(line.application_attempts ?? 0),
+        application_error: line.application_error ?? null,
+        applied_at: line.applied_at ?? null,
+        applied_by: line.applied_by ?? null,
     };
 }
 
@@ -121,6 +129,33 @@ export async function GET(req: NextRequest, context: RouteContext) {
         if (!header) return NextResponse.json({ error: "Batch not found" }, { status: 404 });
 
         const details = await getDetails(headerId);
+        const conflictCandidates = details
+            .filter((line) =>
+                String(line.application_status ?? "").toUpperCase() === "FAILED" &&
+                isPriceSnapshotConflictMessage(line.application_error),
+            )
+            .map((line) => ({
+                request_id: pickId(line.request_id) ?? 0,
+                product_id: normalizeProductId(line),
+                price_type_id: normalizePriceTypeId(line),
+                current_price: line.current_price,
+                proposed_price: line.proposed_price,
+            }))
+            .filter((line) => line.product_id > 0 && line.price_type_id > 0);
+        const conflicts = conflictCandidates.length > 0
+            ? await findPriceSnapshotConflicts(conflictCandidates)
+            : [];
+        const conflictRequestIds = new Set(conflicts.map((conflict) => conflict.request_id));
+        const headerApplicationStatus = String(header.application_status ?? "").toUpperCase();
+        const retryable = header.status === "APPROVED" &&
+            ["FAILED", "SCHEDULED"].includes(headerApplicationStatus) &&
+            details.some((line) => {
+                const lineStatus = String(line.application_status ?? "").toUpperCase();
+                return lineStatus === "SCHEDULED" ||
+                    (lineStatus === "FAILED" &&
+                        Number(line.application_attempts ?? 0) < APPLICATION_MAX_FAILURES &&
+                        !conflictRequestIds.has(pickId(line.request_id) ?? 0));
+            });
         const batchSupplierName = supplierLabelOf(header.supplier_id);
         const { approved_by_name, rejected_by_name } = await resolveBatchDecisionUserNames(header);
         const detailRequester = details.find((line) => userIdOf(line.requested_by) !== null)?.requested_by ?? null;
@@ -150,8 +185,12 @@ export async function GET(req: NextRequest, context: RouteContext) {
                 reject_reason: header.reject_reason ?? null,
                 effective_at: header.effective_at ?? null,
                 application_status: header.application_status ?? null,
+                application_attempts: Number(header.application_attempts ?? 0),
+                application_error: header.application_error ?? null,
                 applied_at: header.applied_at ?? null,
                 applied_by: header.applied_by ?? null,
+                retryable,
+                conflicts,
                 details: details.map((line) => {
                     return {
                         ...mapDetail(line),
@@ -192,7 +231,10 @@ export async function POST(req: NextRequest, context: RouteContext) {
             if (batchKind === "mixed") {
                 if (action === "approve") {
                     const result = await approveUnifiedBatch(headerId, userId, body.effective_at);
-                    if ("status" in result) return NextResponse.json({ error: result.error }, { status: result.status });
+                    if ("status" in result) {
+                        const { status, ...payload } = result;
+                        return NextResponse.json(payload, { status });
+                    }
                     return NextResponse.json(result, { status: result.failed > 0 || result.retryable ? 202 : 200 });
                 }
 
