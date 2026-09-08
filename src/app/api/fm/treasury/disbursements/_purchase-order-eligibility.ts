@@ -272,6 +272,7 @@ export function postedReceivingRowsByPurchaseOrder<T extends DirectusReceiving>(
 
     for (const row of rows) {
         if (asNumber(row.is_reverted) === 1) continue;
+        if (!asString(row.receipt_no)) continue;
         const poId = asNumber(row.purchase_order_id);
         if (poId === undefined) continue;
 
@@ -307,4 +308,8 @@ export function activeReceivingRowsByPurchaseOrder<T extends DirectusReceiving>(
 
 export function isFullyPostedPurchaseOrder<T extends DirectusReceiving>(rows: T[]): boolean {
     return rows.length > 0 && rows.every(isPostedReceivingAmount);
+}
+
+export function hasUnpostedReceivingRows<T extends DirectusReceiving>(rows: T[]): boolean {
+    return rows.some((row) => !isPostedReceivingAmount(row));
 }
