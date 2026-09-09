@@ -98,6 +98,7 @@ export function ItemCreateModal({ open, onOpenChange, onSaved }: ItemCreateModal
     e.preventDefault();
     if (!name.trim()) { toast.error("Item name is required"); return; }
     const drafts = addVariants ? variants : [];
+    if (drafts.length === 0) { toast.error("Each item needs at least one variant"); return; }
     const invalid = drafts.find((v) =>
       (v.selectedAttrs.length === 0 && !v.uom_id) || v.selectedAttrs.some((s) => s.valueId <= 0)
     );

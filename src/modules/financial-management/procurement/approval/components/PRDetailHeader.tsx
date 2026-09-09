@@ -57,7 +57,7 @@ export function PRDetailHeader({ master, computedTotal }: PRDetailHeaderProps) {
             <div>
               <span className="text-muted-foreground block">PO Reference</span>
               <button
-                onClick={() => router.push(`/fm/procurement/purchase-order/${master.po_no}`)}
+                onClick={() => router.push(`/fm/procurement/procurement-summary/${master.id}`)}
                 className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline cursor-pointer"
               >
                 PO #{master.po_no} <ExternalLink className="h-3 w-3" />

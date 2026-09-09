@@ -2,10 +2,35 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2, Plus } from "lucide-react";
-import { useAttributes } from "../hooks/useItemAttributes";
-import { AttributeCard } from "./AttributeCard";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Loader2, Plus, Settings2 } from "lucide-react";
+import { isActiveFlag, useAttributes } from "../hooks/useItemAttributes";
+import { formatDateTime } from "../../utils/utils";
 import { AttributeCreateModal } from "./AttributeCreateModal";
+import {
+  AttributeManageModal,
+  type ManagedAttribute,
+} from "./AttributeManageModal";
+
+function fallback(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  const text = String(value).trim();
+  return text.length > 0 ? text : "—";
+}
+
+export function activeValueCount(attr: ManagedAttribute): number {
+  return (attr.attribute_values || []).filter((v) =>
+    isActiveFlag(v.is_active)
+  ).length;
+}
+
 export default function ItemAttributeManager() {
   const {
     attributes,
@@ -14,11 +39,16 @@ export default function ItemAttributeManager() {
     addAttribute,
     addAttributeValue,
     updateAttribute,
-    deleteAttribute,
+    toggleAttribute,
     updateAttributeValue,
-    deleteAttributeValue,
+    toggleAttributeValue,
   } = useAttributes();
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [managed, setManaged] = useState<ManagedAttribute | null>(null);
+
+  const liveManaged = managed
+    ? (attributes.find((a) => a.id === managed.id) ?? managed)
+    : null;
 
   if (loading) {
     return (
@@ -44,20 +74,54 @@ export default function ItemAttributeManager() {
           <p className="text-sm">Create your first attribute to get started.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {attributes.map((attr) => (
-            <AttributeCard
-              key={attr.id}
-              attribute={attr}
-              values={attr.attribute_values || []}
-              onAddValue={addAttributeValue}
-              onUpdateAttribute={updateAttribute}
-              onDeleteAttribute={deleteAttribute}
-              onUpdateValue={updateAttributeValue}
-              onDeleteValue={deleteAttributeValue}
-              onSaved={fetchAll}
-            />
-          ))}
+        <div className="overflow-x-auto rounded-lg border">
+          <Table className="min-w-[900px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Attribute Name</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead>Value Count</TableHead>
+                <TableHead>Created By</TableHead>
+                <TableHead>Last Updated</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {attributes.map((attr) => (
+                <TableRow key={attr.id}>
+                  <TableCell className="max-w-[220px] truncate font-medium">
+                    {attr.name}
+                  </TableCell>
+                  <TableCell className="max-w-[280px] truncate">
+                    {fallback(attr.description)}
+                  </TableCell>
+                  <TableCell>{activeValueCount(attr)}</TableCell>
+                  <TableCell className="max-w-[140px] truncate">
+                    {fallback(attr.created_by)}
+                  </TableCell>
+                  <TableCell className="max-w-[170px] truncate" title={formatDateTime(attr.updated_at)}>
+                    {formatDateTime(attr.updated_at)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setManaged(attr)}
+                    >
+                      <Settings2 className="mr-2 h-4 w-4" />
+                      Manage
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-4 py-2 text-xs text-muted-foreground border-t">
+            <span>
+              Showing {attributes.length} of {attributes.length} record
+              {attributes.length !== 1 ? "s" : ""}
+            </span>
+          </div>
         </div>
       )}
 
@@ -65,6 +129,20 @@ export default function ItemAttributeManager() {
         open={showCreateModal}
         onOpenChange={setShowCreateModal}
         onSaved={addAttribute}
+      />
+
+      <AttributeManageModal
+        attribute={liveManaged}
+        open={liveManaged !== null}
+        onOpenChange={(next) => {
+          if (!next) setManaged(null);
+        }}
+        onUpdateAttribute={updateAttribute}
+        onToggleAttribute={toggleAttribute}
+        onAddValue={addAttributeValue}
+        onUpdateValue={updateAttributeValue}
+        onToggleValue={toggleAttributeValue}
+        onSaved={fetchAll}
       />
     </div>
   );

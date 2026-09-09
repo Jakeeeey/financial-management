@@ -23,7 +23,7 @@ export const CreateVariantSchema = z
     uom_id: z.number().int().positive().nullable().optional(),
     list_price: z.number().nonnegative().optional(),
     sku: z.string().nullable().optional(),
-    valueIds: z.array(z.number().int().positive()).optional(),
+    valueIds: z.array(z.number().int()).optional(),
   })
   .superRefine((data, ctx) => {
     if ((!data.valueIds || data.valueIds.length === 0) && data.uom_id == null) {
@@ -31,6 +31,13 @@ export const CreateVariantSchema = z
         code: z.ZodIssueCode.custom,
         path: ["uom_id"],
         message: "A UOM is required when the variant has no attribute values",
+      });
+    }
+    if (data.valueIds && data.valueIds.some((v) => v <= 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["valueIds"],
+        message: "Each attribute must have a value selected",
       });
     }
   });
@@ -43,7 +50,7 @@ export const UpdateVariantSchema = z
     uom_id: z.number().int().positive().nullable().optional(),
     list_price: z.number().nonnegative().optional(),
     sku: z.string().nullable().optional(),
-    valueIds: z.array(z.number().int().positive()).optional(),
+    valueIds: z.array(z.number().int()).optional(),
     active: z.boolean().optional(),
   })
   .superRefine((data, ctx) => {
@@ -54,14 +61,24 @@ export const UpdateVariantSchema = z
         message: "A UOM is required when the variant has no attribute values",
       });
     }
+    if (data.valueIds && data.valueIds.some((v) => v <= 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["valueIds"],
+        message: "Each attribute must have a value selected",
+      });
+    }
   });
 
-/** Payload for renaming an attribute. */
 export const UpdateAttributeSchema = z.object({
-  name: z.string().min(1),
+  name: z.string().min(1).optional(),
+  description: z.string().nullable().optional(),
+  is_active: z.boolean().optional(),
 });
 
-/** Payload for renaming an attribute value. */
 export const UpdateAttributeValueSchema = z.object({
-  name: z.string().min(1),
+  name: z.string().min(1).optional(),
+  description: z.string().nullable().optional(),
+  extra_price: z.number().nonnegative().optional(),
+  is_active: z.boolean().optional(),
 });

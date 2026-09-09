@@ -1,4 +1,11 @@
-import type { ItemAttribute, ItemAttributeValue } from "@/modules/financial-management/procurement/items/utils/types";
+import type {
+  CreateAttributeInput,
+  CreateAttributeValueInput,
+  ItemAttribute,
+  ItemAttributeValue,
+  UpdateAttributeInput,
+  UpdateAttributeValueInput,
+} from "@/modules/financial-management/procurement/items/utils/types";
 
 const BASE = "/api/fm/procurement/items";
 
@@ -20,23 +27,33 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export async function listAttributes(): Promise<{ data: ItemAttribute[] }> {
-  return request<{ data: ItemAttribute[] }>(`${BASE}/attributes`);
+  return request<{ data: ItemAttribute[] }>(`${BASE}/attributes?limit=-1`);
 }
 
-export async function createAttribute(data: {
-  name: string;
-}): Promise<{ data: ItemAttribute }> {
+export async function listAttributeValues(params?: {
+  page?: number;
+  limit?: number;
+}): Promise<{ data: ItemAttributeValue[]; total?: number }> {
+  const qs = new URLSearchParams();
+  if (params?.page) qs.set("page", String(params.page));
+  qs.set("limit", String(params?.limit ?? -1));
+  return request<{ data: ItemAttributeValue[]; total?: number }>(
+    `${BASE}/attribute-values?${qs.toString()}`
+  );
+}
+
+export async function createAttribute(
+  data: CreateAttributeInput
+): Promise<{ data: ItemAttribute }> {
   return request<{ data: ItemAttribute }>(`${BASE}/attributes`, {
     method: "POST",
     body: JSON.stringify(data),
   });
 }
 
-export async function createAttributeValue(data: {
-  attribute_id: number;
-  name: string;
-  extra_price?: number;
-}): Promise<{ data: ItemAttributeValue }> {
+export async function createAttributeValue(
+  data: CreateAttributeValueInput
+): Promise<{ data: ItemAttributeValue }> {
   return request<{ data: ItemAttributeValue }>(`${BASE}/attribute-values`, {
     method: "POST",
     body: JSON.stringify(data),
@@ -45,7 +62,7 @@ export async function createAttributeValue(data: {
 
 export async function updateAttribute(
   id: number,
-  data: { name: string }
+  data: UpdateAttributeInput
 ): Promise<{ data: ItemAttribute }> {
   return request<{ data: ItemAttribute }>(`${BASE}/attributes/${id}`, {
     method: "PATCH",
@@ -63,7 +80,7 @@ export async function deleteAttribute(
 
 export async function updateAttributeValue(
   id: number,
-  data: { name: string }
+  data: UpdateAttributeValueInput
 ): Promise<{ data: ItemAttributeValue }> {
   return request<{ data: ItemAttributeValue }>(`${BASE}/attribute-values/${id}`, {
     method: "PATCH",
