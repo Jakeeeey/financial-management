@@ -78,6 +78,7 @@ export interface WalletItem extends SettlementPrintableWalletItem {
     balanceTypeId?: number;
     isLocal?: boolean;
     invoiceId?: number;
+    isCrossEntity?: boolean;
 }
 
 export interface GeneralFinding {
@@ -279,7 +280,7 @@ export function useSettlement(pouchId: string | number, activeInvoiceId: number 
             const returnsPage = (returnsResponse || {}) as PaginatedRawReturnResponse;
             const returnItems = returnsPage.content || [];
             setCredits(prev => {
-                const newCredits = append ? [...prev] : [];
+                const newCredits = append ? [...prev] : prev.filter(credit => credit.isCrossEntity);
                 memos?.forEach(m => {
                     const remainingMemoAmount = (m.amount || 0) - (m.appliedAmount || 0);
                     const id = `memo-${m.id}`;
@@ -320,7 +321,7 @@ export function useSettlement(pouchId: string | number, activeInvoiceId: number 
         ++creditRequestVersion.current;
 
         if (creditCustomerCodes.length === 0 && creditCustomerNames.length === 0) {
-            setCredits([]);
+            setCredits(prev => prev.filter(credit => credit.isCrossEntity));
             setCreditsPage(0);
             setHasMoreCredits(false);
             setCreditsError(null);
@@ -328,7 +329,7 @@ export function useSettlement(pouchId: string | number, activeInvoiceId: number 
             return;
         }
 
-        setCredits([]);
+        setCredits(prev => prev.filter(credit => credit.isCrossEntity));
         setCreditsPage(0);
         setHasMoreCredits(false);
         void loadCreditsPage(1, false);
@@ -373,12 +374,12 @@ export function useSettlement(pouchId: string | number, activeInvoiceId: number 
                     if (type === "MEMO") {
                         const remaining = (data.amount || 0) - (data.appliedAmount || 0);
                         if (remaining > 0) {
-                        newCredits.unshift({ id, dbId: data.id, type: "MEMO", label: `Memo: ${data.memoNumber}`, originalAmount: remaining, customerCode: data.customerCode, customerName: data.customerName });
+                        newCredits.unshift({ id, dbId: data.id, type: "MEMO", label: `Memo: ${data.memoNumber}`, originalAmount: remaining, customerCode: data.customerCode, customerName: data.customerName, isCrossEntity: true });
                         }
                     } else {
                         const availableReturnAmount = getAvailableReturnAmount(data);
                         if (availableReturnAmount > SETTLEMENT_BALANCE_TOLERANCE) {
-                            newCredits.unshift({ id, dbId: data.id, type: "RETURN", label: `Return: ${data.returnNumber}`, originalAmount: availableReturnAmount, customerCode: data.customerCode, customerName: data.customerName });
+                            newCredits.unshift({ id, dbId: data.id, type: "RETURN", label: `Return: ${data.returnNumber}`, originalAmount: availableReturnAmount, customerCode: data.customerCode, customerName: data.customerName, isCrossEntity: true });
                         }
                     }
                 }
@@ -589,7 +590,8 @@ export function useSettlement(pouchId: string | number, activeInvoiceId: number 
 
                 if (wItem && inv) {
                     const isCredit = wItem.type === "MEMO" || wItem.type === "RETURN";
-                    if (isCredit && !isSameCustomer(wItem, inv)) return filtered;
+                    const isExplicitCrossEntityCredit = isCredit && wItem.isCrossEntity === true;
+                    if (isCredit && !isExplicitCrossEntityCredit && !isSameCustomer(wItem, inv)) return filtered;
 
                     const walletUsedElsewhere = prev
                         .filter(a => a.sourceTempId === sourceId && a.invoiceId !== invoiceId)
