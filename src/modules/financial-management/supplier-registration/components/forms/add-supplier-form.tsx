@@ -104,6 +104,60 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
   const { paymentTerms, isLoading: isLoadingPayment } = usePaymentTerms();
   const { deliveryTerms, isLoading: isLoadingDelivery } = useDeliveryTerms();
 
+  const handleNext = async () => {
+    let fieldsToValidate: string[] = [];
+    let nextTab = "";
+
+    if (activeTab === "contact") {
+      fieldsToValidate = [
+        "supplier_name",
+        "supplier_shortcut",
+        "supplier_type",
+        "contact_person",
+        "email_address",
+        "phone_number",
+        "preferred_communication_method",
+      ];
+      nextTab = "location";
+    } else if (activeTab === "location") {
+      fieldsToValidate = [
+        "address",
+        "brgy",
+        "city",
+        "state_province",
+        "postal_code",
+        "country",
+      ];
+      nextTab = "business";
+    } else if (activeTab === "business") {
+      fieldsToValidate = [
+        "tin_number",
+        "bank_details",
+        "notes_or_comments",
+        "agreement_or_contract",
+        "supplier_image",
+      ];
+      nextTab = "terms";
+    }
+
+    if (fieldsToValidate.length > 0) {
+      const isValid = await form.trigger(fieldsToValidate as any);
+      if (isValid) {
+        setActiveTab(nextTab);
+      }
+    }
+  };
+
+  const handlePrev = () => {
+    if (activeTab === "location") {
+      setActiveTab("contact");
+    } else if (activeTab === "business") {
+      setActiveTab("location");
+    } else if (activeTab === "terms") {
+      setActiveTab("business");
+    }
+  };
+
   const onSubmit = async (data: SupplierFormValues) => {
     setIsSubmitting(true);
     try {
@@ -231,7 +285,7 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                           <span className="text-destructive">*</span>
                         </FormLabel>
                         <FormControl>
-                          <Input placeholder="Enter supplier name" {...field} />
+                          <Input placeholder="Enter supplier name" {...field} maxLength={255} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -248,7 +302,7 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                           <span className="text-destructive">*</span>
                         </FormLabel>
                         <FormControl>
-                          <Input placeholder="e.g., NFPI" {...field} />
+                          <Input placeholder="e.g., NFPI" {...field} maxLength={50} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -292,6 +346,7 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                         <Input
                           placeholder="Enter contact person name"
                           {...field}
+                          maxLength={255}
                         />
                       </FormControl>
                       <FormMessage />
@@ -311,6 +366,7 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                             type="email"
                             placeholder="email@example.com"
                             {...field}
+                            maxLength={255}
                           />
                         </FormControl>
                         <FormMessage />
@@ -348,7 +404,7 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                     <FormItem>
                       <FormLabel>Preferred Communication Method</FormLabel>
                       <FormControl>
-                        <Input placeholder="Email, Phone, etc." {...field} />
+                        <Input placeholder="Email, Phone, etc." {...field} maxLength={100} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -371,7 +427,7 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                         Street Address <span className="text-destructive">*</span>
                       </FormLabel>
                       <FormControl>
-                        <Input placeholder="Street address" {...field} />
+                        <Input placeholder="Street address" {...field} maxLength={255} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -388,7 +444,7 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                           Barangay <span className="text-destructive">*</span>
                         </FormLabel>
                         <FormControl>
-                          <Input placeholder="Barangay name" {...field} />
+                          <Input placeholder="Barangay name" {...field} maxLength={100} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -404,7 +460,7 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                           City <span className="text-destructive">*</span>
                         </FormLabel>
                         <FormControl>
-                          <Input placeholder="City name" {...field} />
+                          <Input placeholder="City name" {...field} maxLength={100} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -422,7 +478,7 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                           Province <span className="text-destructive">*</span>
                         </FormLabel>
                         <FormControl>
-                          <Input placeholder="Province name" {...field} />
+                          <Input placeholder="Province name" {...field} maxLength={100} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -438,7 +494,7 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                           Postal Code <span className="text-destructive">*</span>
                         </FormLabel>
                         <FormControl>
-                          <Input placeholder="e.g., 2300" {...field} />
+                          <Input placeholder="e.g., 2300" {...field} maxLength={10} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -455,7 +511,7 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                         Country <span className="text-destructive">*</span>
                       </FormLabel>
                       <FormControl>
-                        <Input placeholder="Philippines" {...field} />
+                        <Input placeholder="Philippines" {...field} maxLength={100} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -481,6 +537,7 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                         <Input
                           placeholder="000-000-000-000"
                           {...field}
+                          maxLength={15}
                           onChange={(e) => {
                             const formatted = formatTIN(e.target.value);
                             field.onChange(formatted);
@@ -705,10 +762,26 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
           >
             Cancel
           </Button>
-          <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isSubmitting ? "Creating..." : "Create Supplier"}
-          </Button>
+          {activeTab !== "contact" && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handlePrev}
+              disabled={isSubmitting}
+            >
+              Prev
+            </Button>
+          )}
+          {activeTab !== "terms" ? (
+            <Button type="button" onClick={handleNext}>
+              Next
+            </Button>
+          ) : (
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {isSubmitting ? "Creating..." : "Create Supplier"}
+            </Button>
+          )}
         </div>
       </form>
     </Form>

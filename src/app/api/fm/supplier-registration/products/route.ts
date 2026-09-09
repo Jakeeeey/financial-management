@@ -15,12 +15,14 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const search = searchParams.get("search");
+    const limit = parseInt(searchParams.get("limit") || "-1");
+    const offset = parseInt(searchParams.get("offset") || "0");
 
     let products;
     if (search && search.trim() !== "") {
-      products = await searchProducts(search.trim());
+      products = await searchProducts(search.trim(), limit, offset);
     } else {
-      products = await fetchAllProducts();
+      products = await fetchAllProducts(limit, offset);
     }
 
     return NextResponse.json(

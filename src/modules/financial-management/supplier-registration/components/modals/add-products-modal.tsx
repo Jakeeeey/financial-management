@@ -11,7 +11,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { useProducts } from "@/modules/financial-management/supplier-registration/hooks/useProducts";
 import { Loader2, Search } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -29,10 +28,27 @@ export function AddProductsModal({
   onAddProducts,
   assignedProductIds,
 }: AddProductsModalProps) {
-  const { products, isLoading: productsLoading } = useProducts();
-  const [searchQuery, setSearchQuery] = useState("");
+  const {
+    products,
+    isLoading: productsLoading,
+    isFetchingMore,
+    hasMore,
+    loadMore,
+    searchQuery,
+    setSearchQuery,
+  } = useProducts();
+
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    if (target.scrollHeight - target.scrollTop <= target.clientHeight + 50) {
+      if (!productsLoading && !isFetchingMore && hasMore) {
+        loadMore();
+      }
+    }
+  };
 
   // Filter out products already assigned and de-duplicate the available list
   const availableProducts = useMemo(() => {
@@ -50,18 +66,6 @@ export function AddProductsModal({
 
     return Array.from(uniqueProducts.values());
   }, [products, assignedProductIds]);
-
-  // Filter available products based on search
-  const filteredProducts = useMemo(() => {
-    if (!searchQuery.trim()) return availableProducts;
-    const query = searchQuery.toLowerCase();
-    return availableProducts.filter(
-      (p) =>
-        (p.short_description?.toLowerCase() ?? "").includes(query) ||
-        (p.product_name?.toLowerCase() ?? "").includes(query) ||
-        (String(p.unit_of_measurement ?? "").toLowerCase()).includes(query),
-    );
-  }, [availableProducts, searchQuery]);
 
   const toggleProduct = (id: number) => {
     const next = new Set(selectedIds);
@@ -110,44 +114,67 @@ export function AddProductsModal({
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-        </DialogHeader>
-
-        <div className="flex-1 overflow-hidden">
-          <ScrollArea className="h-full px-6">
-            <div className="py-2 space-y-1">
-              {productsLoading ? (
-                <div className="flex items-center justify-center py-10">
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                </div>
-              ) : filteredProducts.length === 0 ? (
-                <div className="text-center py-10 text-sm text-muted-foreground">
-                  {searchQuery ? "No products found" : "All products assigned"}
-                </div>
-              ) : (
-                filteredProducts.map((product) => (
-                  <label
-                    key={product.product_id}
-                    className="flex items-center gap-3 p-3 rounded-md hover:bg-muted/50 transition-colors cursor-pointer group"
-                  >
-                    <Checkbox
-                      checked={selectedIds.has(product.product_id)}
-                      onCheckedChange={() => toggleProduct(product.product_id)}
-                    />
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium leading-none truncate group-hover:text-primary transition-colors">
-                        {product.product_name || product.short_description}
-                      </p>
-                      {product.unit_of_measurement != null && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {product.unit_of_measurement}
-                        </p>
-                      )}
-                    </div>
-                  </label>
-                ))
+          {!productsLoading && (
+            <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
+              <span>
+                {searchQuery ? (
+                  <>
+                    Found <strong>{availableProducts.length}</strong> matching {availableProducts.length === 1 ? "product" : "products"}
+                  </>
+                ) : (
+                  <>
+                    Total loaded: <strong>{availableProducts.length}</strong> {availableProducts.length === 1 ? "product" : "products"}
+                  </>
+                )}
+              </span>
+              {selectedIds.size > 0 && (
+                <span className="text-primary font-medium">
+                  {selectedIds.size} {selectedIds.size === 1 ? "product" : "products"} selected
+                </span>
               )}
             </div>
-          </ScrollArea>
+          )}
+        </DialogHeader>
+
+        <div className="flex-1 overflow-y-auto px-6" onScroll={handleScroll}>
+          <div className="py-2 space-y-1">
+            {productsLoading ? (
+              <div className="flex items-center justify-center py-10">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : availableProducts.length === 0 ? (
+              <div className="text-center py-10 text-sm text-muted-foreground">
+                {searchQuery ? "No products found" : "All products assigned"}
+              </div>
+            ) : (
+              availableProducts.map((product) => (
+                <label
+                  key={product.product_id}
+                  className="flex items-center gap-3 p-3 rounded-md hover:bg-muted/50 transition-colors cursor-pointer group"
+                >
+                  <Checkbox
+                    checked={selectedIds.has(product.product_id)}
+                    onCheckedChange={() => toggleProduct(product.product_id)}
+                  />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium leading-none truncate group-hover:text-primary transition-colors">
+                      {product.description || product.product_name || product.short_description}
+                    </p>
+                    {product.unit_of_measurement != null && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {product.unit_of_measurement}
+                      </p>
+                    )}
+                  </div>
+                </label>
+              ))
+            )}
+            {isFetchingMore && (
+              <div className="h-8 flex items-center justify-center">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              </div>
+            )}
+          </div>
         </div>
 
         <DialogFooter className="px-6 py-4 border-t shrink-0">

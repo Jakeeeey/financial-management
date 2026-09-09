@@ -46,10 +46,10 @@ export async function fetchUnitsMap(): Promise<Record<number, string>> {
 /**
  * Fetch all products
  */
-export async function fetchAllProducts(): Promise<Product[]> {
+export async function fetchAllProducts(limit = -1, offset = 0): Promise<Product[]> {
   try {
     const [response, unitsMap] = await Promise.all([
-      fetch(`${API_BASE}/products?limit=-1&fields=*`, {
+      fetch(`${API_BASE}/products?limit=${limit}&offset=${offset}&fields=product_id,product_name,description,short_description,unit_of_measurement`, {
         method: "GET",
         headers: getHeaders(),
         cache: "no-store",
@@ -76,19 +76,20 @@ export async function fetchAllProducts(): Promise<Product[]> {
 /**
  * Search products by name or code
  */
-export async function searchProducts(query: string): Promise<Product[]> {
+export async function searchProducts(query: string, limit = -1, offset = 0): Promise<Product[]> {
   try {
     const filter = {
       _or: [
         { product_name: { _contains: query } },
         { product_code: { _contains: query } },
+        { description: { _contains: query } },
         { short_description: { _contains: query } },
       ],
     };
 
     const [response, unitsMap] = await Promise.all([
       fetch(
-        `${API_BASE}/products?limit=-1&fields=*&filter=${encodeURIComponent(
+        `${API_BASE}/products?limit=${limit}&offset=${offset}&fields=product_id,product_name,description,short_description,unit_of_measurement&filter=${encodeURIComponent(
           JSON.stringify(filter),
         )}`,
         {
