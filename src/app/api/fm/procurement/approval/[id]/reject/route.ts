@@ -13,23 +13,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   try {
     const { id } = await params;
 
-    let approved_by: number | null = null;
-    try {
-      const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64").toString("utf-8"));
-      const userId = payload?.id || payload?.user_id || payload?.sub;
-      if (userId) {
-        const userRes = await fetch(
-          `${DIRECTUS_URL}/items/user/${userId}?fields=user_id`,
-          { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }
-        );
-        if (userRes.ok) {
-          const userData = await userRes.json();
-          const uid = userData?.data?.user_id ?? userData?.data?.id;
-          if (uid) approved_by = Number(uid);
-        }
-      }
-    } catch { /* fallback */ }
-
     const currentRes = await fetch(`${DIRECTUS_URL}/items/procurement/${id}?fields=id,isApproved,status`, {
       headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
       cache: "no-store",
@@ -37,18 +20,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!currentRes.ok) throw new Error(await currentRes.text());
     const current = (await currentRes.json())?.data;
     if (!current) return NextResponse.json({ message: "Not Found", detail: "Procurement not found" }, { status: 404 });
+
+    const alreadyApproved = current.isApproved === 1 || current.isApproved === "1" || current.isApproved === true;
+    if (alreadyApproved) {
+      return NextResponse.json({ message: "Validation Error", detail: "Procurement is already approved" }, { status: 400 });
+    }
     if (String(current.status ?? "").toLowerCase() === "rejected") {
-      return NextResponse.json({ message: "Validation Error", detail: "Procurement is rejected" }, { status: 400 });
+      return NextResponse.json({ message: "Validation Error", detail: "Procurement is already rejected" }, { status: 400 });
     }
 
     const res = await fetch(`${DIRECTUS_URL}/items/procurement/${id}`, {
       method: "PATCH",
       headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        isApproved: 1,
-        status: "approved",
-        approved_by,
-        approved_date: new Date().toISOString(),
+        status: "rejected",
       }),
       cache: "no-store",
     });

@@ -221,11 +221,18 @@ export async function listAttributes(signal?: AbortSignal): Promise<{ data: Item
   }
 }
 
-export async function listAttributeValues(signal?: AbortSignal): Promise<{ data: ItemAttributeValue[] }> {
+export async function listAttributeValues(
+  params?: { page?: number; limit?: number },
+  signal?: AbortSignal
+): Promise<{ data: ItemAttributeValue[]; total?: number }> {
   try {
-    const res = await fetch("/api/fm/procurement/items/attribute-values?limit=-1", { signal, cache: "no-store" });
+    const qs = new URLSearchParams();
+    if (params?.page) qs.set("page", String(params.page));
+    qs.set("limit", String(params?.limit ?? -1));
+
+    const res = await fetch(`/api/fm/procurement/items/attribute-values?${qs.toString()}`, { signal, cache: "no-store" });
     if (!res.ok) throw await parseErrorPayload(res, "Failed to fetch attribute values");
-    return res.json() as Promise<{ data: ItemAttributeValue[] }>;
+    return res.json() as Promise<{ data: ItemAttributeValue[]; total?: number }>;
   } catch (err) {
     if (signal?.aborted) throw err;
     console.error("[items service] listAttributeValues", err);

@@ -11,7 +11,18 @@ import {
   updateAttributeValue as updateAttributeValueRequest,
   deleteAttributeValue as deleteAttributeValueRequest,
 } from "../providers/item-attribute-service";
-import type { ItemAttribute, ItemAttributeValue } from "@/modules/financial-management/procurement/items/utils/types";
+import type {
+  CreateAttributeInput,
+  CreateAttributeValueInput,
+  ItemAttribute,
+  ItemAttributeValue,
+  UpdateAttributeInput,
+  UpdateAttributeValueInput,
+} from "@/modules/financial-management/procurement/items/utils/types";
+
+export function isActiveFlag(v: unknown): boolean {
+  return v == null ? true : v === true || v === 1 || v === "1";
+}
 
 export function useAttributes() {
   const [attributes, setAttributes] = useState<Array<ItemAttribute & { attribute_values: ItemAttributeValue[] }>>([]);
@@ -59,7 +70,7 @@ export function useAttributes() {
   }, [fetchAll]);
 
   const addAttribute = useCallback(
-    async (data: { name: string }) => {
+    async (data: CreateAttributeInput) => {
       try {
         const res = await createAttribute(data);
         setAttributes((prev) => [
@@ -78,7 +89,7 @@ export function useAttributes() {
   );
 
   const addAttributeValue = useCallback(
-    async (data: { attribute_id: number; name: string; extra_price?: number }) => {
+    async (data: CreateAttributeValueInput) => {
       try {
         const res = await createAttributeValue(data);
         const newVal: ItemAttributeValue = {
@@ -105,7 +116,7 @@ export function useAttributes() {
   );
 
   const updateAttribute = useCallback(
-    async (id: number, data: { name: string }) => {
+    async (id: number, data: UpdateAttributeInput) => {
       try {
         const res = await updateAttributeRequest(id, data);
         setAttributes((prev) =>
@@ -115,6 +126,28 @@ export function useAttributes() {
       } catch (err) {
         toast.error(
           err instanceof Error ? err.message : "Failed to update attribute"
+        );
+        throw err;
+      }
+    },
+    []
+  );
+
+  const toggleAttribute = useCallback(
+    async (id: number, next: boolean) => {
+      try {
+        const res = await updateAttributeRequest(id, { is_active: next });
+        setAttributes((prev) =>
+          prev.map((a) =>
+            a.id === id
+              ? { ...a, ...res.data, is_active: res.data.is_active ?? (next ? 1 : 0) }
+              : a
+          )
+        );
+        toast.success(next ? "Attribute activated" : "Attribute deactivated");
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Failed to update attribute status"
         );
         throw err;
       }
@@ -138,8 +171,40 @@ export function useAttributes() {
     []
   );
 
+  const toggleAttributeValue = useCallback(
+    async (id: number, next: boolean) => {
+      try {
+        const res = await updateAttributeValueRequest(id, { is_active: next });
+        setAttributes((prev) =>
+          prev.map((a) => ({
+            ...a,
+            attribute_values: (a.attribute_values || []).map((v) =>
+              v.id === id
+                ? {
+                    ...v,
+                    ...res.data,
+                    attribute_id: Number(
+                      res.data.attribute_id ?? v.attribute_id
+                    ),
+                    is_active: res.data.is_active ?? (next ? 1 : 0),
+                  }
+                : v
+            ),
+          }))
+        );
+        toast.success(next ? "Value activated" : "Value deactivated");
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Failed to update value status"
+        );
+        throw err;
+      }
+    },
+    []
+  );
+
   const updateAttributeValue = useCallback(
-    async (id: number, data: { name: string }) => {
+    async (id: number, data: UpdateAttributeValueInput) => {
       try {
         const res = await updateAttributeValueRequest(id, data);
         setAttributes((prev) =>
@@ -199,8 +264,10 @@ export function useAttributes() {
     addAttribute,
     addAttributeValue,
     updateAttribute,
+    toggleAttribute,
     deleteAttribute,
     updateAttributeValue,
+    toggleAttributeValue,
     deleteAttributeValue,
   };
 }

@@ -55,7 +55,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const masterData = await masterRes.json();
     const master = masterData.data;
 
-    if (!master || !master.isApproved) {
+    if (!master || !master.isApproved || String(master.status ?? "").toLowerCase() === "rejected") {
       return NextResponse.json({ message: "Validation Error", detail: "Procurement is not approved" }, { status: 400 });
     }
 

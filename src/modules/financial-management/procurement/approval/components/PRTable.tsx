@@ -15,10 +15,13 @@ type PRTableProps = {
   loading: boolean;
   error: string | null;
   total: number;
+  page: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
   onView: (id: number) => void;
 };
 
-export function PRTable({ rows, loading, error, total, onView }: PRTableProps) {
+export function PRTable({ rows, loading, error, total, page, pageSize, onPageChange, onView }: PRTableProps) {
   const router = useRouter();
   if (loading) {
     return <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>;
@@ -66,7 +69,7 @@ export function PRTable({ rows, loading, error, total, onView }: PRTableProps) {
               <TableCell>
                 {row.po_no ? (
                   <button
-                    onClick={() => router.push(`/fm/procurement/purchase-order/${row.po_no}`)}
+                    onClick={() => router.push(`/fm/procurement/procurement-summary/${row.id}`)}
                     className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline cursor-pointer"
                   >
                     PO #{row.po_no} <ExternalLink className="h-3 w-3" />
@@ -81,7 +84,26 @@ export function PRTable({ rows, loading, error, total, onView }: PRTableProps) {
           ))}
         </TableBody>
       </Table>
-      {total > 0 && <div className="px-4 py-2 text-xs text-muted-foreground border-t">{total} record{total !== 1 ? "s" : ""}</div>}
+      {total > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-4 py-2 text-xs text-muted-foreground border-t">
+          <span>
+            Showing {Math.min((page - 1) * pageSize + 1, total)}–{Math.min(page * pageSize, total)} of {total} record{total !== 1 ? "s" : ""} · Page {page} of {Math.max(1, Math.ceil(total / pageSize))}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= Math.max(1, Math.ceil(total / pageSize))}
+              onClick={() => onPageChange(page + 1)}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
