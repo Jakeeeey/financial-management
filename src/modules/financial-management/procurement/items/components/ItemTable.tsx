@@ -88,10 +88,10 @@ export function ItemTable({ items, variants, onEdit, onEditVariant, onAddVariant
             <TableHead className="min-w-[200px] max-w-[250px]">Name</TableHead>
             <TableHead className="min-w-[220px] max-w-[300px]">Description</TableHead>
             <TableHead className="w-[130px]">Status</TableHead>
-            <TableHead className="w-[110px] whitespace-nowrap">Created At</TableHead>
-            <TableHead className="w-[90px] whitespace-nowrap">Created By</TableHead>
-            <TableHead className="w-[110px] whitespace-nowrap">Updated At</TableHead>
-            <TableHead className="w-[90px] whitespace-nowrap">Updated By</TableHead>
+            <TableHead className="w-[150px] whitespace-nowrap">Created At</TableHead>
+            <TableHead className="w-[110px] whitespace-nowrap">Created By</TableHead>
+            <TableHead className="w-[150px] whitespace-nowrap">Updated At</TableHead>
+            <TableHead className="w-[110px] whitespace-nowrap">Updated By</TableHead>
             <TableHead className="w-16" />
           </TableRow>
         </TableHeader>
@@ -118,9 +118,9 @@ export function ItemTable({ items, variants, onEdit, onEditVariant, onAddVariant
                     </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground text-xs whitespace-nowrap tabular-nums">{formatDateTime(tmpl.created_at)}</TableCell>
-                  <TableCell className="text-muted-foreground text-xs whitespace-nowrap truncate max-w-[90px]">{tmpl.created_by || "—"}</TableCell>
+                  <TableCell className="text-muted-foreground text-xs whitespace-nowrap truncate max-w-[110px]">{tmpl.created_by || "—"}</TableCell>
                   <TableCell className="text-muted-foreground text-xs whitespace-nowrap tabular-nums">{formatDateTime(tmpl.updated_at)}</TableCell>
-                  <TableCell className="text-muted-foreground text-xs whitespace-nowrap truncate max-w-[90px]">{tmpl.updated_by || "—"}</TableCell>
+                  <TableCell className="text-muted-foreground text-xs whitespace-nowrap truncate max-w-[110px]">{tmpl.updated_by || "—"}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
                       <Button

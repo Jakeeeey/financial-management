@@ -75,14 +75,16 @@ export default function ItemAttributeManager() {
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border">
-          <Table className="min-w-[900px]">
+          <Table className="min-w-[1100px]">
             <TableHeader>
               <TableRow>
                 <TableHead>Attribute Name</TableHead>
                 <TableHead>Description</TableHead>
                 <TableHead>Value Count</TableHead>
-                <TableHead>Created By</TableHead>
-                <TableHead>Last Updated</TableHead>
+                <TableHead className="w-[150px] whitespace-nowrap">Created At</TableHead>
+                <TableHead className="w-[110px] whitespace-nowrap">Created By</TableHead>
+                <TableHead className="w-[150px] whitespace-nowrap">Updated At</TableHead>
+                <TableHead className="w-[110px] whitespace-nowrap">Updated By</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -96,11 +98,17 @@ export default function ItemAttributeManager() {
                     {fallback(attr.description)}
                   </TableCell>
                   <TableCell>{activeValueCount(attr)}</TableCell>
-                  <TableCell className="max-w-[140px] truncate">
+                  <TableCell className="text-muted-foreground text-xs whitespace-nowrap tabular-nums" title={formatDateTime(attr.created_at)}>
+                    {formatDateTime(attr.created_at)}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground text-xs whitespace-nowrap truncate max-w-[110px]" title={fallback(attr.created_by)}>
                     {fallback(attr.created_by)}
                   </TableCell>
-                  <TableCell className="max-w-[170px] truncate" title={formatDateTime(attr.updated_at)}>
+                  <TableCell className="text-muted-foreground text-xs whitespace-nowrap tabular-nums" title={formatDateTime(attr.updated_at)}>
                     {formatDateTime(attr.updated_at)}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground text-xs whitespace-nowrap truncate max-w-[110px]" title={fallback(attr.updated_by)}>
+                    {fallback(attr.updated_by)}
                   </TableCell>
                   <TableCell className="text-right">
                     <Button
