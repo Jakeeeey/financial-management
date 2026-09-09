@@ -358,15 +358,12 @@ export function useSettlement(pouchId: string | number, activeInvoiceId: number 
             if (!activeInvoice) return false;
 
             const safeDocNo = encodeURIComponent(documentNo.trim());
-            const customerQuery = activeInvoice.customerCode
-                ? `&customerCode=${encodeURIComponent(activeInvoice.customerCode)}`
-                : "";
             const endpoint = type === "MEMO"
-                ? `/api/fm/treasury/memos/search?documentNo=${safeDocNo}${customerQuery}`
-                : `/api/fm/treasury/returns/search?documentNo=${safeDocNo}&currentPouchId=${encodeURIComponent(String(pouchId))}${customerQuery}`;
+                ? `/api/fm/treasury/memos/search?documentNo=${safeDocNo}`
+                : `/api/fm/treasury/returns/search?documentNo=${safeDocNo}&currentPouchId=${encodeURIComponent(String(pouchId))}`;
 
             const data = await fetchProvider.get<RawMemoOrReturn>(endpoint);
-            if (!data || !isSameCustomer(data, activeInvoice)) return false;
+            if (!data) return false;
 
             setCredits(prev => {
                 const newCredits = [...prev];
