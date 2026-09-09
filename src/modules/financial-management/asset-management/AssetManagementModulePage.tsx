@@ -16,10 +16,12 @@ import { AssetTableData } from "./types";
 // Hooks
 import { useAssets } from "./hooks/useAssets";
 
-// Modals
 import AddAssetModal from "./components/modals/AddAssetModal";
 import AssetViewModal from "./components/modals/AssetViewModal";
 import AssetEditModal from "./components/modals/EditAssetModal";
+import AssignAssetModal from "./components/modals/AssignAssetModal";
+import ReturnAssetModal from "./components/modals/ReturnAssetModal";
+import AssetAssignmentHistoryModal from "./components/modals/AssetAssignmentHistoryModal";
 
 export default function AssetManagementModulePage() {
   const {
@@ -41,8 +43,11 @@ export default function AssetManagementModulePage() {
   );
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isAssignOpen, setIsAssignOpen] = useState(false);
+  const [isReturnOpen, setIsReturnOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
-  // --- Memoized Calculations ---
+  // --- Handlers for Table Actions (Meta Contract) ---
   /*
   const totalValue = useMemo(() => {
     // [Guard Clause] Ensuring reduce doesn't run on non-arrays
@@ -72,6 +77,21 @@ export default function AssetManagementModulePage() {
   const handleEdit = (asset: AssetTableData) => {
     setSelectedAsset(asset);
     setIsEditOpen(true);
+  };
+
+  const handleAssign = (asset: AssetTableData) => {
+    setSelectedAsset(asset);
+    setIsAssignOpen(true);
+  };
+
+  const handleReturn = (asset: AssetTableData) => {
+    setSelectedAsset(asset);
+    setIsReturnOpen(true);
+  };
+
+  const handleHistory = (asset: AssetTableData) => {
+    setSelectedAsset(asset);
+    setIsHistoryOpen(true);
   };
 
   // --- Render Logic ---
@@ -137,6 +157,9 @@ export default function AssetManagementModulePage() {
           setProjectionDate,
           onView: handleView, // Fulfilling meta contract for View
           onEdit: handleEdit, // Fulfilling meta contract for Edit
+          onAssign: handleAssign,
+          onReturn: handleReturn,
+          onHistory: handleHistory,
         }}
       />
 
@@ -155,6 +178,35 @@ export default function AssetManagementModulePage() {
         }}
         onSuccess={fetchAssets}
         onLocalUpdate={updateAssetLocally}
+        asset={selectedAsset}
+      />
+
+      <AssignAssetModal
+        isOpen={isAssignOpen}
+        onClose={() => {
+          setIsAssignOpen(false);
+          setSelectedAsset(null);
+        }}
+        onSuccess={fetchAssets}
+        asset={selectedAsset}
+      />
+
+      <ReturnAssetModal
+        isOpen={isReturnOpen}
+        onClose={() => {
+          setIsReturnOpen(false);
+          setSelectedAsset(null);
+        }}
+        onSuccess={fetchAssets}
+        asset={selectedAsset}
+      />
+
+      <AssetAssignmentHistoryModal
+        isOpen={isHistoryOpen}
+        onClose={() => {
+          setIsHistoryOpen(false);
+          setSelectedAsset(null);
+        }}
         asset={selectedAsset}
       />
     </div>

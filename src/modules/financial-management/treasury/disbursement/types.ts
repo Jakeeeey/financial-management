@@ -159,6 +159,7 @@ export interface UnpaidPoDto {
     date: string;
     amountDue: number;
     type: string;
+    isPartiallyReceived: boolean;
 }
 
 export interface MemoDto {

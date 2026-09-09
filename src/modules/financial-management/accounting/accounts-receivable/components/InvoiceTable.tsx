@@ -16,7 +16,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ChevronDown, ChevronUp, ChevronRight, ChevronsUpDown, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronRight, ChevronsUpDown, LayoutGrid, Table2, X } from 'lucide-react';
 import { cn } from "@/lib/utils";
 import { formatPeso, formatDate, getPageNumbers, mapARRowToInvoice, sortCustomerGroups } from '../utils';
 import type { Invoice, CustomerGroup } from '../types';
@@ -100,11 +100,11 @@ function SortableHeader<T>({
     <DropdownMenu>
       <DropdownMenuTrigger
         className={cn(
-          "flex items-center gap-1.5 focus:outline-none hover:text-foreground [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-muted-foreground whitespace-nowrap",
+          "flex min-w-0 items-center gap-1.5 focus:outline-none hover:text-foreground [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-muted-foreground whitespace-normal",
           className
         )}
       >
-        {label}
+        <span className="min-w-0 break-words leading-tight">{label}</span>
         {isSorted && currentSortOrder === "desc" ? (
           <ChevronDown />
         ) : isSorted && currentSortOrder === "asc" ? (
@@ -161,15 +161,27 @@ const INVOICE_ROW_HEIGHT = 44;
 const MAX_VIRTUAL_LIST_HEIGHT = 320;
 
 const INVOICE_TABLE_COL_WIDTHS = [
-  '8%', '10%', '8%', '6%', '6%', '6%', '6%', '6%',
-  '7%', '6%', '7%', '5%', '6%', '7%',
+  { width: '8%', minWidth: 110 },
+  { width: '10%', minWidth: 145 },
+  { width: '8%', minWidth: 125 },
+  { width: '6%', minWidth: 100 },
+  { width: '6%', minWidth: 90 },
+  { width: '6%', minWidth: 95 },
+  { width: '6%', minWidth: 95 },
+  { width: '6%', minWidth: 95 },
+  { width: '8%', minWidth: 122 },
+  { width: '7%', minWidth: 110 },
+  { width: '8%', minWidth: 125 },
+  { width: '5%', minWidth: 76 },
+  { width: '7%', minWidth: 110 },
+  { width: '9%', minWidth: 145 },
 ] as const;
 
 function InvoiceTableColGroup() {
   return (
     <colgroup>
-      {INVOICE_TABLE_COL_WIDTHS.map((width, i) => (
-        <col key={i} style={{ width }} />
+      {INVOICE_TABLE_COL_WIDTHS.map((column, i) => (
+        <col key={i} style={{ width: column.width, minWidth: column.minWidth }} />
       ))}
     </colgroup>
   );
@@ -217,7 +229,7 @@ function VirtualInvoiceRows({
       <TableCell colSpan={14} className="p-0">
         <div
           ref={parentRef}
-          className="overflow-auto"
+          className="overflow-y-auto"
           style={{ height: listHeight }}
         >
           <div style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}>
@@ -235,7 +247,7 @@ function VirtualInvoiceRows({
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
                 >
-                  <table className="w-full table-fixed">
+                  <table className="w-full min-w-[1650px] table-fixed">
                     <InvoiceTableColGroup />
                     <tbody>
                       <InvoiceChildRow inv={inv} isLast={virtualRow.index === invoices.length - 1} onRowClick={onRowClick} asTableRow />
@@ -264,7 +276,7 @@ function InvoiceChildRow({
 }) {
   const row = (
     <>
-      <TableCell className="py-2 pl-8 relative">
+      <TableCell className="relative min-w-0 overflow-hidden py-2 pl-8">
         {isLast ? (
           <div className="absolute left-5 top-0 h-[22px] w-px bg-border/40 dark:bg-border/20" />
         ) : (
@@ -272,7 +284,7 @@ function InvoiceChildRow({
         )}
         <div className="absolute left-5 top-[22px] w-3 h-px bg-border/40 dark:bg-border/20" />
         <div className="flex flex-col gap-1 min-w-0 pl-2.5">
-          <span className="font-extrabold text-foreground/90 text-xs truncate block w-full" title={inv.invoiceNo}>{inv.invoiceNo}</span>
+          <span className="block w-full min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs font-extrabold text-foreground/90" title={inv.invoiceNo}>{inv.invoiceNo}</span>
           {inv.isPosted ? (
             <span className="inline-flex items-center w-max px-1 py-0.25 rounded text-[8px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/15 uppercase">Posted</span>
           ) : (
@@ -281,9 +293,9 @@ function InvoiceChildRow({
         </div>
       </TableCell>
       <TableCell className="py-2 text-muted-foreground/35 text-[9px] font-medium tracking-wide uppercase italic">└─ detail</TableCell>
-      <TableCell className="py-2"><span className="text-xs text-muted-foreground truncate block w-full font-medium" title={inv.salesman}>{inv.salesman || <span className="text-muted-foreground/20">—</span>}</span></TableCell>
-      <TableCell className="py-2"><span className="text-xs text-muted-foreground truncate block w-full font-medium" title={inv.division}>{inv.division || <span className="text-muted-foreground/20">—</span>}</span></TableCell>
-      <TableCell className="py-2"><span className="text-xs text-muted-foreground truncate block w-full font-mono font-medium" title={inv.salesmanCode}>{inv.salesmanCode || <span className="text-muted-foreground/20">—</span>}</span></TableCell>
+      <TableCell className="min-w-0 overflow-hidden py-2"><span className="block w-full min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs font-medium text-muted-foreground" title={inv.salesman}>{inv.salesman || <span className="text-muted-foreground/20">—</span>}</span></TableCell>
+      <TableCell className="min-w-0 overflow-hidden py-2"><span className="block w-full min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs font-medium text-muted-foreground" title={inv.division}>{inv.division || <span className="text-muted-foreground/20">—</span>}</span></TableCell>
+      <TableCell className="min-w-0 overflow-hidden py-2"><span className="block w-full min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-xs font-medium text-muted-foreground" title={inv.salesmanCode}>{inv.salesmanCode || <span className="text-muted-foreground/20">—</span>}</span></TableCell>
       <TableCell className="py-2"><span className="text-xs text-muted-foreground/90 font-mono font-medium whitespace-nowrap block">{formatDate(inv.invoiceDate)}</span></TableCell>
       <TableCell className="py-2"><span className="text-xs text-muted-foreground/90 font-mono font-medium whitespace-nowrap block">{formatDate(inv.deliveryDate)}</span></TableCell>
       <TableCell className="py-2"><span className="text-xs text-muted-foreground/90 font-mono font-medium whitespace-nowrap block">{formatDate(inv.due)}</span></TableCell>
@@ -297,8 +309,8 @@ function InvoiceChildRow({
           <span className="text-[11px] text-muted-foreground/50">—</span>
         )}
       </TableCell>
-      <TableCell className="py-2"><StatusPill status={inv.arStatus} /></TableCell>
-      <TableCell className="py-2 pr-4"><StatusPill status={inv.transactionStatus} /></TableCell>
+      <TableCell className="min-w-0 overflow-hidden py-2"><StatusPill status={inv.arStatus} /></TableCell>
+      <TableCell className="min-w-0 overflow-hidden py-2 pr-4"><StatusPill status={inv.transactionStatus} /></TableCell>
     </>
   );
 
@@ -314,6 +326,164 @@ function InvoiceChildRow({
     <TableRow className="border-b border-border/20 hover:bg-muted/15 cursor-pointer bg-card/45 transition-colors active:bg-muted/25" onClick={() => onRowClick?.(inv)}>
       {row}
     </TableRow>
+  );
+}
+
+type InvoiceViewMode = 'table' | 'cards';
+type DisplayCustomerGroup = Omit<CustomerGroup, 'invoices'> & { invoices: Invoice[] };
+
+function InvoiceCardField({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="min-w-0 rounded-lg border border-border/60 bg-background/60 px-3 py-2.5">
+      <dt className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">{label}</dt>
+      <dd className="mt-1 min-w-0 break-words text-xs font-semibold text-foreground">{value}</dd>
+    </div>
+  );
+}
+
+function InvoiceCard({
+  invoice,
+  onRowClick,
+}: {
+  invoice: Invoice;
+  onRowClick?: (invoice: Invoice) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onRowClick?.(invoice)}
+      className="w-full min-w-0 rounded-xl border border-border/60 bg-card p-4 text-left shadow-sm transition-colors hover:border-primary/40 hover:bg-primary/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:bg-primary/[0.06]"
+    >
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="break-words text-sm font-extrabold text-foreground" title={invoice.invoiceNo}>
+            {invoice.invoiceNo}
+          </div>
+          <div className="mt-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+            {invoice.isPosted ? 'Posted' : 'Draft'} · {invoice.customerCode || 'No customer code'}
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+          <StatusPill status={invoice.arStatus} />
+          <StatusPill status={invoice.transactionStatus} />
+        </div>
+      </div>
+
+      <dl className="mt-4 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        <InvoiceCardField label="Customer" value={invoice.customer || '—'} />
+        <InvoiceCardField label="Salesman" value={invoice.salesman || '—'} />
+        <InvoiceCardField label="Division" value={invoice.division || '—'} />
+        <InvoiceCardField label="Salesman Code" value={invoice.salesmanCode || '—'} />
+        <InvoiceCardField label="Invoice Date" value={formatDate(invoice.invoiceDate)} />
+        <InvoiceCardField label="Delivery Date" value={formatDate(invoice.deliveryDate)} />
+        <InvoiceCardField label="Due Date" value={formatDate(invoice.due)} />
+        <InvoiceCardField label="Net Receivable" value={formatPeso(invoice.netReceivable)} />
+        <InvoiceCardField label="Paid" value={formatPeso(invoice.totalPaid)} />
+        <InvoiceCardField label="Outstanding" value={formatPeso(invoice.outstanding)} />
+        <InvoiceCardField
+          label="Overdue"
+          value={invoice.overdue !== null && invoice.overdue >= 0 ? `${invoice.overdue}d` : '—'}
+        />
+      </dl>
+    </button>
+  );
+}
+
+function InvoiceCardGroups({
+  groups,
+  expandedCustomers,
+  onToggleCustomer,
+  onRowClick,
+  tableLoading,
+}: {
+  groups: DisplayCustomerGroup[];
+  expandedCustomers: Record<string, boolean>;
+  onToggleCustomer: (customerName: string) => void;
+  onRowClick?: (invoice: Invoice) => void;
+  tableLoading: boolean;
+}) {
+  if (groups.length === 0) {
+    return (
+      <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+        {tableLoading ? 'Loading invoices…' : 'No invoices found.'}
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-w-0 space-y-3 p-3 sm:p-4">
+      {groups.map((group) => {
+        const isExpanded = expandedCustomers[group.customerName] !== false;
+
+        return (
+          <section key={group.customerName} className="min-w-0 overflow-hidden rounded-xl border border-border/60 bg-muted/10">
+            <button
+              type="button"
+              aria-expanded={isExpanded}
+              onClick={() => onToggleCustomer(group.customerName)}
+              className="flex min-h-11 w-full min-w-0 flex-col items-stretch gap-3 p-3 text-left transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div className="flex min-w-0 flex-1 items-start gap-2">
+                {isExpanded ? (
+                  <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                ) : (
+                  <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                )}
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="rounded-md border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-widest text-primary">
+                      Group
+                    </span>
+                    <span className="text-[10px] font-bold text-muted-foreground/80">
+                      {group.invoices.length} invoice{group.invoices.length === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  <div className="mt-1 break-words text-xs font-extrabold text-foreground/90" title={group.customerName}>
+                    {group.customerName}
+                  </div>
+                  <div className="mt-1 break-words font-mono text-[9px] font-semibold text-muted-foreground">
+                    {group.customerCode}
+                  </div>
+                </div>
+              </div>
+
+              <dl className="grid w-full grid-cols-2 gap-x-4 gap-y-2 text-right text-[10px] sm:w-auto sm:grid-cols-4">
+                <div>
+                  <dt className="uppercase tracking-wider text-muted-foreground">Net</dt>
+                  <dd className="mt-0.5 font-mono font-bold text-foreground/90">{formatPeso(group.netReceivable)}</dd>
+                </div>
+                <div>
+                  <dt className="uppercase tracking-wider text-muted-foreground">Paid</dt>
+                  <dd className="mt-0.5 font-mono font-bold text-emerald-600 dark:text-emerald-400">{formatPeso(group.totalPaid)}</dd>
+                </div>
+                <div>
+                  <dt className="uppercase tracking-wider text-muted-foreground">Outstanding</dt>
+                  <dd className="mt-0.5 font-mono font-extrabold text-primary">{formatPeso(group.outstanding)}</dd>
+                </div>
+                <div>
+                  <dt className="uppercase tracking-wider text-muted-foreground">Overdue</dt>
+                  <dd className="mt-0.5 font-mono font-bold" style={{ color: group.maxOverdue !== null && group.maxOverdue >= 0 ? agingColor(group.maxOverdue) : undefined }}>
+                    {group.maxOverdue !== null && group.maxOverdue >= 0 ? `${group.maxOverdue}d` : '—'}
+                  </dd>
+                </div>
+              </dl>
+            </button>
+
+            {isExpanded && (
+              <div className="min-w-0 space-y-2 border-t border-border/50 bg-background/30 p-2 sm:p-3">
+                {group.invoices.map((invoice, index) => (
+                  <InvoiceCard
+                    key={`${invoice.invoiceNo}-${index}`}
+                    invoice={invoice}
+                    onRowClick={onRowClick}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        );
+      })}
+    </div>
   );
 }
 
@@ -336,6 +506,7 @@ export function InvoiceTable({
   const [localSortKey, setLocalSortKey] = useState<keyof Invoice | null>(null);
   const [localSortOrder, setLocalSortOrder] = useState<'asc' | 'desc' | null>(null);
   const [expandedCustomers, setExpandedCustomers] = useState<Record<string, boolean>>({});
+  const [viewMode, setViewMode] = useState<InvoiceViewMode>('table');
 
   const isControlledSort = serverMode && onSortChange != null;
   const sortKey = isControlledSort ? (controlledSortKey ?? null) : localSortKey;
@@ -423,24 +594,59 @@ export function InvoiceTable({
     }
   };
 
+  const toggleCustomer = (customerName: string) => {
+    setExpandedCustomers((prev) => ({
+      ...prev,
+      [customerName]: prev[customerName] === false,
+    }));
+  };
+
   return (
     <Card className="dark:bg-zinc-950 border-border overflow-hidden w-full">
-      <CardHeader className="bg-muted/30 border-b border-border/50 flex flex-row items-center justify-between gap-4">
-        <CardTitle className="text-sm font-bold uppercase shrink-0">Invoice Details</CardTitle>
-        <div className="flex items-center gap-2 max-w-sm w-full justify-end">
+      <CardHeader className="flex flex-col items-start gap-3 bg-muted/30 border-b border-border/50 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <CardTitle className="shrink-0 text-sm font-bold uppercase">Invoice Details</CardTitle>
+          <div role="group" aria-label="Invoice display mode" className="flex shrink-0 rounded-lg border border-border bg-background/60 p-0.5">
+            <button
+              type="button"
+              aria-pressed={viewMode === 'table'}
+              onClick={() => setViewMode('table')}
+              className={cn(
+                "inline-flex min-h-9 items-center gap-1.5 rounded-md px-3 text-[10px] font-bold uppercase tracking-wider transition-colors",
+                viewMode === 'table' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+              )}
+            >
+              <Table2 className="h-3.5 w-3.5" />
+              Table
+            </button>
+            <button
+              type="button"
+              aria-pressed={viewMode === 'cards'}
+              onClick={() => setViewMode('cards')}
+              className={cn(
+                "inline-flex min-h-9 items-center gap-1.5 rounded-md px-3 text-[10px] font-bold uppercase tracking-wider transition-colors",
+                viewMode === 'cards' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+              )}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+              Cards
+            </button>
+          </div>
+        </div>
+        <div className="flex w-full flex-wrap items-center justify-between gap-2 sm:w-auto sm:justify-end">
           <button
             type="button"
             onClick={toggleAll}
-            className="h-8 px-2.5 text-[10px] font-bold uppercase tracking-wider border border-border bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground rounded transition-colors whitespace-nowrap"
+            className="min-h-9 rounded border border-border bg-muted/40 px-2.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground transition-colors hover:bg-muted hover:text-foreground whitespace-nowrap"
           >
             {isAllExpanded ? "Collapse Page" : "Expand Page"}
           </button>
+          <span className="text-right text-xs text-muted-foreground sm:text-left">
+            {tableLoading ? 'Loading…' : (
+              <>{displayInvoiceCount} invoice{displayInvoiceCount !== 1 ? 's' : ''} ({displayGroupCount} customer{displayGroupCount !== 1 ? 's' : ''}) &mdash; page {safePage} of {totalPages || 1}</>
+            )}
+          </span>
         </div>
-        <span className="text-xs text-muted-foreground shrink-0">
-          {tableLoading ? 'Loading…' : (
-            <>{displayInvoiceCount} invoice{displayInvoiceCount !== 1 ? 's' : ''} ({displayGroupCount} customer{displayGroupCount !== 1 ? 's' : ''}) &mdash; page {safePage} of {totalPages || 1}</>
-          )}
-        </span>
       </CardHeader>
 
       {truncated ? (
@@ -450,25 +656,34 @@ export function InvoiceTable({
       ) : null}
 
       <CardContent className="p-0">
-        <div className="max-h-[600px] overflow-auto relative w-full">
-          <Table className="w-full table-fixed">
+        {viewMode === 'cards' ? (
+          <InvoiceCardGroups
+            groups={pagedGroups}
+            expandedCustomers={expandedCustomers}
+            onToggleCustomer={toggleCustomer}
+            onRowClick={onRowClick}
+            tableLoading={tableLoading}
+          />
+        ) : (
+        <div className="relative w-full min-w-0 max-h-[600px] overflow-y-auto">
+          <Table className="w-full min-w-[1650px] table-fixed">
             <InvoiceTableColGroup />
             <TableHeader className="sticky top-0 bg-background dark:bg-zinc-950 z-20 shadow-sm">
               <TableRow className="bg-muted/50 hover:bg-muted/50">
-              <TableHead className="py-3 pl-4 w-[8%] whitespace-nowrap"><SortableHeader<Invoice> label="inv #" sortKey="invoiceNo" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
-              <TableHead className="py-3 w-[10%] whitespace-nowrap"><SortableHeader<Invoice> label="Customer" sortKey="customer" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
-              <TableHead className="py-3 w-[8%] whitespace-nowrap"><SortableHeader<Invoice> label="Salesman" sortKey="salesman" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
-              <TableHead className="py-3 w-[6%] whitespace-nowrap"><SortableHeader<Invoice> label="Division" sortKey="division" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
-              <TableHead className="py-3 w-[6%] whitespace-nowrap"><SortableHeader<Invoice> label="SCode" sortKey="salesmanCode" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
-              <TableHead className="py-3 w-[6%] whitespace-nowrap"><SortableHeader<Invoice> label="Inv. Date" sortKey="invoiceDate" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
-              <TableHead className="py-3 w-[6%] whitespace-nowrap"><SortableHeader<Invoice> label="Del Date" sortKey="deliveryDate" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
-              <TableHead className="py-3 w-[6%] whitespace-nowrap"><SortableHeader<Invoice> label="Due Date" sortKey="due" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
-              <TableHead className="py-3 text-right w-[7%] whitespace-nowrap"><SortableHeader<Invoice> label="Net Receivable" sortKey="netReceivable" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold justify-end w-full" /></TableHead>
-              <TableHead className="py-3 text-right w-[6%] whitespace-nowrap"><SortableHeader<Invoice> label="Paid" sortKey="totalPaid" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold justify-end w-full" /></TableHead>
-              <TableHead className="py-3 text-right w-[7%] whitespace-nowrap"><SortableHeader<Invoice> label="Outstanding" sortKey="outstanding" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold justify-end w-full" /></TableHead>
-              <TableHead className="py-3 text-center w-[5%] whitespace-nowrap"><SortableHeader<Invoice> label="Overdue" sortKey="overdue" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold justify-center w-full" /></TableHead>
-              <TableHead className="py-3 w-[6%] whitespace-nowrap"><SortableHeader<Invoice> label="AR Status" sortKey="arStatus" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
-              <TableHead className="py-3 pr-4 w-[7%] whitespace-nowrap"><SortableHeader<Invoice> label="Transaction Status" sortKey="transactionStatus" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
+              <TableHead className="py-3 pl-4 whitespace-normal align-top"><SortableHeader<Invoice> label="inv #" sortKey="invoiceNo" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
+              <TableHead className="py-3 whitespace-normal align-top"><SortableHeader<Invoice> label="Customer" sortKey="customer" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
+              <TableHead className="py-3 whitespace-normal align-top"><SortableHeader<Invoice> label="Salesman" sortKey="salesman" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
+              <TableHead className="py-3 whitespace-normal align-top"><SortableHeader<Invoice> label="Division" sortKey="division" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
+              <TableHead className="py-3 whitespace-normal align-top"><SortableHeader<Invoice> label="SCode" sortKey="salesmanCode" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
+              <TableHead className="py-3 whitespace-normal align-top"><SortableHeader<Invoice> label="Inv. Date" sortKey="invoiceDate" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
+              <TableHead className="py-3 whitespace-normal align-top"><SortableHeader<Invoice> label="Del Date" sortKey="deliveryDate" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
+              <TableHead className="py-3 whitespace-normal align-top"><SortableHeader<Invoice> label="Due Date" sortKey="due" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
+              <TableHead className="py-3 text-right whitespace-normal align-top"><SortableHeader<Invoice> label="Net Receivable" sortKey="netReceivable" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-full justify-end text-xs font-bold" /></TableHead>
+              <TableHead className="py-3 text-right whitespace-normal align-top"><SortableHeader<Invoice> label="Paid" sortKey="totalPaid" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-full justify-end text-xs font-bold" /></TableHead>
+              <TableHead className="py-3 text-right whitespace-normal align-top"><SortableHeader<Invoice> label="Outstanding" sortKey="outstanding" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-full justify-end text-xs font-bold" /></TableHead>
+              <TableHead className="py-3 text-center whitespace-normal align-top"><SortableHeader<Invoice> label="Overdue" sortKey="overdue" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-full justify-center text-xs font-bold" /></TableHead>
+              <TableHead className="py-3 whitespace-normal align-top"><SortableHeader<Invoice> label="AR Status" sortKey="arStatus" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
+              <TableHead className="py-3 pr-4 whitespace-normal align-top"><SortableHeader<Invoice> label="Transaction Status" sortKey="transactionStatus" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
             </TableRow>
           </TableHeader>
 
@@ -569,6 +784,7 @@ export function InvoiceTable({
           </TableBody>
         </Table>
         </div>
+        )}
 
         {totalPages > 1 && (
           <div className="w-full py-4 border-t border-border/50">
