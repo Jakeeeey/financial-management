@@ -174,7 +174,7 @@ export function ItemTable({ items, variants, onEdit, onEditVariant, onAddVariant
                             <TableBody>
                               {itemVariants.map((v) => (
                                 <TableRow key={v.id} className="hover:bg-muted/50">
-                                  <TableCell className="font-medium">
+                                  <TableCell className="text-muted-foreground select-text">
                                     <span className="block truncate max-w-[220px]">{v.name}</span>
                                   </TableCell>
                                   <TableCell className="text-muted-foreground">{v._uom_name || "\u2014"}</TableCell>
