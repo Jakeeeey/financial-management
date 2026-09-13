@@ -1610,34 +1610,37 @@ export async function POST(req: NextRequest) {
       if (!updateDisbRes.ok) {
         return json(updateDisbRes.data, { status: updateDisbRes.status });
       }
+    }
 
-      const oldPayRes = await directusFetch(
-        `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${disbursementId}&fields=id&limit=-1`
+    // 1. Delete payables for explicitly Rejected expenses
+    const rejectedExpenseIds = allDetailRows
+      .filter((expense) => {
+        const decision = itemDecisions[String(expense.id)];
+        return decision && decision.status === "Rejected";
+      })
+      .map((expense) => toNumber(expense.id));
+
+    if (rejectedExpenseIds.length > 0 && disbursementId) {
+      const rejectedPayRes = await directusFetch(
+        `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${disbursementId}&filter[expense_id][_in]=${rejectedExpenseIds.join(",")}&fields=id&limit=-1`
       );
 
-      if (!oldPayRes.ok) {
-        return json(oldPayRes.data, { status: oldPayRes.status });
-      }
+      if (rejectedPayRes.ok) {
+        const rejectedPayIds = getListData<{ id?: number | string }>(rejectedPayRes.data)
+          .map((p) => toNumber(p.id))
+          .filter((id) => id > 0);
 
-      const oldPayIds = getListData<{ id?: number | string }>(oldPayRes.data)
-        .map((payable) => toNumber(payable.id))
-        .filter((id) => id > 0);
-
-      if (oldPayIds.length > 0) {
-        const deletePayRes = await directusFetch(
-          `/items/disbursement_payables_draft`,
-          {
+        if (rejectedPayIds.length > 0) {
+          await directusFetch(`/items/disbursement_payables_draft`, {
             method: "DELETE",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify(oldPayIds),
-          }
-        );
-
-        if (!deletePayRes.ok) {
-          return json(deletePayRes.data, { status: deletePayRes.status });
+            body: JSON.stringify(rejectedPayIds),
+          });
         }
       }
-    } else {
+    }
+
+    if (!disbursementId) {
       const latestRes = await directusFetch(
         `/items/disbursement_draft?filter[doc_no][_starts_with]=NT-&sort=-id&limit=1&fields=doc_no`
       );
@@ -1646,21 +1649,17 @@ export async function POST(req: NextRequest) {
         return json(latestRes.data, { status: latestRes.status });
       }
 
-      const latestDoc = getListData<{ doc_no?: string }>(latestRes.data)[0]
-        ?.doc_no;
-
+      const latestDoc = getListData<{ doc_no?: string }>(latestRes.data)[0]?.doc_no;
       let nextNum = 1000;
 
       if (latestDoc) {
         const match = latestDoc.match(/NT-(\d+)/);
-
         if (match) {
           nextNum = parseInt(match[1], 10) + 1;
         }
       }
 
       docNo = `NT-${nextNum}`;
-
       const firstSelected = selectedExpenses[0];
 
       const newDisbRes = await directusFetch(`/items/disbursement_draft`, {
@@ -1672,7 +1671,7 @@ export async function POST(req: NextRequest) {
           payee: firstSelected?.payee_id || salesmanUserId,
           encoder_id: salesmanUserId,
           approver_id: approverId,
-          total_amount: totalAmount,
+          total_amount: 0,
           transaction_date: firstSelected?.transaction_date || todayManila(),
           division_id: salesmanDivisionId,
           department_id: salesmanDepartmentId,
@@ -1692,39 +1691,92 @@ export async function POST(req: NextRequest) {
       }
 
       const newDisb = getItemData<{ id?: number | string }>(newDisbRes.data);
-
       disbursementId = toNumber(newDisb?.id);
 
       if (!disbursementId) {
-        return json(
-          { error: "Failed to create disbursement draft" },
-          { status: 500 }
-        );
+        return json({ error: "Failed to create disbursement draft" }, { status: 500 });
       }
     }
 
-    const payables = selectedExpenses.map((expense) => ({
-      disbursement_id: disbursementId,
-      expense_id: toNumber(expense.id),
-      division_id: salesmanDivisionId,
-      reference_no: docNo,
-      date: expense.transaction_date,
-      coa_id: toNumber(expense.particulars),
-      amount: toNumber(expense.amount),
-      remarks: expense.remarks || null,
-      version: toNumber(expense.version, 1),
-      date_created: nowTs,
-    }));
+    // 2. Incremental Upsert for Selected Approved Expenses
+    const existingPayablesRes = await directusFetch(
+      `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${disbursementId}&fields=id,expense_id,approval_tier&limit=-1`
+    );
 
-    const payablesRes = await directusFetch(`/items/disbursement_payables_draft`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payables),
-    });
+    const existingPayables = getListData<{ id: number; expense_id: unknown; approval_tier: number }>(
+      existingPayablesRes.ok ? existingPayablesRes.data : []
+    );
 
-    if (!payablesRes.ok) {
-      return json(payablesRes.data, { status: payablesRes.status });
+    const existingByExpenseId = new Map<number, number>();
+    for (const p of existingPayables) {
+      const expId = getRelationId(p.expense_id);
+      if (expId > 0) existingByExpenseId.set(expId, toNumber(p.id));
     }
+
+    for (const expense of selectedExpenses) {
+      const expenseId = toNumber(expense.id);
+      const existingPayableId = existingByExpenseId.get(expenseId);
+
+      if (existingPayableId) {
+        // PATCH existing payable (preserve existing approval_tier)
+        await directusFetch(`/items/disbursement_payables_draft/${existingPayableId}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            amount: toNumber(expense.amount),
+            remarks: expense.remarks || null,
+            date: expense.transaction_date,
+            date_updated: nowTs,
+          }),
+        });
+      } else {
+        // POST new payable with approval_tier = 1
+        await directusFetch(`/items/disbursement_payables_draft`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            disbursement_id: disbursementId,
+            expense_id: expenseId,
+            division_id: salesmanDivisionId,
+            reference_no: docNo,
+            date: expense.transaction_date,
+            coa_id: toNumber(expense.particulars),
+            amount: toNumber(expense.amount),
+            remarks: expense.remarks || null,
+            version: toNumber(expense.version, 1),
+            approval_tier: 1,
+            date_created: nowTs,
+            date_updated: nowTs,
+          }),
+        });
+      }
+    }
+
+    // 3. Recalculate Draft Total Amount & Supporting Docs
+    const updatedPayablesRes = await directusFetch(
+      `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${disbursementId}&fields=amount,expense_id.attachment_url&limit=-1`
+    );
+
+    const updatedPayables = getListData<{ amount: number | string; expense_id?: { attachment_url?: string } }>(
+      updatedPayablesRes.ok ? updatedPayablesRes.data : []
+    );
+
+    const newTotalAmount = updatedPayables.reduce(
+      (sum, p) => sum + toNumber(p.amount),
+      0
+    );
+
+    await directusFetch(`/items/disbursement_draft/${disbursementId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        total_amount: newTotalAmount,
+        remarks: remarks || null,
+        supporting_documents_url: supportingDocs || null,
+        date_updated: nowTs,
+        is_supervisor: hasSupervisor ? 1 : 0,
+      }),
+    });
 
     return json({
       ok: true,

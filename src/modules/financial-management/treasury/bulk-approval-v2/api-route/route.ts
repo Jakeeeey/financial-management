@@ -126,6 +126,7 @@ type DisbursementPayableDraftRow = {
     attachment_url?: string | number | { id?: string; uuid?: string; directus_files_id?: string } | null;
   }
   | null;
+  approval_tier?: number | string | null;
 };
 
 type ExpenseDraftRow = {
@@ -1515,7 +1516,7 @@ export async function GET(req: NextRequest) {
       }
 
       const pRes = await directusFetch(
-        `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,coa_id,amount,reference_no,remarks,date,expense_id.id,expense_id.status,expense_id.feedback,expense_id.attachment_url,expense_id.return_to,expense_id.header_id&limit=-1`
+        `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,coa_id,amount,reference_no,remarks,date,approval_tier,expense_id.id,expense_id.status,expense_id.feedback,expense_id.attachment_url,expense_id.return_to,expense_id.header_id&limit=-1`
       );
 
       const payablesRaw =
@@ -1595,6 +1596,7 @@ export async function GET(req: NextRequest) {
           is_rejected: expenseObj?.status === "Rejected",
           feedback: expenseObj?.feedback ?? null,
           expense_id: expenseObj ? (toNumericId(expenseObj.id) ?? 0) : (toNumericId(p.expense_id) ?? 0),
+          approval_tier: toNumber(p.approval_tier, 1),
         };
       });
 
@@ -2214,7 +2216,7 @@ export async function POST(req: NextRequest) {
         console.log(`[POST] Virtual draft detected. Looking for real draft in week ${weekStart} for division ${draft.division_id} / encoder ${encoderId}`);
 
         const realDraftRes = await directusFetch(
-          `/items/disbursement_draft?filter[division_id][_eq]=${draft.division_id}&filter[encoder_id][_eq]=${encoderId}&filter[transaction_date][_between]=[${weekStart},${weekEnd}]&filter[status][_nin]=Approved,Rejected&limit=1`
+          `/items/disbursement_draft?filter[division_id][_eq]=${draft.division_id}&filter[encoder_id][_eq]=${encoderId}&filter[transaction_date][_between]=${weekStart},${weekEnd}&filter[status][_nin]=Approved,Rejected&limit=1`
         );
 
         const existingDraft = ((realDraftRes.data as DirectusListResponse<DisbursementDraftRow>).data ?? [])[0];
@@ -2792,6 +2794,24 @@ export async function POST(req: NextRequest) {
           approval_version: currentVersion + 1,
         }),
       });
+
+      const payablesForDraftRes = await directusFetch(
+        `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,approval_tier&limit=-1`
+      );
+      const rawData = (payablesForDraftRes.ok && typeof payablesForDraftRes.data === "object" && payablesForDraftRes.data !== null && "data" in payablesForDraftRes.data)
+        ? (payablesForDraftRes.data as { data: { id: number | string; approval_tier?: number | string }[] }).data
+        : [];
+      for (const p of rawData) {
+        const pId = toNumericId(p.id);
+        const pTier = toNumber(p.approval_tier, 1);
+        if (pId && pTier <= currentTier) {
+          await directusFetch(`/items/disbursement_payables_draft/${pId}`, {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ approval_tier: nextLevel }),
+          });
+        }
+      }
 
       return json({
         ok: true,

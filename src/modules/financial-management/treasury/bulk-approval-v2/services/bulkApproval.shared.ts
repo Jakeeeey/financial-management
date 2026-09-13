@@ -537,30 +537,32 @@ export async function fetchCoaMap(coaIds: number[]) {
 
 export async function fetchMyVotes(draftIds: number[], userId: number) {
   const uniqueIds = [...new Set(draftIds.filter((id) => id > 0))];
-  const map = new Map<string, { status: string; created_at: string; version: number }>();
+  const map = new Map<string, { status: string; created_at: string; version: number; tier: number }>();
 
   if (!uniqueIds.length) return map;
 
   const res = await directusFetch(
     `/items/disbursement_draft_approvals?filter[draft_id][_in]=${uniqueIds.join(
       ","
-    )}&filter[approver_id][_eq]=${userId}&fields=draft_id,status,created_at,version&limit=-1`
+    )}&filter[approver_id][_eq]=${userId}&fields=draft_id,status,created_at,version,approver_heirarchy&limit=-1`
   );
 
   if (!res.ok) return map;
 
-  const rows = (res.data as DirectusListResponse<ApprovalVoteRow>).data ?? [];
+  const rows = (res.data as DirectusListResponse<ApprovalVoteRow & { approver_heirarchy?: number | string }>).data ?? [];
 
   for (const row of rows) {
     const draftId = toNumericId(row.draft_id);
     const version = toNumber(row.version, 1);
+    const tier = toNumber(row.approver_heirarchy, 1);
 
     if (!draftId) continue;
 
-    map.set(`${draftId}:${version}`, {
+    map.set(`${draftId}:${version}:${tier}`, {
       status: row.status ?? "",
       created_at: row.created_at ?? "",
       version,
+      tier,
     });
   }
 
@@ -991,6 +993,7 @@ export async function insertExpenseIntoPayableDraft(params: {
   expense: ExpenseDraftRow;
   referenceNo?: string | null;
   nowTs?: string;
+  approvalTier?: number;
 }) {
   const expenseId = toNumericId(params.expense.id);
   const divisionId = toNumericId(params.expense.division_id);
@@ -1020,6 +1023,7 @@ export async function insertExpenseIntoPayableDraft(params: {
         remarks: params.expense.remarks ?? null,
         date: params.expense.transaction_date ?? null,
         date_updated: params.nowTs ?? undefined,
+        ...(params.approvalTier ? { approval_tier: params.approvalTier } : {}),
       }),
     });
     console.log(`[insertExpenseIntoPayableDraft] Updated existing payable ${existing.id} for expense ${expenseId} with new amount ${newAmount}.`);
@@ -1038,6 +1042,7 @@ export async function insertExpenseIntoPayableDraft(params: {
       date: params.expense.transaction_date ?? null,
       expense_id: expenseId,
       reference_no: params.referenceNo ?? null,
+      approval_tier: params.approvalTier ?? 1,
       date_created: params.nowTs ?? undefined,
       date_updated: params.nowTs ?? undefined,
     }),
@@ -1575,19 +1580,26 @@ export async function processDraftApproval(params: {
 
   const hasConcernItemsToProcess = item_decisions && Object.keys(item_decisions).some(id => Number(id) < 0 && !handledVirtualExpenseIds.has(Math.abs(Number(id))));
 
-  if (!authorizedLevels.some((lvl) => lvl === currentTier) && !hasConcernItemsToProcess) {
+  const payablesForCheckRes = await directusFetch<DirectusListResponse<DisbursementPayableDraftRow>>(
+    `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=approval_tier&limit=-1`
+  );
+  const activePayableTiers = (payablesForCheckRes.ok ? payablesForCheckRes.data.data ?? [] : []).map(p => toNumber(p.approval_tier, 1));
+
+  const isUserAuthorizedForPayable = authorizedLevels.some((lvl) => activePayableTiers.includes(lvl));
+
+  if (!isUserAuthorizedForPayable && !hasConcernItemsToProcess) {
     return {
       ok: false,
       status: 403,
       data: {
         error: "Unauthorized tier",
-        detail: `You are authorized for levels [${authorizedLevels.join(",")}] in this division, but the draft is currently at Level ${currentTier}.`,
+        detail: `You are authorized for levels [${authorizedLevels.join(",")}] in this division, but none of the draft's payables match your approval level.`,
       },
     };
   }
 
   const existingVoteRes = await directusFetch<DirectusListResponse<ApprovalVoteRow>>(
-    `/items/disbursement_draft_approvals?filter[draft_id][_eq]=${draftId}&filter[approver_id][_eq]=${currentUserId}&filter[version][_eq]=${currentVersion}&fields=id,status&limit=1`
+    `/items/disbursement_draft_approvals?filter[draft_id][_eq]=${draftId}&filter[approver_id][_eq]=${currentUserId}&filter[version][_eq]=${currentVersion}&filter[approver_heirarchy][_eq]=${activeVotedTier}&fields=id,status&limit=1`
   );
 
   const existingVote = (existingVoteRes.ok ? existingVoteRes.data.data ?? [] : [])[0];
@@ -1623,7 +1635,7 @@ export async function processDraftApproval(params: {
       const encoderId = toNumericId(draft.encoder_id);
 
       const realDraftRes = await directusFetch<DirectusListResponse<DisbursementDraftRow>>(
-        `/items/disbursement_draft?filter[division_id][_eq]=${draft.division_id}&filter[encoder_id][_eq]=${encoderId}&filter[transaction_date][_between]=[${weekStart},${weekEnd}]&filter[status][_nin]=Approved,Rejected&limit=1`
+        `/items/disbursement_draft?filter[division_id][_eq]=${draft.division_id}&filter[encoder_id][_eq]=${encoderId}&filter[transaction_date][_between]=${weekStart},${weekEnd}&filter[status][_nin]=Approved,Rejected&limit=1`
       );
 
       const existingDraft = (realDraftRes.ok ? realDraftRes.data.data ?? [] : [])[0];
@@ -1893,7 +1905,7 @@ export async function processDraftApproval(params: {
       body: JSON.stringify({
         draft_id: draftId,
         approver_id: currentUserId,
-        approver_heirarchy: currentTier,
+        approver_heirarchy: activeVotedTier,
         status: finalVoteStatus,
         remarks: finalRemarks,
         version: currentVersion,
@@ -1983,14 +1995,16 @@ export async function processDraftApproval(params: {
     return { ok: true, result: finalVoteStatus, message: "Draft updated." };
   }
 
-  // If the user is voting on concern items and is NOT authorized for the current tier,
+  const activeVotedTier = authorizedLevels.find((lvl) => activePayableTiers.includes(lvl)) ?? currentTier;
+
+  // If the user is voting on concern items and is NOT authorized for any active payable tier,
   // do not run consensus logic as they are just processing items into the existing draft.
-  if (!authorizedLevels.some((lvl) => lvl === currentTier)) {
+  if (!authorizedLevels.some((lvl) => lvl === activeVotedTier)) {
     return { ok: true, result: finalVoteStatus, message: "Concern items processed." };
   }
 
   const tierApproversRes = await directusFetch<DirectusListResponse<DirectusApproverRow>>(
-    `/items/disbursement_draft_approver?filter[division_id][_eq]=${draftDivisionId}&filter[is_deleted][_eq]=0&filter[approver_heirarchy][_eq]=${currentTier}&fields=approver_id&limit=-1`
+    `/items/disbursement_draft_approver?filter[division_id][_eq]=${draftDivisionId}&filter[is_deleted][_eq]=0&filter[approver_heirarchy][_eq]=${activeVotedTier}&fields=approver_id&limit=-1`
   );
 
   const totalInTier = (tierApproversRes.ok ? tierApproversRes.data.data ?? [] : []).length || 1;
@@ -2007,9 +2021,32 @@ export async function processDraftApproval(params: {
     );
 
     const maxLevel = toNumber((allApproversRes.ok ? allApproversRes.data.data ?? [] : [])[0]?.approver_heirarchy, 1) || 1;
-    const nextLevel = currentTier + 1;
+    const nextLevel = activeVotedTier + 1;
 
-    if (nextLevel > maxLevel) {
+    const payablesForDraftRes = await directusFetch<DirectusListResponse<DisbursementPayableDraftRow>>(
+      `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,approval_tier&limit=-1`
+    );
+    const payablesForDraft = (payablesForDraftRes.ok ? payablesForDraftRes.data.data ?? [] : []);
+
+    // Advance line item approval_tier ONLY for payables matching the voted tier
+    for (const p of payablesForDraft) {
+      const pId = toNumericId(p.id);
+      const pTier = toNumber(p.approval_tier, 1);
+      if (pId && pTier === activeVotedTier) {
+        const updatedTier = Math.min(nextLevel, maxLevel);
+        await directusFetch(`/items/disbursement_payables_draft/${pId}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ approval_tier: updatedTier, date_updated: nowTs }),
+        });
+        p.approval_tier = updatedTier;
+      }
+    }
+
+    // Finalize ONLY if ALL payables in the draft have reached maxLevel
+    const allPayablesAtMax = payablesForDraft.length > 0 && payablesForDraft.every((p) => toNumber(p.approval_tier, 1) >= maxLevel);
+
+    if (allPayablesAtMax && nextLevel > maxLevel) {
       return await finalizeDisbursementDraft({
         draftId,
         draft,

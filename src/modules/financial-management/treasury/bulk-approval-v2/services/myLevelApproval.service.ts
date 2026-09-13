@@ -147,64 +147,87 @@ export async function handleMyLevelApprovalGetResource(params: {
         ),
       ]);
 
-      const realRows: DraftRowResponse[] = realDrafts.map((draft) => {
-        const draftId = toNumericId(draft.id) ?? 0;
-        const divisionId = toNumericId(draft.division_id) ?? 0;
-        const payeeId = toNumericId(draft.payee) ?? 0;
-        const encoderId = toNumericId(draft.encoder_id) ?? 0;
-        const approvalVersion = toNumber(draft.approval_version, 1);
-        const status = draft.status ?? "Submitted";
-        const currentTier = parseTier(status);
-        const myVote = myVotes.get(`${draftId}:${approvalVersion}`) ?? null;
+      const payablesForDraftsRes = await directusFetch(
+        `/items/disbursement_payables_draft?filter[disbursement_id][_in]=${realDrafts.map((d) => toNumericId(d.id)).filter(Boolean).join(",")}&fields=disbursement_id,approval_tier&limit=-1`
+      );
+      const payablesForDrafts = payablesForDraftsRes.ok
+        ? (payablesForDraftsRes.data as DirectusListResponse<{ disbursement_id?: number | string; approval_tier?: number | string }>).data ?? []
+        : [];
 
-        return {
-          id: draftId,
-          doc_no: draft.doc_no ?? `DRAFT-${draftId}`,
-          payee_user_id: payeeId,
-          payee_name: supplierMap.get(payeeId) ?? `Supplier #${payeeId}`,
-          encoder_name: userMap.get(encoderId) ?? `User #${encoderId}`,
-          total_amount: toNumber(draft.total_amount),
-          remarks: draft.remarks ?? null,
-          status,
-          division_id: divisionId,
-          division_name: divisionMap.get(divisionId) ?? `Division #${divisionId}`,
-          requires_final_top_sheet:
-            currentTier >= (maxLevelByDivision[divisionId] ?? currentTier) &&
-            approverRecords.some(
-              (r) =>
-                toNumericId(r.division_id) === divisionId &&
-                toNumber(r.approver_heirarchy) ===
-                  (maxLevelByDivision[divisionId] ?? currentTier)
-            ),
-          approval_version: approvalVersion,
-          transaction_date: draft.transaction_date ?? null,
-          date_created: draft.date_created ?? draft.transaction_date ?? "",
-          current_tier: currentTier,
-          max_level: maxLevelByDivision[divisionId] ?? currentTier,
-          approvers_per_level: approversPerLevelByDivision[divisionId] ?? {},
-          my_vote: myVote,
-          can_vote:
-            !(
+      const payablesByDraftId = new Map<number, number[]>();
+      for (const p of payablesForDrafts) {
+        const dId = toNumericId(p.disbursement_id);
+        if (!dId) continue;
+        const tier = toNumber(p.approval_tier, 1);
+        if (!payablesByDraftId.has(dId)) payablesByDraftId.set(dId, []);
+        payablesByDraftId.get(dId)!.push(tier);
+      }
+
+        const realRows: DraftRowResponse[] = realDrafts.map((draft) => {
+          const draftId = toNumericId(draft.id) ?? 0;
+          const divisionId = toNumericId(draft.division_id) ?? 0;
+          const payeeId = toNumericId(draft.payee) ?? 0;
+          const encoderId = toNumericId(draft.encoder_id) ?? 0;
+          const approvalVersion = toNumber(draft.approval_version, 1);
+          const status = draft.status ?? "Submitted";
+          const currentTier = parseTier(status);
+          const itemTiers = payablesByDraftId.get(draftId) ?? [currentTier];
+
+          const userHierarchyInDivision = approverRecords
+            .filter((r) => toNumericId(r.division_id) === divisionId)
+            .map((r) => toNumber(r.approver_heirarchy));
+
+          // Find the active tier for this user matching active payables
+          const activeMatchingTier = itemTiers.find((t) => userHierarchyInDivision.includes(t));
+          const myVote = activeMatchingTier
+            ? (myVotes.get(`${draftId}:${approvalVersion}:${activeMatchingTier}`) ?? null)
+            : (myVotes.get(`${draftId}:${approvalVersion}:${currentTier}`) ?? null);
+
+          const hasMatchingPayable = activeMatchingTier !== undefined;
+
+          return {
+            id: draftId,
+            doc_no: draft.doc_no ?? `DRAFT-${draftId}`,
+            payee_user_id: payeeId,
+            payee_name: supplierMap.get(payeeId) ?? `Supplier #${payeeId}`,
+            encoder_name: userMap.get(encoderId) ?? `User #${encoderId}`,
+            total_amount: toNumber(draft.total_amount),
+            remarks: draft.remarks ?? null,
+            status,
+            division_id: divisionId,
+            division_name: divisionMap.get(divisionId) ?? `Division #${divisionId}`,
+            requires_final_top_sheet:
               currentTier >= (maxLevelByDivision[divisionId] ?? currentTier) &&
               approverRecords.some(
                 (r) =>
                   toNumericId(r.division_id) === divisionId &&
                   toNumber(r.approver_heirarchy) ===
                     (maxLevelByDivision[divisionId] ?? currentTier)
-              )
-            ) &&
-            canUserVote({
-              approverRecords,
-              divisionId,
-              currentTier,
-              status,
-              myVote,
-            }),
-          has_concern:
-            status.toLowerCase() === "with concern" ||
-            Boolean(draft.remarks?.includes("[Contains Returned Items]")),
-        };
-      });
+              ),
+            approval_version: approvalVersion,
+            transaction_date: draft.transaction_date ?? null,
+            date_created: draft.date_created ?? draft.transaction_date ?? "",
+            current_tier: currentTier,
+            max_level: maxLevelByDivision[divisionId] ?? currentTier,
+            approvers_per_level: approversPerLevelByDivision[divisionId] ?? {},
+            my_vote: myVote,
+            can_vote:
+              !myVote &&
+              !(
+                currentTier >= (maxLevelByDivision[divisionId] ?? currentTier) &&
+                approverRecords.some(
+                  (r) =>
+                    toNumericId(r.division_id) === divisionId &&
+                    toNumber(r.approver_heirarchy) ===
+                      (maxLevelByDivision[divisionId] ?? currentTier)
+                )
+              ) &&
+              hasMatchingPayable,
+            has_concern:
+              status.toLowerCase() === "with concern" ||
+              Boolean(draft.remarks?.includes("[Contains Returned Items]")),
+          };
+        });
 
       type ReturnedGroupSummary = {
         amount: number;
@@ -406,7 +429,7 @@ export async function handleMyLevelApprovalGetResource(params: {
       }
 
       const pRes = await directusFetch(
-        `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,coa_id,amount,reference_no,remarks,date,expense_id.id,expense_id.status,expense_id.feedback,expense_id.attachment_url,expense_id.return_to,expense_id.header_id&limit=-1`
+        `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,coa_id,amount,reference_no,remarks,date,approval_tier,expense_id.id,expense_id.status,expense_id.feedback,expense_id.attachment_url,expense_id.return_to,expense_id.header_id&limit=-1`
       );
 
       const payablesRaw =
@@ -417,15 +440,23 @@ export async function handleMyLevelApprovalGetResource(params: {
         .map((p) => toNumericId(p.coa_id))
         .filter((id): id is number => Boolean(id));
 
-      const weekStart = getWeekStart(draft.transaction_date ?? "");
-      const weekEnd = getWeekEndFromStart(weekStart);
-
       const payeeId = toNumericId(draft.payee) ?? 0;
       const encoderId = toNumericId(draft.encoder_id) ?? 0;
 
-      const concernRes = await directusFetch(
-        `/items/expense_draft?filter[division_id][_eq]=${divisionId}&filter[encoded_by][_eq]=${encoderId}&filter[status][_in]=With Concern,Approved&filter[return_to][_starts_with]=L&filter[transaction_date][_between]=[${weekStart},${weekEnd}]&fields=id,amount,remarks,transaction_date,particulars,attachment_url,feedback,return_to,status,header_id&limit=-1`
-      );
+      const headerIds = payablesRaw
+        .map((p) => {
+          const expenseObj = typeof p.expense_id === "object" && p.expense_id !== null ? p.expense_id : null;
+          return expenseObj ? toNumericId(expenseObj.header_id) : null;
+        })
+        .filter((id): id is number => id !== null && id > 0);
+
+      const uniqueHeaderIds = [...new Set(headerIds)];
+
+      const concernRes = uniqueHeaderIds.length > 0
+        ? await directusFetch(
+            `/items/expense_draft?filter[division_id][_eq]=${divisionId}&filter[encoded_by][_eq]=${encoderId}&filter[header_id][_in]=${uniqueHeaderIds.join(",")}&filter[status][_in]=With Concern,Approved&filter[return_to][_starts_with]=L&fields=id,amount,remarks,transaction_date,particulars,attachment_url,feedback,return_to,status,header_id&limit=-1`
+          )
+        : { ok: true, status: 200, data: { data: [] } };
 
       const rawConcerns =
         (concernRes.data as DirectusListResponse<ExpenseDraftRow>).data ?? [];
@@ -479,6 +510,7 @@ export async function handleMyLevelApprovalGetResource(params: {
           feedback: expenseObj?.feedback ?? null,
           expense_id: expenseObj ? (toNumericId(expenseObj.id) ?? 0) : (toNumericId(p.expense_id) ?? 0),
           header_id: expenseObj ? (toNumericId(expenseObj.header_id) ?? 0) : 0,
+          approval_tier: toNumber(p.approval_tier, 1),
         };
       });
 
@@ -545,9 +577,13 @@ export async function handleMyLevelApprovalGetResource(params: {
         vote_history: voteHistory,
         logs: [],
         expense_logs: [],
-        my_level: currentTier,
+        my_level:
+          approverRecords.find(
+            (r) => toNumericId(r.division_id) === divisionId
+          )?.approver_heirarchy ?? currentTier,
         my_vote: myVote,
         can_vote:
+          !myVote &&
           !(
             currentTier >= (maxLevelByDivision[divisionId] ?? currentTier) &&
             approverRecords.some(
@@ -557,13 +593,13 @@ export async function handleMyLevelApprovalGetResource(params: {
                   (maxLevelByDivision[divisionId] ?? currentTier)
             )
           ) &&
-          canUserVote({
-            approverRecords,
-            divisionId,
-            currentTier,
-            status: draft.status ?? "Submitted",
-            myVote,
-          }),
+          payables.some((p) =>
+            approverRecords.some(
+              (r) =>
+                toNumericId(r.division_id) === divisionId &&
+                toNumber(r.approver_heirarchy) === (p.approval_tier ?? currentTier)
+            )
+          ),
         attachments,
       });
     }

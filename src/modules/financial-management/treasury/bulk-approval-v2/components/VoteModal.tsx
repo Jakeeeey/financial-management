@@ -270,6 +270,9 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     if (!!detail?.my_vote && p.id > 0) return false;
     // Don't count ghost items as pending
     if (p.id === -1 || p.id === -2 || p.id === -3) return false;
+    // Only items at the user's active level require a vote decision from this approver
+    const itemTier = p.approval_tier || 1;
+    if (itemTier !== (detail?.my_level || 1)) return false;
     return (itemDecisions[p.id] || "PENDING") === "PENDING";
   });
   const hasMissingFeedback = combinedItems.some(p => {
@@ -838,73 +841,80 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                     </TableCell>
                                   </TableRow>
                                   {week.items.map((p, idx) => {
-                            const status = itemDecisions[p.id] || "PENDING";
-                            const isPersistentLocked = p.is_concern || p.is_rejected;
-                            const isStatusLocked = isPersistentLocked || isInteractionDisabled;
-                            return (
-                              <React.Fragment key={p.id}>
-                                <TableRow className="group hover:bg-slate-50/50 dark:hover:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800">
-                                  <TableCell className="text-center py-3 text-[9px] font-black text-slate-300 dark:text-slate-700 italic">{(idx + 1).toString().padStart(2, '0')}</TableCell>
-                                  <TableCell className="py-3">
-                                    <p className="text-[10px] font-black text-slate-800 dark:text-slate-200 leading-none mb-1 line-clamp-1">{p.remarks || "No remarks"}</p>
-                                    <p className="text-[8px] text-muted-foreground dark:text-slate-500 font-mono">REF: {p.reference_no || "N/A"}</p>
-                                    {showItemRemarks[p.id] && (
-                                      <p className="text-[9px] font-bold text-blue-600 dark:text-blue-400 mt-1 line-clamp-1 break-all">Feedback: {showItemRemarks[p.id]}</p>
-                                    )}
-                                  </TableCell>
-                                  <TableCell className="py-3 text-center">
-                                    <Input
-                                      type="number"
-                                      className="h-7 w-20 text-center text-[10px] font-black tabular-nums bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200"
-                                      value={editedAmounts[p.id] || p.amount}
-                                      onChange={(e) => setEditedAmounts(prev => ({ ...prev, [p.id]: e.target.value }))}
-                                      disabled={processingItem === p.id || submitting || isStatusLocked}
-                                    />
-                                  </TableCell>
-                                  <TableCell className="py-4 text-center">
-                                    {p.attachment_url ? (
-                                      <Button
-                                        type="button"
-                                        size="icon"
-                                        variant="ghost"
-                                        className="h-8 w-8 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/40"
-                                        onClick={() => setPreviewUrl(`/api/fm/expense-assets?id=${p.attachment_url}`)}
-                                        aria-label={`Preview evidence for expense ${p.expense_id}`}
-                                        title="Preview supporting evidence"
-                                      >
-                                        <ExternalLink size={14} />
-                                      </Button>
-                                    ) : (
-                                      <Badge
-                                        variant="outline"
-                                        className="whitespace-nowrap border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wide text-slate-400 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-500"
-                                      >
-                                        No attachment
-                                      </Badge>
-                                    )}
-                                  </TableCell>
-                                  <TableCell className="py-4 text-center text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">{formatDate(p.date)}</TableCell>
-                                  <TableCell className="py-4 text-center">
-                                    <Badge className={`text-[9px] font-black h-5 px-2 uppercase shadow-sm ${status === "APPROVED" ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800" : status === "REJECTED" ? "bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800" : status === "WITH_CONCERN" ? "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800" : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500"}`}>
-                                      {status === "PENDING" ? "Pending" : status}
-                                    </Badge>
-                                  </TableCell>
-                                  <TableCell className="py-3 text-center">
-                                    <div className="flex items-center justify-center gap-1">
-                                      <Button size="icon" className={`h-7 w-7 rounded-lg shadow-sm ${status === "APPROVED" ? "bg-emerald-500 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/40"}`} onClick={() => handleItemActionClick(p, "APPROVED")} disabled={processingItem === p.id || submitting || isStatusLocked}>
-                                        <Check size={14} strokeWidth={3} />
-                                      </Button>
-                                      <Button size="icon" className={`h-7 w-7 rounded-lg shadow-sm ${status === "WITH_CONCERN" ? "bg-amber-500 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:bg-amber-50 dark:hover:bg-amber-900/40"}`} onClick={() => handleItemActionClick(p, "WITH_CONCERN")} disabled={processingItem === p.id || submitting || isStatusLocked}>
-                                        <AlertTriangle size={12} />
-                                      </Button>
-                                      <Button size="icon" className={`h-7 w-7 rounded-lg shadow-sm ${status === "REJECTED" ? "bg-rose-500 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:bg-rose-50 dark:hover:bg-rose-900/40"}`} onClick={() => handleItemActionClick(p, "REJECTED")} disabled={processingItem === p.id || submitting || isStatusLocked}>
-                                        <X size={14} strokeWidth={3} />
-                                      </Button>
-                                    </div>
-                                  </TableCell>
-                                </TableRow>
-                              </React.Fragment>
-                            );
+                                    const status = itemDecisions[p.id] || "PENDING";
+                                    const itemTier = p.approval_tier || 1;
+                                    const isTierMismatch = itemTier !== (detail?.my_level || 1);
+                                    const isPersistentLocked = p.is_concern || p.is_rejected;
+                                    const isStatusLocked = isPersistentLocked || isInteractionDisabled || isTierMismatch;
+                                    return (
+                                      <React.Fragment key={p.id}>
+                                        <TableRow className={`group border-b border-slate-100 dark:border-slate-800 transition-colors ${isTierMismatch ? "bg-slate-50/70 dark:bg-slate-900/30 opacity-75" : "hover:bg-slate-50/50 dark:hover:bg-slate-900/50"}`}>
+                                          <TableCell className="text-center py-3 text-[9px] font-black text-slate-300 dark:text-slate-700 italic">{(idx + 1).toString().padStart(2, '0')}</TableCell>
+                                          <TableCell className="py-3">
+                                            <div className="flex items-center gap-2 mb-1">
+                                              <Badge variant="outline" className={`text-[8px] font-black px-1.5 py-0 uppercase border ${isTierMismatch ? "bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-300 dark:border-slate-700" : "bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800"}`}>
+                                                Level {itemTier}
+                                              </Badge>
+                                              <p className="text-[10px] font-black text-slate-800 dark:text-slate-200 leading-none line-clamp-1">{p.remarks || "No remarks"}</p>
+                                            </div>
+                                            <p className="text-[8px] text-muted-foreground dark:text-slate-500 font-mono">REF: {p.reference_no || "N/A"}</p>
+                                            {showItemRemarks[p.id] && (
+                                              <p className="text-[9px] font-bold text-blue-600 dark:text-blue-400 mt-1 line-clamp-1 break-all">Feedback: {showItemRemarks[p.id]}</p>
+                                            )}
+                                          </TableCell>
+                                          <TableCell className="py-3 text-center">
+                                            <Input
+                                              type="number"
+                                              className="h-7 w-20 text-center text-[10px] font-black tabular-nums bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200"
+                                              value={editedAmounts[p.id] || p.amount}
+                                              onChange={(e) => setEditedAmounts(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                              disabled={processingItem === p.id || submitting || isStatusLocked}
+                                            />
+                                          </TableCell>
+                                          <TableCell className="py-4 text-center">
+                                            {p.attachment_url ? (
+                                              <Button
+                                                type="button"
+                                                size="icon"
+                                                variant="ghost"
+                                                className="h-8 w-8 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/40"
+                                                onClick={() => setPreviewUrl(`/api/fm/expense-assets?id=${p.attachment_url}`)}
+                                                aria-label={`Preview evidence for expense ${p.expense_id}`}
+                                                title="Preview supporting evidence"
+                                              >
+                                                <ExternalLink size={14} />
+                                              </Button>
+                                            ) : (
+                                              <Badge
+                                                variant="outline"
+                                                className="whitespace-nowrap border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wide text-slate-400 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-500"
+                                              >
+                                                No attachment
+                                              </Badge>
+                                            )}
+                                          </TableCell>
+                                          <TableCell className="py-4 text-center text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">{formatDate(p.date)}</TableCell>
+                                          <TableCell className="py-4 text-center">
+                                            <Badge className={`text-[9px] font-black h-5 px-2 uppercase shadow-sm ${status === "APPROVED" ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800" : status === "REJECTED" ? "bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800" : status === "WITH_CONCERN" ? "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800" : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500"}`}>
+                                              {status === "PENDING" ? "Pending" : status}
+                                            </Badge>
+                                          </TableCell>
+                                          <TableCell className="py-3 text-center">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <Button size="icon" title={isTierMismatch ? `Level ${itemTier} item — only Level ${itemTier} approvers can vote` : "Approve line item"} className={`h-7 w-7 rounded-lg shadow-sm ${status === "APPROVED" ? "bg-emerald-500 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/40"}`} onClick={() => handleItemActionClick(p, "APPROVED")} disabled={processingItem === p.id || submitting || isStatusLocked}>
+                                                <Check size={14} strokeWidth={3} />
+                                              </Button>
+                                              <Button size="icon" title={isTierMismatch ? `Level ${itemTier} item — only Level ${itemTier} approvers can vote` : "Flag with concern"} className={`h-7 w-7 rounded-lg shadow-sm ${status === "WITH_CONCERN" ? "bg-amber-500 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:bg-amber-50 dark:hover:bg-amber-900/40"}`} onClick={() => handleItemActionClick(p, "WITH_CONCERN")} disabled={processingItem === p.id || submitting || isStatusLocked}>
+                                                <AlertTriangle size={12} />
+                                              </Button>
+                                              <Button size="icon" title={isTierMismatch ? `Level ${itemTier} item — only Level ${itemTier} approvers can vote` : "Reject line item"} className={`h-7 w-7 rounded-lg shadow-sm ${status === "REJECTED" ? "bg-rose-500 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:bg-rose-50 dark:hover:bg-rose-900/40"}`} onClick={() => handleItemActionClick(p, "REJECTED")} disabled={processingItem === p.id || submitting || isStatusLocked}>
+                                                <X size={14} strokeWidth={3} />
+                                              </Button>
+                                            </div>
+                                          </TableCell>
+                                        </TableRow>
+                                      </React.Fragment>
+                                    );
                                   })}
                                 </React.Fragment>
                               );

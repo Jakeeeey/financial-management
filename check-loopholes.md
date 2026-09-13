@@ -1,0 +1,1 @@
+i-check mo nga muna ang entire workflow ng current codes  at suriin mo mabuti yung sinabi ko kung magkakaroon ba ng loopholes or discrepancies doon sa sinabi ko. i-audit mo ito mabuti bago mo ako sagutin at i-check mo ang bawa instances

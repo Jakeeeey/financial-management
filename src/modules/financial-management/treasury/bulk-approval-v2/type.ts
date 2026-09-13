@@ -184,6 +184,7 @@ export type PayableResponse = {
   feedback?: string | null;
   expense_id?: number;
   header_id: number;
+  approval_tier?: number;
 };
 
 export type ConcernItemResponse = {
@@ -462,6 +463,7 @@ export type DraftDetail = {
   attachments?: { header_id: number; file_url: string; file_name: string }[];
   my_vote: { status: string; created_at: string; version: number } | null;
   can_vote: boolean;
+  my_level?: number;
   approvers_by_level?: Record<number, DraftApproverEntry[]>;
 };
 

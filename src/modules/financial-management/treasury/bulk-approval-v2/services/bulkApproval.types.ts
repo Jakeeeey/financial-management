@@ -113,6 +113,7 @@ export type DisbursementPayableDraftRow = {
     attachment_url?: string | number | { id?: string; uuid?: string; directus_files_id?: string } | null;
   }
   | null;
+  approval_tier?: number | string | null;
 };
 
 export type ExpenseDraftRow = {
@@ -184,6 +185,7 @@ export type PayableResponse = {
   feedback?: string | null;
   expense_id?: number;
   header_id: number;
+  approval_tier?: number;
 };
 
 export type ConcernItemResponse = {
