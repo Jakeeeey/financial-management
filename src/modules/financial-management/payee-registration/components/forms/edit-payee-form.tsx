@@ -32,7 +32,15 @@ export function EditPayeeForm({
   onCancel,
 }: EditPayeeFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { users: payeeUsers, loading: isLoadingPayeeUsers } = usePayeeUsers();
+  const {
+    users: payeeUsers,
+    loading: isLoadingPayeeUsers,
+    error: payeeUsersError,
+    hasMore: hasMorePayeeUsers,
+    searchUsers,
+    loadMore: loadMorePayeeUsers,
+    retry: retryPayeeUsers,
+  } = usePayeeUsers({ currentPayeeId: payee.id });
   const form = useForm({
     resolver: zodResolver(PayeeFormSchema),
     defaultValues: {
@@ -87,6 +95,11 @@ export function EditPayeeForm({
               <UserSelect
                 users={payeeUsers}
                 loading={isLoadingPayeeUsers}
+                error={payeeUsersError}
+                hasMore={hasMorePayeeUsers}
+                onSearch={searchUsers}
+                onLoadMore={loadMorePayeeUsers}
+                onRetry={retryPayeeUsers}
                 onSelect={(user) => {
                   const userId = user.id || user.user_id || user.userId;
                   if (userId) form.setValue("user_id", userId, { shouldValidate: true });

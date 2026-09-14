@@ -209,7 +209,15 @@ export function AddPayeeForm({
   const supplierTypeLabel = supplierType === "TRADE" ? "Trade" : "Non-Trade";
   const { paymentTerms, isLoading: isLoadingPaymentTerms } = usePaymentTerms();
   const { deliveryTerms, isLoading: isLoadingDeliveryTerms } = useDeliveryTerms();
-  const { users: payeeUsers, loading: isLoadingPayeeUsers } = usePayeeUsers();
+  const {
+    users: payeeUsers,
+    loading: isLoadingPayeeUsers,
+    error: payeeUsersError,
+    hasMore: hasMorePayeeUsers,
+    searchUsers,
+    loadMore: loadMorePayeeUsers,
+    retry: retryPayeeUsers,
+  } = usePayeeUsers();
   const form = useForm({
     resolver: zodResolver(PayeeFormSchema),
     defaultValues: {
@@ -524,6 +532,11 @@ export function AddPayeeForm({
               <UserSelect
                 users={payeeUsers}
                 loading={isLoadingPayeeUsers}
+                error={payeeUsersError}
+                hasMore={hasMorePayeeUsers}
+                onSearch={searchUsers}
+                onLoadMore={loadMorePayeeUsers}
+                onRetry={retryPayeeUsers}
                 onSelect={(user) => {
                   const userId = user.id || user.user_id || user.userId;
                   if (userId) form.setValue("user_id", userId, { shouldValidate: true });
