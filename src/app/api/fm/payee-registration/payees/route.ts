@@ -4,7 +4,9 @@ import {
   createPayee,
   searchPayees,
 } from "@/modules/financial-management/payee-registration/services/payee";
-import { PayeeFormSchema } from "@/modules/financial-management/payee-registration/types/payee.schema";
+import { PayeeCreateSchema } from "@/modules/financial-management/payee-registration/types/payee.schema";
+import { requirePayeeRegistrationAccess } from "../_access";
+import { ZodError } from "zod";
 
 /**
  * GET /api/fm/payee-registration/payees
@@ -46,10 +48,18 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const access = await requirePayeeRegistrationAccess();
+    if (!access.ok) {
+      return NextResponse.json(
+        { success: false, error: access.message },
+        { status: access.status },
+      );
+    }
+
     const body = await request.json();
 
     // Validate with Zod schema
-    const validatedData = PayeeFormSchema.parse(body);
+    const validatedData = PayeeCreateSchema.parse(body);
 
     const payeeWithMetadata = {
       ...validatedData,
@@ -70,7 +80,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("POST /api/fm/payee-registration/payees error:", error);
 
-    if (error instanceof Error && error.name === "ZodError") {
+    if (error instanceof ZodError) {
       return NextResponse.json(
         {
           success: false,

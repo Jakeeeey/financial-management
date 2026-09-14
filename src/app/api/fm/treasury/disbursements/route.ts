@@ -213,6 +213,34 @@ function asNumber(value: unknown) {
     return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function isActiveFlag(value: unknown): boolean {
+    return value == null || value === true || value === 1 || value === "1";
+}
+
+async function validateActivePayee(payeeId: number): Promise<{ status: number; message: string } | null> {
+    const response = await fetch(`${DIRECTUS_URL}/items/suppliers/${payeeId}?fields=id,isActive`, {
+        headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+        cache: "no-store",
+    });
+
+    if (response.status === 404) {
+        return { status: 404, message: "Payee was not found." };
+    }
+    if (!response.ok) {
+        throw new Error(`Unable to verify payee status (${response.status}).`);
+    }
+
+    const payload = await response.json() as { data?: { isActive?: unknown } };
+    if (!isActiveFlag(payload.data?.isActive)) {
+        return {
+            status: 409,
+            message: "Inactive payees cannot be used for new transactions.",
+        };
+    }
+
+    return null;
+}
+
 export function relationId(
     value: RelationValue | undefined,
     key: "id" | "division_id" | "department_id" | "coa_id" | "user_id" = "id",
@@ -1069,14 +1097,27 @@ export async function POST(request: NextRequest) {
                 : line
         );
 
-        releaseMemoCapLock = await acquireMemoCapLock(payableLinesInput);
-
         // 1. Fetch payee supplier type to determine prefix (Trade / Non-Trade)
         if (!body.payeeId) {
             return NextResponse.json({ message: "Payee (Supplier ID) is required." }, { status: 400 });
         }
 
-        const memoCapError = await validateSupplierMemoCaps(Number(body.payeeId), requestedPayables);
+        const payeeId = Number(body.payeeId);
+        if (!Number.isInteger(payeeId) || payeeId <= 0) {
+            return NextResponse.json({ message: "Payee (Supplier ID) is invalid." }, { status: 400 });
+        }
+
+        const payeeValidationError = await validateActivePayee(payeeId);
+        if (payeeValidationError) {
+            return NextResponse.json(
+                { message: payeeValidationError.message },
+                { status: payeeValidationError.status },
+            );
+        }
+
+        releaseMemoCapLock = await acquireMemoCapLock(payableLinesInput);
+
+        const memoCapError = await validateSupplierMemoCaps(payeeId, requestedPayables);
         if (memoCapError) {
             return NextResponse.json({
                 message: memoCapError.isLocked
@@ -1097,7 +1138,7 @@ export async function POST(request: NextRequest) {
 
         const taggedPoReferences = await findTaggedPurchaseOrderReferences(
             requestedPayables.map((line) => line.referenceNo),
-            Number(body.payeeId),
+            payeeId,
         );
         if (taggedPoReferences.length > 0) {
             return NextResponse.json({
@@ -1109,7 +1150,7 @@ export async function POST(request: NextRequest) {
 
         const unpostedPoReferences = await findUnpostedPurchaseOrderReferences(
             requestedPayables.map((line) => line.referenceNo),
-            Number(body.payeeId),
+            payeeId,
         );
         if (unpostedPoReferences.length > 0) {
             return NextResponse.json({
@@ -1121,7 +1162,7 @@ export async function POST(request: NextRequest) {
 
         const incomingCanonical = canonicalizeDisbursementPayload({
             transactionTypeId,
-            payeeId: body.payeeId,
+            payeeId,
             remarks: body.remarks,
             totalAmount: body.totalAmount,
             transactionDate: body.transactionDate,
@@ -1146,7 +1187,7 @@ export async function POST(request: NextRequest) {
             const headerPayload = {
                 doc_no: docNoForCreation,
                 transaction_type: transactionTypeId,
-                payee: Number(body.payeeId),
+                payee: payeeId,
                 remarks: body.remarks || "",
                 total_amount: Number(body.totalAmount) || 0,
                 paid_amount: calculatedPaidAmount,
