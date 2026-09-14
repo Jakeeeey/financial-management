@@ -216,6 +216,27 @@ export function CashIssuanceCreateDialog({
     const isNonTradeVoucher = transactionTypeId === 2;
     const payeeSupplierType = isNonTradeVoucher ? "NON-TRADE" : "TRADE";
     const payeeSupplierTypeLabel = isNonTradeVoucher ? "Non-Trade" : "Trade";
+    const activeSuppliers = useMemo(
+        () => suppliers.filter((supplier) => supplier.isActive === true),
+        [suppliers],
+    );
+    const payeeOptions = useMemo(() => {
+        const currentPayeeId = editData?.payeeId == null ? 0 : Number(editData.payeeId);
+        if (!currentPayeeId || activeSuppliers.some((supplier) => Number(supplier.id) === currentPayeeId)) {
+            return activeSuppliers;
+        }
+
+        return editData?.payeeName
+            ? [
+                ...activeSuppliers,
+                {
+                    id: currentPayeeId,
+                    supplier_name: `${editData.payeeName} (Inactive)`,
+                    isActive: false,
+                },
+            ]
+            : activeSuppliers;
+    }, [activeSuppliers, editData?.payeeId, editData?.payeeName]);
 
     useEffect(() => {
         if (open) {
@@ -239,7 +260,10 @@ export function CashIssuanceCreateDialog({
             setLoadingData(true);
             const typeString = transactionTypeId === 1 ? "TRADE" : "NON-TRADE";
             disbursementProvider.getSuppliers(typeString)
-                .then(res => setSuppliers(Array.isArray(res) ? res : []))
+                .then(res => setSuppliers(
+                    Array.isArray(res) ? res.filter((supplier) => supplier.isActive === true) : [],
+                ))
+                .catch(() => setSuppliers([]))
                 .finally(() => setLoadingData(false));
         }
     }, [open, transactionTypeId]);
@@ -405,22 +429,25 @@ export function CashIssuanceCreateDialog({
     const handlePayeeCreated = useCallback(async (createdPayee?: Payee) => {
         try {
             const refreshed = await disbursementProvider.getSuppliers(payeeSupplierType);
-            const nextSuppliers = Array.isArray(refreshed) ? refreshed : [];
+            const nextSuppliers = Array.isArray(refreshed)
+                ? refreshed.filter((supplier) => supplier.isActive === true)
+                : [];
             const createdPayeeId = createdPayee?.id;
 
-            setSuppliers(
-                createdPayeeId == null || nextSuppliers.some((supplier) => supplier.id === createdPayeeId)
-                    ? nextSuppliers
-                    : [
-                        ...nextSuppliers,
-                        {
-                            id: createdPayeeId,
-                            supplier_name: createdPayee?.supplier_name || "New Payee",
-                            isActive: true,
-                        },
-                    ],
-            );
-            if (createdPayeeId != null) setPayeeId(createdPayeeId);
+            setSuppliers(nextSuppliers);
+            if (createdPayeeId == null) {
+                toast.success(`${payeeSupplierTypeLabel} payee created.`);
+                return;
+            }
+
+            const createdSupplier = nextSuppliers.find((supplier) => supplier.id === createdPayeeId);
+            if (!createdSupplier) {
+                setPayeeId("");
+                toast.warning(`${payeeSupplierTypeLabel} payee was created but is not available for new transactions.`);
+                return;
+            }
+
+            setPayeeId(createdSupplier.id);
             toast.success(`${payeeSupplierTypeLabel} payee created and selected.`);
         } catch (error) {
             toast.error(error instanceof Error ? error.message : "Payee created, but the payee list could not be refreshed.");
@@ -464,6 +491,11 @@ export function CashIssuanceCreateDialog({
 
     // Auto-open PO modal when a Trade payee is selected (no extra click needed)
     const handlePayeeSelect = useCallback((val: number) => {
+        if (!activeSuppliers.some((supplier) => Number(supplier.id) === Number(val))) {
+            toast.error("Only active payees can be selected for new transactions.");
+            return;
+        }
+
         const previousPayeeId = payeeId === "" ? undefined : Number(payeeId);
         if (previousPayeeId && previousPayeeId !== val) {
             setPayables((current) => current.map((line) => {
@@ -484,7 +516,7 @@ export function CashIssuanceCreateDialog({
         if (!isNonTradeVoucher && val) {
             handleOpenPoModal(val);
         }
-    }, [payeeId, memoReferences, isNonTradeVoucher, handleOpenPoModal]);
+    }, [activeSuppliers, payeeId, memoReferences, isNonTradeVoucher, handleOpenPoModal]);
 
     const handlePendingRecordsError = poLoadError ? (
         <TableRow><TableCell colSpan={5}
@@ -806,7 +838,7 @@ export function CashIssuanceCreateDialog({
                                     setTransactionDate={setTransactionDate}
                                     payeeId={payeeId}
                                     handlePayeeSelect={handlePayeeSelect}
-                                    suppliers={suppliers}
+                                    suppliers={payeeOptions}
                                     loadingData={loadingData}
                                     payeeSupplierTypeLabel={payeeSupplierTypeLabel}
                                     isNonTradeVoucher={isNonTradeVoucher}
