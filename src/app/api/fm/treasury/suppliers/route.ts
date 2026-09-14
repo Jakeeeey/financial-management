@@ -10,7 +10,7 @@ type DirectusSupplier = {
     id?: number;
     supplier_name?: string;
     supplier_shortcut?: string | null;
-    isActive?: boolean | number | null;
+    isActive?: boolean | number | string | null;
 };
 
 type DirectusList<T> = {
@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
             id: supplier.id,
             supplier_name: supplier.supplier_name ?? "",
             supplier_shortcut: supplier.supplier_shortcut ?? "",
-            isActive: supplier.isActive === true || supplier.isActive === 1,
+            isActive: supplier.isActive === true || supplier.isActive === 1 || supplier.isActive === "1",
             supplier_type: supplier.supplier_type ?? "",
         })));
     } catch (err: unknown) {
