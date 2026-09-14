@@ -1455,9 +1455,21 @@ export async function handleFinalHeaderDecision(params: {
       continue;
     }
 
-    // NOTE: Do NOT delete disbursement_payables_draft records.
-    // The payable must remain intact so the salesman can correct the expense_draft
-    // and resubmit it for re-approval. The status change on expense_draft is sufficient.
+    if (itemStatus === "With Concern") {
+      const payables = payableByExpenseId.get(expenseId) ?? [];
+      for (const p of payables) {
+        if (p.id) {
+          await directusFetch(`/items/disbursement_payables_draft/${p.id}`, {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              with_concern: 1,
+              date_updated: nowTs,
+            }),
+          });
+        }
+      }
+    }
 
     await createExpenseLog({
       expenseId,
