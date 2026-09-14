@@ -15,6 +15,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -648,6 +649,16 @@ export function AddPayeeForm({
                   </FormItem>
                 )}
               />
+            </div>
+
+            <div className="flex items-start justify-between gap-4 rounded-md border border-border bg-muted/30 px-3 py-2">
+              <div>
+                <p className="text-sm font-medium">Account Status</p>
+                <p className="text-xs text-muted-foreground">
+                  New payees created here are Active by default. Change status from Payee Registration after creation.
+                </p>
+              </div>
+              <Badge variant="default">Active</Badge>
             </div>
 
             <FormField

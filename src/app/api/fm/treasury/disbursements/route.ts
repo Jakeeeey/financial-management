@@ -7,6 +7,7 @@ import {
 } from "./_purchase-order-eligibility";
 import { findMissingPayableDivisionError, findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "./_payable-split-integrity";
 import { acquireMemoCapLock, validateSupplierMemoCaps } from "./_memo-cap-integrity";
+import { isEffectivelyActivePayee } from "../_payee-status";
 import { isPettyCashBankAccount, validatePaymentLine } from "./_payment-method";
 import {
     acquireDocumentNumberLock,
@@ -213,10 +214,6 @@ function asNumber(value: unknown) {
     return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-function isActiveFlag(value: unknown): boolean {
-    return value == null || value === true || value === 1 || value === "1";
-}
-
 async function validateActivePayee(payeeId: number): Promise<{ status: number; message: string } | null> {
     const response = await fetch(`${DIRECTUS_URL}/items/suppliers/${payeeId}?fields=id,isActive`, {
         headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
@@ -231,7 +228,7 @@ async function validateActivePayee(payeeId: number): Promise<{ status: number; m
     }
 
     const payload = await response.json() as { data?: { isActive?: unknown } };
-    if (!isActiveFlag(payload.data?.isActive)) {
+    if (!isEffectivelyActivePayee(payload.data?.isActive)) {
         return {
             status: 409,
             message: "Inactive payees cannot be used for new transactions.",
