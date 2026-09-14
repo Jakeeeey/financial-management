@@ -148,7 +148,7 @@ export async function handleMyLevelApprovalGetResource(params: {
       ]);
 
       const payablesForDraftsRes = await directusFetch(
-        `/items/disbursement_payables_draft?filter[disbursement_id][_in]=${realDrafts.map((d) => toNumericId(d.id)).filter(Boolean).join(",")}&fields=disbursement_id,approval_tier&limit=-1`
+        `/items/disbursement_payables_draft?filter[disbursement_id][_in]=${realDrafts.map((d) => toNumericId(d.id)).filter(Boolean).join(",")}&filter[is_finalized][_neq]=1&fields=disbursement_id,approval_tier,is_finalized&limit=-1`
       );
       const payablesForDrafts = payablesForDraftsRes.ok
         ? (payablesForDraftsRes.data as DirectusListResponse<{ disbursement_id?: number | string; approval_tier?: number | string }>).data ?? []

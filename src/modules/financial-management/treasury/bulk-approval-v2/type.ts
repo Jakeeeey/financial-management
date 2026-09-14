@@ -79,6 +79,10 @@ export type DisbursementDraftRow = {
   total_amount?: number | string | null;
   remarks?: string | null;
   status?: string | null;
+  approval_tier?: number | string | null;
+  is_finalized?: number | boolean | null;
+  disbursement_doc_no?: string | null;
+  with_concern?: number | boolean | null;
   approval_version?: number | string | null;
   version?: number | string | null;
   transaction_date?: string | null;

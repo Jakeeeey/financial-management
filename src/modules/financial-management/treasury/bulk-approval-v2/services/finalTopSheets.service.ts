@@ -450,6 +450,10 @@ async function resolveLinkedTopSheetData(params: {
   const headerIdSet = new Set(headerIds);
 
   const payables: LinkedTopSheetPayable[] = rawPayables
+    .filter((payable) => {
+      const isFin = (payable as { is_finalized?: number | boolean }).is_finalized;
+      return isFin !== 1 && isFin !== true;
+    })
     .map((payable) => {
       const payableId = toNumericId(payable.id) ?? 0;
       const draftId = toNumericId(payable.disbursement_id) ?? 0;

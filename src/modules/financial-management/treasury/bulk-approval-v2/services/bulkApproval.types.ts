@@ -114,6 +114,9 @@ export type DisbursementPayableDraftRow = {
   }
   | null;
   approval_tier?: number | string | null;
+  is_finalized?: number | boolean | null;
+  disbursement_doc_no?: string | null;
+  with_concern?: number | boolean | null;
 };
 
 export type ExpenseDraftRow = {

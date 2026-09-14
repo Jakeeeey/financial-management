@@ -1022,6 +1022,7 @@ export async function insertExpenseIntoPayableDraft(params: {
         amount: newAmount,
         remarks: params.expense.remarks ?? null,
         date: params.expense.transaction_date ?? null,
+        with_concern: 0,
         date_updated: params.nowTs ?? undefined,
         ...(params.approvalTier ? { approval_tier: params.approvalTier } : {}),
       }),
@@ -1304,6 +1305,7 @@ export async function finalizeDisbursementDraft(params: {
 
     const approvedPayableRows = payDraftRows
       .filter((p) => {
+        if (p.is_finalized === 1 || p.is_finalized === true) return false;
         if (!p.expense_id) return true;
         const exp = p.expense_id as { id?: number | string; status?: string | null } | null;
         const s = String(exp?.status || "").toLowerCase();
@@ -1466,24 +1468,46 @@ export async function finalizeDisbursementDraft(params: {
       return { ok: false, status: livePayablesRes.status, data: livePayablesRes.data };
     }
 
-    await directusFetch(`/items/disbursement_draft/${draftId}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        status: "Approved",
-        isPosted: 1,
-        doc_no: liveDocNo,
-        total_amount: approvedTotal,
-        approval_version: currentVersion,
-        date_updated: nowTs,
-      }),
-    });
+    // Tag approved payable draft rows as finalized with the new disbursement_doc_no
+    for (const p of approvedPayableRows) {
+      const pId = toNumericId(p.id);
+      if (pId) {
+        await directusFetch(`/items/disbursement_payables_draft/${pId}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            is_finalized: 1,
+            disbursement_doc_no: liveDocNo,
+            date_updated: nowTs,
+          }),
+        });
+      }
+    }
+
+    // Check if ALL payables in this draft are now finalized
+    const remainingUnfinalizedRes = await directusFetch<DirectusListResponse<{ id: number }>>(
+      `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&filter[is_finalized][_eq]=0&fields=id&limit=1`
+    );
+    const unfinalizedCount = (remainingUnfinalizedRes.ok ? remainingUnfinalizedRes.data.data ?? [] : []).length;
+
+    if (unfinalizedCount === 0) {
+      await directusFetch(`/items/disbursement_draft/${draftId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          status: "Approved",
+          isPosted: 1,
+          approval_version: currentVersion,
+          date_updated: nowTs,
+        }),
+      });
+    }
 
     return {
       ok: true,
       result: "APPROVED" as const,
-      message: "Disbursement created.",
       doc_no: liveDocNo,
+      message: "Disbursement created.",
     };
   } catch (error) {
     const err = error as Error;
@@ -1597,6 +1621,8 @@ export async function processDraftApproval(params: {
       },
     };
   }
+
+  const activeVotedTier = authorizedLevels.find((lvl) => activePayableTiers.includes(lvl)) ?? currentTier;
 
   const existingVoteRes = await directusFetch<DirectusListResponse<ApprovalVoteRow>>(
     `/items/disbursement_draft_approvals?filter[draft_id][_eq]=${draftId}&filter[approver_id][_eq]=${currentUserId}&filter[version][_eq]=${currentVersion}&filter[approver_heirarchy][_eq]=${activeVotedTier}&fields=id,status&limit=1`
@@ -1820,10 +1846,20 @@ export async function processDraftApproval(params: {
         status: targetStatus,
       });
 
-      // Remove from current draft
-      await directusFetch(`/items/disbursement_payables_draft/${payableId}`, {
-        method: "DELETE",
-      });
+      if (decision.status === "WITH_CONCERN") {
+        await directusFetch(`/items/disbursement_payables_draft/${payableId}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            with_concern: 1,
+            date_updated: nowTs,
+          }),
+        });
+      } else if (decision.status === "REJECTED") {
+        await directusFetch(`/items/disbursement_payables_draft/${payableId}`, {
+          method: "DELETE",
+        });
+      }
     }
 
 
@@ -1994,8 +2030,6 @@ export async function processDraftApproval(params: {
 
     return { ok: true, result: finalVoteStatus, message: "Draft updated." };
   }
-
-  const activeVotedTier = authorizedLevels.find((lvl) => activePayableTiers.includes(lvl)) ?? currentTier;
 
   // If the user is voting on concern items and is NOT authorized for any active payable tier,
   // do not run consensus logic as they are just processing items into the existing draft.
