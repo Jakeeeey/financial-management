@@ -368,19 +368,18 @@ export function CreateBudgetTable() {
                                                 const inFlight = hasInFlightSupplement(String(budget.id));
                                                 return (
                                                     <Button
-                                                        variant="ghost"
                                                         size="sm"
                                                         onClick={() => openSupplementModal(budget)}
                                                         disabled={inFlight}
-                                                        title={inFlight ? "A supplement for this budget is already Draft or Pending" : "Request additional funding"}
-                                                        className={`h-8 px-2 text-xs gap-1.5 transition-all active:scale-95 ${
+                                                        title={inFlight ? "A supplement for this budget is currently in-flight (Draft, Pending, or Rejected)" : "Request additional funding"}
+                                                        className={`h-8 px-3 text-xs font-semibold gap-1.5 rounded-lg border transition-all active:scale-95 ${
                                                             inFlight
-                                                                ? "opacity-50 cursor-not-allowed text-muted-foreground"
-                                                                : "hover:bg-blue-50 hover:text-blue-600 text-muted-foreground"
+                                                                ? "bg-muted/60 text-muted-foreground/70 border-border/50 opacity-60 cursor-not-allowed shadow-none"
+                                                                : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-600 hover:text-white hover:border-blue-600 shadow-xs"
                                                         }`}
                                                     >
                                                         <Plus className="h-3.5 w-3.5" />
-                                                        {inFlight ? "Supplement Pending" : "Request Supplement"}
+                                                        {inFlight ? "Supplement In-Flight" : "Request Supplement"}
                                                     </Button>
                                                 );
                                             })()}
