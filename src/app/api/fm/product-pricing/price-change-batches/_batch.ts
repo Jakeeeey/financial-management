@@ -666,7 +666,7 @@ export async function normalizeBatchCreateLines(rawLines: BatchCreateLineInput[]
 
 export async function createPriceBatchHeader(args: {
     userId: number;
-    supplierId: number;
+    supplierId: number | null;
     referenceNo: string;
     remarks: string;
 }) {
@@ -745,7 +745,7 @@ export async function createPriceBatchDetails(args: {
 
 export async function createPendingPriceBatch(args: {
     userId: number;
-    supplierId: number;
+    supplierId: number | null;
     referenceNo: string;
     remarks: string;
     linesToCreate: NormalizedBatchCreateLine[];

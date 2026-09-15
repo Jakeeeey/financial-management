@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 
 import type { PriceSnapshotConflict } from "../types";
-import { createPriceChangeBatch } from "../providers/pcrApi";
+import { createPriceChangeBatch, createPriceChangeBatchReplacement } from "../providers/pcrApi";
 
 export type ConflictLabel = {
     product_name?: string;
@@ -30,6 +30,7 @@ type Props = {
     supplierId: number | null;
     supplierName: string;
     batchLabel: string;
+    sourceHeaderId?: number | null;
     labels?: Record<string, ConflictLabel>;
     onCreated?: () => void;
 };
@@ -72,6 +73,7 @@ export function PriceSnapshotConflictPanel({
     supplierId,
     supplierName,
     batchLabel,
+    sourceHeaderId = null,
     labels = {},
     onCreated,
 }: Props) {
@@ -79,9 +81,31 @@ export function PriceSnapshotConflictPanel({
     const [saving, setSaving] = React.useState(false);
 
     const selectedLabel = selectedConflict ? labels[conflictKey(selectedConflict)] : undefined;
+    const canCreateSupplierlessReplacement = !supplierId && Number.isFinite(Number(sourceHeaderId)) && Number(sourceHeaderId) > 0;
 
     async function createReplacement() {
-        if (!selectedConflict || !supplierId || saving) return;
+        if (!selectedConflict || saving) return;
+        if (!supplierId && !canCreateSupplierlessReplacement) return;
+
+        if (!supplierId && canCreateSupplierlessReplacement) {
+            setSaving(true);
+            try {
+                const result = await createPriceChangeBatchReplacement(Number(sourceHeaderId));
+                if (Number(result.created ?? 0) > 0 && result.replacement_header_id) {
+                    toast.success(`Replacement price-change batch PCB-${result.replacement_header_id} created.`);
+                } else {
+                    toast.info("All proposed prices are already effective; no replacement batch was needed.");
+                }
+                setSelectedConflict(null);
+                onCreated?.();
+            } catch (error: unknown) {
+                toast.error(error instanceof Error ? error.message : "Failed to create replacement request.");
+            } finally {
+                setSaving(false);
+            }
+            return;
+        }
+
         if (selectedConflict.proposed_price === null || !Number.isFinite(Number(selectedConflict.proposed_price))) {
             toast.error("The original proposed price is invalid; create a new request manually.");
             return;
@@ -90,7 +114,7 @@ export function PriceSnapshotConflictPanel({
         setSaving(true);
         try {
             const result = await createPriceChangeBatch({
-                supplier_id: supplierId,
+                supplier_id: Number(supplierId),
                 reference_no: `${batchLabel}-REPLACEMENT-${selectedConflict.request_id}`,
                 remarks: `Replacement for ${batchLabel} after a price snapshot conflict. The latest live price was used as the new snapshot.`,
                 lines: [
@@ -187,7 +211,7 @@ export function PriceSnapshotConflictPanel({
                         );
                     })}
                 </div>
-                {!supplierId ? (
+                {!supplierId && !canCreateSupplierlessReplacement ? (
                     <p className="col-start-2 mt-2 text-xs">A supplier is required before a replacement request can be created.</p>
                 ) : null}
             </Alert>
@@ -202,7 +226,9 @@ export function PriceSnapshotConflictPanel({
                     <DialogHeader>
                         <DialogTitle>Create Replacement Request</DialogTitle>
                         <DialogDescription>
-                            This creates a new pending request and leaves the original approved/failed line unchanged.
+                            {canCreateSupplierlessReplacement
+                                ? `This creates a supplier-independent replacement batch for the remaining proposals in ${batchLabel} and leaves the original failed batch unchanged.`
+                                : "This creates a new pending request and leaves the original approved/failed line unchanged."}
                         </DialogDescription>
                     </DialogHeader>
 
@@ -236,8 +262,9 @@ export function PriceSnapshotConflictPanel({
                                 </div>
                             </div>
                             <p className="text-muted-foreground">
-                                The new request will snapshot the latest live price ({money(selectedConflict.live_price)})
-                                and retain the original proposal ({money(selectedConflict.proposed_price)}).
+                                {canCreateSupplierlessReplacement
+                                    ? "The replacement batch will snapshot the latest live prices and retain every proposal that is not already effective."
+                                    : `The new request will snapshot the latest live price (${money(selectedConflict.live_price)}) and retain the original proposal (${money(selectedConflict.proposed_price)}).`}
                             </p>
                         </div>
                     ) : null}
@@ -246,7 +273,7 @@ export function PriceSnapshotConflictPanel({
                         <Button type="button" variant="outline" onClick={() => setSelectedConflict(null)} disabled={saving}>
                             Cancel
                         </Button>
-                        <Button type="button" onClick={() => void createReplacement()} disabled={saving || !supplierId}>
+                        <Button type="button" onClick={() => void createReplacement()} disabled={saving || (!supplierId && !canCreateSupplierlessReplacement)}>
                             {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
                             Create Request
                         </Button>

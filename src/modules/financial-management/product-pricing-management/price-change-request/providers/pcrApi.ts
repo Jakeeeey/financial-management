@@ -615,6 +615,20 @@ export async function createPriceChangeBatch(payload: CreatePriceChangeBatchPayl
     });
 }
 
+export async function createPriceChangeBatchReplacement(headerId: number) {
+    return http<{
+        source_header_id: number;
+        replacement_header_id: number | null;
+        created: number;
+        effective_lines: number;
+        mismatched_lines: number;
+    }>(`/api/fm/product-pricing/price-change-batches/${headerId}/replacement`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+    });
+}
+
 type ApprovalResponse = {
     ok: boolean;
     committed?: boolean;

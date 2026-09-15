@@ -313,6 +313,7 @@ export function PriceChangeBatchDetailDialog({
                             supplierId={detail.supplier_id}
                             supplierName={detail.supplier_name ?? ""}
                             batchLabel={`PCB-${detail.header_id}`}
+                            sourceHeaderId={detail.header_id}
                             labels={conflictLabels}
                             onCreated={() => {
                                 if (!batchId) return;
