@@ -674,10 +674,35 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
     const outstandingBalance = Math.max(0, netReceivable - returnAmount - creditMemos + debitMemos - unfulfilledAmount - totalPaid);
     if (outstandingBalance <= 0) continue;
 
+    // Calculate credit terms in days between invoice_date and due_date if available
+    let termDays = 0;
+    if (inv.due_date && inv.invoice_date) {
+      const invD = new Date(inv.invoice_date);
+      const dueD = new Date(inv.due_date);
+      if (!isNaN(invD.getTime()) && !isNaN(dueD.getTime())) {
+        termDays = Math.max(0, Math.round((dueD.getTime() - invD.getTime()) / (1000 * 60 * 60 * 24)));
+      }
+    }
+
+    // Due date should be based on the delivery / dispatch date, falling back to due_date if dispatch_date is missing
+    let calculatedDueDate: string | null = inv.due_date;
+    const deliveryDateStr = inv.dispatch_date || null;
+    if (deliveryDateStr) {
+      const delD = new Date(deliveryDateStr);
+      if (!isNaN(delD.getTime())) {
+        const newDueD = new Date(delD.getTime());
+        newDueD.setDate(newDueD.getDate() + termDays);
+        calculatedDueDate = newDueD.toISOString();
+      }
+    }
+
     let daysOverdue: number | null = null;
-    if (inv.due_date) {
-      const due = new Date(inv.due_date);
-      if (!isNaN(due.getTime())) { due.setHours(0, 0, 0, 0); daysOverdue = Math.floor((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24)); }
+    if (calculatedDueDate) {
+      const due = new Date(calculatedDueDate);
+      if (!isNaN(due.getTime())) {
+        due.setHours(0, 0, 0, 0);
+        daysOverdue = Math.floor((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+      }
     }
 
     const sm = inv.salesman_id ? salesmanMap.get(inv.salesman_id) : null;
@@ -715,7 +740,7 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
       customerName: customerMap.get(inv.customer_code || '') || inv.customer_code || '—',
       customerCode: inv.customer_code || '',
       invoiceDate: inv.invoice_date,
-      calculatedDueDate: inv.due_date,
+      calculatedDueDate,
       dispatchDate: inv.dispatch_date,
       paymentStatus: inv.payment_status || 'Unpaid',
       transactionStatus: computeDerivedStatus(

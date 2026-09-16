@@ -186,6 +186,24 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ ok: false, message: `Invoice with ID ${invoiceId} not found` }, { status: 404 });
     }
 
+    let calculatedDueDate: string | undefined = rawHeader.due_date || undefined;
+    if (rawHeader.dispatch_date) {
+      let termDays = 0;
+      if (rawHeader.due_date && rawHeader.invoice_date) {
+        const invD = new Date(rawHeader.invoice_date);
+        const dueD = new Date(rawHeader.due_date);
+        if (!isNaN(invD.getTime()) && !isNaN(dueD.getTime())) {
+          termDays = Math.max(0, Math.round((dueD.getTime() - invD.getTime()) / (1000 * 60 * 60 * 24)));
+        }
+      }
+      const delD = new Date(rawHeader.dispatch_date);
+      if (!isNaN(delD.getTime())) {
+        const newDueD = new Date(delD.getTime());
+        newDueD.setDate(newDueD.getDate() + termDays);
+        calculatedDueDate = newDueD.toISOString();
+      }
+    }
+
     const header = {
       invoice_id: rawHeader.invoice_id,
       order_id: rawHeader.order_id || undefined,
@@ -193,7 +211,7 @@ export async function GET(request: NextRequest) {
       invoice_no: rawHeader.invoice_no || undefined,
       invoice_date: rawHeader.invoice_date || undefined,
       dispatch_date: rawHeader.dispatch_date || undefined,
-      due_date: rawHeader.due_date || undefined,
+      due_date: calculatedDueDate,
       payment_terms: rawHeader.payment_terms !== null && rawHeader.payment_terms !== undefined ? Number(rawHeader.payment_terms) : undefined,
       transaction_status: rawHeader.transaction_status || undefined,
       payment_status: rawHeader.payment_status || undefined,
