@@ -113,6 +113,7 @@ export function transformInvoices(data: RawInvoiceRow[]): {
       transactionStatus,
       cluster:            String(row.cluster ?? 'Unassigned'),
       salesmanCode:       String(row.salesmanCode ?? '—'),
+      supplierCode:       String(row.supplierCode ?? '—'),
     };
   });
 
@@ -259,6 +260,7 @@ export function mapARRowToInvoice(row: RawInvoiceRow): import('../types').Invoic
     transactionStatus: String(row.transactionStatus || 'NULL'),
     cluster: String(row.cluster ?? 'Unassigned'),
     salesmanCode: String(row.salesmanCode ?? '—'),
+    supplierCode: String(row.supplierCode ?? '—'),
   };
 }
 

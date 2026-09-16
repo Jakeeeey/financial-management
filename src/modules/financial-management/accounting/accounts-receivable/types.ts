@@ -31,6 +31,7 @@ export interface RawInvoiceRow {
   transactionStatus?: string | null;
   cluster?: string;
   salesmanCode?: string | null;
+  supplierCode?: string | null;
   // Fallback aliases
   id?: string;
   invoice_number?: string;
@@ -69,6 +70,7 @@ export interface Invoice {
   deliveryDate: string;
   arStatus: 'Due' | 'Overdue' | '—';
   salesmanCode: string;
+  supplierCode: string;
   paymentStatus: string;
   transactionStatus: string;
   cluster: string;

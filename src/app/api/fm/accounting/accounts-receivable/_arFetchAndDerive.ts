@@ -44,6 +44,7 @@ export interface ARRow {
   branch: string;
   salesman: string;
   salesmanCode: string;
+  supplierCode: string;
   division: string;
   salesType: number | null;
   isPosted: boolean;
@@ -151,6 +152,8 @@ interface DivisionRow { division_id: number; division_name: string; }
 interface OperationRow { id: number; operation_name: string; operation_code: string | null; }
 interface CollectionRow { id: number; salesman_id: number | null; totalAmount: number | null; }
 interface CollectionInvoiceRow { collection_id: number; invoice_id: number; amount: number; }
+interface SalesOrderLookupRow { order_no: string; supplier_id: { id: number; supplier_name: string; supplier_shortcut: string | null } | null; }
+interface SupplierLookupRow { id: number; supplier_name: string; supplier_shortcut: string | null; }
 
 const DIRECTUS_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
 const DIRECTUS_STATIC_TOKEN = (process.env.DIRECTUS_STATIC_TOKEN || '').trim();
@@ -482,6 +485,7 @@ export function applyARFilters(rows: ARRow[], filters: ARTableFilters): ARRow[] 
         row.invoiceNo.toLowerCase().includes(q) ||
         row.customerName.toLowerCase().includes(q) ||
         row.salesman.toLowerCase().includes(q) ||
+        row.supplierCode.toLowerCase().includes(q) ||
         row.division.toLowerCase().includes(q) ||
         row.customerCode.toLowerCase().includes(q) ||
         (row.invoiceDate || '').toLowerCase().includes(q) ||
@@ -564,11 +568,12 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
   const customerCodes = Array.from(new Set(invoices.map(inv => inv.customer_code).filter((c): c is string => !!c)));
   const salesmanIds = Array.from(new Set(invoices.map(inv => inv.salesman_id).filter((s): s is number => typeof s === 'number')));
   const salesTypeIds = Array.from(new Set(invoices.map(inv => inv.sales_type).filter((s): s is number => typeof s === 'number')));
+  const orderNos = Array.from(new Set(invoices.map(inv => (inv.order_id || '').trim()).filter((o): o is string => !!o)));
   const unpostedPouchIds = unpostedCollections.map(c => c.id);
 
   const [
     payments, returns_, memos, unfulfilled, customers, salesmen, operations, unpostedInvoiceAllocs, clusters, areas,
-    dispatchInvoices, transmittalDetails, counteredInvoices, collectionInvoices
+    dispatchInvoices, transmittalDetails, counteredInvoices, collectionInvoices, salesOrders, suppliers
   ] =
     await Promise.all([
       fetchAllChunked<PaymentRow>(`${DIRECTUS_URL}/items/sales_invoice_payments?limit=-1&fields=invoice_id,paid_amount`, 'invoice_id', invoiceIds),
@@ -589,6 +594,8 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
       fetchAllChunked<any>(`${DIRECTUS_URL}/items/document_transmittal_details?limit=-1&fields=invoice_id,receivedAt,document_transmittal_id.receivedAt`, 'invoice_id', invoiceIds).catch(() => []),
       fetchAllChunked<any>(`${DIRECTUS_URL}/items/countered_invoices?limit=-1&fields=invoice_id,countered_date`, 'invoice_id', invoiceIds).catch(() => []),
       fetchAllChunked<any>(`${DIRECTUS_URL}/items/collection_invoices?limit=-1&fields=invoice_id,collection_id.isPosted,collection_id.isCancelled`, 'invoice_id', invoiceIds).catch(() => []),
+      fetchAllChunked<SalesOrderLookupRow>(`${DIRECTUS_URL}/items/sales_order?limit=-1&fields=order_no,supplier_id.id,supplier_id.supplier_name,supplier_id.supplier_shortcut`, 'order_no', orderNos).catch(() => [] as SalesOrderLookupRow[]),
+      fetchAll<SupplierLookupRow>(`${DIRECTUS_URL}/items/suppliers?limit=-1&fields=id,supplier_name,supplier_shortcut`).catch(() => [] as SupplierLookupRow[]),
     ]);
 
   const divisionIds = Array.from(new Set(salesmen.map(s => s.division_id).filter((d): d is number => typeof d === 'number')));
@@ -607,6 +614,27 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
   for (const cust of customers) {
     const cId = findClusterForCustomer(cust.province, cust.city, cust.brgy, areaIndex);
     customerClusterMap.set(cust.customer_code, cId ? (clusterNameMap.get(cId) || 'Unassigned') : 'Unassigned');
+  }
+
+  const salesOrderSupplierMap = new Map<string, string>();
+  for (const so of salesOrders) {
+    const shortcut = so.supplier_id?.supplier_shortcut?.trim();
+    if (so.order_no && shortcut) {
+      salesOrderSupplierMap.set(so.order_no.trim(), shortcut);
+    }
+  }
+
+  const allSupplierShortcuts = Array.from(
+    new Set(
+      suppliers
+        .map(s => (s.supplier_shortcut || '').trim())
+        .filter(Boolean)
+    )
+  ).sort((a, b) => b.length - a.length);
+
+  if (allSupplierShortcuts.some(s => s.toUpperCase() === 'EPII') && !allSupplierShortcuts.some(s => s.toUpperCase() === 'EPI')) {
+    allSupplierShortcuts.push('EPI');
+    allSupplierShortcuts.sort((a, b) => b.length - a.length);
   }
 
   const paymentAgg = new Map<number, number>();
@@ -653,6 +681,33 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
     }
 
     const sm = inv.salesman_id ? salesmanMap.get(inv.salesman_id) : null;
+    const cleanOrderId = (inv.order_id || '').trim();
+    let supplierCode = salesOrderSupplierMap.get(cleanOrderId) || '';
+
+    if (!supplierCode && cleanOrderId) {
+      const upperOrder = cleanOrderId.toUpperCase();
+      for (const sc of allSupplierShortcuts) {
+        if (upperOrder.startsWith(sc.toUpperCase())) {
+          supplierCode = sc;
+          break;
+        }
+      }
+    }
+
+    if (!supplierCode && inv.invoice_no) {
+      const upperInvNo = inv.invoice_no.trim().toUpperCase();
+      for (const sc of allSupplierShortcuts) {
+        if (upperInvNo.startsWith(sc.toUpperCase())) {
+          supplierCode = sc;
+          break;
+        }
+      }
+    }
+
+    if (!supplierCode) {
+      supplierCode = '—';
+    }
+
     rows.push({
       invoiceId: inv.invoice_id,
       invoiceNo: inv.invoice_no,
@@ -675,6 +730,7 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
       unpostedCollectionAmount: unpostedAgg.get(inv.invoice_id) || 0, daysOverdue,
       branch: inv.branch_id?.branch_name || 'Unknown',
       salesman: sm?.name || 'Unknown', salesmanCode: sm?.code || '—',
+      supplierCode,
       division: sm?.division || '—', salesType: inv.sales_type ?? null, isPosted: false,
       cluster: customerClusterMap.get(inv.customer_code || '') || 'Unassigned',
     });
