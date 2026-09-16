@@ -299,71 +299,73 @@ export function CreateBudgetTable() {
                                             </Badge>
                                         </TableCell>
                                         <TableCell className="py-3 pr-4 text-right space-x-1">
-                                            {budget.status === "Draft" && (
-                                                <>
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        onClick={() => openEditModal(budget)}
-                                                        className="h-8 px-2 text-xs gap-1.5 hover:bg-muted transition-all active:scale-95"
-                                                    >
-                                                        <Pencil className="h-3.5 w-3.5" />
-                                                        Edit
-                                                    </Button>
-                                                    <AlertDialog>
-                                                        <AlertDialogTrigger asChild>
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="sm"
-                                                                className="h-8 px-2 text-xs gap-1.5 hover:bg-primary/10 hover:text-primary transition-all active:scale-95"
-                                                            >
-                                                                <Send className="h-3.5 w-3.5" />
-                                                                Submit
-                                                            </Button>
-                                                        </AlertDialogTrigger>
-                                                        <AlertDialogContent>
-                                                            <AlertDialogHeader>
-                                                                <AlertDialogTitle>Submit for Approval?</AlertDialogTitle>
-                                                                <AlertDialogDescription>
-                                                                    Are you sure you want to submit this budget entry for approval? Once submitted, it will no longer be in draft status.
-                                                                </AlertDialogDescription>
-                                                            </AlertDialogHeader>
-                                                            <AlertDialogFooter>
-                                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                                <AlertDialogAction onClick={() => submitForApproval(String(budget.id))} className="bg-primary hover:bg-primary/90">
-                                                                    Submit
-                                                                </AlertDialogAction>
-                                                            </AlertDialogFooter>
-                                                        </AlertDialogContent>
-                                                    </AlertDialog>
-                                                    <AlertDialog>
-                                                        <AlertDialogTrigger asChild>
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="sm"
-                                                                className="h-8 px-2 text-xs gap-1.5 hover:bg-destructive/10 hover:text-destructive transition-all active:scale-95"
-                                                            >
-                                                                <Trash2 className="h-3.5 w-3.5" />
-                                                                Delete
-                                                            </Button>
-                                                        </AlertDialogTrigger>
-                                                        <AlertDialogContent>
-                                                            <AlertDialogHeader>
-                                                                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                                                                <AlertDialogDescription>
-                                                                    This action cannot be undone. This will permanently delete this draft budget entry.
-                                                                </AlertDialogDescription>
-                                                            </AlertDialogHeader>
-                                                            <AlertDialogFooter>
-                                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                                <AlertDialogAction onClick={() => deleteBudget(String(budget.id))} className="bg-destructive hover:bg-destructive/90">
-                                                                    Delete
-                                                                </AlertDialogAction>
-                                                            </AlertDialogFooter>
-                                                        </AlertDialogContent>
-                                                    </AlertDialog>
-                                                </>
-                                            )}
+                                             {(budget.status === "Draft" || budget.status === "Rejected") && (
+                                                 <>
+                                                     <Button
+                                                         size="sm"
+                                                         onClick={() => openEditModal(budget)}
+                                                         className="h-8 px-3 text-xs font-semibold gap-1.5 rounded-lg border bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-700 hover:text-white dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700 dark:hover:bg-slate-600 transition-all active:scale-95 shadow-xs"
+                                                     >
+                                                         <Pencil className="h-3.5 w-3.5" />
+                                                         Edit
+                                                     </Button>
+                                                     <AlertDialog>
+                                                         <AlertDialogTrigger asChild>
+                                                             <Button
+                                                                 size="sm"
+                                                                 className="h-8 px-3 text-xs font-semibold gap-1.5 rounded-lg border bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-600 hover:text-white dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800 dark:hover:bg-emerald-600 dark:hover:text-white transition-all active:scale-95 shadow-xs"
+                                                             >
+                                                                 <Send className="h-3.5 w-3.5" />
+                                                                 {budget.status === "Rejected" ? "Resubmit" : "Submit"}
+                                                             </Button>
+                                                         </AlertDialogTrigger>
+                                                         <AlertDialogContent>
+                                                             <AlertDialogHeader>
+                                                                 <AlertDialogTitle>
+                                                                     {budget.status === "Rejected" ? "Resubmit for Approval?" : "Submit for Approval?"}
+                                                                 </AlertDialogTitle>
+                                                                 <AlertDialogDescription>
+                                                                     {budget.status === "Rejected"
+                                                                         ? "Are you sure you want to resubmit this budget for approval after your revisions?"
+                                                                         : "Are you sure you want to submit this budget entry for approval? Once submitted, it will no longer be in draft status."
+                                                                     }
+                                                                 </AlertDialogDescription>
+                                                             </AlertDialogHeader>
+                                                             <AlertDialogFooter>
+                                                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                                 <AlertDialogAction onClick={() => submitForApproval(String(budget.id))} className="bg-primary hover:bg-primary/90">
+                                                                     Submit
+                                                                 </AlertDialogAction>
+                                                             </AlertDialogFooter>
+                                                         </AlertDialogContent>
+                                                     </AlertDialog>
+                                                     <AlertDialog>
+                                                         <AlertDialogTrigger asChild>
+                                                             <Button
+                                                                 size="sm"
+                                                                 className="h-8 px-3 text-xs font-semibold gap-1.5 rounded-lg border bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-600 hover:text-white dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800 dark:hover:bg-rose-600 dark:hover:text-white transition-all active:scale-95 shadow-xs"
+                                                             >
+                                                                 <Trash2 className="h-3.5 w-3.5" />
+                                                                 Delete
+                                                             </Button>
+                                                         </AlertDialogTrigger>
+                                                         <AlertDialogContent>
+                                                             <AlertDialogHeader>
+                                                                 <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                                                                 <AlertDialogDescription>
+                                                                     This action cannot be undone. This will permanently delete this draft budget entry.
+                                                                 </AlertDialogDescription>
+                                                             </AlertDialogHeader>
+                                                             <AlertDialogFooter>
+                                                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                                 <AlertDialogAction onClick={() => deleteBudget(String(budget.id))} className="bg-destructive hover:bg-destructive/90">
+                                                                     Delete
+                                                                 </AlertDialogAction>
+                                                             </AlertDialogFooter>
+                                                         </AlertDialogContent>
+                                                     </AlertDialog>
+                                                 </>
+                                             )}
                                             {budget.status === "Approved" && budget.entry_type !== "supplemental" && (() => {
                                                 const inFlight = hasInFlightSupplement(String(budget.id));
                                                 return (
