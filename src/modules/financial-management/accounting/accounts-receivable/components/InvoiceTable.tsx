@@ -295,7 +295,7 @@ function InvoiceChildRow({
       <TableCell className="py-2 text-muted-foreground/35 text-[9px] font-medium tracking-wide uppercase italic">└─ detail</TableCell>
       <TableCell className="min-w-0 overflow-hidden py-2"><span className="block w-full min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs font-medium text-muted-foreground" title={inv.salesman}>{inv.salesman || <span className="text-muted-foreground/20">—</span>}</span></TableCell>
       <TableCell className="min-w-0 overflow-hidden py-2"><span className="block w-full min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs font-medium text-muted-foreground" title={inv.division}>{inv.division || <span className="text-muted-foreground/20">—</span>}</span></TableCell>
-      <TableCell className="min-w-0 overflow-hidden py-2"><span className="block w-full min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-xs font-medium text-muted-foreground" title={inv.salesmanCode}>{inv.salesmanCode || <span className="text-muted-foreground/20">—</span>}</span></TableCell>
+      <TableCell className="min-w-0 overflow-hidden py-2"><span className="block w-full min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-xs font-medium text-muted-foreground" title={inv.supplierCode}>{inv.supplierCode || <span className="text-muted-foreground/20">—</span>}</span></TableCell>
       <TableCell className="py-2"><span className="text-xs text-muted-foreground/90 font-mono font-medium whitespace-nowrap block">{formatDate(inv.invoiceDate)}</span></TableCell>
       <TableCell className="py-2"><span className="text-xs text-muted-foreground/90 font-mono font-medium whitespace-nowrap block">{formatDate(inv.deliveryDate)}</span></TableCell>
       <TableCell className="py-2"><span className="text-xs text-muted-foreground/90 font-mono font-medium whitespace-nowrap block">{formatDate(inv.due)}</span></TableCell>
@@ -373,7 +373,7 @@ function InvoiceCard({
         <InvoiceCardField label="Customer" value={invoice.customer || '—'} />
         <InvoiceCardField label="Salesman" value={invoice.salesman || '—'} />
         <InvoiceCardField label="Division" value={invoice.division || '—'} />
-        <InvoiceCardField label="Salesman Code" value={invoice.salesmanCode || '—'} />
+        <InvoiceCardField label="Supplier Code" value={invoice.supplierCode || '—'} />
         <InvoiceCardField label="Invoice Date" value={formatDate(invoice.invoiceDate)} />
         <InvoiceCardField label="Delivery Date" value={formatDate(invoice.deliveryDate)} />
         <InvoiceCardField label="Due Date" value={formatDate(invoice.due)} />
@@ -674,7 +674,7 @@ export function InvoiceTable({
               <TableHead className="py-3 whitespace-normal align-top"><SortableHeader<Invoice> label="Customer" sortKey="customer" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
               <TableHead className="py-3 whitespace-normal align-top"><SortableHeader<Invoice> label="Salesman" sortKey="salesman" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
               <TableHead className="py-3 whitespace-normal align-top"><SortableHeader<Invoice> label="Division" sortKey="division" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
-              <TableHead className="py-3 whitespace-normal align-top"><SortableHeader<Invoice> label="SCode" sortKey="salesmanCode" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
+              <TableHead className="py-3 whitespace-normal align-top"><SortableHeader<Invoice> label="SCode" sortKey="supplierCode" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
               <TableHead className="py-3 whitespace-normal align-top"><SortableHeader<Invoice> label="Inv. Date" sortKey="invoiceDate" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
               <TableHead className="py-3 whitespace-normal align-top"><SortableHeader<Invoice> label="Del Date" sortKey="deliveryDate" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
               <TableHead className="py-3 whitespace-normal align-top"><SortableHeader<Invoice> label="Due Date" sortKey="due" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
