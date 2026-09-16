@@ -29,6 +29,10 @@ import { cn } from "@/lib/utils";
 import type { PriceChangeBatchDetail, PriceChangeBatchLine } from "../types";
 import { DecisionConfirmationDialog } from "./DecisionConfirmationDialog";
 import { BatchDecisionSummaryFields } from "./BatchDecisionSummaryFields";
+import {
+    formatPriceSnapshotConflictMessage,
+    PriceSnapshotConflictPanel,
+} from "./PriceSnapshotConflictPanel";
 import { getPriceChangeBatch } from "../providers/pcrApi";
 import { decisionUserLabel } from "../utils/labels";
 import { displayPcrStatus, pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
@@ -167,9 +171,26 @@ export function PriceChangeBatchDetailDialog({
         onApplyScheduledNow != null &&
         onRejectScheduled != null;
     const canRetryApplication =
-        !readOnly && detail?.application_status === "FAILED" && headerId > 0 && onRetryApplication != null;
+        !readOnly && detail?.application_status === "FAILED" && (detail.conflicts?.length ?? 0) === 0 && detail.retryable !== false && headerId > 0 && onRetryApplication != null;
     const displayStatus = detail ? displayPcrStatus(detail.status, detail.application_status, detail.effective_at) : "";
     const lineSummary = React.useMemo(() => buildLineSummary(lines), [lines]);
+    const conflictLabels = React.useMemo(
+        () => Object.fromEntries(
+            lines.map((line) => [
+                `${line.product_id}:${line.price_type_id}`,
+                {
+                    product_name: line.product_name,
+                    product_code: line.product_code,
+                    price_type_name: line.price_type_name,
+                    unit_name: line.unit_name,
+                },
+            ]),
+        ),
+        [lines],
+    );
+    const applicationError = detail?.application_error
+        ? formatPriceSnapshotConflictMessage(detail.application_error, conflictLabels)
+        : null;
 
     const handleOpenChange = React.useCallback(
         (nextOpen: boolean) => {
@@ -276,6 +297,28 @@ export function PriceChangeBatchDetailDialog({
                             </div>
                             <BatchDecisionSummaryFields detail={detail} />
                         </div>
+
+                        {applicationError ? (
+                           <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+                               <div className="font-medium">Application issue</div>
+                                <div className="mt-1 break-words">{applicationError}</div>
+                               {detail.application_attempts != null ? (
+                                    <div className="mt-1 text-xs">Attempts: {detail.application_attempts}</div>
+                                ) : null}
+                            </div>
+                        ) : null}
+
+                        <PriceSnapshotConflictPanel
+                            conflicts={detail.conflicts ?? []}
+                            supplierId={detail.supplier_id}
+                            supplierName={detail.supplier_name ?? ""}
+                            batchLabel={`PCB-${detail.header_id}`}
+                            labels={conflictLabels}
+                            onCreated={() => {
+                                if (!batchId) return;
+                                void getPriceChangeBatch(batchId).then((result) => setDetail(result.data));
+                            }}
+                        />
 
                         <div className="rounded-md border overflow-x-auto">
                             <Table>

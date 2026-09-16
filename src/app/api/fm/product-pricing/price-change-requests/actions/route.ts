@@ -96,6 +96,7 @@ export async function POST(req: NextRequest) {
                         error: error.message,
                         code: "price_snapshot_conflict",
                         conflicts: [error.conflict],
+                        retryable: false,
                     },
                     { status: 409 },
                 );

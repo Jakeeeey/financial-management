@@ -1,4 +1,4 @@
-import type { PRListQuery, PRListResponse, ProcurementRequest, ProcurementDetail, UpdateDetailInput, CreateDetailInput } from "../utils/types";
+import type { PRListQuery, PRListResponse, ProcurementRequest, ProcurementDetail } from "../utils/types";
 
 function qs(query: PRListQuery) {
   const p = new URLSearchParams();
@@ -48,6 +48,17 @@ export async function approvePR(id: number, signal?: AbortSignal): Promise<void>
   }
 }
 
+export async function rejectPR(id: number, signal?: AbortSignal): Promise<void> {
+  const url = `/api/fm/procurement/approval/${id}/reject`;
+  const res = await fetch(url, {
+    method: "POST", headers: { "Content-Type": "application/json" }, signal, cache: "no-store",
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Failed to reject PR (${res.status}): ${text}`);
+  }
+}
+
 export async function generatePOFromPR(id: number, signal?: AbortSignal): Promise<{ purchase_order_id: number; purchase_order_no: string }> {
   const url = `/api/fm/procurement/approval/${id}/generate-po`;
   const res = await fetch(url, {
@@ -58,39 +69,4 @@ export async function generatePOFromPR(id: number, signal?: AbortSignal): Promis
     throw new Error(`Failed to generate PO (${res.status}): ${text}`);
   }
   return (await res.json()) as { purchase_order_id: number; purchase_order_no: string };
-}
-
-export async function createPRDetail(input: CreateDetailInput, signal?: AbortSignal): Promise<ProcurementDetail> {
-  const url = `/api/fm/procurement/approval/details`;
-  const res = await fetch(url, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input), signal, cache: "no-store",
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Failed to create detail (${res.status}): ${text}`);
-  }
-  return (await res.json()) as ProcurementDetail;
-}
-
-export async function updatePRDetail(detailId: number, input: UpdateDetailInput, signal?: AbortSignal): Promise<ProcurementDetail> {
-  const url = `/api/fm/procurement/approval/details/${detailId}`;
-  const res = await fetch(url, {
-    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input), signal, cache: "no-store",
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Failed to update detail (${res.status}): ${text}`);
-  }
-  return (await res.json()) as ProcurementDetail;
-}
-
-export async function deletePRDetail(detailId: number, signal?: AbortSignal): Promise<void> {
-  const url = `/api/fm/procurement/approval/details/${detailId}`;
-  const res = await fetch(url, {
-    method: "DELETE", headers: { "Content-Type": "application/json" }, signal, cache: "no-store",
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Failed to delete detail (${res.status}): ${text}`);
-  }
 }

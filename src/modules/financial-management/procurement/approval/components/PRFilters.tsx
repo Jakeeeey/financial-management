@@ -9,27 +9,24 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList } from "@/components/ui/combobox";
 
 type SupplierOption = { name: string; id: string };
 
 type PRFiltersProps = {
   procurementNo: string;
-  status: string;
   supplierLabel: string | null;
   dateFrom: string | null;
   dateTo: string | null;
   onProcurementNoChange: (v: string) => void;
-  onStatusChange: (v: string) => void;
   onSupplierChange: (v: string, label: string | null) => void;
   onDateChange: (from: string | null, to: string | null) => void;
   tableSupplierOptions: SupplierOption[];
 };
 
 export function PRFilters({
-  procurementNo, status, supplierLabel, dateFrom, dateTo,
-  onProcurementNoChange, onStatusChange, onSupplierChange, onDateChange,
+  procurementNo, supplierLabel, dateFrom, dateTo,
+  onProcurementNoChange, onSupplierChange, onDateChange,
   tableSupplierOptions,
 }: PRFiltersProps) {
   const [supplierSearchText, setSupplierSearchText] = React.useState("");
@@ -85,7 +82,7 @@ export function PRFilters({
   );
 
   return (
-    <div className="flex flex-col lg:flex-row lg:items-end gap-3">
+    <div className="flex flex-wrap items-end gap-3">
       <div className="w-full lg:w-[220px] shrink-0">
         <label className="text-xs text-muted-foreground mb-1 block">PR No.</label>
         <div className="relative">
@@ -93,11 +90,9 @@ export function PRFilters({
           <Input className="pl-9 h-9 w-full" placeholder="Search by PR No." value={procurementNo} onChange={(e) => onProcurementNoChange(e.target.value)} />
         </div>
       </div>
-      <div className="hidden lg:block flex-1" />
-      <div className="flex flex-col lg:flex-row lg:items-end gap-3 w-full lg:w-auto">
-        {supplierCombobox}
-        <div className="w-full lg:w-[220px] shrink-0">
-          <label className="text-xs text-muted-foreground mb-1 block">Lead Date</label>
+      {supplierCombobox}
+      <div className="w-full lg:w-[220px] shrink-0">
+        <label className="text-xs text-muted-foreground mb-1 block">Lead Date</label>
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="outline" className={cn("w-full justify-start text-left font-normal h-9", !dateFrom && !dateTo && "text-muted-foreground")}>
@@ -119,23 +114,6 @@ export function PRFilters({
               <Calendar initialFocus mode="range" selected={dateRange} onSelect={handleDateSelect} numberOfMonths={2} className="p-2" />
             </PopoverContent>
           </Popover>
-        </div>
-        <div className="w-full lg:w-[160px] shrink-0">
-          <label className="text-xs text-muted-foreground mb-1 block">Status</label>
-          <Select value={status} onValueChange={onStatusChange}>
-            <SelectTrigger className="h-9 w-full">
-              <SelectValue placeholder="All Statuses" />
-            </SelectTrigger>
-            <SelectContent className="!max-h-[160px] !overflow-y-auto" position="popper">
-              <SelectItem value="all">All Statuses</SelectItem>
-              <SelectItem value="draft">Draft</SelectItem>
-              <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="approved">Approved</SelectItem>
-              <SelectItem value="rejected">Rejected</SelectItem>
-              <SelectItem value="cancelled">Cancelled</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
       </div>
     </div>
   );

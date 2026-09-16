@@ -43,21 +43,44 @@ export async function PATCH(
       );
     }
 
-    const res = await fetch(`${DIRECTUS_URL}/items/item_attribute_value/${id}`, {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${DIRECTUS_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ name: parsed.data.name.trim() }),
-      cache: "no-store",
-    });
+    const patchPayload: Record<string, unknown> = {};
+    if (parsed.data.name !== undefined) patchPayload.name = parsed.data.name.trim();
+    if (parsed.data.description !== undefined) patchPayload.description = parsed.data.description;
+    if (parsed.data.extra_price !== undefined) patchPayload.extra_price = parsed.data.extra_price;
+    if (parsed.data.is_active !== undefined) patchPayload.is_active = parsed.data.is_active;
+
+    async function patchDirectus(payload: Record<string, unknown>): Promise<Response> {
+      return fetch(`${DIRECTUS_URL}/items/item_attribute_value/${id}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${DIRECTUS_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+        cache: "no-store",
+      });
+    }
+
+    let res = await patchDirectus(patchPayload);
+    let degraded = false;
     if (res.status === 404) {
       return NextResponse.json({ ok: false, message: "Attribute value not found" }, { status: 404 });
     }
+    if (!res.ok && "name" in patchPayload && Object.keys(patchPayload).length > 1) {
+      const detail = await res.text();
+      if (detail.toLowerCase().includes("unknown column")) {
+        res = await patchDirectus({ name: patchPayload.name });
+        degraded = res.ok;
+        if (res.status === 404) {
+          return NextResponse.json({ ok: false, message: "Attribute value not found" }, { status: 404 });
+        }
+      } else {
+        throw new Error(detail);
+      }
+    }
     if (!res.ok) throw new Error(await res.text());
     const json = await res.json();
-    return NextResponse.json({ ok: true, data: json.data });
+    return NextResponse.json({ ok: true, data: json.data, ...(degraded ? { degraded: true } : {}) });
   } catch (err) {
     const detail = err instanceof Error ? err.message : "Unknown error";
     console.error("[items/attribute-values route]", err);

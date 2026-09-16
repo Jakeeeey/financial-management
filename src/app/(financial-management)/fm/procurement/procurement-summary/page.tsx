@@ -74,7 +74,7 @@ export default async function Page() {
                 <BreadcrumbSeparator className="hidden md:block shrink-0" />
                 <BreadcrumbItem className="min-w-0 overflow-hidden">
                   <BreadcrumbPage className="truncate max-w-[56vw] sm:max-w-[60vw] md:max-w-none">
-                    Purchase Orders
+                    Procurement Summary
                   </BreadcrumbPage>
                 </BreadcrumbItem>
               </BreadcrumbList>

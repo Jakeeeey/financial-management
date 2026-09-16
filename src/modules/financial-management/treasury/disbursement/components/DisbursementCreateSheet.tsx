@@ -720,6 +720,9 @@ export function DisbursementCreateSheet({
                                                     {po.type === 'CWO' && <Badge variant="outline"
                                                                                  className="w-fit text-[8px] bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800">Cash
                                                         With Order</Badge>}
+                                                    {po.isPartiallyReceived && <Badge variant="outline"
+                                                                                       className="w-fit text-[8px] bg-cyan-50 text-cyan-600 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400 dark:border-cyan-800">Partially
+                                                        Received</Badge>}
                                                 </div>
                                             </TableCell>
                                             <TableCell onClick={(e: React.MouseEvent) => e.stopPropagation()}>

@@ -5,8 +5,8 @@ import { Fragment, useState } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Pencil } from "lucide-react";
-import { formatCurrency } from "@/modules/financial-management/procurement/items/utils/utils";
+import { Pencil, Copy, Trash2 } from "lucide-react";
+import { formatCurrency, formatDateTime } from "@/modules/financial-management/procurement/items/utils/utils";
 import type { ItemTemplate, ItemVariant } from "@/modules/financial-management/procurement/items/utils/types";
 
 interface ItemTableProps {
@@ -15,7 +15,14 @@ interface ItemTableProps {
   onEdit: (id: number) => void;
   onEditVariant: (variantId: number) => void;
   onAddVariant: (templateId: number) => void;
+  onCloneVariant?: (variant: ItemVariant) => void;
+  onDeleteVariant?: (variant: ItemVariant) => void;
+  deletingVariantId?: number | null;
   loading?: boolean;
+  total: number;
+  page: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
 }
 
 function ChevronIcon({ expanded }: { expanded: boolean }) {
@@ -52,7 +59,7 @@ function EditIcon() {
   );
 }
 
-export function ItemTable({ items, variants, onEdit, onEditVariant, onAddVariant, loading }: ItemTableProps) {
+export function ItemTable({ items, variants, onEdit, onEditVariant, onAddVariant, onCloneVariant, onDeleteVariant, deletingVariantId, loading, total, page, pageSize, onPageChange }: ItemTableProps) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
   if (loading) {
@@ -75,11 +82,16 @@ export function ItemTable({ items, variants, onEdit, onEditVariant, onAddVariant
 
   return (
     <div className="rounded-md border overflow-x-auto">
-      <Table className="min-w-[700px] table-fixed">
+      <Table className="min-w-[1100px] table-fixed">
         <TableHeader>
           <TableRow>
             <TableHead className="min-w-[200px] max-w-[250px]">Name</TableHead>
+            <TableHead className="min-w-[220px] max-w-[300px]">Description</TableHead>
             <TableHead className="w-[130px]">Status</TableHead>
+            <TableHead className="w-[150px] whitespace-nowrap">Created At</TableHead>
+            <TableHead className="w-[110px] whitespace-nowrap">Created By</TableHead>
+            <TableHead className="w-[150px] whitespace-nowrap">Updated At</TableHead>
+            <TableHead className="w-[110px] whitespace-nowrap">Updated By</TableHead>
             <TableHead className="w-16" />
           </TableRow>
         </TableHeader>
@@ -97,11 +109,18 @@ export function ItemTable({ items, variants, onEdit, onEditVariant, onAddVariant
                   <TableCell className="font-medium">
                     <span className="block truncate max-w-[250px]">{tmpl.name}</span>
                   </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    <span className="block truncate max-w-[300px]">{tmpl.description || "—"}</span>
+                  </TableCell>
                   <TableCell>
                     <Badge variant={tmpl.is_active ? "default" : "secondary"}>
                       {tmpl.is_active ? "Active" : "Inactive"}
                     </Badge>
                   </TableCell>
+                  <TableCell className="text-muted-foreground text-xs whitespace-nowrap tabular-nums">{formatDateTime(tmpl.created_at)}</TableCell>
+                  <TableCell className="text-muted-foreground text-xs whitespace-nowrap truncate max-w-[110px]">{tmpl.created_by || "—"}</TableCell>
+                  <TableCell className="text-muted-foreground text-xs whitespace-nowrap tabular-nums">{formatDateTime(tmpl.updated_at)}</TableCell>
+                  <TableCell className="text-muted-foreground text-xs whitespace-nowrap truncate max-w-[110px]">{tmpl.updated_by || "—"}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
                       <Button
@@ -126,7 +145,7 @@ export function ItemTable({ items, variants, onEdit, onEditVariant, onAddVariant
 
                 {expanded && (
                   <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={3} className="bg-muted/30 p-4">
+                    <TableCell colSpan={8} className="bg-muted/30 p-4">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-sm font-medium text-muted-foreground">Variants</span>
                         <Button
@@ -149,7 +168,7 @@ export function ItemTable({ items, variants, onEdit, onEditVariant, onAddVariant
                                 <TableHead className="min-w-[100px]">SKU</TableHead>
                                 <TableHead className="min-w-[100px] text-right">List Price</TableHead>
                                 <TableHead className="w-[110px]">Status</TableHead>
-                                <TableHead className="w-12" />
+                                <TableHead className="w-[132px] text-right">Actions</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -171,19 +190,49 @@ export function ItemTable({ items, variants, onEdit, onEditVariant, onAddVariant
                                     </Badge>
                                   </TableCell>
                                   <TableCell className="text-right">
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                                      aria-label={`Edit variant ${v.name}`}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        onEditVariant(v.id);
-                                      }}
-                                    >
-                                      <Pencil className="h-4 w-4" />
-                                    </Button>
+                                    <div className="flex items-center justify-end gap-1">
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                        aria-label={`Edit variant ${v.name}`}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onEditVariant(v.id);
+                                        }}
+                                      >
+                                        <Pencil className="h-4 w-4" />
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                        aria-label={`Clone variant ${v.name}`}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onCloneVariant?.(v);
+                                        }}
+                                      >
+                                        <Copy className="h-4 w-4" />
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:opacity-40"
+                                        aria-label={`Delete variant ${v.name}`}
+                                        title={itemVariants.length <= 1 ? "Each item needs at least one variant" : undefined}
+                                        disabled={itemVariants.length <= 1 || deletingVariantId === v.id}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onDeleteVariant?.(v);
+                                        }}
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                    </div>
                                   </TableCell>
                                 </TableRow>
                               ))}
@@ -201,6 +250,26 @@ export function ItemTable({ items, variants, onEdit, onEditVariant, onAddVariant
           })}
         </TableBody>
       </Table>
+      {total > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-4 py-2 text-xs text-muted-foreground border-t">
+          <span>
+            Showing {Math.min((page - 1) * pageSize + 1, total)}–{Math.min(page * pageSize, total)} of {total} record{total !== 1 ? "s" : ""} · Page {page} of {Math.max(1, Math.ceil(total / pageSize))}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= Math.max(1, Math.ceil(total / pageSize))}
+              onClick={() => onPageChange(page + 1)}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

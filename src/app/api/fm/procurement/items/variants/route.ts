@@ -5,6 +5,41 @@ export const runtime = "nodejs";
 const DIRECTUS_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "");
 const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "";
 
+function sortedCombo(valueIds: number[]): number[] {
+  return [...valueIds].sort((a, b) => a - b);
+}
+
+function sameCombo(a: number[], b: number[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((v, i) => v === b[i]);
+}
+
+function resolveUomId(raw: unknown): number | null {
+  if (typeof raw === "number") return raw;
+  if (raw && typeof raw === "object") {
+    const unitId = (raw as Record<string, unknown>).unit_id;
+    if (typeof unitId === "number") return unitId;
+  }
+  return null;
+}
+
+async function resolveVariantValueIds(variantId: number): Promise<number[]> {
+  const relParams = new URLSearchParams({
+    "filter[item_variant_id][_eq]": String(variantId),
+    fields: "item_attribute_value_id",
+    limit: "-1",
+  });
+  const relRes = await fetch(
+    `${DIRECTUS_URL}/items/item_attribute_value_item_variant_rel?${relParams.toString()}`,
+    { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }
+  );
+  if (!relRes.ok) return [];
+  const relJson = await relRes.json();
+  return ((relJson.data || []) as Record<string, unknown>[])
+    .map((rel) => (typeof rel.item_attribute_value_id === "number" ? rel.item_attribute_value_id : 0))
+    .filter((v) => v > 0);
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -96,29 +131,39 @@ export async function POST(request: NextRequest) {
     }
     const { item_tmpl_id, name, uom_id, list_price, sku, valueIds } = parsed.data;
     const trimmedName = name.trim();
+    const newCombo = sortedCombo(valueIds ?? []);
+    const newUomId = uom_id ?? null;
 
-    const dupParams = new URLSearchParams({
+    // Uniqueness key: (item_tmpl_id, sorted valueIds combo, uom_id),
+    // plus a case-insensitive name+UOM extra guard.
+    const sibParams = new URLSearchParams({
       fields: "id,name,uom_id",
       limit: "-1",
-      filter: JSON.stringify({
-        _and: [
-          { item_tmpl_id: { _eq: item_tmpl_id } },
-          { name: { _icontains: trimmedName } },
-        ],
-      }),
+      filter: JSON.stringify({ item_tmpl_id: { _eq: item_tmpl_id } }),
     });
-    const dupRes = await fetch(`${DIRECTUS_URL}/items/item_variant?${dupParams.toString()}`, {
+    const sibRes = await fetch(`${DIRECTUS_URL}/items/item_variant?${sibParams.toString()}`, {
       headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
       cache: "no-store",
     });
-    if (dupRes.ok) {
-      const dupJson = await dupRes.json();
-      const existing = (dupJson.data || []) as { id: number; name: string; uom_id: number | null }[];
-      if (existing.some((v) => v.name.toLowerCase() === trimmedName.toLowerCase() && v.uom_id === (uom_id ?? null))) {
-        return NextResponse.json(
-          { ok: false, message: "A variant with this name and UOM already exists" },
-          { status: 409 }
-        );
+    if (sibRes.ok) {
+      const sibJson = await sibRes.json();
+      const siblings = (sibJson.data || []) as { id: number; name?: unknown; uom_id?: unknown }[];
+      const newNameKey = trimmedName.toLowerCase();
+      for (const sib of siblings) {
+        if (resolveUomId(sib.uom_id) !== newUomId) continue;
+        if (typeof sib.name === "string" && sib.name.trim().toLowerCase() === newNameKey) {
+          return NextResponse.json(
+            { ok: false, message: "A variant with this name and UOM already exists" },
+            { status: 409 }
+          );
+        }
+        const sibCombo = sortedCombo(await resolveVariantValueIds(sib.id).catch(() => []));
+        if (sameCombo(sibCombo, newCombo)) {
+          return NextResponse.json(
+            { ok: false, message: "A variant with this attribute combination and UOM already exists" },
+            { status: 409 }
+          );
+        }
       }
     }
 

@@ -24,6 +24,7 @@ import {
     nowManila,
     pickId,
     readAuditUserId,
+    type PriceSnapshotConflict,
 } from "../../price-change-batches/_batch";
 import { assertValidPriceValue } from "../../_pricePrecision";
 import { applyProposedPrice, getPriceRequest, type PcrRow } from "../../price-change-requests/_actions";
@@ -144,12 +145,16 @@ async function failLegacyPendingRows(collection: string, headerId: number, ids: 
         application_started_at: null,
         application_attempts: 3,
         application_error: message,
+        applied_at: null,
+        applied_by: null,
     });
     await patchRows(HEADERS, [headerId], {
         application_status: "FAILED",
         application_lock_id: null,
         application_started_at: null,
         application_error: message,
+        applied_at: null,
+        applied_by: null,
     });
 }
 
@@ -189,6 +194,7 @@ async function applyPriceNow(row: PcrRow, userId: number, effectiveAt = nowManil
             await applyProposedPrice({
                 userId,
                 createdBy: readAuditUserId(claimed.requested_by),
+                requestId: pickId(claimed.request_id),
                 productId,
                 priceTypeId,
                 currentPrice: claimed.current_price,
@@ -238,6 +244,7 @@ async function applyPriceBatchNow(headerId: number, userId: number, retryFailed:
                 product_id: normalizeProductId(row),
                 price_type_id: normalizePriceTypeId(row),
                 current_price: row.current_price,
+                proposed_price: row.proposed_price,
             })),
         );
         for (const row of pendingDetails) {
@@ -256,6 +263,8 @@ async function applyPriceBatchNow(headerId: number, userId: number, retryFailed:
                     message,
                 })),
                 application_status: "FAILED",
+                conflicts,
+                retryable: false,
             };
         }
         await stageLegacyPendingRows(PRICE_DETAILS, pendingIds, userId);
@@ -269,6 +278,7 @@ async function applyPriceBatchNow(headerId: number, userId: number, retryFailed:
         details = await getDetails(headerId);
     }
     const failures: BatchApplyFailure[] = [];
+    const conflicts: PriceSnapshotConflict[] = [];
     let applied = 0;
     let failed = 0;
     let skipped = 0;
@@ -279,6 +289,7 @@ async function applyPriceBatchNow(headerId: number, userId: number, retryFailed:
         if (outcome.state === "applied") applied += 1;
         if (outcome.state === "failed") {
             failed += 1;
+            if (outcome.conflict) conflicts.push(outcome.conflict);
             failures.push({
                 request_id: pickId(original.request_id) ?? 0,
                 message: outcome.error ?? "Application failed.",
@@ -287,7 +298,16 @@ async function applyPriceBatchNow(headerId: number, userId: number, retryFailed:
         if (outcome.state === "skipped") skipped += 1;
     }
     const status = await refreshBatchApplicationStatus({ detailCollection: PRICE_DETAILS, headerId, userId });
-    return { affected: applied + failed + skipped, applied, failed, skipped, failures, application_status: status };
+    return {
+        affected: applied + failed + skipped,
+        applied,
+        failed,
+        skipped,
+        failures,
+        application_status: status,
+        conflicts,
+        retryable: failures.length > conflicts.length,
+    };
 }
 
 async function applyCostBatchNow(headerId: number, userId: number, retryFailed: boolean) {
@@ -409,9 +429,14 @@ export async function POST(req: NextRequest) {
                         kind,
                         action,
                         id,
-                        status: 502,
+                        status: outcome.conflict ? 409 : 502,
                         message: outcome.error ?? "Scheduled price change application failed.",
-                        extra: { outcome },
+                        extra: {
+                            outcome,
+                            ...(outcome.conflict
+                                ? { code: "price_snapshot_conflict", conflicts: [outcome.conflict], retryable: false }
+                                : { retryable: outcome.retryable ?? true }),
+                        },
                     });
                 }
                 if (outcome.state === "skipped") {
@@ -491,9 +516,14 @@ export async function POST(req: NextRequest) {
                 kind,
                 action,
                 id,
-                status: 502,
+                status: "conflicts" in result && result.conflicts?.length === result.failed ? 409 : 502,
                 message: `${result.failed} scheduled change(s) failed to apply.`,
-                extra: result,
+                extra: {
+                    ...result,
+                    ...( "conflicts" in result && result.conflicts?.length === result.failed
+                        ? { code: "price_snapshot_conflict", retryable: false }
+                        : {}),
+                },
             });
         }
         if (result.skipped > 0 || result.affected === 0) {

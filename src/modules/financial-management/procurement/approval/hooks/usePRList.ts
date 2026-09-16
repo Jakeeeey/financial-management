@@ -23,7 +23,7 @@ function safeNum(v: unknown, fallback = 0): number {
 
 function normalizeQuery(query: PRListQuery): PRListQuery {
   const page = Math.max(1, Number(query.page ?? 1));
-  const pageSize = Math.min(100, Math.max(5, Number(query.pageSize ?? 20)));
+  const pageSize = Math.min(100, Math.max(5, Number(query.pageSize ?? 10)));
   return { ...query, page, pageSize };
 }
 

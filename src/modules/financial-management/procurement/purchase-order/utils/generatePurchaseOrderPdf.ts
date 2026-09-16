@@ -71,7 +71,7 @@ export async function generatePurchaseOrderPdf(
       }
 
       // ── Header ──
-      centeredText(doc, "PURCHASE ORDER", startY + 2, pageWidth, 13);
+      centeredText(doc, "PROCUREMENT SUMMARY", startY + 2, pageWidth, 13);
       doc.setFontSize(7);
       doc.setFont("helvetica", "normal");
       centeredText(doc, po.purchase_order_no || "", startY + 9, pageWidth);

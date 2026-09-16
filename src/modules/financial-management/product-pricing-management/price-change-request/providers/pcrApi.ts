@@ -14,6 +14,8 @@ import type {
     ListMeta,
     ListCostBatchDetail,
     UnifiedApprovalRow,
+    PriceSnapshotConflict,
+    UnifiedApplicationSummary,
 } from "../types";
 import { apiStatusParam } from "../utils/pcrQuery";
 import { readApiResponse } from "../../shared/apiHttp";
@@ -625,6 +627,9 @@ type ApprovalResponse = {
     effective_at?: string | null;
     warning?: string | null;
     retryable?: boolean;
+    code?: string;
+    conflicts?: PriceSnapshotConflict[];
+    application_summary?: UnifiedApplicationSummary;
 };
 
 export type BatchDecisionKind = "price_batch" | "cost_batch" | "mixed_batch";

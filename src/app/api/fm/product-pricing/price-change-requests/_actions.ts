@@ -12,10 +12,12 @@ import {
     assertPriceSnapshotCurrent,
     directusHeaders,
     fetchDirectus,
+    findPriceSnapshotConflicts,
     isRecord,
     mustBase,
     nowManila,
     pickId,
+    PriceSnapshotConflictError,
     readAuditUserId,
 } from "../price-change-batches/_batch";
 
@@ -50,11 +52,30 @@ type ExistingPriceRow = {
     id?: number | string | null;
     product_id?: number | string | null;
     price_type_id?: number | string | null;
+    price?: number | string | null;
     created_by?: unknown;
+    updated_by?: unknown;
 };
 
 type DirectusSingleResponse<T> = { data: T };
 type DirectusList<T> = { data?: T[] };
+
+async function patchFiltered<T>(
+    collection: string,
+    filter: Record<string, unknown>,
+    patch: Record<string, unknown>,
+    fields: string,
+): Promise<T[]> {
+    const response = await fetchDirectus<DirectusList<T>>(`${mustBase()}/items/${collection}`, {
+        method: "PATCH",
+        headers: directusHeaders(),
+        body: JSON.stringify({
+            data: patch,
+            query: { filter, fields: fields.split(",") },
+        }),
+    });
+    return response.data ?? [];
+}
 
 export type PcrRow = {
     request_id?: number | string | null;
@@ -134,10 +155,11 @@ async function loadPriceTypeCatalog() {
 
 async function findExistingPriceRecord(productId: number, priceTypeId: number): Promise<{
     id?: number | string | null;
+    price?: number | string | null;
     created_by?: unknown;
 } | null> {
     const params = new URLSearchParams();
-    params.set("fields", "id,created_by");
+    params.set("fields", "id,price,created_by");
     params.set("limit", "1");
     params.set("filter[product_id][_eq]", String(productId));
     params.set("filter[price_type_id][_eq]", String(priceTypeId));
@@ -181,6 +203,7 @@ export function approvalApplicationPatch(args: {
 export async function applyProposedPrice(args: {
     userId: number;
     createdBy?: number | null;
+    requestId?: number | null;
     productId: number;
     priceTypeId: number;
     currentPrice: unknown;
@@ -190,9 +213,11 @@ export async function applyProposedPrice(args: {
     const updatedBy = await resolveAuditUserId(userId);
     const validProposedPrice = assertValidPriceValue(proposedPrice, "proposed_price");
     await assertPriceSnapshotCurrent({
+        request_id: args.requestId ?? undefined,
         product_id: productId,
         price_type_id: priceTypeId,
         current_price: currentPrice,
+        proposed_price: validProposedPrice,
     });
 
     const [existingPrice, priceTypeCatalog] = await Promise.all([
@@ -216,31 +241,80 @@ export async function applyProposedPrice(args: {
         ...(createdBy ? { created_by: createdBy } : {}),
     };
 
-    if (hasExistingId) {
-        const response = await fetchDirectus<DirectusSingleResponse<{
+    const snapshotFilter = currentPrice === null || currentPrice === undefined || currentPrice === ""
+        ? { price: { _null: true } }
+        : { price: { _eq: Number(Number(currentPrice).toFixed(4)) } };
+
+    const applyExistingPriceRecord = async (row: ExistingPriceRow) => {
+        const id = Number(row.id);
+        if (!Number.isFinite(id) || id <= 0) {
+            throw new Error("Existing product price record has an invalid id.");
+        }
+
+        const rows = await patchFiltered<{
             id?: number | string | null;
             created_by?: unknown;
             updated_by?: unknown;
-        }>>(`${mustBase()}/items/${PRICES}/${existingId}?fields=id,created_by,updated_by`, {
-            method: "PATCH",
-            headers: directusHeaders(),
-            body: JSON.stringify(payload),
-        });
+        }>(
+            PRICES,
+            {
+                _and: [
+                    { id: { _eq: id } },
+                    snapshotFilter,
+                ],
+            },
+            payload,
+            "id,created_by,updated_by",
+        );
+
+        if (!rows[0]) {
+            const conflicts = await findPriceSnapshotConflicts([
+                {
+                    request_id: args.requestId ?? undefined,
+                    product_id: productId,
+                    price_type_id: priceTypeId,
+                    current_price: currentPrice,
+                    proposed_price: validProposedPrice,
+                },
+            ]);
+            throw new PriceSnapshotConflictError(
+                conflicts[0] ?? {
+                    request_id: args.requestId ?? 0,
+                    product_id: productId,
+                    price_type_id: priceTypeId,
+                    snapshot_price: Number.isFinite(Number(currentPrice)) ? Number(currentPrice) : null,
+                    live_price: null,
+                    proposed_price: validProposedPrice,
+                    reason: "stale_snapshot",
+                },
+            );
+        }
+
         assertPriceAuditRecord(
-            response.data,
+            rows[0],
             createdBy ? { createdBy, updatedBy } : { updatedBy },
         );
+    };
+
+    if (hasExistingId && existingPrice) {
+        await applyExistingPriceRecord(existingPrice);
     } else {
-        const response = await fetchDirectus<DirectusSingleResponse<{
-            id?: number | string | null;
-            created_by?: unknown;
-            updated_by?: unknown;
-        }>>(`${mustBase()}/items/${PRICES}?fields=id,created_by,updated_by`, {
-            method: "POST",
-            headers: directusHeaders(),
-            body: JSON.stringify(payload),
-        });
-        assertPriceAuditRecord(response.data, { createdBy, updatedBy });
+        try {
+            const response = await fetchDirectus<DirectusSingleResponse<{
+                id?: number | string | null;
+                created_by?: unknown;
+                updated_by?: unknown;
+            }>>(`${mustBase()}/items/${PRICES}?fields=id,created_by,updated_by`, {
+                method: "POST",
+                headers: directusHeaders(),
+                body: JSON.stringify(payload),
+            });
+            assertPriceAuditRecord(response.data, { createdBy, updatedBy });
+        } catch (error: unknown) {
+            const concurrentPrice = await findExistingPriceRecord(productId, priceTypeId);
+            if (!concurrentPrice) throw error;
+            await applyExistingPriceRecord(concurrentPrice);
+        }
     }
 
     const priceTypeName =
@@ -300,6 +374,7 @@ export async function approveOneOrphanPriceRequest(
         product_id: productId,
         price_type_id: priceTypeId,
         current_price: row.current_price,
+        proposed_price: proposedPrice,
     });
 
     const staged = await stageStandaloneApproval<PcrRow>({
@@ -320,6 +395,7 @@ export async function approveOneOrphanPriceRequest(
             apply: async (claimed) => applyProposedPrice({
                 userId,
                 createdBy: readAuditUserId(claimed.requested_by),
+                requestId: pickId(claimed.request_id),
                 productId,
                 priceTypeId,
                 currentPrice: claimed.current_price,

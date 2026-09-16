@@ -9,6 +9,7 @@ import {
     mustBase,
     nowManila,
     pickId,
+    type PriceSnapshotConflict,
 } from "./price-change-batches/_batch";
 
 export const APPLICATION_MAX_FAILURES = 3;
@@ -34,6 +35,8 @@ export type ApplicationOutcome<T extends ApplicationRow> = {
     state: "applied" | "failed" | "skipped";
     row: T | null;
     error?: string;
+    conflict?: PriceSnapshotConflict;
+    retryable?: boolean;
 };
 
 export type PostCommitApplicationNotice = {
@@ -293,6 +296,8 @@ export async function stageBatchApproval(args: {
                 application_started_at: null,
                 application_attempts: 1,
                 application_error: sanitizedError(error),
+                applied_at: null,
+                applied_by: null,
             },
             headerFields,
         ).catch(() => undefined);
@@ -401,7 +406,8 @@ export async function executeClaimedApplication<T extends ApplicationRow>(args: 
         return { state: "applied", row: finalized[0] };
     } catch (error: unknown) {
         const errorMessage = sanitizedError(error);
-        const terminalFailure = isPriceSnapshotConflictError(error);
+        const conflict = isPriceSnapshotConflictError(error) ? error.conflict : undefined;
+        const terminalFailure = Boolean(conflict);
         const attempts = terminalFailure
             ? APPLICATION_MAX_FAILURES
             : Math.max(0, Number(claimed.application_attempts ?? 0)) + 1;
@@ -418,14 +424,22 @@ export async function executeClaimedApplication<T extends ApplicationRow>(args: 
             },
             {
                 application_status: nextStatus,
-                application_lock_id: null,
-                application_started_at: null,
-                application_attempts: attempts,
-                application_error: errorMessage,
-            },
-            fields,
-        ).catch(() => undefined);
-        return { state: "failed", row: claimed, error: errorMessage };
+            application_lock_id: null,
+            application_started_at: null,
+            application_attempts: attempts,
+            application_error: errorMessage,
+            applied_at: null,
+            applied_by: null,
+        },
+        fields,
+    ).catch(() => undefined);
+        return {
+            state: "failed",
+            row: claimed,
+            error: errorMessage,
+            ...(conflict ? { conflict } : {}),
+            retryable: nextStatus !== "FAILED",
+        };
     }
 }
 
@@ -445,6 +459,8 @@ export async function resetFailedApplication(collection: string, id: number, eff
             application_lock_id: null,
             application_started_at: null,
             application_error: null,
+            applied_at: null,
+            applied_by: null,
         },
         "request_id,header_id,status,effective_at,application_status,application_attempts",
     );
@@ -466,6 +482,8 @@ export async function resetFailedBatchHeader(headerId: number) {
             application_lock_id: null,
             application_started_at: null,
             application_error: null,
+            applied_at: null,
+            applied_by: null,
         },
         "header_id,status,application_status,application_attempts",
     );
@@ -520,7 +538,7 @@ export async function refreshBatchApplicationStatus(args: {
             application_started_at: null,
             ...(applicationStatus === "APPLIED"
                 ? { applied_at: now, ...(args.userId ? { applied_by: args.userId } : {}) }
-                : {}),
+                : { applied_at: null, applied_by: null }),
         },
         "header_id,status,application_status,application_attempts,application_error,applied_at,applied_by",
     );

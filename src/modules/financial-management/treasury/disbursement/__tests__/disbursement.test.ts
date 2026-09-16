@@ -8,6 +8,7 @@ import { Disbursement, PaymentLine } from "../types";
 import { sumLineAmounts } from "../../utils/line-amounts";
 import {
     isFullyPostedPurchaseOrder,
+    hasUnpostedReceivingRows,
     isPurchaseOrderReferenceTagged,
     isPostedReceivingAmount,
     postedReceivingRowsByPurchaseOrder,
@@ -331,6 +332,19 @@ describe("Disbursement Module Core Business Rules", () => {
                 { isPosted: 1, is_posted_amounts: 1, is_reverted: 0 },
                 { isPosted: 1, is_posted_amounts: 1, is_reverted: 0 },
             ])).toBe(true);
+        });
+
+        it("identifies a partially received PO without treating posted receipt groups as payable rows", () => {
+            const activeRows = [
+                { purchase_order_id: 1, receipt_no: "R-POSTED", isPosted: 1, is_posted_amounts: 1, is_reverted: 0 },
+                { purchase_order_id: 1, receipt_no: null, isPosted: 0, is_posted_amounts: 0, is_reverted: 0 },
+            ];
+
+            expect(hasUnpostedReceivingRows(activeRows)).toBe(true);
+            expect(postedReceivingRowsByPurchaseOrder(activeRows).get(1)).toEqual([activeRows[0]]);
+            expect(postedReceivingRowsByPurchaseOrder([
+                { purchase_order_id: 1, receipt_no: null, isPosted: 1, is_posted_amounts: 1, is_reverted: 0 },
+            ]).has(1)).toBe(false);
         });
 
         it("matches an already-tagged PO reference regardless of separator spacing or case", () => {

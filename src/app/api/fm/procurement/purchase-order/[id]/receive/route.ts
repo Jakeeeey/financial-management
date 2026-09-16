@@ -11,8 +11,25 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!token) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
 
   try {
+    // {id} is the procurement id. Resolve the linked commercial PO id for the
+    // stock-in writes (receiving.purchase_order_id still references the
+    // commercial purchase_order row); status lands on the procurement row.
     const { id } = await params;
-    const poId = Number(id);
+    const procRes = await fetch(
+      `${DIRECTUS_URL}/items/procurement/${id}?fields=id,po_no`,
+      { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }
+    );
+    if (!procRes.ok) {
+      return NextResponse.json({ message: "Purchase order not found" }, { status: 404 });
+    }
+    const procJson = await procRes.json();
+    const proc = procJson.data as { id: number; po_no: number | null } | null;
+    if (!proc || proc.po_no === null || typeof proc.po_no === "undefined") {
+      return NextResponse.json({ message: "Purchase order not found" }, { status: 404 });
+    }
+    const poId = Number(proc.po_no);
+    const procurementId = Number(proc.id);
+
     const body = await request.json();
     const { rows, reference_no, notes, received_by: clientReceivedBy, currentUserId } = body;
 
@@ -99,13 +116,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
     }
 
-    // Determine new inventory_status
-    const poItemsRes = await fetch(
-      `${DIRECTUS_URL}/items/purchase_order_items?filter=${encodeURIComponent(JSON.stringify({ purchase_order_id: { _eq: poId } }))}&limit=-1`,
+    // Determine new status. Item universe is procurement_details (single source
+    // of truth); math is behavior-identical to the old purchase_order_items
+    // version — per-line ordered vs received, all-fulfilled derivation.
+    const detailsRes = await fetch(
+      `${DIRECTUS_URL}/items/procurement_details?filter=${encodeURIComponent(JSON.stringify({ procurement_id: { _eq: procurementId } }))}&fields=id,qty&limit=-1`,
       { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }
     );
-    const poItemsJson = await poItemsRes.json();
-    const allItems: { po_item_id: number; qty: string | number }[] = poItemsJson.data || [];
+    const detailsJson = await detailsRes.json();
+    const allItems: { id: number; qty: string | number }[] = detailsJson.data || [];
 
     const receivingIdsRes = await fetch(
       `${DIRECTUS_URL}/items/receiving?filter=${encodeURIComponent(JSON.stringify({ purchase_order_id: { _eq: poId } }))}&fields=id`,
@@ -129,22 +148,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const allFulfilled = allItems.every((item) => {
       const ordered = Number(item.qty || 0);
-      const itemKey = item.po_item_id;
-      const got = receivedMap[itemKey] || 0;
+      const got = receivedMap[Number(item.id)] || 0;
       return got >= ordered;
     });
 
-    const gmt8Now = new Date(Date.now() + 8 * 60 * 60 * 1000);
-    const lastReceived = gmt8Now.toISOString().replace("T", " ").split(".")[0];
-
+    // Status re-pointed at the procurement row (procurement has no
+    // inventory_status column, so the receive state lives in
+    // procurement.status using the same vocabulary the summary list maps).
+    // Fire-and-forget, matching the old purchase_order PATCH behavior.
     const newStatus = allFulfilled ? "full" : "partial";
-    await fetch(`${DIRECTUS_URL}/items/purchase_order/${poId}`, {
+    await fetch(`${DIRECTUS_URL}/items/procurement/${procurementId}`, {
       method: "PATCH",
       headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        inventory_status: allFulfilled ? 6 : 9,
-        date_received: gmt8Now.toISOString(),
-        last_received: lastReceived,
+        status: allFulfilled ? "Fully Received" : "Partially Received",
       }),
       cache: "no-store",
     });

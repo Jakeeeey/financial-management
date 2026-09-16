@@ -9,8 +9,11 @@ type DirectusUser = {
 type ModuleAccessRow = {
     module_id?: {
         slug?: string | null;
+        base_path?: string | null;
     } | null;
 };
+
+const DISBURSEMENT_APPROVAL_BASE_PATH = "/fm/treasury/cash-issuance/approval";
 
 function isAdmin(user: DirectusUser): boolean {
     return user.role === "ADMIN" || user.isAdmin === true || Number(user.isAdmin) === 1;
@@ -23,6 +26,22 @@ function isDisbursementApprovalSlug(value: unknown): boolean {
         slug.includes("cash-issuance") ||
         slug.includes("treasury")
     );
+}
+
+function normalizeModulePath(value: unknown): string {
+    const path = String(value || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\\/g, "/")
+        .replace(/\/+/g, "/");
+
+    if (!path) return "";
+    return `/${path.replace(/^\/+|\/+$/g, "")}`;
+}
+
+export function isDisbursementApprovalModule(module: ModuleAccessRow["module_id"]): boolean {
+    return normalizeModulePath(module?.base_path) === DISBURSEMENT_APPROVAL_BASE_PATH
+        || isDisbursementApprovalSlug(module?.slug);
 }
 
 /**
@@ -40,7 +59,7 @@ export async function hasDisbursementApprovalAccess(userId: number): Promise<boo
                 headers,
                 cache: "no-store",
             }),
-            fetch(`${DIRECTUS_URL}/items/user_access_modules?filter[user_id][_eq]=${userId}&fields=module_id.slug&limit=-1`, {
+            fetch(`${DIRECTUS_URL}/items/user_access_modules?filter[user_id][_eq]=${userId}&fields=module_id.slug,module_id.base_path&limit=-1`, {
                 headers,
                 cache: "no-store",
             }),
@@ -53,7 +72,7 @@ export async function hasDisbursementApprovalAccess(userId: number): Promise<boo
         if (isAdmin(user)) return true;
 
         const modulePayload = (await moduleRes.json()) as { data?: ModuleAccessRow[] };
-        return (modulePayload.data || []).some((row) => isDisbursementApprovalSlug(row.module_id?.slug));
+        return (modulePayload.data || []).some((row) => isDisbursementApprovalModule(row.module_id));
     } catch {
         return false;
     }
