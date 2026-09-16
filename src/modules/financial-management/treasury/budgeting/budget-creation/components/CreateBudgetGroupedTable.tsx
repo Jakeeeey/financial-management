@@ -512,10 +512,9 @@ function BudgetRow({
             {(node.status === "Draft" || node.status === "Rejected") && (
               <>
                 <Button
-                  variant="ghost"
                   size="sm"
                   onClick={() => openEditModal(node)}
-                  className="h-8 px-2 text-xs gap-1.5 hover:bg-muted transition-all active:scale-95"
+                  className="h-8 px-3 text-xs font-semibold gap-1.5 rounded-lg border bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-700 hover:text-white dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700 dark:hover:bg-slate-600 transition-all active:scale-95 shadow-xs"
                 >
                   <Pencil className="h-3.5 w-3.5" />
                   Edit
@@ -523,9 +522,8 @@ function BudgetRow({
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <Button
-                      variant="ghost"
                       size="sm"
-                      className="h-8 px-2 text-xs gap-1.5 hover:bg-primary/10 hover:text-primary transition-all active:scale-95"
+                      className="h-8 px-3 text-xs font-semibold gap-1.5 rounded-lg border bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-600 hover:text-white dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800 dark:hover:bg-emerald-600 dark:hover:text-white transition-all active:scale-95 shadow-xs"
                     >
                       <Send className="h-3.5 w-3.5" />
                       {node.status === "Rejected" ? "Resubmit" : "Submit"}
@@ -557,9 +555,8 @@ function BudgetRow({
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <Button
-                      variant="ghost"
                       size="sm"
-                      className="h-8 px-2 text-xs gap-1.5 hover:bg-destructive/10 hover:text-destructive transition-all active:scale-95"
+                      className="h-8 px-3 text-xs font-semibold gap-1.5 rounded-lg border bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-600 hover:text-white dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800 dark:hover:bg-rose-600 dark:hover:text-white transition-all active:scale-95 shadow-xs"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                       Delete
