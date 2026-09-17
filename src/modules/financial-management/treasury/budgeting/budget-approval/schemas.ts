@@ -72,8 +72,15 @@ export const BudgetApprovalItemSchema = z.object({
   created_at: z.string().nullish(),
   updated_at: z.string().nullish(),
   
-  // Attachments
+  // Attachments & Feedbacks
   attachments: z.array(AttachmentSchema).nullish().default([]),
+  feedbacks: z.array(z.object({
+    id: z.union([z.string(), z.number()]),
+    status: z.string(),
+    feedback: z.string(),
+    voted_by_name: z.string(),
+    voted_at: z.string(),
+  })).nullish().default([]),
 });
 
 export type BudgetApprovalItem = z.infer<typeof BudgetApprovalItemSchema>;
