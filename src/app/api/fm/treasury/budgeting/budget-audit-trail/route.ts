@@ -8,9 +8,22 @@ const AUTH_HEADERS = {
     Authorization: `Bearer ${process.env.DIRECTUS_STATIC_TOKEN}`,
 };
 
+const ALLOWED_COLLECTIONS = new Set([
+  "budget_audit_trail",
+  "budget",
+  "budget_attachments",
+  "division",
+  "department_per_division",
+  "chart_of_accounts",
+]);
+
 export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const collection = searchParams.get("collection") || "budget_audit_trail";
+
+    if (!ALLOWED_COLLECTIONS.has(collection)) {
+        return NextResponse.json({ message: `Access denied for collection: ${collection}` }, { status: 403 });
+    }
     
     // Create a copy of search params to modify for the upstream request
     const query = new URLSearchParams(searchParams);
