@@ -16,6 +16,7 @@ export interface SortableRowBase {
   salesman?: string;
   division?: string;
   salesmanCode?: string | null;
+  supplierCode?: string | null;
   invoiceDate?: string | null;
   paymentStatus?: string | null;
   transactionStatus?: string | null;
@@ -29,6 +30,7 @@ export const AR_TABLE_SORT_KEYS: ARTableSortKey[] = [
   'salesman',
   'division',
   'salesmanCode',
+  'supplierCode',
   'invoiceDate',
   'deliveryDate',
   'due',
@@ -105,6 +107,8 @@ export function getSortValue(row: SortableRow, key: ARTableSortKey): string | nu
       return row.division ?? '';
     case 'salesmanCode':
       return row.salesmanCode ?? '';
+    case 'supplierCode':
+      return row.supplierCode ?? '';
     case 'invoiceDate':
       return row.invoiceDate ?? '';
     case 'netReceivable':

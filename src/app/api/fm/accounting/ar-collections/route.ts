@@ -343,9 +343,29 @@ export async function GET(request: NextRequest) {
       const totalPaid = paymentAgg.get(inv.invoice_id) || 0;
       const outstanding = Math.max(0, netReceivable - returnAmount - totalPaid);
 
+      // Calculate terms in days between invoice_date and due_date if available
+      let termDays = 0;
+      if (inv.due_date && inv.invoice_date) {
+        const invD = new Date(inv.invoice_date);
+        const dueD = new Date(inv.due_date);
+        if (!isNaN(invD.getTime()) && !isNaN(dueD.getTime())) {
+          termDays = Math.max(0, Math.round((dueD.getTime() - invD.getTime()) / (1000 * 60 * 60 * 24)));
+        }
+      }
+
+      let calculatedDueDate: string | null = inv.due_date;
+      if (inv.dispatch_date) {
+        const delD = new Date(inv.dispatch_date);
+        if (!isNaN(delD.getTime())) {
+          const newDue = new Date(delD.getTime());
+          newDue.setDate(newDue.getDate() + termDays);
+          calculatedDueDate = newDue.toISOString();
+        }
+      }
+
       let daysOverdue: number | null = null;
-      if (inv.due_date) {
-        const due = new Date(inv.due_date);
+      if (calculatedDueDate) {
+        const due = new Date(calculatedDueDate);
         if (!isNaN(due.getTime())) {
           due.setHours(0, 0, 0, 0);
           daysOverdue = Math.floor((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
@@ -360,7 +380,7 @@ export async function GET(request: NextRequest) {
         customer: customerMap.get(inv.customer_code || '') || inv.customer_code || '—',
         customerCode: inv.customer_code || '',
         invoiceDate: inv.invoice_date,
-        due: inv.due_date,
+        due: calculatedDueDate,
         netReceivable,
         totalPaid,
         outstanding,
