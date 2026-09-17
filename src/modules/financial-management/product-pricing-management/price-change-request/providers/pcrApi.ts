@@ -18,7 +18,7 @@ import type {
     UnifiedApplicationSummary,
 } from "../types";
 import { apiStatusParam } from "../utils/pcrQuery";
-import { readApiResponse } from "../../shared/apiHttp";
+import { ApiHttpError, readApiResponse } from "../../shared/apiHttp";
 
 /** Existing consolidated lookups route */
 const LOOKUPS_ENDPOINT = "/api/fm/product-pricing/lookups";
@@ -627,6 +627,7 @@ type ApprovalResponse = {
     effective_at?: string | null;
     warning?: string | null;
     retryable?: boolean;
+    forced?: boolean;
     code?: string;
     conflicts?: PriceSnapshotConflict[];
     application_summary?: UnifiedApplicationSummary;
@@ -725,7 +726,7 @@ export async function waitForBatchDecision(args: {
 }
 
 export type ScheduledOverrideKind = "price_request" | "price_batch" | "cost_request" | "cost_batch" | "mixed_batch";
-export type ScheduledOverrideAction = "apply_now" | "reject_schedule" | "retry_application";
+export type ScheduledOverrideAction = "apply_now" | "force_apply" | "reject_schedule" | "retry_application";
 
 export type ScheduledOverrideResponse = {
     ok: boolean;
@@ -733,6 +734,7 @@ export type ScheduledOverrideResponse = {
     action: ScheduledOverrideAction;
     id: number;
     affected?: number;
+    forced?: boolean;
 };
 
 function approvalBody(effectiveAt?: string | null) {
@@ -762,6 +764,21 @@ export async function approvePriceChangeBatch(headerId: number, effectiveAt?: st
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(approvalBody(effectiveAt)),
+        },
+    );
+}
+
+export async function forceApplyPriceRequest(requestId: number) {
+    return actionPriceRequest({ action: "force_apply", request_id: requestId });
+}
+
+export async function forceApplyPriceChangeBatch(headerId: number) {
+    return http<ApprovalResponse>(
+        `/api/fm/product-pricing/price-change-batches/${headerId}`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "force_apply" }),
         },
     );
 }
@@ -810,6 +827,17 @@ export async function approveUnifiedBatch(headerId: number, effectiveAt?: string
     );
 }
 
+export async function forceApplyUnifiedBatch(headerId: number) {
+    return http<ApprovalResponse>(
+        `/api/fm/product-pricing/unified-batches/${headerId}`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "force_apply" }),
+        },
+    );
+}
+
 export async function retryUnifiedBatch(headerId: number) {
     return http<ApprovalResponse>(
         `/api/fm/product-pricing/unified-batches/${headerId}`,
@@ -830,4 +858,14 @@ export async function rejectUnifiedBatch(headerId: number, reject_reason: string
             body: JSON.stringify({ action: "reject", reject_reason }),
         },
     );
+}
+
+export function priceSnapshotConflictsFromError(error: unknown): PriceSnapshotConflict[] {
+    if (!(error instanceof ApiHttpError) || !isRecord(error.payload)) return [];
+    if (error.payload.code !== "price_snapshot_conflict" || !Array.isArray(error.payload.conflicts)) return [];
+    return error.payload.conflicts as PriceSnapshotConflict[];
+}
+
+export function isPriceSnapshotConflictError(error: unknown): boolean {
+    return priceSnapshotConflictsFromError(error).length > 0;
 }

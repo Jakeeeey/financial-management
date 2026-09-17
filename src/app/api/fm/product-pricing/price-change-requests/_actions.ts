@@ -208,17 +208,20 @@ export async function applyProposedPrice(args: {
     priceTypeId: number;
     currentPrice: unknown;
     proposedPrice: number;
+    bypassSnapshotCheck?: boolean;
 }) {
     const { userId, productId, priceTypeId, currentPrice, proposedPrice } = args;
     const updatedBy = await resolveAuditUserId(userId);
     const validProposedPrice = assertValidPriceValue(proposedPrice, "proposed_price");
-    await assertPriceSnapshotCurrent({
-        request_id: args.requestId ?? undefined,
-        product_id: productId,
-        price_type_id: priceTypeId,
-        current_price: currentPrice,
-        proposed_price: validProposedPrice,
-    });
+    if (!args.bypassSnapshotCheck) {
+        await assertPriceSnapshotCurrent({
+            request_id: args.requestId ?? undefined,
+            product_id: productId,
+            price_type_id: priceTypeId,
+            current_price: currentPrice,
+            proposed_price: validProposedPrice,
+        });
+    }
 
     const [existingPrice, priceTypeCatalog] = await Promise.all([
         findExistingPriceRecord(productId, priceTypeId),
@@ -241,9 +244,11 @@ export async function applyProposedPrice(args: {
         ...(createdBy ? { created_by: createdBy } : {}),
     };
 
-    const snapshotFilter = currentPrice === null || currentPrice === undefined || currentPrice === ""
-        ? { price: { _null: true } }
-        : { price: { _eq: Number(Number(currentPrice).toFixed(4)) } };
+    const snapshotFilter = args.bypassSnapshotCheck
+        ? {}
+        : currentPrice === null || currentPrice === undefined || currentPrice === ""
+            ? { price: { _null: true } }
+            : { price: { _eq: Number(Number(currentPrice).toFixed(4)) } };
 
     const applyExistingPriceRecord = async (row: ExistingPriceRow) => {
         const id = Number(row.id);
@@ -348,6 +353,7 @@ export async function approveOneOrphanPriceRequest(
     request_id: number,
     row: PcrRow,
     effectiveAt?: string | null,
+    options?: { force?: boolean },
 ): Promise<PcrRow> {
     if (!isOrphanPriceRequest(row)) {
         throw new Error("This request is linked to a batch. Approve the batch instead.");
@@ -369,13 +375,29 @@ export async function approveOneOrphanPriceRequest(
         throw new Error("Invalid proposed_price on request.");
     }
 
-    await assertPriceSnapshotCurrent({
-        request_id,
-        product_id: productId,
-        price_type_id: priceTypeId,
-        current_price: row.current_price,
-        proposed_price: proposedPrice,
-    });
+    const force = options?.force === true;
+    const conflicts = force
+        ? await findPriceSnapshotConflicts([{
+            request_id,
+            product_id: productId,
+            price_type_id: priceTypeId,
+            current_price: row.current_price,
+            proposed_price: proposedPrice,
+        }])
+        : [];
+    if (force) {
+        if (conflicts.length === 0) {
+            throw new Error("Force Apply is only available when a current price snapshot conflict exists.");
+        }
+    } else {
+        await assertPriceSnapshotCurrent({
+            request_id,
+            product_id: productId,
+            price_type_id: priceTypeId,
+            current_price: row.current_price,
+            proposed_price: proposedPrice,
+        });
+    }
 
     const staged = await stageStandaloneApproval<PcrRow>({
         collection: PCR,
@@ -400,12 +422,21 @@ export async function approveOneOrphanPriceRequest(
                 priceTypeId,
                 currentPrice: claimed.current_price,
                 proposedPrice,
+                bypassSnapshotCheck: force,
             }),
         });
         if (outcome.state === "applied") invalidateGroupIndexCacheOnCatalogChange();
     }
 
     return (await getPriceRequest(request_id)) ?? staged.row;
+}
+
+export async function forceApplyOneOrphanPriceRequest(
+    userId: number,
+    request_id: number,
+    row: PcrRow,
+): Promise<PcrRow> {
+    return approveOneOrphanPriceRequest(userId, request_id, row, null, { force: true });
 }
 
 export async function rejectOneOrphanPriceRequest(
