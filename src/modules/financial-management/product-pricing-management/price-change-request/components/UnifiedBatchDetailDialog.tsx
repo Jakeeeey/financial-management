@@ -18,7 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { cn } from "@/lib/utils";
 
 import type { UnifiedBatchDetail, UnifiedBatchLine } from "../types";
-import { getUnifiedBatch } from "../providers/pcrApi";
+import { getUnifiedBatch, priceSnapshotConflictsFromError } from "../providers/pcrApi";
 import { BatchDecisionSummaryFields } from "./BatchDecisionSummaryFields";
 import { DecisionConfirmationDialog } from "./DecisionConfirmationDialog";
 import { RejectDialog } from "./RejectDialog";
@@ -39,6 +39,7 @@ type Props = {
     onReject?: (headerId: number, reason: string) => Promise<void> | void;
     onApplyScheduledNow?: (headerId: number) => Promise<void> | void;
     onRetryApplication?: (headerId: number) => Promise<void> | void;
+    onForceApply?: (headerId: number) => Promise<void> | void;
 };
 
 function money(value: number | null | undefined) {
@@ -194,16 +195,19 @@ export function UnifiedBatchDetailDialog({
     onReject,
     onApplyScheduledNow,
     onRetryApplication,
+    onForceApply,
 }: Props) {
     const [detail, setDetail] = React.useState<UnifiedBatchDetail | null>(null);
     const [loading, setLoading] = React.useState(false);
     const [confirmingApprove, setConfirmingApprove] = React.useState(false);
     const [rejecting, setRejecting] = React.useState(false);
+    const [approvalConflicts, setApprovalConflicts] = React.useState<UnifiedBatchDetail["conflicts"]>([]);
 
     React.useEffect(() => {
         let cancelled = false;
         if (!open || !batchId) {
             setDetail(null);
+            setApprovalConflicts([]);
             return;
         }
 
@@ -228,7 +232,16 @@ export function UnifiedBatchDetailDialog({
     const canAct = !readOnly && isPending && Boolean(onApprove && onReject) && !loading;
     const isScheduled = detail?.status === "APPROVED" && detail.application_status === "SCHEDULED";
     const canApplyScheduledNow = !readOnly && isScheduled && Boolean(onApplyScheduledNow) && !loading && !acting;
-    const conflicts = detail?.conflicts ?? [];
+    const conflicts = React.useMemo(() => {
+        const values = [...(detail?.conflicts ?? []), ...(approvalConflicts ?? [])];
+        const seen = new Set<string>();
+        return values.filter((conflict) => {
+            const key = `${conflict.request_id}:${conflict.product_id}:${conflict.price_type_id}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }, [approvalConflicts, detail?.conflicts]);
     const canRetry = !readOnly && detail?.application_status === "FAILED" && conflicts.length === 0 && Boolean(detail.retryable) && Boolean(onRetryApplication) && !loading && !acting;
     const displayStatus = detail ? displayPcrStatus(detail.status, detail.application_status, detail.effective_at) : "";
     const lines = React.useMemo(
@@ -268,6 +281,30 @@ export function UnifiedBatchDetailDialog({
         await onApplyScheduledNow(batchId);
         const result = await getUnifiedBatch(batchId);
         setDetail(result.data);
+    };
+
+    const handleApprove = async (effectiveAt?: string | null) => {
+        if (!batchId || !onApprove) return;
+        try {
+            await onApprove(batchId, effectiveAt);
+            setConfirmingApprove(false);
+            onOpenChange(false);
+        } catch (error: unknown) {
+            const nextConflicts = priceSnapshotConflictsFromError(error);
+            if (nextConflicts.length > 0) {
+                setApprovalConflicts(nextConflicts);
+                setConfirmingApprove(false);
+                return;
+            }
+            throw error;
+        }
+    };
+
+    const handleForceApply = async () => {
+        if (!batchId || !onForceApply) return;
+        await onForceApply(batchId);
+        setApprovalConflicts([]);
+        onOpenChange(false);
     };
 
     return (
@@ -349,14 +386,10 @@ export function UnifiedBatchDetailDialog({
 
                             <PriceSnapshotConflictPanel
                                 conflicts={conflicts}
-                                supplierId={detail.supplier_id}
-                                supplierName={detail.supplier_name}
-                                batchLabel={`PCB-${detail.header_id}`}
+                                recordLabel={`PCB-${detail.header_id}`}
                                 labels={conflictLabels}
-                                onCreated={() => {
-                                    if (!batchId) return;
-                                    void getUnifiedBatch(batchId).then((result) => setDetail(result.data));
-                                }}
+                                forceApplying={acting}
+                                onForceApply={onForceApply ? handleForceApply : undefined}
                             />
 
                             <LineTable lines={lines} supplierName={detail.supplier_name} summary={lineSummary} />
@@ -398,9 +431,7 @@ export function UnifiedBatchDetailDialog({
                 onOpenChange={setConfirmingApprove}
                 onConfirm={async (effectiveAt) => {
                     if (!batchId || !onApprove) return;
-                    await onApprove(batchId, effectiveAt);
-                    setConfirmingApprove(false);
-                    onOpenChange(false);
+                    await handleApprove(effectiveAt);
                 }}
             />
 

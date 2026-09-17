@@ -1010,7 +1010,28 @@ export async function rejectPriceChangeBatch(headerId: number, userId: number, r
     return NextResponse.json({ ok: true, header_id: headerId, rejected: details.length });
 }
 
-export async function applyApprovedBatch(headerId: number, userId: number, effectiveAt?: string | null) {
+export async function markPriceBatchForceApplied(headerId: number, userId: number) {
+    const header = await getHeader(headerId);
+    if (!header) return;
+
+    const existingRemarks = String(header.remarks ?? "").trim();
+    if (existingRemarks.includes("[FORCE_APPLY]")) return;
+
+    const marker = `[FORCE_APPLY] Snapshot conflict overridden by user ${userId} at ${nowManila()}.`;
+    await fetchDirectus(`${mustBase()}/items/${HEADERS}/${headerId}`, {
+        method: "PATCH",
+        headers: directusHeaders(),
+        body: JSON.stringify({ remarks: [existingRemarks, marker].filter(Boolean).join("\n") }),
+    });
+}
+
+export async function applyApprovedBatch(
+    headerId: number,
+    userId: number,
+    effectiveAt?: string | null,
+    options?: { force?: boolean },
+) {
+    const force = options?.force === true;
     const header = await getHeader(headerId);
     if (!header) {
         return NextResponse.json({ error: "Batch not found" }, { status: 404 });
@@ -1049,12 +1070,22 @@ export async function applyApprovedBatch(headerId: number, userId: number, effec
             proposed_price: line.proposedPrice,
         })),
     );
-    if (conflicts.length > 0) {
+    if (conflicts.length > 0 && !force) {
         return NextResponse.json(
             {
                 error: "Batch contains prices that changed after submission.",
                 code: "price_snapshot_conflict",
                 conflicts,
+                retryable: false,
+            },
+            { status: 409 },
+        );
+    }
+    if (force && conflicts.length === 0) {
+        return NextResponse.json(
+            {
+                error: "Force Apply is only available when a current price snapshot conflict exists.",
+                code: "force_apply_requires_conflict",
                 retryable: false,
             },
             { status: 409 },
@@ -1069,7 +1100,12 @@ export async function applyApprovedBatch(headerId: number, userId: number, effec
         stageBatchApproval,
     } =
         await import("../_applicationEngine");
-    const staged = await stageBatchApproval({ detailCollection: DETAILS, headerId, userId, effectiveAt });
+    const staged = await stageBatchApproval({
+        detailCollection: DETAILS,
+        headerId,
+        userId,
+        effectiveAt: force ? nowManila() : effectiveAt,
+    });
     if (!staged) {
         return NextResponse.json({ error: "Batch approval was already claimed or is no longer pending." }, { status: 409 });
     }
@@ -1104,6 +1140,7 @@ export async function applyApprovedBatch(headerId: number, userId: number, effec
                             priceTypeId,
                             currentPrice: claimed.current_price,
                             proposedPrice,
+                            bypassSnapshotCheck: force,
                         });
                     },
                 });
@@ -1128,8 +1165,13 @@ export async function applyApprovedBatch(headerId: number, userId: number, effec
         warning = warning ?? notice.warning;
         retryable = notice.retryable;
     }
+    if (force && applied > 0) {
+        await markPriceBatchForceApplied(headerId, userId).catch((error: unknown) => {
+            console.warn("[priceChangeBatch] Failed to persist force-apply audit remark", error);
+        });
+    }
     if (failed > 0) {
-        warning = warning ?? "Approval was saved, but one or more pricing lines failed to apply. Review the failed lines and create a replacement request for any snapshot conflicts.";
+        warning = warning ?? "Approval was saved, but one or more pricing lines failed to apply. Review the failed lines and use Force Apply if the latest price change is intentional.";
         retryable = retryable || failed > applicationConflicts.length;
     }
     if (applied > 0) {
@@ -1156,6 +1198,7 @@ export async function applyApprovedBatch(headerId: number, userId: number, effec
         effective_at: staged.effectiveAt,
         warning,
         retryable,
+        forced: force,
         conflicts: applicationConflicts,
         application_summary: {
             total: affected,

@@ -18,6 +18,7 @@ import {
     findPriceSnapshotConflicts,
     getDetails,
     getHeader,
+    markPriceBatchForceApplied,
     mustBase,
     normalizePriceTypeId,
     normalizeProductId,
@@ -36,7 +37,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type OverrideKind = "price_request" | "price_batch" | "cost_request" | "cost_batch" | "mixed_batch";
-type OverrideAction = "reschedule" | "apply_now" | "cancel_schedule" | "reject_schedule" | "retry_application";
+type OverrideAction = "reschedule" | "apply_now" | "force_apply" | "cancel_schedule" | "reject_schedule" | "retry_application";
 
 type OverrideBody = Partial<{
     kind: OverrideKind;
@@ -177,7 +178,7 @@ async function rejectScheduledRequest(collection: string, id: number, userId: nu
     });
 }
 
-async function applyPriceNow(row: PcrRow, userId: number, effectiveAt = nowManila()) {
+async function applyPriceNow(row: PcrRow, userId: number, effectiveAt = nowManila(), force = false) {
     return executeClaimedApplication({
         collection: PRICE_DETAILS,
         row,
@@ -199,6 +200,7 @@ async function applyPriceNow(row: PcrRow, userId: number, effectiveAt = nowManil
                 priceTypeId,
                 currentPrice: claimed.current_price,
                 proposedPrice,
+                bypassSnapshotCheck: force,
             });
         },
     });
@@ -227,12 +229,37 @@ async function prepareRetry<T extends ApplicationRow>(collection: string, row: T
     return ((await resetFailedApplication(collection, id, nowManila())) as T | null) ?? row;
 }
 
-async function applyPriceBatchNow(headerId: number, userId: number, retryFailed: boolean) {
+async function applyPriceBatchNow(headerId: number, userId: number, retryFailed: boolean, force = false) {
     let details = await getDetails(headerId);
+    if (force) {
+        const candidates = details.filter((row) => ["SCHEDULED", "FAILED"].includes(applicationStatus(row)));
+        const conflicts = await findPriceSnapshotConflicts(
+            candidates.map((row) => ({
+                request_id: pickId(row.request_id) ?? 0,
+                product_id: normalizeProductId(row),
+                price_type_id: normalizePriceTypeId(row),
+                current_price: row.current_price,
+                proposed_price: row.proposed_price,
+            })),
+        );
+        if (conflicts.length === 0) {
+            return {
+                affected: 0,
+                applied: 0,
+                failed: 0,
+                skipped: 0,
+                failures: [] as BatchApplyFailure[],
+                application_status: applicationStatus(await getHeader(headerId)),
+                conflicts,
+                retryable: false,
+                forceConflictMissing: true,
+            };
+        }
+    }
     const pendingDetails = retryFailed ? details.filter(isPendingDetail) : [];
     if (retryFailed && pendingDetails.length === 0 && !(await resetFailedBatchHeader(headerId))) {
         const header = await getHeader(headerId);
-        if (applicationStatus(header) !== "APPLIED") {
+        if (applicationStatus(header) !== "APPLIED" && !(force && applicationStatus(header) === "SCHEDULED")) {
             return { affected: 0, applied: 0, failed: 0, skipped: 1, failures: [] as BatchApplyFailure[], application_status: null };
         }
     }
@@ -285,7 +312,7 @@ async function applyPriceBatchNow(headerId: number, userId: number, retryFailed:
     for (const original of details) {
         if (!["SCHEDULED", ...(retryFailed ? ["FAILED"] : [])].includes(applicationStatus(original))) continue;
         const row = retryFailed ? await prepareRetry(PRICE_DETAILS, original) : original;
-        const outcome = await applyPriceNow(row as PcrRow, userId);
+        const outcome = await applyPriceNow(row as PcrRow, userId, nowManila(), force);
         if (outcome.state === "applied") applied += 1;
         if (outcome.state === "failed") {
             failed += 1;
@@ -307,6 +334,7 @@ async function applyPriceBatchNow(headerId: number, userId: number, retryFailed:
         application_status: status,
         conflicts,
         retryable: failures.length > conflicts.length,
+        forced: force,
     };
 }
 
@@ -384,19 +412,24 @@ export async function POST(req: NextRequest) {
         if (!kind || !["price_request", "price_batch", "cost_request", "cost_batch", "mixed_batch"].includes(kind)) {
             return NextResponse.json({ error: "Unsupported kind" }, { status: 400 });
         }
-        if (!action || !["reschedule", "apply_now", "cancel_schedule", "reject_schedule", "retry_application"].includes(action)) {
+        if (!action || !["reschedule", "apply_now", "force_apply", "cancel_schedule", "reject_schedule", "retry_application"].includes(action)) {
             return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
         }
         if (!Number.isFinite(id) || id <= 0) return NextResponse.json({ error: "id is required" }, { status: 400 });
 
+        const retry = action === "retry_application";
+        const force = action === "force_apply";
+
         if (kind === "mixed_batch") {
-            if (action !== "apply_now" && action !== "retry_application") {
-                return NextResponse.json({ error: "Mixed batches only support apply_now or retry_application from this route." }, { status: 400 });
+            if (action !== "apply_now" && action !== "force_apply" && action !== "retry_application") {
+                return NextResponse.json({ error: "Mixed batches only support apply_now, force_apply, or retry_application from this route." }, { status: 400 });
             }
 
             const result = action === "apply_now"
                 ? await applyNowUnifiedBatch(id, userId)
-                : await retryUnifiedBatch(id, userId);
+                : action === "force_apply"
+                    ? await applyNowUnifiedBatch(id, userId, { force: true })
+                : await retryUnifiedBatch(id, userId, force ? { force: true } : undefined);
             if ("status" in result) {
                 return failedApplyResponse({
                     kind,
@@ -412,17 +445,37 @@ export async function POST(req: NextRequest) {
             });
         }
 
-        const retry = action === "retry_application";
         if (kind === "price_request") {
             let row = await getPriceRequest(id);
-            const valid = retry ? applicationStatus(row) === "FAILED" : isFutureScheduledApproved(row);
+            const valid = force
+                ? applicationStatus(row) === "FAILED" || isFutureScheduledApproved(row)
+                : retry ? applicationStatus(row) === "FAILED" : isFutureScheduledApproved(row);
             if (!row || !valid) return NextResponse.json({ error: "Request is not available for this override." }, { status: 400 });
+            if (force) {
+                const conflicts = await findPriceSnapshotConflicts([{
+                    request_id: id,
+                    product_id: normalizeProductId(row),
+                    price_type_id: normalizePriceTypeId(row),
+                    current_price: row.current_price,
+                    proposed_price: row.proposed_price,
+                }]);
+                if (conflicts.length === 0) {
+                    return failedApplyResponse({
+                        kind,
+                        action,
+                        id,
+                        status: 409,
+                        message: "Force Apply is only available when a current price snapshot conflict exists.",
+                        extra: { code: "force_apply_requires_conflict", retryable: false },
+                    });
+                }
+            }
             if (action === "reschedule") await rescheduleRequest(PRICE_DETAILS, id, body.effective_at);
             if (action === "cancel_schedule") await cancelScheduledRequest(PRICE_DETAILS, id);
             if (action === "reject_schedule") await rejectScheduledRequest(PRICE_DETAILS, id, userId, requireRejectReason(body.reject_reason));
-            if (retry) row = (await prepareRetry(PRICE_DETAILS, row)) as PcrRow;
-            if (action === "apply_now" || retry) {
-                const outcome = await applyPriceNow(row, userId);
+            if (retry || (force && applicationStatus(row) === "FAILED")) row = (await prepareRetry(PRICE_DETAILS, row)) as PcrRow;
+            if (action === "apply_now" || retry || force) {
+                const outcome = await applyPriceNow(row, userId, nowManila(), force);
                 if (outcome.state === "applied") invalidateGroupIndexCacheOnCatalogChange();
                 if (outcome.state === "failed") {
                     return failedApplyResponse({
@@ -449,7 +502,7 @@ export async function POST(req: NextRequest) {
                         extra: { outcome },
                     });
                 }
-                return NextResponse.json({ ok: true, kind, action, id, outcome });
+                return NextResponse.json({ ok: true, kind, action, id, outcome, ...(force ? { forced: true } : {}) });
             }
             return NextResponse.json({ ok: true, kind, action, id });
         }
@@ -491,7 +544,9 @@ export async function POST(req: NextRequest) {
         }
 
         const header = kind === "price_batch" ? await getHeader(id) : await getCostHeader(id);
-        const valid = retry ? ["FAILED", "APPLIED"].includes(applicationStatus(header)) : isFutureScheduledApproved(header);
+        const valid = force
+            ? ["FAILED", "SCHEDULED"].includes(applicationStatus(header))
+            : retry ? ["FAILED", "APPLIED"].includes(applicationStatus(header)) : isFutureScheduledApproved(header);
         if (!header || !valid) return NextResponse.json({ error: "Batch is not available for this override." }, { status: 400 });
         const collection = kind === "price_batch" ? PRICE_DETAILS : COST_DETAILS;
         if (action === "reschedule") {
@@ -508,8 +563,23 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ ok: true, kind, action, id, affected });
         }
         const result = kind === "price_batch"
-            ? await applyPriceBatchNow(id, userId, retry)
+            ? await applyPriceBatchNow(id, userId, retry || force, force)
             : await applyCostBatchNow(id, userId, retry);
+        if (force && "forceConflictMissing" in result && result.forceConflictMissing) {
+            return failedApplyResponse({
+                kind,
+                action,
+                id,
+                status: 409,
+                message: "Force Apply is only available when a current price snapshot conflict exists.",
+                extra: { code: "force_apply_requires_conflict", retryable: false },
+            });
+        }
+        if (force) {
+            await markPriceBatchForceApplied(id, userId).catch((error: unknown) => {
+                console.warn("[scheduledPriceChange] Failed to persist force-apply audit remark", error);
+            });
+        }
         if (result.applied > 0) invalidateGroupIndexCacheOnCatalogChange();
         if (result.failed > 0) {
             return failedApplyResponse({

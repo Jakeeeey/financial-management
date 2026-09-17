@@ -64,8 +64,13 @@ export async function POST(req: NextRequest, context: RouteContext) {
         };
         const action = String(body.action ?? "").trim().toLowerCase();
 
-        if (action === "approve") {
-            const result = await approveUnifiedBatch(headerId, userId, body.effective_at);
+        if (action === "approve" || action === "force_apply") {
+            const result = await approveUnifiedBatch(
+                headerId,
+                userId,
+                action === "force_apply" ? null : body.effective_at,
+                action === "force_apply" ? { force: true } : undefined,
+            );
             if ("status" in result) {
                 const { status, ...payload } = result;
                 return NextResponse.json(payload, { status });
