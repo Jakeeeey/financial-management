@@ -78,6 +78,10 @@ export function useCreateBudgets() {
   }, [fetchBudgets]);
 
   useEffect(() => {
+    setSelectedIds(new Set());
+  }, [filters.status]);
+
+  useEffect(() => {
     setSelectedIds(prev => {
       if (prev.size === 0) return prev;
       const visibleIds = new Set(budgets.map(b => String(b.id)));
@@ -293,6 +297,7 @@ export function useCreateBudgets() {
   };
 
   return {
+    allBudgets,
     budgets, 
     kpiTotals,
     loading, 

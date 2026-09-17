@@ -41,7 +41,7 @@ export function BudgetApprovalSummaryCards() {
   displayedItems.forEach((b) => {
     const amt = Number(b.amount || 0);
     totalAmount += amt;
-    if (b.entry_type === "original") {
+    if (b.entry_type?.toLowerCase() === "original") {
         originalAmount += amt;
     } else {
         // Combines both supplemental and realignment requests

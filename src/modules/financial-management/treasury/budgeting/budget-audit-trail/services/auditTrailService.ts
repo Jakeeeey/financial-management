@@ -220,6 +220,23 @@ export const auditTrailService = {
       else if (budget.status === "Pending") actionLabel = "Submitted";
       else if (budget.status === "Rejected") actionLabel = "Rejected";
 
+      const rawMonth = budget.month;
+      let monthVal = 0;
+      if (typeof rawMonth === "number") {
+        monthVal = rawMonth;
+      } else if (typeof rawMonth === "string") {
+        const parsedNum = parseInt(rawMonth, 10);
+        if (!isNaN(parsedNum) && parsedNum >= 1 && parsedNum <= 12) {
+          monthVal = parsedNum;
+        } else {
+          const lowerMonth = rawMonth.toLowerCase().trim();
+          const matchIdx = MONTH_NAMES.findIndex(
+            m => m.toLowerCase() === lowerMonth || m.toLowerCase().startsWith(lowerMonth.substring(0, 3))
+          );
+          if (matchIdx !== -1) monthVal = matchIdx + 1;
+        }
+      }
+
       const mappedData = {
         id: String(budget.id),
         budget_id: String(budget.id),
@@ -240,7 +257,7 @@ export const auditTrailService = {
         gl_code:         coa?.gl_code || "—",
         department_name: dept?.department_name || "—",
         division_name:   div?.division_name || "—",
-        month:           typeof budget.month === 'string' ? MONTH_NAMES.findIndex(m => m.toLowerCase() === (budget.month as string).toLowerCase()) + 1 : (Number(budget.month) || 0),
+        month:           monthVal,
         year:            Number(budget.year) || 0,
         budget_no:       budget.budget_no || "—",
         entry_type:      budget.entry_type?.toLowerCase() || "original",
@@ -310,6 +327,23 @@ export const auditTrailService = {
       const bulkAtts = attachmentsMap[targetBudgetId] || [];
       const finalAttachments = nativeAtts.length > 0 ? nativeAtts : bulkAtts;
 
+      const rawMonth = budget?.month;
+      let monthVal = 0;
+      if (typeof rawMonth === "number") {
+        monthVal = rawMonth;
+      } else if (typeof rawMonth === "string") {
+        const parsedNum = parseInt(rawMonth, 10);
+        if (!isNaN(parsedNum) && parsedNum >= 1 && parsedNum <= 12) {
+          monthVal = parsedNum;
+        } else {
+          const lowerMonth = rawMonth.toLowerCase().trim();
+          const matchIdx = MONTH_NAMES.findIndex(
+            m => m.toLowerCase() === lowerMonth || m.toLowerCase().startsWith(lowerMonth.substring(0, 3))
+          );
+          if (matchIdx !== -1) monthVal = matchIdx + 1;
+        }
+      }
+
       const mappedData = {
         id: log.id,
         budget_id: targetBudgetId,
@@ -330,7 +364,7 @@ export const auditTrailService = {
         gl_code:         coa?.gl_code || "—",
         department_name: dept?.department_name || "—",
         division_name:   div?.division_name || "—",
-        month:           typeof budget?.month === 'string' ? MONTH_NAMES.indexOf(budget.month) + 1 : (Number(budget?.month) || 0),
+        month:           monthVal,
         year:            Number(budget?.year) || 0,
         budget_no:       budget?.budget_no || "—",
         entry_type:      budget?.entry_type?.toLowerCase() || "original",

@@ -9,6 +9,7 @@ import type { CreateBudgetPayload, BudgetFilters, Budget } from "../types";
 interface CreateBudgetContextValue {
   // Data & state
   displayedItems:  Budget[];
+  allBudgets:      Budget[];
   budgets:         Budget[];
   kpiTotals:       { draft: number; pending: number; approved: number; rejected: number };
   loading:         boolean;
