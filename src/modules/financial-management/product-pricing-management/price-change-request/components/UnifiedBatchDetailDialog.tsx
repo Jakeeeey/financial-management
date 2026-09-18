@@ -18,10 +18,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { cn } from "@/lib/utils";
 
 import type { UnifiedBatchDetail, UnifiedBatchLine } from "../types";
-import { getUnifiedBatch } from "../providers/pcrApi";
+import { getUnifiedBatch, priceSnapshotConflictsFromError } from "../providers/pcrApi";
 import { BatchDecisionSummaryFields } from "./BatchDecisionSummaryFields";
 import { DecisionConfirmationDialog } from "./DecisionConfirmationDialog";
 import { RejectDialog } from "./RejectDialog";
+import {
+    formatPriceSnapshotConflictMessage,
+    PriceSnapshotConflictPanel,
+} from "./PriceSnapshotConflictPanel";
 import { decisionUserLabel } from "../utils/labels";
 import { displayPcrStatus, pcrApproveButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
@@ -35,6 +39,7 @@ type Props = {
     onReject?: (headerId: number, reason: string) => Promise<void> | void;
     onApplyScheduledNow?: (headerId: number) => Promise<void> | void;
     onRetryApplication?: (headerId: number) => Promise<void> | void;
+    onForceApply?: (headerId: number) => Promise<void> | void;
 };
 
 function money(value: number | null | undefined) {
@@ -190,16 +195,19 @@ export function UnifiedBatchDetailDialog({
     onReject,
     onApplyScheduledNow,
     onRetryApplication,
+    onForceApply,
 }: Props) {
     const [detail, setDetail] = React.useState<UnifiedBatchDetail | null>(null);
     const [loading, setLoading] = React.useState(false);
     const [confirmingApprove, setConfirmingApprove] = React.useState(false);
     const [rejecting, setRejecting] = React.useState(false);
+    const [approvalConflicts, setApprovalConflicts] = React.useState<UnifiedBatchDetail["conflicts"]>([]);
 
     React.useEffect(() => {
         let cancelled = false;
         if (!open || !batchId) {
             setDetail(null);
+            setApprovalConflicts([]);
             return;
         }
 
@@ -224,13 +232,42 @@ export function UnifiedBatchDetailDialog({
     const canAct = !readOnly && isPending && Boolean(onApprove && onReject) && !loading;
     const isScheduled = detail?.status === "APPROVED" && detail.application_status === "SCHEDULED";
     const canApplyScheduledNow = !readOnly && isScheduled && Boolean(onApplyScheduledNow) && !loading && !acting;
-    const canRetry = !readOnly && detail?.application_status === "FAILED" && Boolean(detail.retryable) && Boolean(onRetryApplication) && !loading && !acting;
+    const conflicts = React.useMemo(() => {
+        const values = [...(detail?.conflicts ?? []), ...(approvalConflicts ?? [])];
+        const seen = new Set<string>();
+        return values.filter((conflict) => {
+            const key = `${conflict.request_id}:${conflict.product_id}:${conflict.price_type_id}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }, [approvalConflicts, detail?.conflicts]);
+    const canRetry = !readOnly && detail?.application_status === "FAILED" && conflicts.length === 0 && Boolean(detail.retryable) && Boolean(onRetryApplication) && !loading && !acting;
     const displayStatus = detail ? displayPcrStatus(detail.status, detail.application_status, detail.effective_at) : "";
     const lines = React.useMemo(
         () => [...(detail?.price_details ?? []), ...(detail?.cost_details ?? [])],
         [detail?.cost_details, detail?.price_details],
     );
     const lineSummary = React.useMemo(() => buildLineSummary(lines), [lines]);
+    const conflictLabels = React.useMemo(
+        () => Object.fromEntries(
+            lines
+                .filter((line) => line.kind === "price_type" && line.price_type_id != null)
+                .map((line) => [
+                    `${line.product_id}:${line.price_type_id}`,
+                    {
+                        product_name: line.product_name,
+                        product_code: line.product_code,
+                        price_type_name: line.price_type_name,
+                        unit_name: line.unit_name,
+                    },
+                ]),
+        ),
+        [lines],
+    );
+    const applicationError = detail?.application_error
+        ? formatPriceSnapshotConflictMessage(detail.application_error, conflictLabels)
+        : null;
 
     const handleRetryApplication = async () => {
         if (!batchId || !onRetryApplication) return;
@@ -244,6 +281,30 @@ export function UnifiedBatchDetailDialog({
         await onApplyScheduledNow(batchId);
         const result = await getUnifiedBatch(batchId);
         setDetail(result.data);
+    };
+
+    const handleApprove = async (effectiveAt?: string | null) => {
+        if (!batchId || !onApprove) return;
+        try {
+            await onApprove(batchId, effectiveAt);
+            setConfirmingApprove(false);
+            onOpenChange(false);
+        } catch (error: unknown) {
+            const nextConflicts = priceSnapshotConflictsFromError(error);
+            if (nextConflicts.length > 0) {
+                setApprovalConflicts(nextConflicts);
+                setConfirmingApprove(false);
+                return;
+            }
+            throw error;
+        }
+    };
+
+    const handleForceApply = async () => {
+        if (!batchId || !onForceApply) return;
+        await onForceApply(batchId);
+        setApprovalConflicts([]);
+        onOpenChange(false);
     };
 
     return (
@@ -302,15 +363,34 @@ export function UnifiedBatchDetailDialog({
                                 <BatchDecisionSummaryFields detail={detail} />
                             </div>
 
-                            {detail.application_error ? (
-                                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
-                                    <div className="font-medium">Application issue</div>
-                                    <div className="mt-1">{detail.application_error}</div>
-                                    {detail.application_attempts != null ? (
+                            {applicationError ? (
+                               <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+                                   <div className="font-medium">Application issue</div>
+                                    <div className="mt-1 break-words">{applicationError}</div>
+                                   {detail.application_attempts != null ? (
                                         <div className="mt-1 text-xs">Attempts: {detail.application_attempts}</div>
                                     ) : null}
                                 </div>
                             ) : null}
+
+                            {detail.application_summary && detail.application_summary.failed > 0 ? (
+                                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+                                    <div className="font-medium">
+                                        {detail.application_summary.partial ? "Partially applied" : "Application failed"}
+                                    </div>
+                                    <div className="mt-1">
+                                        {detail.application_summary.applied} of {detail.application_summary.total} line(s) applied; {detail.application_summary.failed} failed.
+                                    </div>
+                                </div>
+                            ) : null}
+
+                            <PriceSnapshotConflictPanel
+                                conflicts={conflicts}
+                                recordLabel={`PCB-${detail.header_id}`}
+                                labels={conflictLabels}
+                                forceApplying={acting}
+                                onForceApply={onForceApply ? handleForceApply : undefined}
+                            />
 
                             <LineTable lines={lines} supplierName={detail.supplier_name} summary={lineSummary} />
                         </div>
@@ -351,9 +431,7 @@ export function UnifiedBatchDetailDialog({
                 onOpenChange={setConfirmingApprove}
                 onConfirm={async (effectiveAt) => {
                     if (!batchId || !onApprove) return;
-                    await onApprove(batchId, effectiveAt);
-                    setConfirmingApprove(false);
-                    onOpenChange(false);
+                    await handleApprove(effectiveAt);
                 }}
             />
 

@@ -752,8 +752,11 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
                                     const isExhausted = c.originalAmount > 0 && remaining <= 0;
                                     return (
                                         <div key={`source-${c.id}`} className={`p-2 rounded-md border shadow-sm transition-all group ${isExhausted ? 'bg-muted/30 border-dashed opacity-60' : 'bg-background border-border border-l-[3px] border-l-purple-500'}`}>
-                                            <div className="flex justify-between items-start mb-1">
-                                                <span className="text-[10px] font-black uppercase tracking-widest truncate pr-2 leading-tight">{c.label}</span>
+                                            <div className="flex justify-between items-start gap-2 mb-1">
+                                                <div className="flex min-w-0 flex-wrap items-center gap-1">
+                                                    <span className="text-[10px] font-black uppercase tracking-widest truncate pr-2 leading-tight">{c.label}</span>
+                                                    {c.isCrossEntity && <Badge variant="outline" className="text-[7px] uppercase px-1 py-0 h-3.5 leading-none border-purple-200 text-purple-700 bg-purple-50">Cross-Entity</Badge>}
+                                                </div>
                                                 <Badge variant="outline" className="text-[7px] uppercase px-1 py-0 h-3.5 leading-none border-purple-200 text-purple-700 bg-purple-50">{c.type}</Badge>
                                             </div>
                                             {c.customerName && <div className="text-[8px] font-bold text-muted-foreground truncate mb-1 leading-tight" title={c.customerName}>{c.customerName}</div>}

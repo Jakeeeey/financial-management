@@ -14,6 +14,7 @@ import {
     nowManila,
     pickId,
     readAuditUserId,
+    type PriceSnapshotConflict,
 } from "../../price-change-batches/_batch";
 import {
     applyProposedPrice,
@@ -45,6 +46,7 @@ const DUE_PAGE_SIZE = 500;
 type ApplyFailure = {
     request_id: number;
     message: string;
+    conflict?: PriceSnapshotConflict;
 };
 
 type ScheduledSummary = {
@@ -53,6 +55,7 @@ type ScheduledSummary = {
     failed: number;
     skipped: number;
     failures: ApplyFailure[];
+    conflicts: PriceSnapshotConflict[];
 };
 
 type HeaderCandidate = {
@@ -241,6 +244,7 @@ async function applyDueMixedBatches(
     let applied = 0;
     let failed = 0;
     let skipped = 0;
+    const conflicts: PriceSnapshotConflict[] = [];
 
     for (const headerId of headerIds) {
         const userId = auditUsers.get(headerId);
@@ -256,6 +260,7 @@ async function applyDueMixedBatches(
         if ("status" in result) {
             if (result.status === 409) {
                 skipped += 1;
+                if ("conflicts" in result && result.conflicts) conflicts.push(...result.conflicts);
             } else {
                 failed += 1;
                 failures.push({ request_id: headerId, message: result.error ?? "Mixed batch retry failed." });
@@ -264,6 +269,7 @@ async function applyDueMixedBatches(
         }
 
         applied += result.applied;
+        if (result.conflicts) conflicts.push(...result.conflicts);
         if (result.failed > 0) {
             failed += result.failed;
             failures.push({
@@ -273,7 +279,7 @@ async function applyDueMixedBatches(
         }
     }
 
-    return { scanned: headerIds.size, applied, failed, skipped, failures };
+    return { scanned: headerIds.size, applied, failed, skipped, failures, conflicts };
 }
 
 async function applyDuePriceRequests(
@@ -284,6 +290,7 @@ async function applyDuePriceRequests(
     const headerIds = new Set<number>();
     let applied = 0;
     let skipped = 0;
+    const conflicts: PriceSnapshotConflict[] = [];
 
     for (const row of rows) {
         const requestId = pickId(row.request_id) ?? 0;
@@ -314,6 +321,7 @@ async function applyDuePriceRequests(
                 await applyProposedPrice({
                     userId,
                     createdBy: readAuditUserId(claimed.requested_by),
+                    requestId: pickId(claimed.request_id),
                     productId,
                     priceTypeId,
                     currentPrice: claimed.current_price,
@@ -324,9 +332,11 @@ async function applyDuePriceRequests(
         if (outcome.state === "applied") {
             applied += 1;
         } else if (outcome.state === "failed") {
+            if (outcome.conflict) conflicts.push(outcome.conflict);
             failures.push({
                 request_id: requestId,
                 message: outcome.error ?? "Application failed.",
+                ...(outcome.conflict ? { conflict: outcome.conflict } : {}),
             });
         } else {
             skipped += 1;
@@ -342,7 +352,7 @@ async function applyDuePriceRequests(
         });
     }
 
-    return { scanned: rows.length, applied, failed: failures.length, skipped, failures };
+    return { scanned: rows.length, applied, failed: failures.length, skipped, failures, conflicts };
 }
 
 async function applyDueCostRequests(
@@ -353,6 +363,7 @@ async function applyDueCostRequests(
     const headerIds = new Set<number>();
     let applied = 0;
     let skipped = 0;
+    const conflicts: PriceSnapshotConflict[] = [];
 
     for (const row of rows) {
         const requestId = pickId(row.request_id) ?? 0;
@@ -402,7 +413,7 @@ async function applyDueCostRequests(
         });
     }
 
-    return { scanned: rows.length, applied, failed: failures.length, skipped, failures };
+    return { scanned: rows.length, applied, failed: failures.length, skipped, failures, conflicts };
 }
 
 export async function POST(req: NextRequest) {

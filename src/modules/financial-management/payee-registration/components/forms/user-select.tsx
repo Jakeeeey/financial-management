@@ -9,37 +9,51 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { PayeeUser } from "../../hooks/usePayeeUsers";
 
 interface UserSelectProps {
   users: PayeeUser[];
   loading: boolean;
+  error?: string | null;
+  hasMore?: boolean;
+  onSearch?: (query: string) => void;
+  onLoadMore?: () => void;
+  onRetry?: () => void;
   onSelect: (user: PayeeUser) => void;
 }
 
-export function UserSelect({ users, loading, onSelect }: UserSelectProps) {
+export function UserSelect({
+  users,
+  loading,
+  error,
+  hasMore = false,
+  onSearch,
+  onLoadMore,
+  onRetry,
+  onSelect,
+}: UserSelectProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedValue, setSelectedValue] = useState("");
+  const [selectedUser, setSelectedUser] = useState<PayeeUser | null>(null);
 
-  const selectedUser = users.find((u) => String(u.id || u.user_id || u.userId) === selectedValue);
-  const selectedName = selectedUser 
+  const selectedName = selectedUser
     ? `${selectedUser.firstName || selectedUser.user_fname || ""} ${selectedUser.lastName || selectedUser.user_lname || ""}`.trim()
     : "";
 
-  const visibleUsers = users.filter((u) => {
-    const name = `${u.firstName || u.user_fname || ""} ${u.lastName || u.user_lname || ""}`.trim().toLowerCase();
-    return name.includes(query.toLowerCase());
-  }).slice(0, 50);
+  const visibleUsers = users;
 
   return (
     <Popover
       open={open}
       onOpenChange={(nextOpen) => {
         setOpen(nextOpen);
-        if (nextOpen) setQuery("");
+        if (nextOpen) {
+          setQuery("");
+          onSearch?.("");
+        }
       }}
     >
       <PopoverTrigger asChild>
@@ -63,24 +77,44 @@ export function UserSelect({ users, loading, onSelect }: UserSelectProps) {
         <Command shouldFilter={false}>
           <CommandInput
             value={query}
-            onValueChange={setQuery}
+            onValueChange={(value) => {
+              setQuery(value);
+              onSearch?.(value);
+            }}
             placeholder="Search users..."
           />
           <CommandList 
             className="max-h-64 overflow-y-auto"
             onWheelCapture={(event) => event.stopPropagation()}
           >
-            <CommandEmpty>{loading ? "Loading..." : "No users found."}</CommandEmpty>
+            {error ? (
+              <div className="flex flex-col items-center gap-2 px-4 py-5 text-center text-xs text-muted-foreground">
+                <p>{error}</p>
+                {onRetry && (
+                  <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+                    <RefreshCw className="mr-2 h-3 w-3" />
+                    Retry
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <CommandEmpty>{loading ? "Loading..." : "No eligible users found."}</CommandEmpty>
+            )}
             <CommandGroup>
               {visibleUsers.map((u) => {
-                const id = String(u.id || u.user_id || u.userId);
+                const id = String(u.id ?? u.user_id ?? u.userId);
                 const name = `${u.firstName || u.user_fname || ""} ${u.lastName || u.user_lname || ""}`.trim();
+                const email = u.email || u.user_email || "";
+                const isAlreadyRegistered = Boolean(u.existingPayee);
                 return (
                   <CommandItem
                     key={id}
                     value={id}
+                    disabled={isAlreadyRegistered}
                     onSelect={() => {
+                      if (isAlreadyRegistered) return;
                       setSelectedValue(id);
+                      setSelectedUser(u);
                       setOpen(false);
                       onSelect(u);
                     }}
@@ -88,11 +122,33 @@ export function UserSelect({ users, loading, onSelect }: UserSelectProps) {
                     <Check
                       className={cn("mr-2 h-4 w-4", selectedValue === id ? "opacity-100" : "opacity-0")}
                     />
-                    {name}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate">{name || email || `User #${id}`}</p>
+                      {email && <p className="truncate text-xs text-muted-foreground">{email}</p>}
+                    </div>
+                    {isAlreadyRegistered && (
+                      <span className="ml-2 shrink-0 text-xs text-muted-foreground">
+                        Already registered
+                      </span>
+                    )}
                   </CommandItem>
                 );
               })}
             </CommandGroup>
+            {hasMore && onLoadMore && (
+              <div className="border-t p-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="w-full"
+                  disabled={loading}
+                  onClick={onLoadMore}
+                >
+                  {loading ? "Loading..." : "Load more users"}
+                </Button>
+              </div>
+            )}
           </CommandList>
         </Command>
       </PopoverContent>

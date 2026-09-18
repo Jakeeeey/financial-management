@@ -6,13 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Printer, CheckCircle, FileText, Loader2, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Printer, CheckCircle, XCircle, FileText, Loader2, ShieldCheck } from "lucide-react";
 import { usePRDetail } from "../hooks/usePRDetail";
 import { PRDetailHeader } from "./PRDetailHeader";
 import { PRLineItemsTable } from "./PRLineItemsTable";
 import type { ProcurementDetail } from "../utils/types";
 import { toBoolLike } from "../utils/parse";
-import { approvePR, generatePOFromPR } from "../providers/approvalService";
+import { approvePR, rejectPR, generatePOFromPR } from "../providers/approvalService";
 import { toast } from "sonner";
 import PrintProcurementDialog from "./PrintProcurementDialog";
 
@@ -26,23 +26,13 @@ export default function ApprovalDetailPage({ id, currentUserName }: ApprovalDeta
   const { master, details, loading, error, reload } = usePRDetail(id);
   const [localDetails, setLocalDetails] = useState<ProcurementDetail[]>([]);
   const [approving, setApproving] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [showRejectConfirm, setShowRejectConfirm] = useState(false);
   const [printDialogOpen, setPrintDialogOpen] = useState(false);
 
   useEffect(() => { setLocalDetails(details); }, [details]);
-
-  const handleDetailUpdated = useCallback((detailId: number, changes: Partial<ProcurementDetail>) => {
-    setLocalDetails((prev) => prev.map((d) => (d.id === detailId ? { ...d, ...changes } : d)));
-  }, []);
-
-  const handleDetailDeleted = useCallback((detailId: number) => {
-    setLocalDetails((prev) => prev.filter((d) => d.id !== detailId));
-  }, []);
-
-  const handleDetailAdded = useCallback((detail: ProcurementDetail) => {
-    setLocalDetails((prev) => [...prev, detail]);
-  }, []);
 
   const computedTotal = localDetails.reduce((a, b) => a + Number((b.qty || 0) * (b.unit_price || 0)), 0);
 
@@ -60,19 +50,31 @@ export default function ApprovalDetailPage({ id, currentUserName }: ApprovalDeta
     } finally { setApproving(false); }
   }
 
+  async function handleReject() {
+    setRejecting(true);
+    try {
+      await rejectPR(id);
+      toast.success("Procurement request rejected");
+      setShowRejectConfirm(false);
+      reload();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to reject");
+    } finally { setRejecting(false); }
+  }
+
   async function handleGeneratePO() {
     setGenerating(true);
     try {
       const result = await generatePOFromPR(id);
-      toast.success(`Purchase Order #${result.purchase_order_no} generated`);
-      router.push(`/fm/procurement/purchase-order/${result.purchase_order_id}`);
+      toast.success(`Procurement Summary #${result.purchase_order_no} generated`);
+      router.push(`/fm/procurement/procurement-summary/${id}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to generate PO");
     } finally { setGenerating(false); }
   }
 
   const isApproved = toBoolLike(master?.isApproved);
-  const readOnly = isApproved;
+  const isRejected = (master?.status ?? "").toLowerCase() === "rejected";
 
   if (loading) {
     return <div className="space-y-4"><Skeleton className="h-32 w-full" /><Skeleton className="h-64 w-full" /></div>;
@@ -98,10 +100,16 @@ export default function ApprovalDetailPage({ id, currentUserName }: ApprovalDeta
           <Button variant="outline" size="sm" onClick={handlePrint}>
             <Printer className="h-4 w-4 mr-1" /> Print
           </Button>
-          {!isApproved && (
+          {!isApproved && !isRejected && (
             <Button onClick={() => setShowConfirm(true)} disabled={approving}>
               {approving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-1" />}
               Approve
+            </Button>
+          )}
+          {!isApproved && !isRejected && (
+            <Button variant="destructive" onClick={() => setShowRejectConfirm(true)} disabled={rejecting}>
+              {rejecting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <XCircle className="h-4 w-4 mr-1" />}
+              Reject
             </Button>
           )}
           {isApproved && !master.po_no && (
@@ -111,7 +119,7 @@ export default function ApprovalDetailPage({ id, currentUserName }: ApprovalDeta
             </Button>
           )}
           {master.po_no && (
-            <Button variant="outline" onClick={() => router.push(`/fm/procurement/purchase-order/${master.po_no}`)}>
+            <Button variant="outline" onClick={() => router.push(`/fm/procurement/procurement-summary/${id}`)}>
               <FileText className="h-4 w-4 mr-1" /> PO #{master.po_no}
             </Button>
           )}
@@ -120,17 +128,16 @@ export default function ApprovalDetailPage({ id, currentUserName }: ApprovalDeta
 
       <PRDetailHeader master={master} computedTotal={computedTotal} />
 
+      {isRejected && (
+        <div className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          Rejected — create a new request
+        </div>
+      )}
+
       <Card>
         <CardHeader><CardTitle className="text-lg">Line Items</CardTitle></CardHeader>
         <CardContent>
-          <PRLineItemsTable
-            details={localDetails}
-            procurementId={id}
-            readOnly={readOnly}
-            onDetailUpdated={handleDetailUpdated}
-            onDetailDeleted={handleDetailDeleted}
-            onDetailAdded={handleDetailAdded}
-          />
+          <PRLineItemsTable details={localDetails} />
         </CardContent>
       </Card>
 
@@ -151,6 +158,28 @@ export default function ApprovalDetailPage({ id, currentUserName }: ApprovalDeta
             <Button variant="ghost" onClick={() => setShowConfirm(false)} disabled={approving} className="flex-1">Cancel</Button>
             <Button onClick={handleApprove} disabled={approving} className="flex-[1.5] bg-emerald-600 hover:bg-emerald-700 text-white">
               {approving ? "Approving..." : "Approve"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showRejectConfirm} onOpenChange={setShowRejectConfirm}>
+        <DialogContent className="max-w-md p-0 overflow-hidden rounded-2xl">
+          <div className="bg-muted/20 p-6 border-b">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-red-50 rounded-2xl shadow-sm"><XCircle className="h-6 w-6 text-red-600" /></div>
+              <DialogTitle className="text-xl font-bold tracking-tight">Confirm Rejection</DialogTitle>
+            </div>
+          </div>
+          <div className="p-6 space-y-4">
+            <DialogDescription className="text-sm">
+              Reject procurement <strong>{master.procurement_no}</strong>? This action is terminal and cannot be undone.
+            </DialogDescription>
+          </div>
+          <DialogFooter className="p-4 bg-muted/10 border-t flex items-center gap-2">
+            <Button variant="ghost" onClick={() => setShowRejectConfirm(false)} disabled={rejecting} className="flex-1">Cancel</Button>
+            <Button variant="destructive" onClick={handleReject} disabled={rejecting} className="flex-[1.5]">
+              {rejecting ? "Rejecting..." : "Reject"}
             </Button>
           </DialogFooter>
         </DialogContent>

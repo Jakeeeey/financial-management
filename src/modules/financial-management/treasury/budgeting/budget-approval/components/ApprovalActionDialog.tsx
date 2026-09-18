@@ -29,7 +29,9 @@ export function ApprovalActionDialog({
   count,
   loading = false,
 }: ApprovalActionDialogProps) {
-  const config = {
+  const [feedback, setFeedback] = React.useState("");
+
+  const configMap = {
     approve: {
       title: "Confirm Approval",
       description: `You are about to approve ${count} budget entry(ies). This action will move them to the Approved status and allow further transaction processing.`,
@@ -48,10 +50,12 @@ export function ApprovalActionDialog({
       buttonText: "Reject Budget",
       badge: "Rejection",
     },
-  }[type as "approve" | "reject"];
+  };
+
+  const config = configMap[type === "reject" ? "reject" : "approve"];
 
   const handleConfirm = () => {
-    onConfirm("");
+    onConfirm(feedback.trim());
   };
 
   return (
@@ -79,6 +83,19 @@ export function ApprovalActionDialog({
           <DialogDescription className="text-sm font-medium leading-relaxed">
             {config.description}
           </DialogDescription>
+
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+              Feedback / Remarks (Optional)
+            </label>
+            <textarea
+              value={feedback}
+              onChange={(e) => setFeedback(e.target.value)}
+              placeholder="Enter optional feedback or notes for this decision..."
+              rows={3}
+              className="w-full rounded-xl border border-input bg-background px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"
+            />
+          </div>
         </div>
 
         <DialogFooter className="p-4 bg-muted/10 border-t border-border/40 flex items-center gap-2">

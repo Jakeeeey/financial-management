@@ -148,13 +148,21 @@ export default function AllocationSidePanel({
 
                         return (
                             <div key={`apply-${inv.id}-${c.id}`} className="flex flex-col gap-1.5 py-2 border-b border-border/50 last:border-0">
-                                <div className="flex justify-between items-start">
-                                    <span className="text-[10px] font-black uppercase text-foreground leading-tight">{c.label}</span>
+                                <div className="flex justify-between items-start gap-2">
+                                    <div className="flex min-w-0 flex-wrap items-center gap-1">
+                                        <span className="text-[10px] font-black uppercase text-foreground leading-tight">{c.label}</span>
+                                        {c.isCrossEntity && <Badge variant="outline" className="h-3.5 px-1 text-[8px] uppercase leading-none text-purple-700 border-purple-200 bg-purple-50">Cross-Entity</Badge>}
+                                    </div>
                                     <span className="text-[9px] font-bold text-muted-foreground uppercase">Rem: ₱{remaining.toLocaleString()}</span>
                                 </div>
+                                {(c.customerName || c.customerCode) && (
+                                    <div className="truncate text-[8px] font-bold text-muted-foreground" title={`Source customer: ${c.customerName || c.customerCode}`}>
+                                        Source: {c.customerName || c.customerCode}
+                                    </div>
+                                )}
                                 <div className="relative mt-1">
                                     <span className="absolute left-2.5 top-2 text-[10px] font-black text-muted-foreground">₱</span>
-                                    <Input type="number" className="h-8 pl-6 pr-12 text-xs font-black text-right shadow-inner bg-background" placeholder="0.00" value={existingAlloc?.amountApplied || ""} onChange={(e) => handleAllocate(inv.id, c.id, parseFloat(e.target.value) || 0)} />
+                                    <Input type="number" aria-label={`${c.label} allocation amount`} className="h-8 pl-6 pr-12 text-xs font-black text-right shadow-inner bg-background" placeholder="0.00" value={existingAlloc?.amountApplied || ""} onChange={(e) => handleAllocate(inv.id, c.id, parseFloat(e.target.value) || 0)} />
                                     <Button size="sm" onClick={() => handleAllocate(inv.id, c.id, targetMax)} className="absolute right-1 top-1 h-6 px-2 bg-purple-50 text-[9px] font-black text-purple-600 hover:bg-purple-200">MAX</Button>
                                 </div>
                             </div>

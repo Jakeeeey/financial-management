@@ -157,13 +157,25 @@ export const budgetHistoryService = {
   },
 
   async getHistoricalBudgets(params: { year: string; month: string; budget_no?: string; division_id?: string; department_id?: string; coa_id?: string }): Promise<HistoryNode[]> {
+    const monthNames = [
+      "January", "February", "March", "April", "May", "June", 
+      "July", "August", "September", "October", "November", "December"
+    ];
+    const monthIndex = monthNames.findIndex(m => m.toLowerCase() === params.month.toLowerCase());
+    const monthNum = monthIndex !== -1 ? monthIndex + 1 : undefined;
+
     const query = new URLSearchParams({
       "filter[status][_eq]": "Approved",
       "filter[deleted_at][_null]": "true",
       "filter[year][_eq]": params.year,
-      "filter[month][_eq]": params.month,
       "limit": "-1"
     });
+
+    if (monthNum) {
+      query.append("filter[month][_in]", `${params.month},${monthNum}`);
+    } else if (params.month) {
+      query.append("filter[month][_eq]", params.month);
+    }
 
     if (params.division_id) {
       query.set("filter[division_id][_eq]", params.division_id);

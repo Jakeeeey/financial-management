@@ -19,6 +19,13 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface EditPayeeFormProps {
   payee: Payee;
@@ -32,7 +39,15 @@ export function EditPayeeForm({
   onCancel,
 }: EditPayeeFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { users: payeeUsers, loading: isLoadingPayeeUsers } = usePayeeUsers();
+  const {
+    users: payeeUsers,
+    loading: isLoadingPayeeUsers,
+    error: payeeUsersError,
+    hasMore: hasMorePayeeUsers,
+    searchUsers,
+    loadMore: loadMorePayeeUsers,
+    retry: retryPayeeUsers,
+  } = usePayeeUsers({ currentPayeeId: payee.id });
   const form = useForm({
     resolver: zodResolver(PayeeFormSchema),
     defaultValues: {
@@ -43,7 +58,7 @@ export function EditPayeeForm({
       bank_details: payee.bank_details || "",
       email_address: payee.email_address || "",
       phone_number: payee.phone_number || "",
-      isActive: payee.isActive || 1,
+      isActive: payee.isActive ?? 1,
     },
   });
 
@@ -87,6 +102,11 @@ export function EditPayeeForm({
               <UserSelect
                 users={payeeUsers}
                 loading={isLoadingPayeeUsers}
+                error={payeeUsersError}
+                hasMore={hasMorePayeeUsers}
+                onSearch={searchUsers}
+                onLoadMore={loadMorePayeeUsers}
+                onRetry={retryPayeeUsers}
                 onSelect={(user) => {
                   const userId = user.id || user.user_id || user.userId;
                   if (userId) form.setValue("user_id", userId, { shouldValidate: true });
@@ -124,7 +144,7 @@ export function EditPayeeForm({
               )}
             />
 
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-3">
               <FormField
                 control={form.control}
                 name="supplier_type"
@@ -142,6 +162,34 @@ export function EditPayeeForm({
                         <option value="NON-TRADE">Non-Trade</option>
                       </select>
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="isActive"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Status</FormLabel>
+                    <Select
+                      value={String(field.value ?? 1)}
+                      onValueChange={(value) => field.onChange(Number(value))}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select status" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="1">Active</SelectItem>
+                        <SelectItem value="0">Inactive</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Inactive payees remain available for history but cannot be used for new transactions.
+                    </p>
                     <FormMessage />
                   </FormItem>
                 )}

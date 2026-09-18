@@ -62,6 +62,17 @@ export const AttachmentSchema = z.object({
 });
 export type BudgetAttachment = z.infer<typeof AttachmentSchema>;
 
+export const BudgetFeedbackSchema = z.object({
+  id: z.number().or(z.string()),
+  budget_id: z.number().or(z.string()),
+  status: z.enum(["Approved", "Rejected"]),
+  feedback: z.string().nullable().optional(),
+  voted_by: z.number().or(UserSchema).nullable().optional(),
+  voted_by_name: z.string().optional(),
+  voted_at: TimestampSchema,
+});
+export type BudgetFeedback = z.infer<typeof BudgetFeedbackSchema>;
+
 export const BudgetSchema = z.object({
   id: z.number().or(z.string()),
   budget_no: z.string(),
@@ -88,6 +99,7 @@ export const BudgetSchema = z.object({
   coa_name: z.string().optional(),
   gl_code: z.string().optional(),
   attachments: z.array(z.any()).optional().default([]),
+  feedbacks: z.array(z.any()).optional().default([]),
 });
 export type Budget = z.infer<typeof BudgetSchema>;
 

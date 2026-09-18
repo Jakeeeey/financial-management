@@ -15,6 +15,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -209,7 +210,15 @@ export function AddPayeeForm({
   const supplierTypeLabel = supplierType === "TRADE" ? "Trade" : "Non-Trade";
   const { paymentTerms, isLoading: isLoadingPaymentTerms } = usePaymentTerms();
   const { deliveryTerms, isLoading: isLoadingDeliveryTerms } = useDeliveryTerms();
-  const { users: payeeUsers, loading: isLoadingPayeeUsers } = usePayeeUsers();
+  const {
+    users: payeeUsers,
+    loading: isLoadingPayeeUsers,
+    error: payeeUsersError,
+    hasMore: hasMorePayeeUsers,
+    searchUsers,
+    loadMore: loadMorePayeeUsers,
+    retry: retryPayeeUsers,
+  } = usePayeeUsers();
   const form = useForm({
     resolver: zodResolver(PayeeFormSchema),
     defaultValues: {
@@ -524,6 +533,11 @@ export function AddPayeeForm({
               <UserSelect
                 users={payeeUsers}
                 loading={isLoadingPayeeUsers}
+                error={payeeUsersError}
+                hasMore={hasMorePayeeUsers}
+                onSearch={searchUsers}
+                onLoadMore={loadMorePayeeUsers}
+                onRetry={retryPayeeUsers}
                 onSelect={(user) => {
                   const userId = user.id || user.user_id || user.userId;
                   if (userId) form.setValue("user_id", userId, { shouldValidate: true });
@@ -635,6 +649,16 @@ export function AddPayeeForm({
                   </FormItem>
                 )}
               />
+            </div>
+
+            <div className="flex items-start justify-between gap-4 rounded-md border border-border bg-muted/30 px-3 py-2">
+              <div>
+                <p className="text-sm font-medium">Account Status</p>
+                <p className="text-xs text-muted-foreground">
+                  New payees created here are Active by default. Change status from Payee Registration after creation.
+                </p>
+              </div>
+              <Badge variant="default">Active</Badge>
             </div>
 
             <FormField

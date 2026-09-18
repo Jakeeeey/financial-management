@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { isEffectivelyActivePayee } from "../_payee-status";
 
 export const runtime = "nodejs";
 
@@ -10,7 +11,7 @@ type DirectusSupplier = {
     id?: number;
     supplier_name?: string;
     supplier_shortcut?: string | null;
-    isActive?: boolean | number | null;
+    isActive?: boolean | number | string | null;
 };
 
 type DirectusList<T> = {
@@ -27,7 +28,8 @@ function supplierParams(type: string) {
     params.set("limit", "-1");
     params.set("sort", "supplier_name");
     params.set("fields", "id,supplier_name,supplier_shortcut,isActive,supplier_type");
-    params.set("filter[_and][0][isActive][_eq]", "1");
+    params.set("filter[_and][0][_or][0][isActive][_eq]", "1");
+    params.set("filter[_and][0][_or][1][isActive][_null]", "true");
     params.set("filter[_and][1][supplier_type][_eq]", supplierTypeFilter(type));
     return params;
 }
@@ -61,7 +63,7 @@ export async function GET(request: NextRequest) {
             id: supplier.id,
             supplier_name: supplier.supplier_name ?? "",
             supplier_shortcut: supplier.supplier_shortcut ?? "",
-            isActive: supplier.isActive === true || supplier.isActive === 1,
+            isActive: isEffectivelyActivePayee(supplier.isActive),
             supplier_type: supplier.supplier_type ?? "",
         })));
     } catch (err: unknown) {

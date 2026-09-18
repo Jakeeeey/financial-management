@@ -30,6 +30,7 @@ import type {
 interface ItemVariantModalProps {
   itemId?: number | null;
   variantId?: number | null;
+  cloneVariantId?: number | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
@@ -40,8 +41,9 @@ interface AttrSel {
   valueId: number;
 }
 
-export function ItemVariantModal({ itemId, variantId, open, onOpenChange, onSaved }: ItemVariantModalProps) {
+export function ItemVariantModal({ itemId, variantId, cloneVariantId, open, onOpenChange, onSaved }: ItemVariantModalProps) {
   const isEdit = variantId != null;
+  const isClone = !isEdit && cloneVariantId != null;
   const [sku, setSku] = useState("");
   const [listPrice, setListPrice] = useState("");
   const [active, setActive] = useState("active");
@@ -119,7 +121,36 @@ export function ItemVariantModal({ itemId, variantId, open, onOpenChange, onSave
               console.error("[ItemVariantModal] load item", err);
             })
             .finally(() => {
-              if (!cancelled) setLoading(false);
+              if (cancelled) return;
+              if (cloneVariantId == null) {
+                setLoading(false);
+                return;
+              }
+              getVariantById(cloneVariantId)
+                .then((res) => {
+                  if (cancelled) return;
+                  const v = res.data;
+                  setSku(v.sku || "");
+                  setListPrice(v.list_price != null ? String(v.list_price) : "");
+                  setUomId(null);
+                  const valueIds = v.valueIds || [];
+                  setSelectedAttrs(
+                    valueIds
+                      .map((vid) => {
+                        const av = vals.find((a) => a.id === vid);
+                        return av ? { attrId: Number(av.attribute_id), valueId: vid } : null;
+                      })
+                      .filter((x): x is AttrSel => x !== null && x.attrId > 0)
+                  );
+                })
+                .catch((err) => {
+                  if (cancelled) return;
+                  console.error("[ItemVariantModal] load clone source", err);
+                  toast.error(err instanceof Error ? err.message : "Failed to load variant to clone");
+                })
+                .finally(() => {
+                  if (!cancelled) setLoading(false);
+                });
             });
         } else {
           setLoading(false);
@@ -133,7 +164,7 @@ export function ItemVariantModal({ itemId, variantId, open, onOpenChange, onSave
     return () => {
       cancelled = true;
     };
-  }, [open, variantId, itemId]);
+  }, [open, variantId, itemId, cloneVariantId]);
 
   function autoGenName(): string {
     const vals = selectedAttrs
@@ -201,7 +232,7 @@ export function ItemVariantModal({ itemId, variantId, open, onOpenChange, onSave
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto overflow-x-hidden">
         <DialogHeader>
-          <DialogTitle className="truncate">{isEdit ? "Edit Variant" : "Add Variant"}</DialogTitle>
+          <DialogTitle className="truncate">{isEdit ? "Edit Variant" : isClone ? "Clone Variant" : "Add Variant"}</DialogTitle>
         </DialogHeader>
 
         {loading ? (

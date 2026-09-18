@@ -72,9 +72,40 @@ export function useUnifiedApprovals(
             toast.success(`${result.affected} price change line(s) ${verb}.`);
             await refresh();
         } catch (error: unknown) {
+            if (api.isPriceSnapshotConflictError(error)) throw error;
             if (applyActionError(error, "Failed to approve batch", { setUnauthorized })) {
                 throw error;
             }
+            throw error;
+        } finally {
+            setActing(false);
+        }
+    }, [refresh]);
+
+    const forceApplyBatch = React.useCallback(async (headerId: number) => {
+        setActing(true);
+        try {
+            const batch = await api.getPriceChangeBatch(headerId);
+            const applicationStatus = String(batch.data?.application_status ?? "").toUpperCase();
+            const hasExistingApplication = batch.data?.status === "APPROVED" &&
+                ["FAILED", "SCHEDULED"].includes(applicationStatus);
+            const result = hasExistingApplication
+                ? await api.overrideScheduledPriceChange({
+                    kind: "price_batch",
+                    id: headerId,
+                    action: "force_apply",
+                })
+                : await api.forceApplyPriceChangeBatch(headerId);
+            await api.waitForBatchDecision({
+                kind: "price_batch",
+                headerId,
+                expectedStatus: "APPROVED",
+                expectedApplicationStatus: "APPLIED",
+            });
+            toast.success(`${result.affected} price change line(s) force-applied and approved.`);
+            await refresh();
+        } catch (error: unknown) {
+            if (applyActionError(error, "Failed to force apply batch", { setUnauthorized })) throw error;
             throw error;
         } finally {
             setActing(false);
@@ -152,7 +183,28 @@ export function useUnifiedApprovals(
             toast.success(`${result.affected} mixed batch line(s) ${verb}.`);
             await refresh();
         } catch (error: unknown) {
+            if (api.isPriceSnapshotConflictError(error)) throw error;
             if (applyActionError(error, "Failed to approve mixed batch", { setUnauthorized })) throw error;
+            throw error;
+        } finally {
+            setActing(false);
+        }
+    }, [refresh]);
+
+    const forceApplyMixedBatch = React.useCallback(async (headerId: number) => {
+        setActing(true);
+        try {
+            const result = await api.forceApplyUnifiedBatch(headerId);
+            await api.waitForBatchDecision({
+                kind: "mixed_batch",
+                headerId,
+                expectedStatus: "APPROVED",
+                expectedApplicationStatus: "APPLIED",
+            });
+            toast.success(`${result.affected} mixed batch line(s) force-applied and approved.`);
+            await refresh();
+        } catch (error: unknown) {
+            if (applyActionError(error, "Failed to force apply mixed batch", { setUnauthorized })) throw error;
             throw error;
         } finally {
             setActing(false);
@@ -182,9 +234,24 @@ export function useUnifiedApprovals(
             toast.success(verb);
             await refresh();
         } catch (error: unknown) {
+            if (api.isPriceSnapshotConflictError(error)) throw error;
             if (applyActionError(error, "Failed to approve request", { setUnauthorized })) {
                 throw error;
             }
+            throw error;
+        } finally {
+            setActing(false);
+        }
+    }, [refresh]);
+
+    const forceApplyPriceRequest = React.useCallback(async (requestId: number) => {
+        setActing(true);
+        try {
+            await api.forceApplyPriceRequest(requestId);
+            toast.success("Price change request force-applied and approved.");
+            await refresh();
+        } catch (error: unknown) {
+            if (applyActionError(error, "Failed to force apply request", { setUnauthorized })) throw error;
             throw error;
         } finally {
             setActing(false);
@@ -287,12 +354,15 @@ export function useUnifiedApprovals(
         unauthorized,
         refresh,
         approveBatch,
+        forceApplyBatch,
         rejectBatch,
         approveCostBatch,
         rejectCostBatch,
         approveMixedBatch,
+        forceApplyMixedBatch,
         rejectMixedBatch,
         approvePriceRequest,
+        forceApplyPriceRequest,
         rejectPriceRequest,
         applyScheduledNow,
         rejectScheduled,

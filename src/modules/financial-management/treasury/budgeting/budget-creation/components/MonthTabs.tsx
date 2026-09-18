@@ -35,10 +35,10 @@ export function MonthTabs() {
             ref={isActive ? activeRef : null}
             onClick={() => updateFilter("month", value)}
             className={`
-              h-8 w-full min-w-0 rounded-lg px-2 text-xs font-bold transition-all duration-150 active:scale-95
+              h-8.5 w-full min-w-0 rounded-xl px-2 text-xs transition-all duration-150 active:scale-95 flex items-center justify-center
               ${isActive
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                ? "bg-primary text-primary-foreground font-bold shadow-sm border border-primary"
+                : "bg-muted/60 text-muted-foreground border border-border/50 hover:bg-muted hover:border-border hover:text-foreground font-semibold shadow-2xs"
               }
             `}
           >

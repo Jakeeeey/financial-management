@@ -8,12 +8,14 @@ import {
     getDetails as getPriceDetails,
     getHeader,
     isRecord,
+    markPriceBatchForceApplied,
     mustBase,
     normalizeHeaderId,
     nowManila,
     pickId,
     resolveBatchDecisionUserNames,
     supplierNameOf,
+    type PriceSnapshotConflict,
 } from "./price-change-batches/_batch";
 import {
     COST_DETAILS,
@@ -85,6 +87,15 @@ export type UnifiedBatchLine = {
     applied_by?: unknown;
 };
 
+export type UnifiedApplicationSummary = {
+    total: number;
+    applied: number;
+    failed: number;
+    scheduled: number;
+    applying: number;
+    partial: boolean;
+};
+
 export type UnifiedBatchData = {
     id: number;
     header_id: number;
@@ -110,6 +121,8 @@ export type UnifiedBatchData = {
     retryable?: boolean;
     applied_at?: string | null;
     applied_by?: unknown;
+    application_summary: UnifiedApplicationSummary;
+    conflicts: PriceSnapshotConflict[];
     price_details: UnifiedBatchLine[];
     cost_details: UnifiedBatchLine[];
     batch_types: Array<"PRICE_TYPE" | "LIST_COST">;
@@ -201,6 +214,30 @@ function mapCostLine(line: DetailRow): UnifiedBatchLine {
     };
 }
 
+function summarizeApplicationLines(lines: UnifiedBatchLine[]): UnifiedApplicationSummary {
+    let applied = 0;
+    let failed = 0;
+    let scheduled = 0;
+    let applying = 0;
+
+    for (const line of lines) {
+        const status = String(line.application_status ?? "").toUpperCase();
+        if (status === "APPLIED") applied += 1;
+        if (status === "FAILED") failed += 1;
+        if (status === "SCHEDULED") scheduled += 1;
+        if (status === "APPLYING") applying += 1;
+    }
+
+    return {
+        total: lines.length,
+        applied,
+        failed,
+        scheduled,
+        applying,
+        partial: applied > 0 && failed > 0,
+    };
+}
+
 export async function getUnifiedBatch(headerId: number): Promise<UnifiedBatchData | null> {
     const header = await getHeader(headerId);
     if (!header) return null;
@@ -218,6 +255,23 @@ export async function getUnifiedBatch(headerId: number): Promise<UnifiedBatchDat
     const requestedBy = userIdOf(header.requested_by);
     const { requested_by_name, approved_by_name, rejected_by_name } = await resolveBatchDecisionUserNames(header);
     const allLines = [...price, ...cost];
+    const conflictCandidates = priceDetails
+        .filter((line) =>
+            String(line.application_status ?? "").toUpperCase() === "FAILED" &&
+            String(line.application_error ?? "").toLowerCase().includes("price changed after submission"),
+        )
+        .map((line) => ({
+            request_id: pickId(line.request_id) ?? 0,
+            product_id: detailProductId(line),
+            price_type_id: detailPriceTypeId(line),
+            current_price: line.current_price,
+            proposed_price: line.proposed_price,
+        }))
+        .filter((line) => line.product_id > 0 && line.price_type_id > 0);
+    const conflicts = conflictCandidates.length > 0
+        ? await findPriceSnapshotConflicts(conflictCandidates)
+        : [];
+    const applicationSummary = summarizeApplicationLines(allLines);
     const headerApplicationStatus = String(header.application_status ?? "").toUpperCase();
     const retryable = String(header.status ?? "").toUpperCase() === "APPROVED" &&
         ["FAILED", "SCHEDULED"].includes(headerApplicationStatus) &&
@@ -252,6 +306,8 @@ export async function getUnifiedBatch(headerId: number): Promise<UnifiedBatchDat
         retryable,
         applied_at: header.applied_at ?? null,
         applied_by: header.applied_by,
+        application_summary: applicationSummary,
+        conflicts,
         price_details: price,
         cost_details: cost,
         batch_types: [
@@ -556,7 +612,9 @@ async function refreshUnifiedApplicationStatus(headerId: number, userId: number 
             application_error: error,
             application_lock_id: null,
             application_started_at: null,
-            ...(status === "APPLIED" ? { applied_at: nowManila(), ...(userId ? { applied_by: userId } : {}) } : {}),
+            ...(status === "APPLIED"
+                ? { applied_at: nowManila(), ...(userId ? { applied_by: userId } : {}) }
+                : { applied_at: null, applied_by: null }),
         },
         "header_id,status,application_status,application_attempts,application_error",
     );
@@ -566,11 +624,13 @@ async function refreshUnifiedApplicationStatus(headerId: number, userId: number 
     return status;
 }
 
-async function applyUnifiedDetails(headerId: number, userId: number) {
+async function applyUnifiedDetails(headerId: number, userId: number, options?: { force?: boolean }) {
+    const force = options?.force === true;
     let applied = 0;
     let failed = 0;
     let warning: string | null = null;
     let retryable = false;
+    const conflicts: PriceSnapshotConflict[] = [];
 
     try {
         const [priceRows, costRows] = await Promise.all([
@@ -587,15 +647,20 @@ async function applyUnifiedDetails(headerId: number, userId: number) {
                 apply: async (claimedRow) => {
                     await applyProposedPrice({
                         userId,
+                        requestId: pickId(claimedRow.request_id),
                         productId: detailProductId(claimedRow),
                         priceTypeId: detailPriceTypeId(claimedRow),
                         currentPrice: claimedRow.current_price,
                         proposedPrice: Number(claimedRow.proposed_price),
+                        bypassSnapshotCheck: force,
                     });
                 },
             });
             if (outcome.state === "applied") applied += 1;
-            if (outcome.state === "failed") failed += 1;
+            if (outcome.state === "failed") {
+                failed += 1;
+                if (outcome.conflict) conflicts.push(outcome.conflict);
+            }
         }
 
         for (const row of costRows) {
@@ -620,10 +685,16 @@ async function applyUnifiedDetails(headerId: number, userId: number) {
         retryable = notice.retryable;
     }
 
-    return { applied, failed, warning, retryable };
+    return { applied, failed, warning, retryable, conflicts };
 }
 
-export async function approveUnifiedBatch(headerId: number, userId: number, effectiveAt?: string | null) {
+export async function approveUnifiedBatch(
+    headerId: number,
+    userId: number,
+    effectiveAt?: string | null,
+    options?: { force?: boolean },
+) {
+    const force = options?.force === true;
     const batch = await getBatchForDecision(headerId);
     if (!batch) return { error: "Batch not found", status: 404 } as const;
     if (batch.status !== "PENDING") return { error: "Only PENDING batches can be approved.", status: 409 } as const;
@@ -650,19 +721,30 @@ export async function approveUnifiedBatch(headerId: number, userId: number, effe
         }
     }
 
-    const conflicts = await findPriceSnapshotConflicts(
+    const preflightConflicts = await findPriceSnapshotConflicts(
         batch.price_details.map((line) => ({
             request_id: line.request_id ?? undefined,
             product_id: line.product_id,
             price_type_id: line.price_type_id!,
             current_price: line.current_price,
+            proposed_price: line.proposed_price,
         })),
     );
-    if (conflicts.length > 0) {
+    if (preflightConflicts.length > 0 && !force) {
         return {
             error: "Mixed batch contains prices that changed after submission.",
             status: 409,
-            conflicts,
+            code: "price_snapshot_conflict",
+            conflicts: preflightConflicts,
+            retryable: false,
+        } as const;
+    }
+    if (force && preflightConflicts.length === 0) {
+        return {
+            error: "Force Apply is only available when a current price snapshot conflict exists.",
+            status: 409,
+            code: "force_apply_requires_conflict",
+            retryable: false,
         } as const;
     }
 
@@ -670,7 +752,7 @@ export async function approveUnifiedBatch(headerId: number, userId: number, effe
     if (!claimed) return { error: "Batch approval was already claimed or is no longer pending.", status: 409 } as const;
 
     const scheduled = Boolean(effectiveAt && new Date(effectiveAt).getTime() > Date.now());
-    const effective = effectiveAt || claimed.now;
+    const effective = force ? claimed.now : effectiveAt || claimed.now;
 
     try {
         await reconcileDetails(PRICE_DETAILS, headerId, userId, claimed.now, effective, batch.price_details.length, claimed.lockId);
@@ -680,7 +762,14 @@ export async function approveUnifiedBatch(headerId: number, userId: number, effe
         await patchFiltered(
             "price_change_headers",
             { _and: [{ header_id: { _eq: headerId } }, { application_lock_id: { _eq: claimed.lockId } }] },
-            { application_status: "FAILED", application_lock_id: null, application_started_at: null, application_error: error instanceof Error ? error.message : String(error) },
+            {
+                application_status: "FAILED",
+                application_lock_id: null,
+                application_started_at: null,
+                application_error: error instanceof Error ? error.message : String(error),
+                applied_at: null,
+                applied_by: null,
+            },
             "header_id,status,application_status,application_error",
         ).catch(() => undefined);
         const message = error instanceof Error ? error.message : String(error);
@@ -694,8 +783,14 @@ export async function approveUnifiedBatch(headerId: number, userId: number, effe
     let failed = 0;
     let warning: string | null = null;
     let retryable = false;
+    let conflicts: PriceSnapshotConflict[] = [];
     if (!scheduled) {
-        ({ applied, failed, warning, retryable } = await applyUnifiedDetails(headerId, userId));
+        const application = await applyUnifiedDetails(headerId, userId, { force });
+        applied = application.applied;
+        failed = application.failed;
+        warning = application.warning;
+        retryable = application.retryable;
+        conflicts = application.conflicts;
     }
 
     let applicationStatus: string | null = null;
@@ -706,9 +801,14 @@ export async function approveUnifiedBatch(headerId: number, userId: number, effe
         warning = warning ?? notice.warning;
         retryable = notice.retryable;
     }
+    if (force && applied > 0) {
+        await markPriceBatchForceApplied(headerId, userId).catch((error: unknown) => {
+            console.warn("[unifiedBatch] Failed to persist force-apply audit remark", error);
+        });
+    }
     if (failed > 0) {
-        warning = warning ?? "Approval was saved, but one or more pricing lines failed to apply. Retry application from the batch details.";
-        retryable = true;
+        warning = warning ?? "Approval was saved, but one or more pricing lines failed to apply. Review the failed lines and use Force Apply if the latest price change is intentional.";
+        retryable = retryable || conflicts.length === 0;
     }
 
     const affected = batch.price_details.length + batch.cost_details.length;
@@ -724,10 +824,20 @@ export async function approveUnifiedBatch(headerId: number, userId: number, effe
         effective_at: effective,
         warning,
         retryable,
+        forced: force,
+        conflicts,
+        application_summary: {
+            total: affected,
+            applied,
+            failed,
+            scheduled: scheduled ? affected : 0,
+            applying: 0,
+            partial: applied > 0 && failed > 0,
+        } satisfies UnifiedApplicationSummary,
     } as const;
 }
 
-async function resetRetryableDetails(collection: string, headerId: number, effectiveAt: string) {
+async function resetRetryableDetails(collection: string, headerId: number, effectiveAt: string, force = false) {
     const rows = await patchFiltered<DetailRow>(
         collection,
         {
@@ -735,7 +845,7 @@ async function resetRetryableDetails(collection: string, headerId: number, effec
                 { header_id: { _eq: headerId } },
                 { status: { _eq: "APPROVED" } },
                 { application_status: { _eq: "FAILED" } },
-                { application_attempts: { _lt: APPLICATION_MAX_FAILURES } },
+                ...(force ? [] : [{ application_attempts: { _lt: APPLICATION_MAX_FAILURES } }]),
             ],
         },
         {
@@ -750,7 +860,8 @@ async function resetRetryableDetails(collection: string, headerId: number, effec
     return rows.length;
 }
 
-export async function retryUnifiedBatch(headerId: number, userId: number) {
+export async function retryUnifiedBatch(headerId: number, userId: number, options?: { force?: boolean }) {
+    const force = options?.force === true;
     const batch = await getBatchForDecision(headerId);
     if (!batch) return { error: "Batch not found", status: 404 } as const;
     if (batch.price_details.length === 0 || batch.cost_details.length === 0) {
@@ -769,6 +880,29 @@ export async function retryUnifiedBatch(headerId: number, userId: number) {
         return { error: "Mixed batch has pending detail lines and requires reconciliation before retry.", status: 409 } as const;
     }
 
+    const forceCandidates = force
+        ? priceRows.filter((row) => ["SCHEDULED", "FAILED"].includes(String(row.application_status ?? "").toUpperCase()))
+        : [];
+    if (force) {
+        const conflicts = await findPriceSnapshotConflicts(
+            forceCandidates.map((row) => ({
+                request_id: pickId(row.request_id) ?? 0,
+                product_id: detailProductId(row),
+                price_type_id: detailPriceTypeId(row),
+                current_price: row.current_price,
+                proposed_price: row.proposed_price,
+            })),
+        );
+        if (conflicts.length === 0) {
+            return {
+                error: "Force Apply is only available when a current price snapshot conflict exists.",
+                status: 409,
+                code: "force_apply_requires_conflict",
+                retryable: false,
+            } as const;
+        }
+    }
+
     const allApplied = rows.length > 0 && rows.every(
         (row) => String(row.application_status ?? "").toUpperCase() === "APPLIED",
     );
@@ -784,16 +918,24 @@ export async function retryUnifiedBatch(headerId: number, userId: number) {
             failed: 0,
             application_status: applicationStatus ?? "APPLIED",
             retryable: false,
+            conflicts: [],
+            application_summary: batch.application_summary,
         } as const;
     }
 
     const retryableRows = rows.filter((row) => {
         const status = String(row.application_status ?? "").toUpperCase();
         return status === "SCHEDULED" ||
-            (status === "FAILED" && Number(row.application_attempts ?? 0) < APPLICATION_MAX_FAILURES);
+            (status === "FAILED" && (force || Number(row.application_attempts ?? 0) < APPLICATION_MAX_FAILURES));
     });
     if (retryableRows.length === 0) {
-        return { error: "This mixed batch has no retryable application lines.", status: 409 } as const;
+        return {
+            error: "This mixed batch has no retryable application lines.",
+            status: 409,
+            ...(batch.conflicts.length > 0
+                ? { code: "price_snapshot_conflict", conflicts: batch.conflicts, retryable: false }
+                : {}),
+        } as const;
     }
 
     const claimed = await claimHeader(headerId, "retry");
@@ -801,8 +943,8 @@ export async function retryUnifiedBatch(headerId: number, userId: number) {
 
     try {
         const effectiveAt = claimed.now;
-        await resetRetryableDetails(PRICE_DETAILS, headerId, effectiveAt);
-        await resetRetryableDetails(COST_DETAILS, headerId, effectiveAt);
+        await resetRetryableDetails(PRICE_DETAILS, headerId, effectiveAt, force);
+        await resetRetryableDetails(COST_DETAILS, headerId, effectiveAt, force);
 
         const stagedRows = [
             ...(await fetchApplicationRows(PRICE_DETAILS, headerId)),
@@ -812,9 +954,16 @@ export async function retryUnifiedBatch(headerId: number, userId: number) {
             throw new Error("Mixed batch retry found unresolved detail lines.");
         }
 
-        const result = await applyUnifiedDetails(headerId, userId);
+        const result = await applyUnifiedDetails(headerId, userId, { force });
+        if (force && result.applied > 0) {
+            await markPriceBatchForceApplied(headerId, userId).catch((error: unknown) => {
+                console.warn("[unifiedBatch] Failed to persist force-apply audit remark", error);
+            });
+        }
         const applicationStatus = await refreshUnifiedApplicationStatus(headerId, userId, claimed.lockId);
-        const retryable = result.failed > 0 || result.retryable || applicationStatus === "SCHEDULED" || applicationStatus === "FAILED";
+        const retryable = result.retryable ||
+            result.failed > result.conflicts.length ||
+            applicationStatus === "SCHEDULED";
 
         return {
             ok: true,
@@ -826,6 +975,16 @@ export async function retryUnifiedBatch(headerId: number, userId: number) {
             application_status: applicationStatus,
             warning: result.warning ?? (result.failed > 0 ? "One or more mixed batch lines failed to apply. Retry the batch again." : null),
             retryable,
+            forced: force,
+            conflicts: result.conflicts,
+            application_summary: {
+                total: rows.length,
+                applied: result.applied,
+                failed: result.failed,
+                scheduled: 0,
+                applying: 0,
+                partial: result.applied > 0 && result.failed > 0,
+            } satisfies UnifiedApplicationSummary,
         } as const;
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -844,6 +1003,8 @@ export async function retryUnifiedBatch(headerId: number, userId: number) {
                 application_lock_id: null,
                 application_started_at: null,
                 application_error: message,
+                applied_at: null,
+                applied_by: null,
             },
             "header_id,status,application_status,application_error",
         ).catch(() => undefined);
@@ -856,17 +1017,19 @@ export async function retryUnifiedBatch(headerId: number, userId: number) {
     }
 }
 
-export async function applyNowUnifiedBatch(headerId: number, userId: number) {
+export async function applyNowUnifiedBatch(headerId: number, userId: number, options?: { force?: boolean }) {
+    const force = options?.force === true;
     const batch = await getBatchForDecision(headerId);
     if (!batch) return { error: "Batch not found", status: 404 } as const;
     if (batch.price_details.length === 0 || batch.cost_details.length === 0) {
         return { error: "This batch is not a mixed batch.", status: 400 } as const;
     }
-    if (String(batch.status).toUpperCase() !== "APPROVED" || String(batch.application_status).toUpperCase() !== "SCHEDULED") {
+    if (String(batch.status).toUpperCase() !== "APPROVED" ||
+        !["SCHEDULED", ...(force ? ["FAILED"] : [])].includes(String(batch.application_status).toUpperCase())) {
         return { error: "Only scheduled approved mixed batches can be applied now.", status: 409 } as const;
     }
 
-    return retryUnifiedBatch(headerId, userId);
+    return retryUnifiedBatch(headerId, userId, options);
 }
 
 export async function rejectUnifiedBatch(headerId: number, userId: number, reason: string) {
@@ -961,6 +1124,8 @@ export async function rejectUnifiedBatch(headerId: number, userId: number, reaso
                 application_lock_id: null,
                 application_started_at: null,
                 application_error: error instanceof Error ? error.message : String(error),
+                applied_at: null,
+                applied_by: null,
             },
             "header_id,status,application_status,application_error",
         ).catch(() => undefined);

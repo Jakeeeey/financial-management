@@ -44,7 +44,7 @@ export const PayeeSchema = z.object({
   payment_terms: z.string().optional().default(""),
   delivery_terms: z.string().optional().default(""),
   date_added: z.string().or(z.date()).optional(),
-  isActive: z.number().int().min(0).max(1).default(1),
+  isActive: z.number().int().min(0).max(1),
   supplier_image: z.string().optional().default(""),
   bank_details: z.string().optional().default(""),
   notes_or_comments: z.string().optional().default(""),
@@ -59,6 +59,14 @@ export const PayeeSchema = z.object({
 export const PayeeFormSchema = PayeeSchema.omit({
   id: true,
   date_added: true,
+});
+
+/**
+ * New payees always enter the registry as active. Updates must not receive
+ * this default because omitting isActive must preserve the stored status.
+ */
+export const PayeeCreateSchema = PayeeFormSchema.extend({
+  isActive: z.number().int().min(0).max(1).default(1),
 });
 
 /**
