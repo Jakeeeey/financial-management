@@ -26,6 +26,57 @@ async function getUserId() {
   }
 }
 
+// Helper to get formatted Philippine Time without timezone conversion (+8) or Z suffix (YYYY-MM-DD HH:mm:ss)
+function getPhilippineFormattedTime(): string {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(now);
+
+  const getPart = (type: string) => parts.find(p => p.type === type)?.value || '00';
+  const year = getPart('year');
+  const month = getPart('month');
+  const day = getPart('day');
+  const hour = getPart('hour');
+  const minute = getPart('minute');
+  const second = getPart('second');
+
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+}
+
+// Helper to create feedback record in items/budget_approval_feedback
+async function createBudgetFeedback(record: {
+  budget_id: number;
+  status: "Approved" | "Rejected";
+  feedback?: string | null;
+  voted_by: number | null;
+  voted_at: string;
+}): Promise<number | null> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/items/budget_approval_feedback`, {
+      method: "POST",
+      headers: AUTH_HEADERS,
+      body: JSON.stringify(record),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      return json.data?.id || null;
+    }
+    console.error("Budget Feedback Insertion Error Response:", res.status, await res.text());
+    return null;
+  } catch (e) {
+    console.error("Budget Feedback Insertion Error:", e);
+    return null;
+  }
+}
+
 // Helper to create audit log
 async function createAuditLog(log: {
   budget_id: number;
@@ -69,6 +120,8 @@ export async function GET(req: Request) {
     targetUrl = `${API_BASE_URL}/items/department_per_division?${query.toString()}`;
   } else if (collection === "budget_attachments") {
     targetUrl = `${API_BASE_URL}/items/budget_attachments?${query.toString()}`;
+  } else if (collection === "budget_approval_feedback") {
+    targetUrl = `${API_BASE_URL}/items/budget_approval_feedback?${query.toString()}`;
   } else {
     // Default to budget fetching for approval
     if (!query.has("filter[status][_neq]")) {
@@ -145,8 +198,9 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ message: "Only Pending budgets can be approved or rejected." }, { status: 409 });
     }
 
-    // 2. PRE-LOGGING (Strict Flow): Create audit logs FIRST
+    // 2. PRE-LOGGING (Strict Flow): Create audit logs & feedback records FIRST
     const createdLogIds: number[] = [];
+    const phVotedAt = getPhilippineFormattedTime();
 
     for (const bId of idsToUpdate) {
       const oldItem = oldDataMap[String(bId)];
@@ -182,6 +236,15 @@ export async function PATCH(req: Request) {
         return NextResponse.json({ message: "Audit log creation failed. Budget status was not changed." }, { status: 502 });
       }
       createdLogIds.push(logId);
+
+      // Create record in items/budget_approval_feedback
+      await createBudgetFeedback({
+        budget_id: Number(bId),
+        status: newStatus as "Approved" | "Rejected",
+        feedback: remarks || null,
+        voted_by: userId,
+        voted_at: phVotedAt,
+      });
     }
 
     // 3. Perform the update

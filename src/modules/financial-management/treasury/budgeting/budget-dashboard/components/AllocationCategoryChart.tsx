@@ -9,6 +9,7 @@ import {
   Sector
 } from "recharts";
 import { Card } from "@/components/ui/card";
+import { PieChart as PieIcon, TrendingUp, Trophy } from "lucide-react";
 
 // Expanded High contrast premium colors
 const COLORS = [
@@ -45,13 +46,13 @@ const renderActiveShape = (props: unknown) => {
       <Sector
         cx={cx}
         cy={cy}
-        innerRadius={innerRadius}
-        outerRadius={outerRadius + 8}
+        innerRadius={innerRadius - 2}
+        outerRadius={outerRadius + 6}
         startAngle={startAngle}
         endAngle={endAngle}
         fill={fill}
-        cornerRadius={8}
-        className="transition-all duration-300 drop-shadow-lg outline-none"
+        cornerRadius={6}
+        className="transition-all duration-300 drop-shadow-md outline-none"
         style={{ outline: "none" }}
       />
     </g>
@@ -79,7 +80,7 @@ export function AllocationCategoryChart({ data = [] }: { data?: { name: string; 
   // Pre-calculate percentages and colors for Chart Data
   const chartData = chartDataRaw.map((d, index) => ({
     ...d,
-    percent: total > 0 ? (Number(d.value) / total * 100).toFixed(2) : "0.00",
+    percent: total > 0 ? (Number(d.value) / total * 100).toFixed(1) : "0.0",
     fill: d.name === "Others" ? OTHERS_COLOR : COLORS[index % COLORS.length]
   }));
 
@@ -95,7 +96,8 @@ export function AllocationCategoryChart({ data = [] }: { data?: { name: string; 
 
     return {
       ...d,
-      percent: total > 0 ? (Number(d.value) / total * 100).toFixed(2) : "0.00",
+      percentRaw: total > 0 ? (Number(d.value) / total * 100) : 0,
+      percent: total > 0 ? (Number(d.value) / total * 100).toFixed(1) : "0.0",
       fill,
       isOther: chartItemIndex === -1
     };
@@ -103,44 +105,83 @@ export function AllocationCategoryChart({ data = [] }: { data?: { name: string; 
 
   // Track hovered state
   let activeChartData = null;
-  if (activeIndex !== null) {
-    const hoveredLegend = legendData[activeIndex];
-    if (hoveredLegend.isOther) {
+  let activeLegendItem: typeof legendData[0] | null = null;
+  if (activeIndex !== null && legendData[activeIndex]) {
+    activeLegendItem = legendData[activeIndex];
+    const legendItemName = activeLegendItem.name;
+    if (activeLegendItem.isOther) {
        activeChartData = chartData.find(d => d.name === "Others") || null;
     } else {
-       activeChartData = chartData.find(d => d.name === hoveredLegend.name) || null;
+       activeChartData = chartData.find(d => d.name === legendItemName) || null;
     }
   }
 
   const activePieIndex = activeChartData ? chartData.findIndex(d => d.name === activeChartData.name) : undefined;
+  const topAccount = legendData.length > 0 ? legendData[0] : null;
 
   return (
-    <Card className="rounded-3xl border-border/50 shadow-sm bg-card overflow-hidden h-full min-h-[400px] flex flex-col group p-0">
-      <div className="px-6 pt-4 pb-0 shrink-0 z-10">
-        <h3 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70 m-0 leading-none">
-          Allocation by Account
-        </h3>
+    <Card className="rounded-3xl border-border/50 shadow-sm bg-card overflow-hidden h-full min-h-[440px] flex flex-col group p-0">
+      {/* Header Section */}
+      <div className="px-6 pt-5 pb-3 flex items-center justify-between shrink-0 z-10 border-b border-border/30 bg-muted/5">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 rounded-xl bg-primary/10 text-primary">
+            <PieIcon className="h-4 w-4" />
+          </div>
+          <div>
+            <h3 className="text-xs font-black uppercase tracking-wider text-foreground leading-none">
+              Allocation by Account
+            </h3>
+            <p className="text-[10px] text-muted-foreground font-medium mt-0.5">
+              Budget breakdown by chart of account
+            </p>
+          </div>
+        </div>
+
+        {topAccount && (
+          <div className="hidden sm:flex items-center gap-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2.5 py-1 rounded-full text-[10px] font-bold border border-emerald-500/20">
+            <TrendingUp className="h-3 w-3 shrink-0" />
+            <span className="truncate max-w-[100px]">{topAccount.name}</span>
+            <span className="font-black">({topAccount.percent}%)</span>
+          </div>
+        )}
       </div>
-      <div className="flex-1 min-h-0 flex flex-col mt-0">
-        {/* Chart Section - Stacked Top */}
-        <div className="w-full h-[250px] relative shrink-0 flex items-center justify-center py-3 -mt-4">
-          {/* Dynamic Center Text */}
-          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10 px-8">
-            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground truncate max-w-[110px] text-center mt-2">
-              {activeChartData ? activeChartData.name : "Total"}
+
+      <div className="flex-1 min-h-0 flex flex-col">
+        {/* Chart Section */}
+        <div className="w-full h-[200px] relative shrink-0 flex items-center justify-center py-2">
+          {/* Enhanced Center KPI Display */}
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10 px-8 text-center">
+            <span 
+              className="text-[9px] font-black uppercase tracking-wider text-muted-foreground/80 line-clamp-2 max-w-[120px] leading-tight transition-colors"
+              title={activeLegendItem ? activeLegendItem.name : "Total Allocation"}
+            >
+              {activeLegendItem ? activeLegendItem.name : "Total Allocation"}
             </span>
+            <span className="text-sm font-black tracking-tight text-foreground mt-0.5 transition-all">
+              {activeLegendItem 
+                ? formatCurrency(activeLegendItem.value)
+                : formatCurrency(total)}
+            </span>
+            {activeLegendItem && (
+              <span 
+                className="text-[9px] font-extrabold px-2 py-0.5 rounded-full text-white mt-0.5 shadow-xs transition-all"
+                style={{ backgroundColor: activeLegendItem.fill }}
+              >
+                {activeLegendItem.percent}% of Total
+              </span>
+            )}
           </div>
 
           <ResponsiveContainer width="100%" height="100%" className="focus:outline-none">
-            <PieChart className="focus:outline-none [&_.recharts-pie-sector]:outline-none [&_.recharts-sector]:outline-none [&_path]:outline-none" style={{ outline: "none" }}>
+            <PieChart style={{ outline: "none" }}>
               <Pie
                 data={chartData}
                 cx="50%"
                 cy="50%"
-                innerRadius="65%"
-                outerRadius="90%"
-                paddingAngle={4}
-                cornerRadius={8}
+                innerRadius="68%"
+                outerRadius="88%"
+                paddingAngle={3}
+                cornerRadius={6}
                 dataKey="value"
                 stroke="none"
                 activeIndex={activePieIndex}
@@ -168,29 +209,6 @@ export function AllocationCategoryChart({ data = [] }: { data?: { name: string; 
                   }
                 }}
                 onMouseLeave={() => setActiveIndex(null)}
-                labelLine={false}
-                label={(props) => {
-                  const { cx, cy, midAngle, innerRadius, outerRadius, percent } = props;
-                  const RADIAN = Math.PI / 180;
-                  const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
-                  const x = cx + radius * Math.cos(-midAngle * RADIAN);
-                  const y = cy + radius * Math.sin(-midAngle * RADIAN);
-                  
-                  if (Number(percent) < 5) return null;
-
-                  return (
-                    <text 
-                      x={x} 
-                      y={y} 
-                      fill="#fff" 
-                      textAnchor="middle" 
-                      dominantBaseline="central"
-                      className="text-[8.5px] font-bold pointer-events-none drop-shadow-md outline-none"
-                    >
-                      {percent}%
-                    </text>
-                  );
-                }}
               >
                 {chartData.map((entry, index) => (
                   <Cell 
@@ -206,61 +224,94 @@ export function AllocationCategoryChart({ data = [] }: { data?: { name: string; 
           </ResponsiveContainer>
         </div>
 
-        {/* Compact Legend Panel - Stacked Bottom */}
-        <div className="w-full flex-1 border-t border-border/40 bg-muted/10 px-6 pt-3 pb-2 flex flex-col min-h-0 overflow-hidden">
-          <div className="flex items-center justify-between mb-2 shrink-0">
-            <h4 className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60 whitespace-nowrap">
+        {/* Streamlined Account Details / Legend Panel */}
+        <div className="w-full flex-1 border-t border-border/40 bg-muted/10 px-4 pt-3 pb-3 flex flex-col min-h-0 overflow-hidden">
+          <div className="flex items-center justify-between mb-2 shrink-0 px-1">
+            <h4 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap">
               Account Details
             </h4>
-            <span className="text-[9px] font-bold text-muted-foreground/40 whitespace-nowrap">{legendData.length} items</span>
+            <span className="text-[10px] font-bold text-muted-foreground/60 bg-background border border-border/50 px-2 py-0.5 rounded-full">
+              {legendData.length} {legendData.length === 1 ? 'account' : 'accounts'}
+            </span>
           </div>
-          {/* Native scroll container to guarantee scrolling works */}
-          <div className="flex-1 overflow-y-auto pr-3 -mr-3 scrollbar-thin scrollbar-thumb-muted-foreground/20">
-            <div className="flex flex-col gap-1.5 pb-2">
-              {legendData.map((item, index) => (
-                <div 
-                  key={item.name || index}
-                  id={`allocation-legend-item-${index}`}
-                  className={`flex items-center justify-between p-2 rounded-lg transition-all cursor-pointer ${
-                    activeIndex === index 
-                      ? "bg-background shadow-sm border border-border/60 scale-[1.01]" 
-                      : "hover:bg-muted/60 border border-transparent"
-                  }`}
-                  onClick={() => {
-                    setActiveIndex(index);
-                    document.getElementById(`allocation-legend-item-${index}`)?.scrollIntoView({ 
-                      behavior: 'smooth', 
-                      block: 'nearest' 
-                    });
-                  }}
-                  onMouseEnter={() => setActiveIndex(index)}
-                  onMouseLeave={() => setActiveIndex(null)}
-                >
-                  <div className="flex items-center gap-3 overflow-hidden flex-1 min-w-0">
+
+          {/* Scrollable Compact Account List */}
+          <div className="flex-1 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-muted-foreground/20">
+            <div className="flex flex-col gap-1.5 pb-1">
+              {legendData.map((item, index) => {
+                const isSelected = activeIndex === index;
+                const isTop1 = index === 0;
+
+                return (
+                  <div 
+                    key={item.name || index}
+                    id={`allocation-legend-item-${index}`}
+                    className={`group/item relative overflow-hidden flex items-center justify-between p-2 rounded-xl transition-all cursor-pointer border ${
+                      isSelected 
+                        ? "bg-background shadow-md border-primary/50 translate-x-1" 
+                        : isTop1
+                          ? "bg-background/80 border-primary/20 shadow-xs"
+                          : "bg-background/40 hover:bg-background border-border/30 hover:border-border/60"
+                    }`}
+                    onClick={() => {
+                      setActiveIndex(index);
+                      document.getElementById(`allocation-legend-item-${index}`)?.scrollIntoView({ 
+                        behavior: 'smooth', 
+                        block: 'nearest' 
+                      });
+                    }}
+                    onMouseEnter={() => setActiveIndex(index)}
+                    onMouseLeave={() => setActiveIndex(null)}
+                  >
+                    {/* Background Progress Bar Fill Accent */}
                     <div 
-                      className={`w-2.5 h-2.5 rounded-full shrink-0 shadow-sm ${item.isOther ? 'ring-1 ring-border/50' : ''}`}
-                      style={{ backgroundColor: item.fill }}
+                      className="absolute inset-y-0 left-0 opacity-[0.07] pointer-events-none transition-all duration-500 rounded-xl"
+                      style={{ 
+                        width: `${Math.max(item.percentRaw, 3)}%`,
+                        backgroundColor: item.fill 
+                      }}
                     />
-                    <span className="text-[10px] font-bold uppercase truncate text-foreground group-hover:text-primary transition-colors">
-                      {item.name}
-                    </span>
+
+                    {/* Left Rank Dot / Accent Strip */}
+                    <div className="flex items-center gap-2.5 overflow-hidden flex-1 min-w-0 z-10">
+                      <div 
+                        className="w-1.5 h-6 rounded-full shrink-0 transition-transform group-hover/item:scale-110"
+                        style={{ backgroundColor: item.fill }}
+                      />
+                      
+                      {isTop1 && (
+                        <Trophy className="h-3 w-3 text-amber-500 shrink-0" />
+                      )}
+
+                      <span 
+                        className={`text-[11px] uppercase truncate transition-colors ${
+                          isTop1 ? "font-black text-foreground" : "font-bold text-foreground/90 group-hover/item:text-primary"
+                        }`}
+                        title={item.name}
+                      >
+                        {item.name}
+                      </span>
+                    </div>
+
+                    {/* Right Amount & Percent Badge */}
+                    <div className="text-right shrink-0 flex items-center gap-2 z-10 ml-2">
+                      <span className="text-[11px] font-extrabold text-foreground tracking-tight">
+                        {formatCurrency(item.value)}
+                      </span>
+                      <span 
+                        className="text-[9.5px] font-black text-white px-2 py-0.5 rounded-lg shadow-xs min-w-[42px] text-center shrink-0"
+                        style={{ backgroundColor: item.fill }}
+                      >
+                        {item.percent}%
+                      </span>
+                    </div>
                   </div>
-                  <div className="text-right shrink-0 ml-2 flex gap-3 items-center">
-                    <span className="text-[10px] font-bold text-muted-foreground">
-                      {formatCurrency(item.value)}
-                    </span>
-                    <span 
-                      className="text-[10px] font-black text-white px-2 py-0.5 rounded-md shadow-sm min-w-[48px] text-center shrink-0"
-                      style={{ backgroundColor: item.fill }}
-                    >
-                      {item.percent}%
-                    </span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
+
               {legendData.length === 0 && (
-                <div className="text-[10px] text-muted-foreground text-center py-4 italic font-medium">
-                  No data
+                <div className="text-xs text-muted-foreground text-center py-6 italic font-medium">
+                  No account allocation data available
                 </div>
               )}
             </div>

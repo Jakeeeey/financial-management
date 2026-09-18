@@ -22,6 +22,15 @@ interface RawBudgetRecord {
   remarks?: string;
 }
 
+interface RawFeedbackRecord {
+  id?: string | number;
+  budget_id?: string | number;
+  status?: string;
+  feedback?: string;
+  voted_by?: { user_fname?: string; user_lname?: string; user_position?: string } | string | number | null;
+  voted_at?: string;
+}
+
 interface RawAttachmentRecord {
   id?: string | number;
   budget_id?: string | number;
@@ -130,9 +139,10 @@ export const budgetService = {
     const rawData = result?.data || [];
     const total = result?.meta?.filter_count || 0;
     
-    // Bulk manual lookup for budget attachments mapped onto items
+    // Bulk manual lookup for budget attachments & feedbacks mapped onto items
     const budgetIds = Array.from(new Set(rawData.map((b) => b.id).filter(Boolean)));
     const attachmentsMap = new Map<string, BudgetAttachment[]>();
+    const feedbacksMap = new Map<string, unknown[]>();
     
     if (budgetIds.length > 0) {
       try {
@@ -160,6 +170,37 @@ export const budgetService = {
       } catch (attErr) {
         console.error("Bulk attachment fetch error:", attErr);
       }
+
+      try {
+        const fbQuery = new URLSearchParams({
+          "filter[budget_id][_in]": budgetIds.join(","),
+          fields: "id,budget_id,status,feedback,voted_at,voted_by.user_fname,voted_by.user_lname,voted_by.user_position",
+          sort: "-voted_at",
+          limit: "-1",
+        });
+        const fbResult = await fetchProxy<{ data: RawFeedbackRecord[] }>(`${PROXY_BASE_URL}/budget_approval_feedback?${fbQuery.toString()}`);
+        const rawFbs = fbResult?.data || [];
+
+        for (const fb of rawFbs) {
+          const bId = String(fb.budget_id);
+          if (!feedbacksMap.has(bId)) {
+            feedbacksMap.set(bId, []);
+          }
+          const userObj = typeof fb.voted_by === 'object' && fb.voted_by !== null ? fb.voted_by : null;
+          const name = userObj ? `${userObj.user_fname || ""} ${userObj.user_lname || ""}`.trim() : "System Evaluator";
+
+          feedbacksMap.get(bId)!.push({
+            id: fb.id,
+            budget_id: bId,
+            status: fb.status || "Approved",
+            feedback: fb.feedback || "",
+            voted_by_name: name,
+            voted_at: fb.voted_at || "",
+          });
+        }
+      } catch (fbErr) {
+        console.error("Bulk feedback fetch error:", fbErr);
+      }
     }
     
     const budgets = rawData.map((b) => {
@@ -179,6 +220,7 @@ export const budgetService = {
       
       const bIdStr = String(b.id || "");
       const mappedAtts = attachmentsMap.get(bIdStr) || [];
+      const mappedFbs = feedbacksMap.get(bIdStr) || [];
 
       const parentObj = typeof b.parent_budget_id === 'object' && b.parent_budget_id !== null ? b.parent_budget_id : null;
       const parentId = parentObj?.id || (typeof b.parent_budget_id === 'string' || typeof b.parent_budget_id === 'number' ? b.parent_budget_id : null);
@@ -197,6 +239,7 @@ export const budgetService = {
         coa_id:          coaId ? String(coaId) : undefined,
         amount:          Number(b.amount || 0),
         attachments:     mappedAtts,
+        feedbacks:       mappedFbs,
       } as unknown as Budget;
     });
 
@@ -229,7 +272,7 @@ export const budgetService = {
     });
 
     if (excludeId) {
-      query.append("filter[id][_neq]", excludeId);
+      query.append("filter[id][_neq]", String(excludeId));
     }
 
     const url = `${PROXY_BASE_URL}/budget?${query.toString()}`;
@@ -443,7 +486,7 @@ export const budgetService = {
     });
 
     if (excludeId) {
-      query.append("filter[id][_neq]", excludeId);
+      query.append("filter[id][_neq]", String(excludeId));
     }
 
     const url = `${PROXY_BASE_URL}/budget?${query.toString()}`;

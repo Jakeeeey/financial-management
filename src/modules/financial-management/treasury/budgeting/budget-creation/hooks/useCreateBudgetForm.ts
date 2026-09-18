@@ -56,7 +56,22 @@ export function useCreateBudgetForm(
   // Sync with initialData
   useEffect(() => {
     if (initialData) {
-      const monthIdx = MONTH_NAMES.indexOf(initialData.month) + 1;
+      let monthIdx = 0;
+      if (typeof initialData.month === "number") {
+        monthIdx = initialData.month;
+      } else if (typeof initialData.month === "string") {
+        const parsedNum = parseInt(initialData.month, 10);
+        if (!isNaN(parsedNum) && parsedNum >= 1 && parsedNum <= 12) {
+          monthIdx = parsedNum;
+        } else {
+          const lowerMonth = initialData.month.toLowerCase().trim();
+          const matchIdx = MONTH_NAMES.findIndex(
+            m => m.toLowerCase() === lowerMonth || m.toLowerCase().startsWith(lowerMonth.substring(0, 3))
+          );
+          if (matchIdx !== -1) monthIdx = matchIdx + 1;
+        }
+      }
+
       setForm({
         year:          String(initialData.year || ""),
         month:         monthIdx > 0 ? String(monthIdx) : String(initialData.month || ""),
@@ -73,11 +88,26 @@ export function useCreateBudgetForm(
       budgetService.getAttachments(initialData.id).then(setExistingAttachments).catch(console.error);
 
     } else if (supplementParent) {
-      const monthIdx = MONTH_NAMES.indexOf(supplementParent.month) + 1;
+      let suppMonthIdx = 0;
+      if (typeof supplementParent.month === "number") {
+        suppMonthIdx = supplementParent.month;
+      } else if (typeof supplementParent.month === "string") {
+        const parsedNum = parseInt(supplementParent.month, 10);
+        if (!isNaN(parsedNum) && parsedNum >= 1 && parsedNum <= 12) {
+          suppMonthIdx = parsedNum;
+        } else {
+          const lowerMonth = supplementParent.month.toLowerCase().trim();
+          const matchIdx = MONTH_NAMES.findIndex(
+            m => m.toLowerCase() === lowerMonth || m.toLowerCase().startsWith(lowerMonth.substring(0, 3))
+          );
+          if (matchIdx !== -1) suppMonthIdx = matchIdx + 1;
+        }
+      }
+
       setForm(prev => ({
         ...prev,
         year:          String(supplementParent.year),
-        month:         monthIdx > 0 ? String(monthIdx) : String(supplementParent.month),
+        month:         suppMonthIdx > 0 ? String(suppMonthIdx) : String(supplementParent.month),
         division_id:   String(supplementParent.division_id),
         department_id: String(supplementParent.department_id),
         coa_id:        String(supplementParent.coa_id),

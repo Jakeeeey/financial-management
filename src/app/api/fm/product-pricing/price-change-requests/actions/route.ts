@@ -9,6 +9,7 @@ import {
 import {
     approveOneOrphanPriceRequest,
     cancelOnePriceRequest,
+    forceApplyOneOrphanPriceRequest,
     getPriceRequest,
     rejectOneOrphanPriceRequest,
 } from "../_actions";
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
         if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
         const body = (await req.json()) as Partial<{
-            action: "approve" | "reject" | "cancel";
+            action: "approve" | "force_apply" | "reject" | "cancel";
             request_id: number;
             reject_reason?: string;
             effective_at?: string | null;
@@ -37,7 +38,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "action is required" }, { status: 400 });
         }
 
-        if (action !== "approve" && action !== "reject" && action !== "cancel") {
+        if (action !== "approve" && action !== "force_apply" && action !== "reject" && action !== "cancel") {
             return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
         }
 
@@ -87,8 +88,10 @@ export async function POST(req: NextRequest) {
         }
 
         try {
-            const data = await approveOneOrphanPriceRequest(userId, request_id, pcr, body.effective_at);
-            return NextResponse.json({ data });
+            const data = action === "force_apply"
+                ? await forceApplyOneOrphanPriceRequest(userId, request_id, pcr)
+                : await approveOneOrphanPriceRequest(userId, request_id, pcr, body.effective_at);
+            return NextResponse.json({ data, ...(action === "force_apply" ? { forced: true } : {}) });
         } catch (error: unknown) {
             if (isPriceSnapshotConflictError(error)) {
                 return NextResponse.json(
@@ -107,9 +110,10 @@ export async function POST(req: NextRequest) {
                 message.includes("linked to a batch") ||
                 message === "Invalid product_id on request." ||
                 message === "Invalid price_type_id on request." ||
-                message === "Invalid proposed_price on request."
+                message === "Invalid proposed_price on request." ||
+                message.includes("Force Apply is only available")
             ) {
-                return NextResponse.json({ error: message }, { status: 400 });
+                return NextResponse.json({ error: message }, { status: message.includes("Force Apply") ? 409 : 400 });
             }
             throw error;
         }

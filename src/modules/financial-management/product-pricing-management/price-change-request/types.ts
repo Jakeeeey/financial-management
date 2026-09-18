@@ -492,6 +492,7 @@ export type ActionPayload =
 
 export type PriceActionPayload =
     | { action: "approve"; request_id: number; effective_at?: string | null }
+    | { action: "force_apply"; request_id: number }
     | { action: "cancel"; request_id: number }
     | { action: "reject"; request_id: number; reject_reason: string };
 

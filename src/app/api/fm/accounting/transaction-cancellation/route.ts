@@ -595,16 +595,57 @@ export async function POST(request: NextRequest) {
 
     } else if (action === "upload_attachments") {
       // ── UPLOAD ATTACHMENTS (Admin/Requester) ──
-      if (!requestId) {
-        return NextResponse.json({ message: "requestId is required" }, { status: 400 });
-      }
       if (attachmentFiles.length === 0) {
         return NextResponse.json({ message: "At least one attachment is required" }, { status: 400 });
       }
 
-      const cancellationRequest = await getPendingCancellationRequest(invoiceId, requestId);
+      let cancellationRequest = await getPendingCancellationRequest(invoiceId, requestId);
+
+      if (!cancellationRequest && !requestId) {
+        // Look up by invoice ID just in case
+        cancellationRequest = await getPendingCancellationRequest(invoiceId, null);
+      }
+
       if (!cancellationRequest) {
-        return NextResponse.json({ message: "Pending cancellation request not found" }, { status: 404 });
+        // Handle legacy requests: Create a cancellation_requests record on-the-fly
+        if (invoice.transaction_status === "Cancellation Requested" && invoice.remarks) {
+           const match = invoice.remarks.match(/PrevStatus:\s*([A-Za-z0-9_]+)/);
+           const prevStat = match ? match[1] : "Onboarded";
+           const reqMatch = invoice.remarks.match(/by\s+([^\]]+)/);
+           const legacyRequester = reqMatch ? reqMatch[1] : username;
+           const reasonMatch = invoice.remarks.match(/Reason:\s*(.*)$/);
+           const legacyReason = reasonMatch ? reasonMatch[1] : "Legacy Request";
+
+           try {
+             const requestResponse = await directusFetch<{ data?: DirectusCancellationRequest }>(
+               `/items/${CANCELLATION_REQUESTS_COLLECTION}`,
+               {
+                 method: "POST",
+                 body: JSON.stringify({
+                   invoice_id: invoiceId,
+                   reason: legacyReason.trim(),
+                   previous_status: prevStat,
+                   status: "PENDING",
+                   requested_by: legacyRequester,
+                   requested_at: new Date().toISOString(),
+                   retrieval_confirmed: true,
+                 }),
+               }
+             );
+             if (requestResponse.data?.id) {
+               cancellationRequest = requestResponse.data;
+               requestId = String(cancellationRequest.id);
+             }
+           } catch (error) {
+             console.error("[Legacy Migration Error]:", error);
+           }
+        }
+      } else if (!requestId) {
+        requestId = String(cancellationRequest.id);
+      }
+
+      if (!cancellationRequest || !requestId) {
+        return NextResponse.json({ message: "Pending cancellation request not found and could not be migrated" }, { status: 404 });
       }
 
       const createdAttachmentIds: Array<string | number> = [];

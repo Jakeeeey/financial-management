@@ -16,8 +16,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
-import type { PriceTypeUnifiedApprovalRow } from "../types";
+import type { PriceSnapshotConflict, PriceTypeUnifiedApprovalRow } from "../types";
 import { DecisionConfirmationDialog } from "./DecisionConfirmationDialog";
+import { PriceSnapshotConflictPanel } from "./PriceSnapshotConflictPanel";
+import { priceSnapshotConflictsFromError } from "../providers/pcrApi";
 import { decisionUserLabel, priceRowHasBatchLink, priceTypeLabel } from "../utils/labels";
 import { displayPcrStatus, pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
@@ -34,6 +36,8 @@ type Props = {
     onApplyScheduledNow?: (kind: "price_request" | "price_batch", id: number) => Promise<void>;
     onRejectScheduled?: (kind: "price_request" | "price_batch", id: number, reason: string) => Promise<void>;
     onRetryApplication?: (kind: "price_request" | "price_batch", id: number) => Promise<void>;
+    onForceApplyBatch?: (headerId: number) => Promise<void>;
+    onForceApplyRequest?: (requestId: number) => Promise<void>;
 };
 
 function money(value: number | null | undefined) {
@@ -76,11 +80,14 @@ export function PriceTypeRequestDetailDialog({
     onApplyScheduledNow,
     onRejectScheduled,
     onRetryApplication,
+    onForceApplyBatch,
+    onForceApplyRequest,
 }: Props) {
     const [rejecting, setRejecting] = React.useState(false);
     const [rejectReason, setRejectReason] = React.useState("");
     const [confirmingAction, setConfirmingAction] = React.useState<"approve" | "reject" | "apply_now" | "reject_schedule" | null>(null);
     const [submitting, setSubmitting] = React.useState(false);
+    const [approvalConflicts, setApprovalConflicts] = React.useState<PriceSnapshotConflict[]>([]);
 
     React.useEffect(() => {
         if (!open) {
@@ -88,6 +95,7 @@ export function PriceTypeRequestDetailDialog({
             setRejectReason("");
             setConfirmingAction(null);
             setSubmitting(false);
+            setApprovalConflicts([]);
         }
     }, [open]);
 
@@ -146,8 +154,30 @@ export function PriceTypeRequestDetailDialog({
             }
             setConfirmingAction(null);
             onOpenChange(false);
+        } catch (error: unknown) {
+            const nextConflicts = priceSnapshotConflictsFromError(error);
+            if (nextConflicts.length > 0) {
+                setApprovalConflicts(nextConflicts);
+                setConfirmingAction(null);
+                return;
+            }
+            throw error;
         } finally {
             setSubmitting(false);
+        }
+    };
+
+    const handleForceApply = async () => {
+        if (isBatchLinked && headerId && onForceApplyBatch) {
+            await onForceApplyBatch(headerId);
+            setApprovalConflicts([]);
+            onOpenChange(false);
+            return;
+        }
+        if (!isBatchLinked && requestId && onForceApplyRequest) {
+            await onForceApplyRequest(requestId);
+            setApprovalConflicts([]);
+            onOpenChange(false);
         }
     };
 
@@ -339,6 +369,23 @@ export function PriceTypeRequestDetailDialog({
                                 </div>
                             </div>
                         </div>
+
+                        <PriceSnapshotConflictPanel
+                            conflicts={approvalConflicts}
+                            recordLabel={recordLabel}
+                            labels={{
+                                [String(row.product_id) + ":" + String(row.price_type_id)]: {
+                                    product_name: row.title,
+                                    price_type_name: priceTypeLabel(row),
+                                },
+                            }}
+                            forceApplying={busy}
+                            onForceApply={
+                                isBatchLinked
+                                    ? onForceApplyBatch && headerId ? handleForceApply : undefined
+                                    : onForceApplyRequest && requestId ? handleForceApply : undefined
+                            }
+                        />
 
                         {canAct ? (
                             <p className="text-xs text-muted-foreground">

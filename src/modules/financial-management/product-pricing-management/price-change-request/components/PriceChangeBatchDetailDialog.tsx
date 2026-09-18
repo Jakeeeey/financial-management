@@ -33,7 +33,7 @@ import {
     formatPriceSnapshotConflictMessage,
     PriceSnapshotConflictPanel,
 } from "./PriceSnapshotConflictPanel";
-import { getPriceChangeBatch } from "../providers/pcrApi";
+import { getPriceChangeBatch, priceSnapshotConflictsFromError } from "../providers/pcrApi";
 import { decisionUserLabel } from "../utils/labels";
 import { displayPcrStatus, pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
@@ -48,6 +48,7 @@ type Props = {
     onApplyScheduledNow?: (headerId: number) => Promise<void> | void;
     onRejectScheduled?: (headerId: number, reason: string) => Promise<void> | void;
     onRetryApplication?: (headerId: number) => Promise<void> | void;
+    onForceApply?: (headerId: number) => Promise<void> | void;
 };
 
 function money(value: number | null | undefined) {
@@ -119,11 +120,13 @@ export function PriceChangeBatchDetailDialog({
     onApplyScheduledNow,
     onRejectScheduled,
     onRetryApplication,
+    onForceApply,
 }: Props) {
     const [detail, setDetail] = React.useState<PriceChangeBatchDetail | null>(null);
     const [loading, setLoading] = React.useState(false);
     const [rejecting, setRejecting] = React.useState(false);
     const [rejectReason, setRejectReason] = React.useState("");
+    const [approvalConflicts, setApprovalConflicts] = React.useState<PriceChangeBatchDetail["conflicts"]>([]);
     const [confirmingAction, setConfirmingAction] = React.useState<"approve" | "reject" | "apply_now" | "reject_schedule" | null>(null);
 
     React.useEffect(() => {
@@ -132,6 +135,7 @@ export function PriceChangeBatchDetailDialog({
         async function load() {
             if (!open || !batchId) {
                 setDetail(null);
+                setApprovalConflicts([]);
                 return;
             }
 
@@ -155,6 +159,16 @@ export function PriceChangeBatchDetailDialog({
     }, [batchId, open]);
 
     const lines = React.useMemo(() => detail?.details ?? [], [detail?.details]);
+    const conflicts = React.useMemo(() => {
+        const values = [...(detail?.conflicts ?? []), ...(approvalConflicts ?? [])];
+        const seen = new Set<string>();
+        return values.filter((conflict) => {
+            const key = `${conflict.request_id}:${conflict.product_id}:${conflict.price_type_id}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }, [approvalConflicts, detail?.conflicts]);
     const isPending = detail?.status === "PENDING";
     const headerId = detail?.header_id ?? batchId ?? 0;
     const canAct = !readOnly && isPending && headerId != null && onApprove != null && onReject != null;
@@ -198,6 +212,7 @@ export function PriceChangeBatchDetailDialog({
                 setRejecting(false);
                 setRejectReason("");
                 setConfirmingAction(null);
+                setApprovalConflicts([]);
             }
             onOpenChange(nextOpen);
         },
@@ -207,10 +222,27 @@ export function PriceChangeBatchDetailDialog({
     const handleApprove = React.useCallback(async (effectiveAt?: string | null) => {
         if (!headerId) return;
         if (!headerId || !onApprove) return;
-        await onApprove(headerId, effectiveAt);
-        setConfirmingAction(null);
-        handleOpenChange(false);
+        try {
+            await onApprove(headerId, effectiveAt);
+            setConfirmingAction(null);
+            handleOpenChange(false);
+        } catch (error: unknown) {
+            const nextConflicts = priceSnapshotConflictsFromError(error);
+            if (nextConflicts.length > 0) {
+                setApprovalConflicts(nextConflicts);
+                setConfirmingAction(null);
+                return;
+            }
+            throw error;
+        }
     }, [handleOpenChange, headerId, onApprove]);
+
+    const handleForceApply = React.useCallback(async () => {
+        if (!headerId || !onForceApply) return;
+        await onForceApply(headerId);
+        setApprovalConflicts([]);
+        handleOpenChange(false);
+    }, [handleOpenChange, headerId, onForceApply]);
 
     const handleReject = React.useCallback(async () => {
         const reason = rejectReason.trim();
@@ -309,15 +341,11 @@ export function PriceChangeBatchDetailDialog({
                         ) : null}
 
                         <PriceSnapshotConflictPanel
-                            conflicts={detail.conflicts ?? []}
-                            supplierId={detail.supplier_id}
-                            supplierName={detail.supplier_name ?? ""}
-                            batchLabel={`PCB-${detail.header_id}`}
+                            conflicts={conflicts}
+                            recordLabel={`PCB-${detail.header_id}`}
                             labels={conflictLabels}
-                            onCreated={() => {
-                                if (!batchId) return;
-                                void getPriceChangeBatch(batchId).then((result) => setDetail(result.data));
-                            }}
+                            forceApplying={acting}
+                            onForceApply={onForceApply ? handleForceApply : undefined}
                         />
 
                         <div className="rounded-md border overflow-x-auto">
