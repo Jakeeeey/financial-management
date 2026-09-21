@@ -35,6 +35,7 @@ export function useLogisticsWer() {
   const [error, setError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const requestId = useRef(0);
+  const lastPlan = useRef<LogisticsWerDispatchPlan | null>(null);
 
   const load = useCallback(async () => {
     const currentRequest = ++requestId.current;
@@ -96,6 +97,23 @@ export function useLogisticsWer() {
     setDetail(null);
     setDetailError(null);
     setDetailLoading(true);
+    lastPlan.current = plan;
+    try {
+      setDetail(await fetchLogisticsWerDetails(plan.id, plan));
+    } catch (requestError) {
+      if (lastPlan.current?.id === plan.id) {
+        setDetailError(requestError instanceof Error ? requestError.message : "Unable to load dispatch plan details.");
+      }
+    } finally {
+      if (lastPlan.current?.id === plan.id) setDetailLoading(false);
+    }
+  }, []);
+
+  const refreshDetails = useCallback(async () => {
+    const plan = lastPlan.current;
+    if (!plan) return;
+    setDetailError(null);
+    setDetailLoading(true);
     try {
       setDetail(await fetchLogisticsWerDetails(plan.id, plan));
     } catch (requestError) {
@@ -124,7 +142,11 @@ export function useLogisticsWer() {
     resetToCurrentWeek,
     changeStatus,
     openDetails,
-    closeDetails: () => setDetail(null),
+    closeDetails: () => {
+      lastPlan.current = null;
+      setDetail(null);
+    },
+    refreshDetails,
     retry: load,
     setPage,
   };

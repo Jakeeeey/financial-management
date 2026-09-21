@@ -100,6 +100,9 @@ export default function LogisticsWerModule() {
         onOpenChange={(open) => {
           if (!open) report.closeDetails();
         }}
+        onChanged={() => {
+          void report.refreshDetails();
+        }}
       />
     </div>
   );

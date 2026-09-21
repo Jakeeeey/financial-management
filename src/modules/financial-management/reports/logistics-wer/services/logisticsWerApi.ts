@@ -1,10 +1,14 @@
 import type {
   LogisticsWerDispatchPlan,
   LogisticsWerDispatchPlanDetail,
+  LogisticsWerPayableLine,
+  LogisticsWerPayableReceipt,
+  LogisticsWerPayableSubmission,
   LogisticsWerReportPage,
   LogisticsWerStaff,
   LogisticsWerStop,
   LogisticsWerStopItem,
+  LogisticsWerSupplierEligibility,
 } from "../types";
 
 const ENDPOINT = "/api/fm/reports/logistics-wer";
@@ -65,6 +69,51 @@ interface DispatchApprovalResponse {
   staff?: DispatchApprovalStaff[] | null;
   budgets?: DispatchApprovalBudget[] | null;
   stops?: DispatchApprovalStop[] | null;
+  werPayables?: DispatchApprovalWerPayables | null;
+}
+
+interface DispatchApprovalWerReceipt {
+  id?: unknown;
+  fileId?: unknown;
+}
+
+interface DispatchApprovalLine {
+  id?: unknown;
+  lineNo?: unknown;
+  amount?: unknown;
+  referenceNo?: unknown;
+  remarks?: unknown;
+  date?: unknown;
+  coaId?: unknown;
+  receipts?: DispatchApprovalWerReceipt[] | null;
+}
+
+interface DispatchApprovalSubmission {
+  id?: unknown;
+  status?: unknown;
+  totalAmount?: unknown;
+  submittedBy?: unknown;
+  submittedAt?: unknown;
+  decidedBy?: unknown;
+  decidedAt?: unknown;
+  decisionRemarks?: unknown;
+  disbursementId?: unknown;
+  idempotencyKey?: unknown;
+  lines?: DispatchApprovalLine[] | null;
+}
+
+interface DispatchApprovalWerPayables {
+  plannedAmount?: unknown;
+  reservedAmount?: unknown;
+  remainingAmount?: unknown;
+  supplierEligibility?: {
+    eligible?: unknown;
+    driverId?: unknown;
+    supplierId?: unknown;
+    supplierName?: unknown;
+    reason?: unknown;
+  } | null;
+  submissions?: DispatchApprovalSubmission[] | null;
 }
 
 function asString(value: unknown): string {
@@ -186,6 +235,7 @@ function mapDetails(data: DispatchApprovalResponse, sourcePlan?: LogisticsWerDis
     remarks: asNullableString(budget.remarks),
     amount: asNumber(budget.amount),
   }));
+  const werPayables = data.werPayables ?? null;
 
   return {
     plan: mapPlan(data, sourcePlan),
@@ -193,6 +243,60 @@ function mapDetails(data: DispatchApprovalResponse, sourcePlan?: LogisticsWerDis
     staff: (data.staff ?? []).map(mapStaff),
     stops: (data.stops ?? []).map(mapStop),
     disbursementTotal: disbursements.reduce((total, line) => total + line.amount, 0),
+    supplierEligibility: mapEligibility(werPayables?.supplierEligibility),
+    plannedAmount: asNullableNumber(werPayables?.plannedAmount),
+    reservedAmount: asNullableNumber(werPayables?.reservedAmount),
+    remainingAmount: asNullableNumber(werPayables?.remainingAmount),
+    submissions: (werPayables?.submissions ?? []).map(mapSubmission),
+  };
+}
+
+function mapEligibility(
+  data: DispatchApprovalWerPayables["supplierEligibility"],
+): LogisticsWerSupplierEligibility | null {
+  if (!data) return null;
+  return {
+    eligible: data.eligible === true,
+    driverId: asNullableNumber(data.driverId),
+    supplierId: asNullableNumber(data.supplierId),
+    supplierName: asNullableString(data.supplierName),
+    reason: asNullableString(data.reason),
+  };
+}
+
+function mapReceipt(data: DispatchApprovalWerReceipt): LogisticsWerPayableReceipt {
+  return {
+    id: asNumber(data.id),
+    fileId: asNullableString(data.fileId),
+  };
+}
+
+function mapSubmissionLine(data: DispatchApprovalLine): LogisticsWerPayableLine {
+  return {
+    id: asNumber(data.id),
+    lineNo: asNullableNumber(data.lineNo),
+    amount: asNumber(data.amount),
+    referenceNo: asNullableString(data.referenceNo),
+    remarks: asNullableString(data.remarks),
+    date: asNullableString(data.date),
+    coaId: asNullableNumber(data.coaId),
+    receipts: (data.receipts ?? []).map(mapReceipt),
+  };
+}
+
+function mapSubmission(data: DispatchApprovalSubmission): LogisticsWerPayableSubmission {
+  return {
+    id: asNumber(data.id),
+    status: asNullableString(data.status),
+    totalAmount: asNumber(data.totalAmount),
+    submittedBy: asNullableNumber(data.submittedBy),
+    submittedAt: asNullableString(data.submittedAt),
+    decidedBy: asNullableNumber(data.decidedBy),
+    decidedAt: asNullableString(data.decidedAt),
+    decisionRemarks: asNullableString(data.decisionRemarks),
+    disbursementId: asNullableNumber(data.disbursementId),
+    idempotencyKey: asNullableString(data.idempotencyKey),
+    lines: (data.lines ?? []).map(mapSubmissionLine),
   };
 }
 
@@ -206,4 +310,98 @@ export async function fetchLogisticsWerDetails(
   });
   const data = await readJson<DispatchApprovalResponse>(response);
   return mapDetails(data, sourcePlan);
+}
+
+export interface PayableLineInput {
+  amount: number;
+  referenceNo?: string | null;
+  remarks?: string | null;
+  date?: string | null;
+  coaId?: number | null;
+  receiptFileIds?: string[];
+}
+
+export interface StagedReceipt {
+  fileId: string;
+  fileName: string | null;
+}
+
+export interface PayableCoaOption {
+  coaId: number;
+  label: string;
+}
+
+async function postPayables(
+  planId: number,
+  action: "save-draft" | "submit" | "withdraw",
+  payload: Record<string, unknown>,
+): Promise<LogisticsWerPayableSubmission> {
+  const response = await fetch(`${ENDPOINT}/${encodeURIComponent(String(planId))}/payables`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, ...payload }),
+    cache: "no-store",
+  });
+  const data = await readJson<{ draft?: DispatchApprovalSubmission }>(response);
+  return mapSubmission(data.draft ?? {});
+}
+
+export function savePayableDraft(
+  planId: number,
+  lines: PayableLineInput[],
+  idempotencyKey?: string,
+): Promise<LogisticsWerPayableSubmission> {
+  return postPayables(planId, "save-draft", { lines, idempotencyKey });
+}
+
+export function submitPayable(
+  planId: number,
+  lines: PayableLineInput[],
+  idempotencyKey?: string,
+): Promise<LogisticsWerPayableSubmission> {
+  return postPayables(planId, "submit", { lines, idempotencyKey });
+}
+
+export function withdrawPayableSubmission(
+  planId: number,
+  submissionId: number,
+): Promise<LogisticsWerPayableSubmission> {
+  return postPayables(planId, "withdraw", { submissionId });
+}
+
+export async function uploadPayableReceipt(planId: number, file: File): Promise<StagedReceipt> {
+  const formData = new FormData();
+  formData.append("file", file, file.name);
+  const response = await fetch(
+    `${ENDPOINT}/${encodeURIComponent(String(planId))}/payables/receipts`,
+    { method: "POST", credentials: "include", body: formData, cache: "no-store" },
+  );
+  const data = await readJson<{ fileId?: unknown; fileName?: unknown }>(response);
+  return { fileId: asString(data.fileId), fileName: asNullableString(data.fileName) };
+}
+
+export async function deletePayableReceipt(planId: number, fileId: string): Promise<void> {
+  const response = await fetch(
+    `${ENDPOINT}/${encodeURIComponent(String(planId))}/payables/receipts/${encodeURIComponent(fileId)}`,
+    { method: "DELETE", credentials: "include", cache: "no-store" },
+  );
+  if (!response.ok && response.status !== 204) {
+    const payload = await response.json().catch(() => null) as { message?: string } | null;
+    throw new Error(payload?.message || `Receipt removal failed with status ${response.status}.`);
+  }
+}
+
+export async function fetchPayableCoas(): Promise<PayableCoaOption[]> {
+  const response = await fetch("/api/fm/treasury/coas?forPayable=true", {
+    credentials: "include",
+    cache: "no-store",
+  });
+  const payload = await readJson<Array<{ coaId?: unknown; glCode?: unknown; accountTitle?: unknown }>>(response);
+  return (Array.isArray(payload) ? payload : []).map((row) => {
+    const coaId = asNumber(row.coaId);
+    const title = asString(row.accountTitle) || `COA ${coaId}`;
+    const code = asString(row.glCode);
+    return { coaId, label: code ? `${code} · ${title}` : title };
+  }).filter((row) => row.coaId > 0);
 }

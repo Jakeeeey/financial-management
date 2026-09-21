@@ -65,4 +65,47 @@ export interface LogisticsWerDispatchPlanDetail {
   staff: LogisticsWerStaff[];
   stops: LogisticsWerStop[];
   disbursementTotal: number;
+  supplierEligibility?: LogisticsWerSupplierEligibility | null;
+  plannedAmount?: number | null;
+  reservedAmount?: number | null;
+  remainingAmount?: number | null;
+  submissions?: LogisticsWerPayableSubmission[];
+}
+
+export interface LogisticsWerSupplierEligibility {
+  eligible: boolean;
+  driverId: number | null;
+  supplierId: number | null;
+  supplierName: string | null;
+  reason: string | null;
+}
+
+export interface LogisticsWerPayableReceipt {
+  id: number;
+  fileId: string | null;
+}
+
+export interface LogisticsWerPayableLine {
+  id: number;
+  lineNo: number | null;
+  amount: number;
+  referenceNo: string | null;
+  remarks: string | null;
+  date: string | null;
+  coaId: number | null;
+  receipts: LogisticsWerPayableReceipt[];
+}
+
+export interface LogisticsWerPayableSubmission {
+  id: number;
+  status: string | null;
+  totalAmount: number;
+  submittedBy: number | null;
+  submittedAt: string | null;
+  decidedBy: number | null;
+  decidedAt: string | null;
+  decisionRemarks: string | null;
+  disbursementId: number | null;
+  idempotencyKey: string | null;
+  lines: LogisticsWerPayableLine[];
 }

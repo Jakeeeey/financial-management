@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/table";
 import type { LogisticsWerDispatchPlanDetail } from "../types";
 import { dispatchPlanStatusClassName } from "../utils/status";
+import { LogisticsWerPayablesSection } from "./LogisticsWerPayablesSection";
 
 function formatMoney(value: number): string {
   return `₱${value.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -40,9 +41,10 @@ interface LogisticsWerDetailsSheetProps {
   loading: boolean;
   error: string | null;
   onOpenChange: (open: boolean) => void;
+  onChanged?: () => Promise<void> | void;
 }
 
-export function LogisticsWerDetailsSheet({ detail, loading, error, onOpenChange }: LogisticsWerDetailsSheetProps) {
+export function LogisticsWerDetailsSheet({ detail, loading, error, onOpenChange, onChanged }: LogisticsWerDetailsSheetProps) {
   return (
     <Sheet open={loading || Boolean(detail)} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-[min(96vw,1120px)] overflow-y-auto sm:max-w-[1120px]">
@@ -183,6 +185,13 @@ export function LogisticsWerDetailsSheet({ detail, loading, error, onOpenChange 
                   </div>
                 </section>
               )}
+
+              <LogisticsWerPayablesSection
+                planId={detail.plan.id}
+                planStatus={detail.plan.status}
+                detail={detail}
+                onChanged={() => onChanged?.()}
+              />
             </>
           )}
         </div>
