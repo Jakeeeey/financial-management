@@ -13,7 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { LogisticsWerDispatchPlanSummary } from "../types";
-import { dispatchPlanStatusClassName } from "../utils/status";
+import { dispatchPlanStatusClassName, displayWerStatus } from "../utils/status";
 
 function formatMoney(value: number): string {
   return `₱${value.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -73,7 +73,7 @@ export function LogisticsWerTable({ rows, loading, onViewDetails }: LogisticsWer
                     <TableCell>{row.vehicleName || "Unassigned"}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className={dispatchPlanStatusClassName(row.status)}>
-                        {row.status || "Unknown"}
+                        {displayWerStatus(row.status)}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right font-medium">{formatMoney(row.amount)}</TableCell>

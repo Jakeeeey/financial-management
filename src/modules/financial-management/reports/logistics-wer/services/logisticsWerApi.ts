@@ -106,6 +106,7 @@ interface DispatchApprovalWerPayables {
   plannedAmount?: unknown;
   reservedAmount?: unknown;
   remainingAmount?: unknown;
+  isLiquidated?: unknown;
   supplierEligibility?: {
     eligible?: unknown;
     driverId?: unknown;
@@ -247,6 +248,7 @@ function mapDetails(data: DispatchApprovalResponse, sourcePlan?: LogisticsWerDis
     plannedAmount: asNullableNumber(werPayables?.plannedAmount),
     reservedAmount: asNullableNumber(werPayables?.reservedAmount),
     remainingAmount: asNullableNumber(werPayables?.remainingAmount),
+    isLiquidated: werPayables?.isLiquidated === true,
     submissions: (werPayables?.submissions ?? []).map(mapSubmission),
   };
 }

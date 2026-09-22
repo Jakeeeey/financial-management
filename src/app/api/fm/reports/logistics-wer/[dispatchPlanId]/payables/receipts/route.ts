@@ -42,6 +42,9 @@ export async function POST(
     return error("Unable to load the dispatch plan.", 502);
   }
   if (!baseline) return error("Dispatch plan not found.", 404);
+  if (baseline.isLiquidated) {
+    return error("Receipts cannot be staged for liquidated dispatch plans.", 409);
+  }
   if ((baseline.status || "").toLowerCase() !== "for clearance") {
     return error("Receipts can only be staged for plans in For Clearance state.", 409);
   }

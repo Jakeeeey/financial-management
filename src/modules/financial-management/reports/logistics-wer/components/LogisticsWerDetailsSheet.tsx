@@ -19,7 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { LogisticsWerDispatchPlanDetail } from "../types";
-import { dispatchPlanStatusClassName } from "../utils/status";
+import { dispatchPlanStatusClassName, displayWerStatus } from "../utils/status";
 import { LogisticsWerPayablesSection } from "./LogisticsWerPayablesSection";
 
 function formatMoney(value: number): string {
@@ -84,7 +84,7 @@ export function LogisticsWerDetailsSheet({ detail, loading, error, onOpenChange,
                 <div>
                   <p className="text-xs text-muted-foreground">Status</p>
                   <Badge variant="outline" className={dispatchPlanStatusClassName(detail.plan.status)}>
-                    {detail.plan.status || "Unknown"}
+                    {displayWerStatus(detail.plan.status)}
                   </Badge>
                 </div>
               </div>

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { AlertCircle, CheckCircle2, Loader2, Paperclip, Plus, Trash2, X } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { displayWerStatus } from "../utils/status";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -195,7 +196,14 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
   return (
     <section className="space-y-4">
       <div>
-        <h3 className="font-semibold">Logistics payables</h3>
+        <h3 className="flex items-center gap-2 font-semibold">
+          Logistics payables
+          {detail.isLiquidated && (
+            <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+              Liquidated
+            </Badge>
+          )}
+        </h3>
         <p className="text-xs text-muted-foreground">
           Record payable drafts against this dispatch plan and submit them for QA approval.
         </p>
@@ -267,7 +275,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
                   <TableCell className="font-semibold">#{submission.id}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className={submissionBadgeClassName(submission.status)}>
-                      {submission.status || "Unknown"}
+                      {displayWerStatus(submission.status)}
                     </Badge>
                     {submission.decisionRemarks && (
                       <p className="mt-1 max-w-48 truncate text-[11px] text-muted-foreground" title={submission.decisionRemarks}>
@@ -309,6 +317,12 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
           <AlertDescription>
             New payables can only be recorded while the plan is in For Clearance state. Posted plans are read-only.
           </AlertDescription>
+        </Alert>
+      ) : detail.isLiquidated ? (
+        <Alert className="border-emerald-500/40 bg-emerald-500/5">
+          <CheckCircle2 className="size-4 text-emerald-600" />
+          <AlertTitle>Liquidated</AlertTitle>
+          <AlertDescription>All payables for this dispatch plan have been released. No new submissions are accepted.</AlertDescription>
         </Alert>
       ) : !eligibility?.eligible ? (
         <Alert variant="destructive">

@@ -49,6 +49,7 @@ export async function GET(
         plannedAmount: remaining.baseline,
         reservedAmount: remaining.reserved,
         remainingAmount: remaining.remaining,
+        isLiquidated: baseline?.isLiquidated ?? false,
         supplierEligibility: eligibility,
         submissions: remaining.submissions,
       },

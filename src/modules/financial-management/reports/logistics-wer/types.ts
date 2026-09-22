@@ -69,6 +69,7 @@ export interface LogisticsWerDispatchPlanDetail {
   plannedAmount?: number | null;
   reservedAmount?: number | null;
   remainingAmount?: number | null;
+  isLiquidated?: boolean | null;
   submissions?: LogisticsWerPayableSubmission[];
 }
 

@@ -73,6 +73,7 @@ export interface Disbursement {
     departmentName?: string;
     status: string;
     supportingDocumentsUrl?: string;
+    sourceType?: string | null;
 
     payables: PayableLine[];
     payments: PaymentLine[];

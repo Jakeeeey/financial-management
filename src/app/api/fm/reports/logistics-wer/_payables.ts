@@ -197,11 +197,12 @@ export interface PlanBaseline {
   driverId: number | null;
   status: string | null;
   amount: number;
+  isLiquidated: boolean;
 }
 
 export async function getPlanBaseline(planId: number): Promise<PlanBaseline | null> {
   const params = new URLSearchParams({
-    fields: "id,doc_no,driver_id,status,amount",
+    fields: "id,doc_no,driver_id,status,amount,is_liquidated",
     "filter[id][_eq]": String(planId),
     limit: "1",
   });
@@ -221,6 +222,7 @@ export async function getPlanBaseline(planId: number): Promise<PlanBaseline | nu
     driverId,
     status: asString(row.status) || null,
     amount: asNumber(row.amount),
+    isLiquidated: Number(row.is_liquidated) === 1,
   };
 }
 

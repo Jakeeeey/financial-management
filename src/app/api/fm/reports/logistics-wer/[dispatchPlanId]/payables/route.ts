@@ -203,6 +203,9 @@ export async function POST(
       if (planStatus === "posted") {
         return error("Posted dispatch plans are read-only for new payable submissions.", 409);
       }
+      if (baseline.isLiquidated) {
+        return error("Liquidated dispatch plans are read-only for new payable submissions.", 409);
+      }
       if (planStatus !== "for clearance") {
         return error(`Payables can only be recorded for plans in For Clearance state (current: ${baseline.status || "unknown"}).`, 409);
       }
