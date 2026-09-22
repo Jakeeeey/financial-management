@@ -124,7 +124,7 @@ async function lockAppliedMemos(payablesList: PayableRow[], supplierId: number) 
 
 // 🚀 Helper: Logistics WER liquidation sync
 // Strict rule: a dispatch plan is liquidated only when it has at least one
-// converted payable, every converted disbursement is Released, Partially
+// approved payable, every approved disbursement is Released, Partially
 // Released, or Posted, and no submitted/approved submission is outstanding.
 // Fail-closed: any unreadable state leaves the flag untouched.
 const WER_SETTLED_DISBURSEMENT_STATUSES = new Set(["Released", "Partially Released", "Posted"]);
@@ -158,14 +158,14 @@ async function markWerPlanLiquidatedIfSettled(draftId: number): Promise<void> {
         status: String(row.status || "").toLowerCase(),
         disbursementId: Number(row.disbursement_id) || 0,
     }));
-    const convertedIds = Array.from(new Set(
-        submissions.filter((row) => row.status === "converted" && row.disbursementId > 0).map((row) => row.disbursementId),
+    const approvedIds = Array.from(new Set(
+        submissions.filter((row) => row.status === "approved" && row.disbursementId > 0).map((row) => row.disbursementId),
     ));
-    if (convertedIds.length === 0) return;
+    if (approvedIds.length === 0) return;
     if (submissions.some((row) => row.status === "submitted" || row.status === "approved")) return;
 
     const statusParams = new URLSearchParams({
-        "filter[id][_in]": convertedIds.join(","),
+        "filter[id][_in]": approvedIds.join(","),
         fields: "id,status",
         limit: "-1",
     });
@@ -175,7 +175,7 @@ async function markWerPlanLiquidatedIfSettled(draftId: number): Promise<void> {
     });
     if (!statusRes.ok) return;
     const rows = (((await statusRes.json()) as { data?: Array<{ id?: unknown; status?: unknown }> }).data ?? []);
-    if (rows.length !== convertedIds.length) return;
+    if (rows.length !== approvedIds.length) return;
     if (!rows.every((row) => WER_SETTLED_DISBURSEMENT_STATUSES.has(String(row.status || "")))) return;
 
     await fetch(`${DIRECTUS_URL}/items/post_dispatch_plan/${planId}`, {

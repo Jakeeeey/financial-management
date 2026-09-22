@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { cookies } from "next/headers";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
@@ -39,7 +40,9 @@ export default async function Page() {
       </header>
 
       <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4">
-        <LogisticsWerModule />
+        <Suspense fallback={<p className="p-4 text-sm text-muted-foreground">Loading Logistics WER…</p>}>
+          <LogisticsWerModule />
+        </Suspense>
       </main>
     </div>
   );

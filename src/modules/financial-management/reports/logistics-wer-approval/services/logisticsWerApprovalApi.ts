@@ -19,6 +19,7 @@ export interface ApprovalQueuePage {
   size: number;
   totalElements: number;
   totalPages: number;
+  statusCounts?: Record<string, number>;
 }
 
 export interface ApprovalQueueQuery {
@@ -76,12 +77,12 @@ export async function fetchSubmissionReview(submissionId: number): Promise<Submi
   });
   return readJson<SubmissionReview>(response);
 }
-
 export async function decideSubmission(
   submissionId: number,
   decision: ApprovalDecision,
   remarks?: string,
 ): Promise<DecisionResult> {
+
   const response = await fetch(`${ENDPOINT}/${encodeURIComponent(String(submissionId))}/decision`, {
     method: "POST",
     credentials: "include",
@@ -95,4 +96,33 @@ export async function decideSubmission(
     disbursementId: typeof payload.disbursementId === "number" ? payload.disbursementId : null,
     idempotent: payload.idempotent === true,
   };
+}
+
+export interface BulkDecisionItemResult {
+  submissionId: number;
+  ok: boolean;
+  message: string | null;
+  disbursementId: number | null;
+  idempotent: boolean;
+}
+
+export interface BulkDecisionResult {
+  results: BulkDecisionItemResult[];
+  decided: number;
+  failed: number;
+}
+
+export async function decideSubmissionsBulk(
+  submissionIds: number[],
+  decision: ApprovalDecision,
+  remarks?: string,
+): Promise<BulkDecisionResult> {
+  const response = await fetch(`${ENDPOINT}/decisions`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ submissionIds, decision, remarks }),
+    cache: "no-store",
+  });
+  return readJson<BulkDecisionResult>(response);
 }

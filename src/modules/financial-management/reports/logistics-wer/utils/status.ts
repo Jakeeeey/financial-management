@@ -14,14 +14,12 @@ export function dispatchPlanStatusClassName(status: string | null): string {
 }
 
 /**
- * Display text for status pills on the Logistics WER page. Converted
- * submissions read as Approved, and every value renders with uppercased
- * first letters. Stored values are unchanged.
+ * Display text for status pills on the Logistics WER page. Every value
+ * renders with uppercased first letters. Stored values are unchanged.
  */
 export function displayWerStatus(status: string | null): string {
   const normalized = (status || "").trim().toLowerCase();
   if (!normalized) return "Unknown";
-  if (normalized === "converted") return "Approved";
   return normalized
     .split(/[\s_-]+/)
     .map((word) => (word ? word.charAt(0).toUpperCase() + word.slice(1) : word))

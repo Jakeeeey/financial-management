@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertCircle, CheckCircle2, Loader2, Paperclip, Plus, Trash2, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, Copy, Loader2, Paperclip, Plus, Trash2, X } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { displayWerStatus } from "../utils/status";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { WerCoaCombobox } from "./WerCoaCombobox";
 import {
   Table,
   TableBody,
@@ -41,7 +41,6 @@ function formatMoney(value: number | null | undefined): string {
 function submissionBadgeClassName(status: string | null): string {
   switch ((status || "").toLowerCase()) {
     case "approved":
-    case "converted":
       return "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
     case "submitted":
       return "border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300";
@@ -70,8 +69,16 @@ interface EditableLine {
   receipts: StagedReceipt[];
 }
 
+function todayDateOnly(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function emptyLine(key: number): EditableLine {
-  return { key, amount: "", referenceNo: "", remarks: "", date: "", coaId: "", receipts: [] };
+  return { key, amount: "", referenceNo: "", remarks: "", date: todayDateOnly(), coaId: "", receipts: [] };
 }
 
 interface LogisticsWerPayablesSectionProps {
@@ -90,6 +97,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
   const [uploadingKey, setUploadingKey] = useState<number | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [submittedId, setSubmittedId] = useState<number | null>(null);
   const [withdrawingId, setWithdrawingId] = useState<number | null>(null);
 
   const eligibility = detail.supplierEligibility ?? null;
@@ -115,6 +123,11 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
     setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)));
   };
 
+  const linesTotal = lines.reduce((sum, line) => {
+    const amount = Number(line.amount);
+    return sum + (Number.isFinite(amount) && amount > 0 ? amount : 0);
+  }, 0);
+
   const buildPayload = (): PayableLineInput[] => lines.map((line) => ({
     amount: Number(line.amount),
     referenceNo: line.referenceNo.trim() || null,
@@ -127,6 +140,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
   const handleAction = async (kind: "save-draft" | "submit") => {
     setFormError(null);
     setNotice(null);
+    setSubmittedId(null);
     setBusy(true);
     try {
       const idempotencyKey = typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -140,6 +154,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
           ? `Submission #${submission.id} recorded for QA approval.`
           : `Draft #${submission.id} saved.`,
       );
+      if (kind === "submit") setSubmittedId(submission.id);
       setLines([emptyLine(1)]);
       setLineKey((next) => next + 1);
       await onChanged();
@@ -264,7 +279,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
             {submissions.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="py-6 text-center text-xs text-muted-foreground">
-                  No payable submissions recorded for this dispatch plan.
+                  No payable submissions recorded for this dispatch plan. Use the form below to record the first payable.
                 </TableCell>
               </TableRow>
             ) : submissions.map((submission) => {
@@ -354,16 +369,44 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
             <div key={line.key} className="space-y-2 rounded-lg border bg-muted/20 p-3">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold text-muted-foreground">Line {index + 1}</p>
-                {lines.length > 1 && (
+                <div className="flex items-center gap-1">
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={() => setLines((current) => current.filter((item) => item.key !== line.key))}
+                    onClick={() => {
+                      setLines((current) => {
+                        const position = current.findIndex((item) => item.key === line.key);
+                        // Receipts are intentionally not copied: each attachment
+                        // belongs to exactly one payable line.
+                        const copy: EditableLine = {
+                          key: Math.max(0, ...current.map((item) => item.key)) + 1,
+                          amount: line.amount,
+                          referenceNo: line.referenceNo,
+                          remarks: line.remarks,
+                          date: line.date,
+                          coaId: line.coaId,
+                          receipts: [],
+                        };
+                        const nextLines = [...current];
+                        nextLines.splice(position + 1, 0, copy);
+                        return nextLines;
+                      });
+                    }}
                   >
-                    <Trash2 className="size-3.5" /> Remove
+                    <Copy className="size-3.5" /> Duplicate
                   </Button>
-                )}
+                  {lines.length > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setLines((current) => current.filter((item) => item.key !== line.key))}
+                    >
+                      <Trash2 className="size-3.5" /> Remove
+                    </Button>
+                  )}
+                </div>
               </div>
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 <div className="space-y-1">
@@ -395,16 +438,11 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
                 </div>
                 <div className="space-y-1 sm:col-span-2 lg:col-span-1">
                   <Label>Account (COA) *</Label>
-                  <Select value={line.coaId} onValueChange={(value) => updateLine(line.key, { coaId: value })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select account…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {coas.map((coa) => (
-                        <SelectItem key={coa.coaId} value={String(coa.coaId)}>{coa.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <WerCoaCombobox
+                    value={line.coaId}
+                    options={coas}
+                    onValueChange={(value) => updateLine(line.key, { coaId: value })}
+                  />
                 </div>
                 <div className="space-y-1 sm:col-span-2">
                   <Label>Remarks</Label>
@@ -470,11 +508,29 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
               <AlertDescription>{formError}</AlertDescription>
             </Alert>
           )}
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+            <span>
+              Lines total: <strong className="text-foreground">{formatMoney(linesTotal)}</strong>
+            </span>
+            <span>
+              Remaining on plan: <strong className="text-foreground">{formatMoney(detail.remainingAmount ?? detail.plan.amount)}</strong>
+            </span>
+          </div>
           {notice && (
             <Alert className="border-emerald-500/40 bg-emerald-500/5">
               <CheckCircle2 className="size-4 text-emerald-600" />
               <AlertTitle>Saved</AlertTitle>
-              <AlertDescription>{notice}</AlertDescription>
+              <AlertDescription className="flex flex-wrap items-center gap-3">
+                <span>{notice}</span>
+                {submittedId !== null && (
+                  <a
+                    className="font-semibold text-emerald-700 underline dark:text-emerald-300"
+                    href={`/fm/reports/logistics-wer-approval?search=${encodeURIComponent(String(submittedId))}`}
+                  >
+                    View in approval queue
+                  </a>
+                )}
+              </AlertDescription>
             </Alert>
           )}
 

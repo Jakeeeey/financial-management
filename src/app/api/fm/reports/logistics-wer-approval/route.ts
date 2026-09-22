@@ -10,7 +10,7 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const QUEUE_STATUSES = ["submitted", "approved", "returned", "rejected", "converted", "withdrawn", "draft"] as const;
+const QUEUE_STATUSES = ["submitted", "approved", "returned", "rejected", "withdrawn", "draft"] as const;
 
 function error(message: string, status: number) {
   return NextResponse.json({ message }, { status });
@@ -116,12 +116,18 @@ export async function GET(request: NextRequest) {
     }
 
     const offset = page * size;
+    const statusCounts: Record<string, number> = {};
+    for (const row of drafts.data ?? []) {
+      const key = (typeof row.status === "string" ? row.status.trim().toLowerCase() : "") || "unknown";
+      statusCounts[key] = (statusCounts[key] ?? 0) + 1;
+    }
     return NextResponse.json({
       content: items.slice(offset, offset + size),
       number: page,
       size,
       totalElements: items.length,
       totalPages: items.length === 0 ? 0 : Math.ceil(items.length / size),
+      statusCounts,
     });
   } catch (queueError) {
     console.error("[Logistics WER] Approval queue failed:", queueError);

@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import type { SubmissionReview } from "../services/logisticsWerApprovalApi";
+import { displayWerStatus } from "../../logistics-wer/utils/status";
 
 function formatMoney(value: number | null | undefined): string {
   return `₱${Number(value ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -67,6 +68,14 @@ export function LogisticsWerApprovalReviewDialog({
               ? `Dispatch plan ${review.dispatchPlanDocNo} · ${formatMoney(submission?.totalAmount)}`
               : "Loading submission details…"}
           </DialogDescription>
+          {review && (
+            <a
+              className="text-xs font-semibold text-primary underline"
+              href={`/fm/reports/logistics-wer?planId=${encodeURIComponent(String(review.dispatchPlanId))}`}
+            >
+              Open dispatch plan
+            </a>
+          )}
         </DialogHeader>
 
         {loading && !review && (
@@ -155,7 +164,7 @@ export function LogisticsWerApprovalReviewDialog({
             {submission.disbursementId && (
               <Alert className="border-emerald-500/40 bg-emerald-500/5">
                 <CheckCircle2 className="size-4 text-emerald-600" />
-                <AlertTitle>Converted</AlertTitle>
+                <AlertTitle>Approved</AlertTitle>
                 <AlertDescription>
                   Standard Draft disbursement #{submission.disbursementId} was created from this submission.
                 </AlertDescription>
@@ -194,13 +203,13 @@ export function LogisticsWerApprovalReviewDialog({
                     {deciding ? "Saving…" : "Reject"}
                   </Button>
                   <Button type="button" disabled={deciding} onClick={() => onDecide("approve", remarks)}>
-                    {deciding ? "Approving…" : "Approve & Convert"}
+                    {deciding ? "Approving…" : "Approve"}
                   </Button>
                 </div>
               </div>
             ) : (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Badge variant="outline">{submission.status || "Unknown"}</Badge>
+                <Badge variant="outline">{displayWerStatus(submission.status)}</Badge>
                 <span>This submission is no longer awaiting a decision.</span>
               </div>
             )}

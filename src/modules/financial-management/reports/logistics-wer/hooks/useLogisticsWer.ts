@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   fetchLogisticsWerDetails,
   fetchLogisticsWerReport,
@@ -21,6 +22,7 @@ export const LOGISTICS_WER_STATUS_OPTIONS = [
 ];
 
 export function useLogisticsWer() {
+  const searchParams = useSearchParams();
   const initialRange = currentManilaWeek();
   const [range, setRange] = useState<DateRange>(initialRange);
   const [draftRange, setDraftRange] = useState<DateRange>(initialRange);
@@ -36,6 +38,24 @@ export function useLogisticsWer() {
   const [detailError, setDetailError] = useState<string | null>(null);
   const requestId = useRef(0);
   const lastPlan = useRef<LogisticsWerDispatchPlan | null>(null);
+  const deepLinkedPlanId = useRef<number | null>(null);
+
+  // Deep link (?planId=) from the approval module: open that plan's details.
+  useEffect(() => {
+    const rawPlanId = searchParams.get("planId");
+    const planId = rawPlanId !== null ? Number(rawPlanId) : 0;
+    if (!Number.isSafeInteger(planId) || planId <= 0 || deepLinkedPlanId.current === planId) return;
+    deepLinkedPlanId.current = planId;
+    setDetail(null);
+    setDetailError(null);
+    setDetailLoading(true);
+    fetchLogisticsWerDetails(planId)
+      .then((loaded) => setDetail(loaded))
+      .catch((requestError) => {
+        setDetailError(requestError instanceof Error ? requestError.message : "Unable to load dispatch plan details.");
+      })
+      .finally(() => setDetailLoading(false));
+  }, [searchParams]);
 
   const load = useCallback(async () => {
     const currentRequest = ++requestId.current;

@@ -20,7 +20,7 @@ function error(message: string, status: number) {
 
 /**
  * Remove a staged receipt. Rejected once the file is attached to a
- * submitted, approved, or converted payable.
+ * submitted or approved payable.
  */
 export async function DELETE(
   request: NextRequest,
@@ -71,8 +71,8 @@ export async function DELETE(
         return error("This receipt belongs to a different dispatch plan.", 403);
       }
       const status = String(owner.status || "").toLowerCase();
-      if (status === "submitted" || status === "approved" || status === "converted") {
-        return error("Receipts attached to a submitted, approved, or converted payable cannot be removed.", 403);
+      if (status === "submitted" || status === "approved") {
+        return error("Receipts attached to a submitted or approved payable cannot be removed.", 403);
       }
       await directusWrite("DELETE", `/items/${DRAFT_RECEIPT_COLLECTION}/${Number(link.id)}`);
     }

@@ -125,7 +125,7 @@ async function assertReceiptsAttachable(fileIds: string[], excludeDraftId: numbe
         `/items/${DRAFT_COLLECTION}?${draftParams.toString()}`,
       );
       const status = String(draft.data?.[0]?.status || "").toLowerCase();
-      if (status === "submitted" || status === "approved" || status === "converted") {
+      if (status === "submitted" || status === "approved") {
         return `Receipt ${fileId} is already attached to an active payable submission.`;
       }
     }

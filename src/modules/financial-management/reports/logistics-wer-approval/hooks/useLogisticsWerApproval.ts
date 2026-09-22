@@ -1,12 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   decideSubmission,
+  decideSubmissionsBulk,
   fetchApprovalQueue,
   fetchSubmissionReview,
   type ApprovalDecision,
   type ApprovalQueueItem,
+  type BulkDecisionResult,
   type SubmissionReview,
 } from "../services/logisticsWerApprovalApi";
 
@@ -17,19 +20,21 @@ export const APPROVAL_STATUS_OPTIONS = [
   { value: "approved", label: "Approved" },
   { value: "returned", label: "Returned" },
   { value: "rejected", label: "Rejected" },
-  { value: "converted", label: "Converted" },
   { value: "withdrawn", label: "Withdrawn" },
   { value: "all", label: "All statuses" },
 ];
 
 export function useLogisticsWerApproval() {
+  const searchParams = useSearchParams();
+  const initialSearch = (searchParams.get("search") || "").trim();
   const [status, setStatus] = useState("submitted");
-  const [draftSearch, setDraftSearch] = useState("");
-  const [search, setSearch] = useState("");
+  const [draftSearch, setDraftSearch] = useState(initialSearch);
+  const [search, setSearch] = useState(initialSearch);
   const [page, setPage] = useState(0);
   const [items, setItems] = useState<ApprovalQueueItem[]>([]);
   const [totalElements, setTotalElements] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
+  const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reviewId, setReviewId] = useState<number | null>(null);
@@ -37,6 +42,8 @@ export function useLogisticsWerApproval() {
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [deciding, setDeciding] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [bulkDeciding, setBulkDeciding] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -46,6 +53,7 @@ export function useLogisticsWerApproval() {
       setItems(result.content);
       setTotalElements(result.totalElements);
       setTotalPages(result.totalPages);
+      setStatusCounts(result.statusCounts ?? {});
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load the approval queue.");
     } finally {
@@ -60,11 +68,13 @@ export function useLogisticsWerApproval() {
   const applySearch = useCallback(() => {
     setSearch(draftSearch.trim());
     setPage(0);
+    setSelectedIds([]);
   }, [draftSearch]);
 
   const changeStatus = useCallback((nextStatus: string) => {
     setStatus(nextStatus);
     setPage(0);
+    setSelectedIds([]);
   }, []);
 
   const openReview = useCallback(async (submissionId: number) => {
@@ -100,6 +110,30 @@ export function useLogisticsWerApproval() {
     }
   }, [load, reviewId]);
 
+  const toggleSelected = useCallback((submissionId: number) => {
+    setSelectedIds((current) => current.includes(submissionId)
+      ? current.filter((id) => id !== submissionId)
+      : [...current, submissionId]);
+  }, []);
+
+  const clearSelection = useCallback(() => setSelectedIds([]), []);
+
+  const decideBulk = useCallback(async (
+    decision: ApprovalDecision,
+    remarks?: string,
+  ): Promise<BulkDecisionResult | null> => {
+    if (selectedIds.length === 0) return null;
+    setBulkDeciding(true);
+    try {
+      const result = await decideSubmissionsBulk(selectedIds, decision, remarks);
+      setSelectedIds([]);
+      await load();
+      return result;
+    } finally {
+      setBulkDeciding(false);
+    }
+  }, [load, selectedIds]);
+
   return {
     status,
     draftSearch,
@@ -109,6 +143,7 @@ export function useLogisticsWerApproval() {
     items,
     totalElements,
     totalPages,
+    statusCounts,
     loading,
     error,
     reviewId,
@@ -116,6 +151,11 @@ export function useLogisticsWerApproval() {
     reviewLoading,
     reviewError,
     deciding,
+    selectedIds,
+    bulkDeciding,
+    toggleSelected,
+    clearSelection,
+    decideBulk,
     setPage,
     applySearch,
     changeStatus,

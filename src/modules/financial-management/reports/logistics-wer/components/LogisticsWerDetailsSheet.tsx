@@ -21,6 +21,7 @@ import {
 import type { LogisticsWerDispatchPlanDetail } from "../types";
 import { dispatchPlanStatusClassName, displayWerStatus } from "../utils/status";
 import { LogisticsWerPayablesSection } from "./LogisticsWerPayablesSection";
+import { WerWorkflowStepper, werStageForSubmissions } from "./WerWorkflowStepper";
 
 function formatMoney(value: number): string {
   return `₱${value.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -101,6 +102,17 @@ export function LogisticsWerDetailsSheet({ detail, loading, error, onOpenChange,
                   <span className="font-medium">Starting point:</span> {detail.plan.remarks}
                 </div>
               )}
+
+              <WerWorkflowStepper
+                currentStage={werStageForSubmissions(detail.submissions, detail.isLiquidated)}
+              />
+
+              <LogisticsWerPayablesSection
+                planId={detail.plan.id}
+                planStatus={detail.plan.status}
+                detail={detail}
+                onChanged={() => onChanged?.()}
+              />
 
               <section className="space-y-3">
                 <div>
@@ -185,13 +197,6 @@ export function LogisticsWerDetailsSheet({ detail, loading, error, onOpenChange,
                   </div>
                 </section>
               )}
-
-              <LogisticsWerPayablesSection
-                planId={detail.plan.id}
-                planStatus={detail.plan.status}
-                detail={detail}
-                onChanged={() => onChanged?.()}
-              />
             </>
           )}
         </div>

@@ -15,8 +15,7 @@ export type LogisticsDraftStatus =
   | "approved"
   | "returned"
   | "rejected"
-  | "withdrawn"
-  | "converted";
+  | "withdrawn";
 
 /** Drafts in these statuses hold an active reservation against the plan. */
 export const ACTIVE_RESERVATION_STATUSES: LogisticsDraftStatus[] = ["submitted", "approved"];
@@ -323,7 +322,7 @@ export async function getPlanDrafts(planId: number): Promise<DraftSubmission[]> 
   });
 }
 
-async function convertedDisbursementTotal(disbursementId: number): Promise<number> {
+async function approvedDisbursementTotal(disbursementId: number): Promise<number> {
   const params = new URLSearchParams({
     "filter[disbursement_id][_eq]": String(disbursementId),
     limit: "-1",
@@ -337,7 +336,7 @@ async function convertedDisbursementTotal(disbursementId: number): Promise<numbe
 
 /**
  * Remaining payable amount for a plan. The baseline is never overwritten;
- * active submitted/approved drafts reserve, and a converted draft counts once
+ * active submitted drafts reserve, and an approved draft counts once
  * via its resulting disbursement instead of its draft total.
  */
 export async function getPlanRemaining(planId: number): Promise<PlanRemaining & { submissions: DraftSubmission[] }> {
@@ -348,8 +347,8 @@ export async function getPlanRemaining(planId: number): Promise<PlanRemaining & 
   let reserved = 0;
   for (const submission of submissions) {
     const status = (submission.status || "").toLowerCase();
-    if (status === "converted" && submission.disbursementId) {
-      reserved += await convertedDisbursementTotal(submission.disbursementId);
+    if (status === "approved" && submission.disbursementId) {
+      reserved += await approvedDisbursementTotal(submission.disbursementId);
     } else if (ACTIVE_RESERVATION_STATUSES.includes(status as (typeof ACTIVE_RESERVATION_STATUSES)[number])) {
       reserved += submission.totalAmount;
     }
