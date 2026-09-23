@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { proxySpring } from "@/app/api/fm/financial-statements/adjusting-journal-entries/_spring";
 import {
-  getPlanBaseline,
-  getPlanRemaining,
+  getPlanFinancialContext,
   resolveDriverSupplier,
-  withTreasuryStatuses,
 } from "../_payables";
 
 export const runtime = "nodejs";
@@ -31,33 +29,33 @@ export async function GET(
     return NextResponse.json({ message: "dispatchPlanId must be a positive integer." }, { status: 400 });
   }
 
+  const contextPromise = getPlanFinancialContext(id)
+    .then((context) => ({ context }))
+    .catch((error: unknown) => ({ error }));
   const springResponse = await springDetail(id);
   if (!springResponse.ok) return springResponse;
+  const springPayload = await springResponse.json().catch(() => ({})) as Record<string, unknown>;
 
   // Merge Logistics WER payables context (Directus-side) into the Spring detail.
   // A merge failure must not break the existing details sheet.
   try {
-    const springPayload = (await springResponse.json()) as Record<string, unknown>;
-    const baseline = await getPlanBaseline(id);
-    const driverId = baseline?.driverId ?? null;
-    const [eligibility, remaining] = await Promise.all([
-      resolveDriverSupplier(driverId),
-      getPlanRemaining(id),
-    ]);
-    const submissions = await withTreasuryStatuses(remaining.submissions);
+    const contextResult = await contextPromise;
+    if ("error" in contextResult) throw contextResult.error;
+    const context = contextResult.context;
+    const eligibility = await resolveDriverSupplier(context.plan?.driverId ?? null);
     return NextResponse.json({
       ...springPayload,
       werPayables: {
-        plannedAmount: remaining.baseline,
-        reservedAmount: remaining.reserved,
-        remainingAmount: remaining.remaining,
-        isLiquidated: baseline?.isLiquidated ?? false,
+        plannedAmount: context.baseline,
+        reservedAmount: context.reserved,
+        remainingAmount: context.remaining,
+        isLiquidated: context.plan?.isLiquidated ?? false,
         supplierEligibility: eligibility,
-        submissions,
+        submissions: context.submissions,
       },
     });
   } catch (mergeError) {
     console.error("[Logistics WER] Failed to merge payables context:", mergeError);
-    return springDetail(id);
+    return NextResponse.json(springPayload);
   }
 }

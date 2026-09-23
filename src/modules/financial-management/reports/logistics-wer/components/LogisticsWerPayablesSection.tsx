@@ -21,7 +21,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import type {
   LogisticsWerDispatchPlanDetail,
-  LogisticsWerPayableSubmission,
+  LogisticsWerPayableSubmissionSummary,
 } from "../types";
 import {
   deletePayableReceipt,
@@ -82,6 +82,10 @@ function emptyLine(key: number): EditableLine {
   return { key, amount: "", referenceNo: "", remarks: "", date: todayDateOnly(), coaId: "", receipts: [] };
 }
 
+function nextLineKey(current: EditableLine[]): number {
+  return Math.max(0, ...current.map((item) => item.key)) + 1;
+}
+
 interface LogisticsWerPayablesSectionProps {
   planId: number;
   planStatus: string | null;
@@ -91,7 +95,6 @@ interface LogisticsWerPayablesSectionProps {
 
 export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChanged }: LogisticsWerPayablesSectionProps) {
   const [lines, setLines] = useState<EditableLine[]>([emptyLine(1)]);
-  const [lineKey, setLineKey] = useState(2);
   const [coas, setCoas] = useState<PayableCoaOption[]>([]);
   const [coasError, setCoasError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -157,7 +160,6 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
       );
       if (kind === "submit") setSubmittedId(submission.id);
       setLines([emptyLine(1)]);
-      setLineKey((next) => next + 1);
       await onChanged();
     } catch (actionError) {
       setFormError(actionError instanceof Error ? actionError.message : "Unable to record the payable.");
@@ -194,7 +196,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
     }
   };
 
-  const handleWithdraw = async (submission: LogisticsWerPayableSubmission) => {
+  const handleWithdraw = async (submission: LogisticsWerPayableSubmissionSummary) => {
     if (!window.confirm(`Withdraw submission #${submission.id}? Its reservation will be released.`)) return;
     setFormError(null);
     setWithdrawingId(submission.id);
@@ -285,7 +287,6 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
                 </TableCell>
               </TableRow>
             ) : submissions.map((submission) => {
-              const receiptCount = submission.lines.reduce((sum, line) => sum + line.receipts.length, 0);
               const status = (submission.status || "").toLowerCase();
               const treasuryStatus = submission.disbursementId
                 ? submission.treasuryStatus || "Unavailable"
@@ -305,7 +306,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
                   </TableCell>
                   <TableCell className="text-right font-medium">{formatMoney(submission.totalAmount)}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">
-                    {submission.lines.length} line(s) · {receiptCount} receipt(s)
+                    {submission.lineCount} line(s) · {submission.receiptCount} receipt(s)
                   </TableCell>
                   <TableCell className="text-xs">
                     {submission.disbursementId ? `#${submission.disbursementId}` : "—"}
@@ -367,8 +368,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
               variant="outline"
               size="sm"
               onClick={() => {
-                setLineKey((next) => next + 1);
-                setLines((current) => [...current, emptyLine(lineKey)]);
+                setLines((current) => [...current, emptyLine(nextLineKey(current))]);
               }}
             >
               <Plus className="size-3.5" /> Add line

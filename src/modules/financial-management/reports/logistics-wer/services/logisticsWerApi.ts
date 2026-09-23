@@ -4,6 +4,7 @@ import type {
   LogisticsWerPayableLine,
   LogisticsWerPayableReceipt,
   LogisticsWerPayableSubmission,
+  LogisticsWerPayableSubmissionSummary,
   LogisticsWerReportPage,
   LogisticsWerStaff,
   LogisticsWerStop,
@@ -103,6 +104,17 @@ interface DispatchApprovalSubmission {
   lines?: DispatchApprovalLine[] | null;
 }
 
+interface DispatchApprovalSubmissionSummary {
+  id?: unknown;
+  status?: unknown;
+  totalAmount?: unknown;
+  decisionRemarks?: unknown;
+  disbursementId?: unknown;
+  treasuryStatus?: unknown;
+  lineCount?: unknown;
+  receiptCount?: unknown;
+}
+
 interface DispatchApprovalWerPayables {
   plannedAmount?: unknown;
   reservedAmount?: unknown;
@@ -115,7 +127,7 @@ interface DispatchApprovalWerPayables {
     supplierName?: unknown;
     reason?: unknown;
   } | null;
-  submissions?: DispatchApprovalSubmission[] | null;
+  submissions?: DispatchApprovalSubmissionSummary[] | null;
 }
 
 function asString(value: unknown): string {
@@ -250,7 +262,7 @@ function mapDetails(data: DispatchApprovalResponse, sourcePlan?: LogisticsWerDis
     reservedAmount: asNullableNumber(werPayables?.reservedAmount),
     remainingAmount: asNullableNumber(werPayables?.remainingAmount),
     isLiquidated: werPayables?.isLiquidated === true,
-    submissions: (werPayables?.submissions ?? []).map(mapSubmission),
+    submissions: (werPayables?.submissions ?? []).map(mapSubmissionSummary),
   };
 }
 
@@ -301,6 +313,19 @@ function mapSubmission(data: DispatchApprovalSubmission): LogisticsWerPayableSub
     treasuryStatus: asNullableString(data.treasuryStatus),
     idempotencyKey: asNullableString(data.idempotencyKey),
     lines: (data.lines ?? []).map(mapSubmissionLine),
+  };
+}
+
+function mapSubmissionSummary(data: DispatchApprovalSubmissionSummary): LogisticsWerPayableSubmissionSummary {
+  return {
+    id: asNumber(data.id),
+    status: asNullableString(data.status),
+    totalAmount: asNumber(data.totalAmount),
+    decisionRemarks: asNullableString(data.decisionRemarks),
+    disbursementId: asNullableNumber(data.disbursementId),
+    treasuryStatus: asNullableString(data.treasuryStatus),
+    lineCount: asNumber(data.lineCount),
+    receiptCount: asNumber(data.receiptCount),
   };
 }
 

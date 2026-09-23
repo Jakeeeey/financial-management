@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDispatchPlans } from "./_directus";
 import type { LogisticsWerReportPage } from "@/modules/financial-management/reports/logistics-wer/types";
-import { isLogisticsWerVisibleStatus } from "@/modules/financial-management/reports/logistics-wer/utils/status";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -71,29 +70,13 @@ export async function GET(request: NextRequest) {
   const size = normalizeSize(request.nextUrl.searchParams.get("size"));
 
   try {
-    const plans = await getDispatchPlans(startDate, endDate);
-
-    const filteredPlans = plans
-      .filter((plan) => isLogisticsWerVisibleStatus(plan.status))
-      .filter((plan) => status.toUpperCase() === "ALL" || (plan.status || "").toLowerCase() === status.toLowerCase())
-      .filter((plan) => {
-        if (!search) return true;
-        return [plan.docNo, plan.driverName, plan.vehicleName]
-          .some((value) => (value || "").toLowerCase().includes(search));
-      })
-      .sort((left, right) =>
-        (right.dispatchDate || "0000-00-00").localeCompare(left.dispatchDate || "0000-00-00")
-        || (right.timeOfDispatch || "").localeCompare(left.timeOfDispatch || "")
-        || right.id - left.id,
-      );
-
-    const offset = page * size;
+    const result = await getDispatchPlans({ startDate, endDate, status, search, page, size });
     const response: LogisticsWerReportPage = {
-      content: filteredPlans.slice(offset, offset + size),
+      content: result.content,
       number: page,
       size,
-      totalElements: filteredPlans.length,
-      totalPages: filteredPlans.length === 0 ? 0 : Math.ceil(filteredPlans.length / size),
+      totalElements: result.totalElements,
+      totalPages: result.totalElements === 0 ? 0 : Math.ceil(result.totalElements / size),
       range: { startDate, endDate },
     };
 

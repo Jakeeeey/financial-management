@@ -8,7 +8,7 @@ import {
   directusFetch,
   directusWrite,
   getPlanBaseline,
-  getPlanDrafts,
+  getPlanSubmission,
   getPlanRemaining,
   markWerPlanLiquidatedIfSettled,
   resolveDriverSupplier,
@@ -43,13 +43,7 @@ function manilaDateOnly(): string {
 }
 
 async function loadSubmission(submissionId: number): Promise<{ planId: number; submission: DraftSubmission | null }> {
-  const header = await directusFetch<{ data?: Record<string, unknown> }>(
-    `/items/${DRAFT_COLLECTION}/${submissionId}?fields=id,dispatch_plan_id`,
-  ).catch(() => null);
-  const planId = Number(header?.data?.dispatch_plan_id) || 0;
-  if (!planId) return { planId: 0, submission: null };
-  const submissions = await getPlanDrafts(planId);
-  return { planId, submission: submissions.find((item) => item.id === submissionId) ?? null };
+  return await getPlanSubmission(submissionId) ?? { planId: 0, submission: null };
 }
 
 interface CreatedIds {

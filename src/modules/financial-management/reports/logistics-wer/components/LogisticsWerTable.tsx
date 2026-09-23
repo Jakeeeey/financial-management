@@ -82,13 +82,9 @@ export function LogisticsWerTable({ rows, loading, onViewDetails }: LogisticsWer
                         variant="outline"
                         className={row.isLiquidated
                           ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                          : row.isLiquidated === false
-                            ? "border-muted-foreground/30 bg-muted/40 text-muted-foreground"
-                            : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"}
+                          : "border-muted-foreground/30 bg-muted/40 text-muted-foreground"}
                       >
-                        {row.isLiquidated === null || row.isLiquidated === undefined
-                          ? "Unknown"
-                          : row.isLiquidated ? "Yes" : "No"}
+                        {row.isLiquidated ? "Yes" : "No"}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right font-medium">{formatMoney(row.amount)}</TableCell>

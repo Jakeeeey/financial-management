@@ -125,12 +125,14 @@ export function useLogisticsWer() {
         setDetailError(requestError instanceof Error ? requestError.message : "Unable to load dispatch plan details.");
       }
     } finally {
-      if (lastPlan.current?.id === plan.id) setDetailLoading(false);
+      if ((lastPlan.current?.id ?? detail?.plan.id) === plan.id) setDetailLoading(false);
     }
-  }, []);
+  }, [detail]);
 
   const refreshDetails = useCallback(async () => {
-    const plan = lastPlan.current;
+    // Deep-linked sheets (?planId=) never went through openDetails, so
+    // lastPlan is unset there — fall back to the currently open detail.
+    const plan = lastPlan.current ?? detail?.plan ?? null;
     if (!plan) return;
     setDetailError(null);
     setDetailLoading(true);

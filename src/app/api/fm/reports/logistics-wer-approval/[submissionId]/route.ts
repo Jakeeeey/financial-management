@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { hasDisbursementApprovalAccess } from "@/app/api/fm/treasury/disbursements/_approval-access";
 import {
-  DRAFT_COLLECTION,
-  directusFetch,
-  getPlanBaseline,
-  getPlanDrafts,
-  getPlanRemaining,
+  getPlanFinancialContext,
+  getPlanSubmission,
   requireSessionUserId,
   resolveDriverSupplier,
 } from "../../logistics-wer/_payables";
@@ -34,29 +31,20 @@ export async function GET(
   }
 
   try {
-    const header = await directusFetch<{ data?: Record<string, unknown> }>(
-      `/items/${DRAFT_COLLECTION}/${id}?fields=id,dispatch_plan_id,status`,
-    ).catch(() => null);
-    const planId = Number(header?.data?.dispatch_plan_id) || 0;
-    if (!planId) return error("Submission not found.", 404);
+    const record = await getPlanSubmission(id);
+    if (!record) return error("Submission not found.", 404);
+    const { planId, submission } = record;
+    const context = await getPlanFinancialContext(planId, false);
 
-    const [submissions, baseline, remaining] = await Promise.all([
-      getPlanDrafts(planId),
-      getPlanBaseline(planId),
-      getPlanRemaining(planId),
-    ]);
-    const submission = submissions.find((item) => item.id === id);
-    if (!submission) return error("Submission not found.", 404);
-
-    const eligibility = await resolveDriverSupplier(baseline?.driverId ?? null);
+    const eligibility = await resolveDriverSupplier(context.plan?.driverId ?? null);
     return NextResponse.json({
       submission,
       dispatchPlanId: planId,
-      dispatchPlanDocNo: baseline?.docNo ?? `Plan #${planId}`,
-      dispatchPlanStatus: baseline?.status ?? null,
-      plannedAmount: remaining.baseline,
-      reservedAmount: remaining.reserved,
-      remainingAmount: remaining.remaining,
+      dispatchPlanDocNo: context.plan?.docNo ?? `Plan #${planId}`,
+      dispatchPlanStatus: context.plan?.status ?? null,
+      plannedAmount: context.baseline,
+      reservedAmount: context.reserved,
+      remainingAmount: context.remaining,
       supplierEligibility: eligibility,
     });
   } catch (detailError) {

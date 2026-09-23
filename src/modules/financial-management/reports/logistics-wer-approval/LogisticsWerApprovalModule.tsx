@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import { LogisticsWerApprovalReviewDialog } from "./components/LogisticsWerApprovalReviewDialog";
 import { APPROVAL_STATUS_OPTIONS, useLogisticsWerApproval } from "./hooks/useLogisticsWerApproval";
+import { displayWerStatus } from "../logistics-wer/utils/status";
 import type { ApprovalDecision } from "./services/logisticsWerApprovalApi";
 
 function formatMoney(value: number | null | undefined): string {
@@ -252,12 +253,12 @@ export default function LogisticsWerApprovalModule() {
                 </TableCell>
                 <TableCell className="text-right font-medium">{formatMoney(item.submission.totalAmount)}</TableCell>
                 <TableCell>
-                  <Badge variant="outline" className={statusBadgeClassName(item.submission.status)}>
-                    {item.submission.status || "Unknown"}
-                  </Badge>
+                    <Badge variant="outline" className={statusBadgeClassName(item.submission.status)}>
+                      {displayWerStatus(item.submission.status)}
+                    </Badge>
                 </TableCell>
                 <TableCell className="text-xs">
-                  {item.submission.disbursementId ? `#${item.submission.disbursementId}` : "—"}
+                  {item.disbursementDocNo || (item.submission.disbursementId ? `#${item.submission.disbursementId}` : "—")}
                 </TableCell>
                 <TableCell className="text-right">
                   <Button type="button" variant="outline" size="sm" onClick={() => void queue.openReview(item.submission.id)}>

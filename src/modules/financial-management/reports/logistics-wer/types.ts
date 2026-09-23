@@ -71,7 +71,7 @@ export interface LogisticsWerDispatchPlanDetail {
   reservedAmount?: number | null;
   remainingAmount?: number | null;
   isLiquidated?: boolean | null;
-  submissions?: LogisticsWerPayableSubmission[];
+  submissions?: LogisticsWerPayableSubmissionSummary[];
 }
 
 export interface LogisticsWerSupplierEligibility {
@@ -111,4 +111,15 @@ export interface LogisticsWerPayableSubmission {
   treasuryStatus: string | null;
   idempotencyKey: string | null;
   lines: LogisticsWerPayableLine[];
+}
+
+export interface LogisticsWerPayableSubmissionSummary {
+  id: number;
+  status: string | null;
+  totalAmount: number;
+  decisionRemarks: string | null;
+  disbursementId: number | null;
+  treasuryStatus: string | null;
+  lineCount: number;
+  receiptCount: number;
 }

@@ -6,7 +6,7 @@ import {
   directusFetch,
   directusWrite,
   getPlanBaseline,
-  getPlanDrafts,
+  getPlanSubmission,
   getPlanRemaining,
   markWerPlanLiquidatedIfSettled,
   requireSessionUserId,
@@ -149,8 +149,8 @@ async function findDraftByKey(planId: number, key: string) {
 }
 
 async function loadSubmission(planId: number, draftId: number): Promise<DraftSubmission | null> {
-  const submissions = await getPlanDrafts(planId);
-  return submissions.find((submission) => submission.id === draftId) ?? null;
+  const record = await getPlanSubmission(draftId);
+  return record?.planId === planId ? record.submission : null;
 }
 
 export async function POST(

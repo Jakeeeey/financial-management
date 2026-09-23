@@ -11,6 +11,7 @@ export interface ApprovalQueueItem {
   dispatchPlanDocNo: string;
   dispatchPlanAmount: number;
   dispatchPlanStatus: string | null;
+  disbursementDocNo: string | null;
 }
 
 export interface ApprovalQueuePage {
