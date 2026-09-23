@@ -17,7 +17,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { LogisticsWerApprovalReviewDialog } from "./components/LogisticsWerApprovalReviewDialog";
-import { WerWorkflowStepper } from "../logistics-wer/components/WerWorkflowStepper";
 import { APPROVAL_STATUS_OPTIONS, useLogisticsWerApproval } from "./hooks/useLogisticsWerApproval";
 import type { ApprovalDecision } from "./services/logisticsWerApprovalApi";
 
@@ -104,7 +103,6 @@ export default function LogisticsWerApprovalModule() {
             Review submitted payables and decide: approve to convert into a standard disbursement, or return/reject to release the reservation.
           </p>
         </div>
-        <WerWorkflowStepper currentStage={2} />
       </div>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center">

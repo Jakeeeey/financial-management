@@ -322,6 +322,43 @@ export async function getPlanDrafts(planId: number): Promise<DraftSubmission[]> 
   });
 }
 
+/** Liquidate a WER plan only after all approved payables are fully released. */
+export async function markWerPlanLiquidatedIfSettled(draftId: number): Promise<void> {
+  const draftParams = new URLSearchParams({
+    "filter[id][_eq]": String(draftId),
+    fields: "id,dispatch_plan_id",
+    limit: "1",
+  });
+  const draft = await directusFetch<DirectusList<{ dispatch_plan_id?: unknown }>>(
+    `/items/${DRAFT_COLLECTION}?${draftParams.toString()}`,
+  );
+  const planId = asNumber(draft.data?.[0]?.dispatch_plan_id);
+  if (!planId) return;
+
+  const baseline = await getPlanBaseline(planId);
+  if (!baseline || baseline.isLiquidated) return;
+
+  const submissions = await getPlanDrafts(planId);
+  const approved = submissions.filter((row) => (row.status || "").toLowerCase() === "approved");
+  if (approved.length === 0 || submissions.some((row) => (row.status || "").toLowerCase() === "submitted")) return;
+  if (approved.some((row) => !row.disbursementId)) return;
+
+  const approvedIds = Array.from(new Set(approved.map((row) => row.disbursementId as number)));
+  const statusParams = new URLSearchParams({
+    "filter[id][_in]": approvedIds.join(","),
+    fields: "id,status",
+    limit: "-1",
+  });
+  const disbursements = await directusFetch<DirectusList<{ id?: unknown; status?: unknown }>>(
+    `/items/disbursement?${statusParams.toString()}`,
+  );
+  const rows = disbursements.data ?? [];
+  if (rows.length !== approvedIds.length) return;
+  if (!rows.every((row) => ["Released", "Posted"].includes(asString(row.status)))) return;
+
+  await directusWrite("PATCH", `/items/post_dispatch_plan/${planId}`, { is_liquidated: 1 });
+}
+
 async function approvedDisbursementTotal(disbursementId: number): Promise<number> {
   const params = new URLSearchParams({
     "filter[disbursement_id][_eq]": String(disbursementId),

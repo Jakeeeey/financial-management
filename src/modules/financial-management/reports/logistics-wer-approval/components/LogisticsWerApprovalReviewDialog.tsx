@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, Expand, ExternalLink, Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,42 @@ function formatMoney(value: number | null | undefined): string {
   return `₱${Number(value ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function receiptHref(fileId: string): string {
+  return `/api/fm/treasury/disbursements/attachments/${encodeURIComponent(fileId)}`;
+}
+
+function ReceiptThumbnail({ fileId, receiptId, onPreview }: { fileId: string; receiptId: number; onPreview: (fileId: string) => void }) {
+  const [broken, setBroken] = useState(false);
+  if (broken) {
+    return (
+      <a href={receiptHref(fileId)} target="_blank" rel="noreferrer" className="text-xs underline">
+        Receipt #{receiptId}
+      </a>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => onPreview(fileId)}
+      title="Preview receipt"
+      aria-label={`Preview receipt ${receiptId}`}
+      className="group relative block overflow-hidden rounded-md border"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={receiptHref(fileId)}
+        alt={`Receipt ${receiptId} preview`}
+        loading="lazy"
+        onError={() => setBroken(true)}
+        className="h-12 w-12 object-cover"
+      />
+      <span className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/30">
+        <Expand className="size-4 text-white opacity-0 transition-opacity group-hover:opacity-100" />
+      </span>
+    </button>
+  );
+}
+
 interface LogisticsWerApprovalReviewDialogProps {
   review: SubmissionReview | null;
   loading: boolean;
@@ -51,6 +87,7 @@ export function LogisticsWerApprovalReviewDialog({
   onDecide,
 }: LogisticsWerApprovalReviewDialogProps) {
   const [remarks, setRemarks] = useState("");
+  const [previewFileId, setPreviewFileId] = useState<string | null>(null);
   const open = loading || error !== null || review !== null;
   const submission = review?.submission ?? null;
   const status = (submission?.status || "").toLowerCase();
@@ -138,17 +175,14 @@ export function LogisticsWerApprovalReviewDialog({
                         {line.receipts.length === 0 ? (
                           <span className="text-muted-foreground">—</span>
                         ) : (
-                          <div className="flex flex-wrap gap-1">
+                          <div className="flex flex-wrap gap-1.5">
                             {line.receipts.map((receipt) => receipt.fileId ? (
-                              <a
+                              <ReceiptThumbnail
                                 key={receipt.id}
-                                href={`/api/fm/treasury/disbursements/attachments/${encodeURIComponent(receipt.fileId)}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-xs underline"
-                              >
-                                Receipt #{receipt.id}
-                              </a>
+                                fileId={receipt.fileId}
+                                receiptId={receipt.id}
+                                onPreview={setPreviewFileId}
+                              />
                             ) : (
                               <span key={receipt.id} className="text-xs text-muted-foreground">#{receipt.id}</span>
                             ))}
@@ -216,6 +250,34 @@ export function LogisticsWerApprovalReviewDialog({
           </div>
         )}
       </DialogContent>
+
+      <Dialog open={previewFileId !== null} onOpenChange={(nextOpen) => { if (!nextOpen) setPreviewFileId(null); }}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Receipt preview</DialogTitle>
+            <DialogDescription>
+              {previewFileId && (
+                <a
+                  href={receiptHref(previewFileId)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 font-semibold text-primary underline"
+                >
+                  <ExternalLink className="size-3.5" /> Open in new tab
+                </a>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {previewFileId && (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={receiptHref(previewFileId)}
+              alt="Receipt full preview"
+              className="max-h-[70vh] w-full rounded-lg border object-contain"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }

@@ -10,6 +10,7 @@ import {
   getPlanBaseline,
   getPlanDrafts,
   getPlanRemaining,
+  markWerPlanLiquidatedIfSettled,
   resolveDriverSupplier,
   withPlanLock,
   type DraftSubmission,
@@ -213,6 +214,9 @@ export async function decideOneSubmission(input: DecideOneInput): Promise<Decisi
         decided_by: approverId,
         decided_at: now,
         decision_remarks: remarks,
+      });
+      await markWerPlanLiquidatedIfSettled(submission.id).catch((syncError) => {
+        console.error("[Logistics WER] Liquidation sync after decision failed:", syncError);
       });
       const updated = (await loadSubmission(submissionId)).submission;
       if (!updated) throw new DecisionFailure("Submission not found.", 404);

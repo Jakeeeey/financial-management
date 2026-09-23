@@ -8,6 +8,7 @@ import {
   getPlanBaseline,
   getPlanDrafts,
   getPlanRemaining,
+  markWerPlanLiquidatedIfSettled,
   requireSessionUserId,
   resolveDriverSupplier,
   withPlanLock,
@@ -195,6 +196,9 @@ export async function POST(
           return error("Only the submitter can withdraw this submission.", 403);
         }
         await directusWrite("PATCH", `/items/${DRAFT_COLLECTION}/${submission.id}`, { status: "withdrawn" });
+        await markWerPlanLiquidatedIfSettled(submission.id).catch((syncError) => {
+          console.error("[Logistics WER] Liquidation sync after withdrawal failed:", syncError);
+        });
         const updated = await loadSubmission(planId, submission.id);
         return NextResponse.json({ draft: updated });
       }

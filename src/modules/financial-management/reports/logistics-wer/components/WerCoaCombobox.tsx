@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +27,16 @@ export function WerCoaCombobox({ value, options, onValueChange, disabled = false
   const [open, setOpen] = useState(false);
   const selected = options.find((option) => String(option.coaId) === value);
 
+  // The dropdown list is portaled outside the modal details sheet, so the
+  // sheet's scroll lock would cancel wheel events on it. Stopping propagation
+  // with a native target-phase listener keeps native list scrolling intact.
+  const guardListWheel = useCallback((node: HTMLDivElement | null) => {
+    if (!node) return undefined;
+    const stopWheelPropagation = (event: WheelEvent) => event.stopPropagation();
+    node.addEventListener("wheel", stopWheelPropagation);
+    return () => node.removeEventListener("wheel", stopWheelPropagation);
+  }, []);
+
   return (
     <Popover open={open} onOpenChange={setOpen} modal={false}>
       <PopoverTrigger asChild>
@@ -45,7 +55,7 @@ export function WerCoaCombobox({ value, options, onValueChange, disabled = false
       <PopoverContent className="w-[--radix-popover-trigger-width] min-w-64 p-0" align="start">
         <Command>
           <CommandInput placeholder="Search accounts…" />
-          <CommandList className="max-h-64 overflow-y-auto">
+          <CommandList ref={guardListWheel} className="max-h-64 overflow-y-auto">
             <CommandEmpty>No accounts found.</CommandEmpty>
             <CommandGroup>
               {options.map((option) => (

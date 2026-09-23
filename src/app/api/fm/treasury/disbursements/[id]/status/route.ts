@@ -7,6 +7,7 @@ import { findVatSplitDivisionError } from "../../_payable-split-integrity";
 import { acquireMemoCapLock, refreshSupplierMemoStatuses, validateSupplierMemoCaps } from "../../_memo-cap-integrity";
 import { validatePaymentLine } from "../../_payment-method";
 import { hasDisbursementApprovalAccess } from "../../_approval-access";
+import { markWerPlanLiquidatedIfSettled } from "../../../../reports/logistics-wer/_payables";
 
 export const runtime = "nodejs";
 
@@ -120,69 +121,6 @@ async function lockAppliedMemos(payablesList: PayableRow[], supplierId: number) 
     ));
 
     await refreshSupplierMemoStatuses(supplierId, referenceNumbers);
-}
-
-// 🚀 Helper: Logistics WER liquidation sync
-// Strict rule: a dispatch plan is liquidated only when it has at least one
-// approved payable, every approved disbursement is Released, Partially
-// Released, or Posted, and no submitted/approved submission is outstanding.
-// Fail-closed: any unreadable state leaves the flag untouched.
-const WER_SETTLED_DISBURSEMENT_STATUSES = new Set(["Released", "Partially Released", "Posted"]);
-
-async function markWerPlanLiquidatedIfSettled(draftId: number): Promise<void> {
-    const authHeaders = { Authorization: `Bearer ${DIRECTUS_TOKEN}`, "Content-Type": "application/json" };
-    const draftParams = new URLSearchParams({
-        "filter[id][_eq]": String(draftId),
-        fields: "id,dispatch_plan_id",
-        limit: "1",
-    });
-    const draftRes = await fetch(`${DIRECTUS_URL}/items/disbursement_logistics_draft?${draftParams.toString()}`, {
-        headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
-        cache: "no-store",
-    });
-    if (!draftRes.ok) return;
-    const planId = Number(((await draftRes.json()) as { data?: Array<{ dispatch_plan_id?: unknown }> }).data?.[0]?.dispatch_plan_id) || 0;
-    if (!planId) return;
-
-    const subsParams = new URLSearchParams({
-        "filter[dispatch_plan_id][_eq]": String(planId),
-        fields: "id,status,disbursement_id",
-        limit: "-1",
-    });
-    const subsRes = await fetch(`${DIRECTUS_URL}/items/disbursement_logistics_draft?${subsParams.toString()}`, {
-        headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
-        cache: "no-store",
-    });
-    if (!subsRes.ok) return;
-    const submissions = (((await subsRes.json()) as { data?: Array<{ status?: unknown; disbursement_id?: unknown }> }).data ?? []).map((row) => ({
-        status: String(row.status || "").toLowerCase(),
-        disbursementId: Number(row.disbursement_id) || 0,
-    }));
-    const approvedIds = Array.from(new Set(
-        submissions.filter((row) => row.status === "approved" && row.disbursementId > 0).map((row) => row.disbursementId),
-    ));
-    if (approvedIds.length === 0) return;
-    if (submissions.some((row) => row.status === "submitted" || row.status === "approved")) return;
-
-    const statusParams = new URLSearchParams({
-        "filter[id][_in]": approvedIds.join(","),
-        fields: "id,status",
-        limit: "-1",
-    });
-    const statusRes = await fetch(`${DIRECTUS_URL}/items/disbursement?${statusParams.toString()}`, {
-        headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
-        cache: "no-store",
-    });
-    if (!statusRes.ok) return;
-    const rows = (((await statusRes.json()) as { data?: Array<{ id?: unknown; status?: unknown }> }).data ?? []);
-    if (rows.length !== approvedIds.length) return;
-    if (!rows.every((row) => WER_SETTLED_DISBURSEMENT_STATUSES.has(String(row.status || "")))) return;
-
-    await fetch(`${DIRECTUS_URL}/items/post_dispatch_plan/${planId}`, {
-        method: "PATCH",
-        headers: authHeaders,
-        body: JSON.stringify({ is_liquidated: 1 }),
-    });
 }
 
 // 🚀 PATCH Handler - Status Transitions
@@ -525,7 +463,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
         // Logistics WER liquidation sync (gated: WER-sourced disbursements only,
         // settled states only; failures must not break the status transition).
-        if ((newStatus === "Released" || newStatus === "Partially Released" || newStatus === "Posted")
+        if ((newStatus === "Released" || newStatus === "Posted")
             && String((currentDis as { source_type?: unknown }).source_type || "").toUpperCase() === "LOGISTICS_WER") {
             const werDraftId = Number((currentDis as { source_reference_id?: unknown }).source_reference_id) || 0;
             if (werDraftId > 0) {
