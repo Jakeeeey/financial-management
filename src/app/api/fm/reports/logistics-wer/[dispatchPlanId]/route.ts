@@ -4,6 +4,7 @@ import {
   getPlanBaseline,
   getPlanRemaining,
   resolveDriverSupplier,
+  withTreasuryStatuses,
 } from "../_payables";
 
 export const runtime = "nodejs";
@@ -43,6 +44,7 @@ export async function GET(
       resolveDriverSupplier(driverId),
       getPlanRemaining(id),
     ]);
+    const submissions = await withTreasuryStatuses(remaining.submissions);
     return NextResponse.json({
       ...springPayload,
       werPayables: {
@@ -51,7 +53,7 @@ export async function GET(
         remainingAmount: remaining.remaining,
         isLiquidated: baseline?.isLiquidated ?? false,
         supplierEligibility: eligibility,
-        submissions: remaining.submissions,
+        submissions,
       },
     });
   } catch (mergeError) {

@@ -27,7 +27,7 @@ export const APPROVAL_STATUS_OPTIONS = [
 export function useLogisticsWerApproval() {
   const searchParams = useSearchParams();
   const initialSearch = (searchParams.get("search") || "").trim();
-  const [status, setStatus] = useState("submitted");
+  const [status, setStatus] = useState("all");
   const [draftSearch, setDraftSearch] = useState(initialSearch);
   const [search, setSearch] = useState(initialSearch);
   const [page, setPage] = useState(0);

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { WerCoaCombobox } from "./WerCoaCombobox";
+import { getStatusColor } from "@/modules/financial-management/treasury/disbursement/utils/disbursement-utils";
 import {
   Table,
   TableBody,
@@ -272,19 +273,23 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
               <TableHead className="text-right">Total</TableHead>
               <TableHead>Lines / receipts</TableHead>
               <TableHead>Disbursement</TableHead>
+              <TableHead>Treasury Status</TableHead>
               <TableHead className="text-right">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {submissions.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="py-6 text-center text-xs text-muted-foreground">
+                <TableCell colSpan={7} className="py-6 text-center text-xs text-muted-foreground">
                   No payable submissions recorded for this dispatch plan. Use the form below to record the first payable.
                 </TableCell>
               </TableRow>
             ) : submissions.map((submission) => {
               const receiptCount = submission.lines.reduce((sum, line) => sum + line.receipts.length, 0);
               const status = (submission.status || "").toLowerCase();
+              const treasuryStatus = submission.disbursementId
+                ? submission.treasuryStatus || "Unavailable"
+                : "Not created";
               return (
                 <TableRow key={submission.id}>
                   <TableCell className="font-semibold">#{submission.id}</TableCell>
@@ -304,6 +309,14 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
                   </TableCell>
                   <TableCell className="text-xs">
                     {submission.disbursementId ? `#${submission.disbursementId}` : "—"}
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant="outline"
+                      className={`text-[9px] font-black uppercase ${getStatusColor(treasuryStatus)}`}
+                    >
+                      {treasuryStatus}
+                    </Badge>
                   </TableCell>
                   <TableCell className="text-right">
                     {status === "submitted" && (

@@ -8,6 +8,7 @@ export interface LogisticsWerDispatchPlan {
   status: string | null;
   remarks: string | null;
   amount: number;
+  isLiquidated?: boolean | null;
 }
 
 export type LogisticsWerDispatchPlanSummary = LogisticsWerDispatchPlan;
@@ -107,6 +108,7 @@ export interface LogisticsWerPayableSubmission {
   decidedAt: string | null;
   decisionRemarks: string | null;
   disbursementId: number | null;
+  treasuryStatus: string | null;
   idempotencyKey: string | null;
   lines: LogisticsWerPayableLine[];
 }

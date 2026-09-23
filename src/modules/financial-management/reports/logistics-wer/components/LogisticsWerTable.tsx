@@ -46,6 +46,7 @@ export function LogisticsWerTable({ rows, loading, onViewDetails }: LogisticsWer
                 <TableHead>Driver</TableHead>
                 <TableHead>Vehicle</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Liquidated</TableHead>
                 <TableHead className="text-right">Planned amount</TableHead>
                 <TableHead className="text-right">Action</TableHead>
               </TableRow>
@@ -53,14 +54,14 @@ export function LogisticsWerTable({ rows, loading, onViewDetails }: LogisticsWer
             <TableBody>
               {loading && rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="h-32 text-center text-muted-foreground">
                     <Loader2 className="mr-2 inline-block size-4 animate-spin" />
                     Loading dispatch plans…
                   </TableCell>
                 </TableRow>
               ) : rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="h-32 text-center text-muted-foreground">
                     No dispatch plans found for the selected filters.
                   </TableCell>
                 </TableRow>
@@ -74,6 +75,20 @@ export function LogisticsWerTable({ rows, loading, onViewDetails }: LogisticsWer
                     <TableCell>
                       <Badge variant="outline" className={dispatchPlanStatusClassName(row.status)}>
                         {displayWerStatus(row.status)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={row.isLiquidated
+                          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                          : row.isLiquidated === false
+                            ? "border-muted-foreground/30 bg-muted/40 text-muted-foreground"
+                            : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"}
+                      >
+                        {row.isLiquidated === null || row.isLiquidated === undefined
+                          ? "Unknown"
+                          : row.isLiquidated ? "Yes" : "No"}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right font-medium">{formatMoney(row.amount)}</TableCell>

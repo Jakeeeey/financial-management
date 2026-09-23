@@ -98,6 +98,7 @@ interface DispatchApprovalSubmission {
   decidedAt?: unknown;
   decisionRemarks?: unknown;
   disbursementId?: unknown;
+  treasuryStatus?: unknown;
   idempotencyKey?: unknown;
   lines?: DispatchApprovalLine[] | null;
 }
@@ -297,6 +298,7 @@ function mapSubmission(data: DispatchApprovalSubmission): LogisticsWerPayableSub
     decidedAt: asNullableString(data.decidedAt),
     decisionRemarks: asNullableString(data.decisionRemarks),
     disbursementId: asNullableNumber(data.disbursementId),
+    treasuryStatus: asNullableString(data.treasuryStatus),
     idempotencyKey: asNullableString(data.idempotencyKey),
     lines: (data.lines ?? []).map(mapSubmissionLine),
   };

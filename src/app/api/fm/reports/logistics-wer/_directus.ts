@@ -24,6 +24,7 @@ interface DirectusDispatchPlanRow {
   date_encoded?: unknown;
   remarks?: unknown;
   amount?: unknown;
+  is_liquidated?: unknown;
 }
 
 interface DirectusUserRow {
@@ -132,6 +133,9 @@ function normalizePlan(
     status: asNullableString(row.status),
     remarks: asNullableString(row.remarks),
     amount: asNumber(row.amount),
+    isLiquidated: row.is_liquidated === null || row.is_liquidated === undefined
+      ? null
+      : Number(row.is_liquidated) === 1,
   };
 }
 
@@ -139,7 +143,7 @@ export async function getDispatchPlans(startDate: string, endDate: string): Prom
   const params = new URLSearchParams({
     limit: "-1",
     sort: "-time_of_dispatch,-date_encoded,-id",
-    fields: "id,doc_no,driver_id,vehicle_id,status,time_of_dispatch,date_encoded,remarks,amount",
+    fields: "id,doc_no,driver_id,vehicle_id,status,time_of_dispatch,date_encoded,remarks,amount,is_liquidated",
   });
   params.set("filter[_or][0][time_of_dispatch][_gte]", dateTimeBoundary(startDate, false));
   params.set("filter[_or][0][time_of_dispatch][_lte]", dateTimeBoundary(endDate, true));

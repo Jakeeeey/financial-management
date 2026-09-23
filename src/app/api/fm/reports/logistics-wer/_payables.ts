@@ -322,6 +322,42 @@ export async function getPlanDrafts(planId: number): Promise<DraftSubmission[]> 
   });
 }
 
+export async function withTreasuryStatuses(
+  submissions: DraftSubmission[],
+): Promise<Array<DraftSubmission & { treasuryStatus: string | null }>> {
+  const disbursementIds = Array.from(new Set(
+    submissions.map((submission) => submission.disbursementId).filter((id): id is number => Boolean(id)),
+  ));
+  const statusesById = new Map<number, string>();
+
+  if (disbursementIds.length > 0) {
+    const params = new URLSearchParams({
+      "filter[id][_in]": disbursementIds.join(","),
+      fields: "id,status",
+      limit: "-1",
+    });
+    try {
+      const result = await directusFetch<DirectusList<{ id?: unknown; status?: unknown }>>(
+        `/items/disbursement?${params.toString()}`,
+      );
+      for (const row of result.data ?? []) {
+        const id = asNumber(row.id);
+        const status = asString(row.status);
+        if (id && status) statusesById.set(id, status);
+      }
+    } catch (error) {
+      console.error("[Logistics WER] Failed to load Treasury disbursement statuses:", error);
+    }
+  }
+
+  return submissions.map((submission) => ({
+    ...submission,
+    treasuryStatus: submission.disbursementId
+      ? statusesById.get(submission.disbursementId) ?? null
+      : null,
+  }));
+}
+
 /** Liquidate a WER plan only after all approved payables are fully released. */
 export async function markWerPlanLiquidatedIfSettled(draftId: number): Promise<void> {
   const draftParams = new URLSearchParams({

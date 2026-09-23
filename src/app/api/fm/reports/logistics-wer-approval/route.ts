@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
   }
 
   const searchParams = request.nextUrl.searchParams;
-  const statusParam = (searchParams.get("status") || "submitted").trim().toLowerCase();
+  const statusParam = (searchParams.get("status") || "all").trim().toLowerCase();
   const statuses = statusParam === "all"
     ? [...QUEUE_STATUSES]
     : QUEUE_STATUSES.filter((status) => status === statusParam);
