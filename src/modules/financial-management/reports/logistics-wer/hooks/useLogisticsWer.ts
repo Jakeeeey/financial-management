@@ -143,7 +143,7 @@ export function useLogisticsWer() {
     } finally {
       setDetailLoading(false);
     }
-  }, []);
+  }, [detail?.plan]);
 
   return {
     report,
