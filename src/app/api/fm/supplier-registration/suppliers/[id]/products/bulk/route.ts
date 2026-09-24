@@ -34,6 +34,7 @@ export async function POST(
       supplier_id: supplierId,
       product_id: productId,
       discount_type: null,
+      price_changeable: false,
     }));
 
     const result = await createBulkSupplierProducts(items);

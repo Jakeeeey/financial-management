@@ -9,6 +9,7 @@ export const ProductPerSupplierSchema = z.object({
   supplier_id: z.number().int().positive("Supplier ID is required"),
   product_id: z.number().int().positive("Product ID is required"),
   discount_type: z.number().nullable().optional(), // References discount_type.id
+  price_changeable: z.boolean().optional(),
 });
 
 /**
@@ -18,6 +19,7 @@ export const ProductPerSupplierFormSchema = z.object({
   supplier_id: z.number().int().positive("Supplier ID is required"),
   product_id: z.number().int().positive("Product ID is required"),
   discount_type: z.number().nullable().optional(),
+  price_changeable: z.boolean().optional().default(false),
 });
 
 /**
@@ -28,6 +30,7 @@ export interface ProductPerSupplierWithDetails {
   supplier_id: number;
   product_id: number;
   discount_type: number | null;
+  price_changeable?: boolean;
   product_name: string;
   product_code: string | null;
   short_description: string | null;
