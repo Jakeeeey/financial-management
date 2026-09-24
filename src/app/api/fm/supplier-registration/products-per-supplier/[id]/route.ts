@@ -1,12 +1,13 @@
 import {
   removeProductFromSupplier,
   updateProductDiscount,
+  updateProductPriceChangeable,
 } from "@/modules/financial-management/supplier-registration/services/products-per-suppliers";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
  * PATCH /api/fm/supplier-registration/products-per-supplier/[id]
- * Update discount type for a product-supplier relationship
+ * Update discount type or price changeable for a product-supplier relationship
  */
 export async function PATCH(
   request: NextRequest,
@@ -24,22 +25,27 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const { discount_type } = body;
+    let result;
 
-    const result = await updateProductDiscount(id, discount_type || null);
+    if ("price_changeable" in body) {
+      result = await updateProductPriceChangeable(id, Boolean(body.price_changeable));
+    } else {
+      const { discount_type } = body;
+      result = await updateProductDiscount(id, discount_type || null);
+    }
 
     return NextResponse.json(
       {
         data: result,
-        message: "Discount type updated successfully",
+        message: "Product supplier relationship updated successfully",
       },
       { status: 200 },
     );
   } catch (error) {
-    console.error("Error updating product discount:", error);
+    console.error("Error updating product supplier relationship:", error);
     return NextResponse.json(
       {
-        error: "Failed to update discount type",
+        error: "Failed to update product supplier relationship",
         message: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 },

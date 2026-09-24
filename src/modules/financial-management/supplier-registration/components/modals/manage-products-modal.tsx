@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { PackageOpen, Plus, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useDiscountTypes } from "../../hooks/useDiscountTypes";
@@ -33,8 +34,16 @@ export function ManageProductsModal({
 }: ManageProductsModalProps) {
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const { products, isLoading, addProductsBulk, updateDiscount, removeProduct } =
-    useSupplierProducts(supplierId);
+  const {
+    products,
+    isLoading,
+    isBatchUpdating,
+    addProductsBulk,
+    updateDiscount,
+    updatePriceChangeable,
+    toggleAllPriceChangeable,
+    removeProduct,
+  } = useSupplierProducts(supplierId);
   const { discountTypes } = useDiscountTypes();
 
   // Filter products based on search query
@@ -47,6 +56,12 @@ export function ManageProductsModal({
         (p.product_code?.toLowerCase() ?? "").includes(query),
     );
   }, [products, searchQuery]);
+
+  // Check if all visible/filtered products have price_changeable = true
+  const isAllPriceChangeable = useMemo(() => {
+    if (filteredProducts.length === 0) return false;
+    return filteredProducts.every((p) => Boolean(p.price_changeable));
+  }, [filteredProducts]);
 
   // Get list of assigned product IDs for filtering in AddProductsModal
   const assignedProductIds = useMemo(
@@ -64,7 +79,7 @@ export function ManageProductsModal({
   return (
     <>
       <Dialog open={open} onOpenChange={onClose}>
-        <DialogContent className="sm:max-w-[800px] max-h-[80vh] gap-0 p-0 flex flex-col" showCloseButton={false}>
+        <DialogContent className="sm:max-w-[850px] max-h-[80vh] gap-0 p-0 flex flex-col" showCloseButton={false}>
           {/* Header */}
           <DialogHeader className="px-6 py-4 border-b shrink-0">
             <DialogTitle>Manage Products</DialogTitle>
@@ -88,13 +103,27 @@ export function ManageProductsModal({
 
           {/* Column headers */}
           {!isLoading && filteredProducts.length > 0 && (
-            <div className="grid grid-cols-[1fr_200px_40px] gap-4 px-6 py-2 border-b bg-muted/30 shrink-0">
+            <div className="grid grid-cols-[1fr_180px_160px_40px] gap-4 px-6 py-2 border-b bg-muted/30 shrink-0 items-center">
               <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                 Product Details
               </span>
               <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                 Applied Discount
               </span>
+              <div className="flex items-center justify-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Price Changeable
+                </span>
+                <Switch
+                  size="sm"
+                  checked={isAllPriceChangeable}
+                  disabled={isLoading || isBatchUpdating}
+                  onCheckedChange={(checked) => {
+                    const targetIds = filteredProducts.map((p) => p.id);
+                    toggleAllPriceChangeable(targetIds, checked);
+                  }}
+                />
+              </div>
               <span />
             </div>
           )}
@@ -106,13 +135,14 @@ export function ManageProductsModal({
                 {Array.from({ length: 4 }).map((_, i) => (
                   <div
                     key={i}
-                    className="grid grid-cols-[1fr_200px_40px] gap-4 px-2 py-3 items-center"
+                    className="grid grid-cols-[1fr_180px_160px_40px] gap-4 px-2 py-3 items-center"
                   >
                     <div className="space-y-1.5">
                       <Skeleton className="h-4 w-3/4" />
                       <Skeleton className="h-3 w-16" />
                     </div>
                     <Skeleton className="h-8 w-full" />
+                    <Skeleton className="h-6 w-12 mx-auto" />
                     <Skeleton className="h-8 w-8" />
                   </div>
                 ))}
@@ -142,6 +172,7 @@ export function ManageProductsModal({
                     product={product}
                     discountTypes={discountTypes}
                     onDiscountChange={updateDiscount}
+                    onPriceChangeableChange={updatePriceChangeable}
                     onRemove={removeProduct}
                   />
                 ))}
