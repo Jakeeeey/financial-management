@@ -45,6 +45,11 @@ export function CashIssuanceTable({ data, loading, onView }: CashIssuanceTablePr
                                         <div className="flex items-center gap-1.5 text-foreground">
                                             <FileText className={`w-3.5 h-3.5 ${d.isPosted === 1 ? 'text-foreground' : 'text-primary'} opacity-70`} />
                                             <span className="font-bold text-xs uppercase">{d.docNo}</span>
+                                            {d.sourceType === "LOGISTICS_WER" && (
+                                                <Badge variant="outline" className="border-sky-500/40 bg-sky-500/10 text-[9px] font-black uppercase tracking-widest text-sky-700 dark:text-sky-300">
+                                                    Logistics
+                                                </Badge>
+                                            )}
                                             {d.isPosted === 1 && (
                                                 <span title="Locked & Posted"><Lock className="w-3 h-3 text-destructive ml-1" /></span>
                                             )}

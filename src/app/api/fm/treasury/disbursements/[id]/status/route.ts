@@ -7,6 +7,7 @@ import { findVatSplitDivisionError } from "../../_payable-split-integrity";
 import { acquireMemoCapLock, refreshSupplierMemoStatuses, validateSupplierMemoCaps } from "../../_memo-cap-integrity";
 import { validatePaymentLine } from "../../_payment-method";
 import { hasDisbursementApprovalAccess } from "../../_approval-access";
+import { markWerPlanLiquidatedIfSettled } from "../../../../reports/logistics-wer/_payables";
 
 export const runtime = "nodejs";
 
@@ -459,6 +460,18 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
         if (!patchRes.ok) throw new Error(await patchRes.text());
         const updatedDis = (await patchRes.json()).data;
+
+        // Logistics WER liquidation sync (gated: WER-sourced disbursements only,
+        // settled states only; failures must not break the status transition).
+        if ((newStatus === "Released" || newStatus === "Posted")
+            && String((currentDis as { source_type?: unknown }).source_type || "").toUpperCase() === "LOGISTICS_WER") {
+            const werDraftId = Number((currentDis as { source_reference_id?: unknown }).source_reference_id) || 0;
+            if (werDraftId > 0) {
+                await markWerPlanLiquidatedIfSettled(werDraftId).catch((hookError) => {
+                    console.error("[Disbursement] Logistics WER liquidation sync failed:", hookError);
+                });
+            }
+        }
 
         if (status === "Posted" || status === "Returned for Revision") {
             await lockAppliedMemos(payables, currentPayeeId);
