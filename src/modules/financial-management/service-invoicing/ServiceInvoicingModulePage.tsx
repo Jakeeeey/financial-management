@@ -582,10 +582,12 @@ export default function ServiceInvoicingModulePage() {
     return selectedList.reduce((sum, item) => sum + item.amountApplied, 0);
   }, [selectedList]);
 
-  // Sync gross amount to total applied sum on selections change
+  // Sync gross amount to total applied sum only when child invoices are selected
   useEffect(() => {
-    setGrossAmount(totalAppliedSum.toString());
-  }, [totalAppliedSum]);
+    if (selectedList.length > 0) {
+      setGrossAmount(totalAppliedSum.toString());
+    }
+  }, [totalAppliedSum, selectedList.length]);
 
   const calculatedNet = useMemo(() => {
     const gross = Number(grossAmount) || 0;
@@ -619,9 +621,6 @@ export default function ServiceInvoicingModulePage() {
     }
     if (!selectedInvoiceType) {
       return toast.error("Please select an Invoice Type.");
-    }
-    if (selectedList.length === 0) {
-      return toast.error("Please select at least one sales invoice to consolidate.");
     }
 
     setSubmitting(true);
@@ -1052,7 +1051,7 @@ export default function ServiceInvoicingModulePage() {
 
                 <Button
                   onClick={handleSubmit}
-                  disabled={submitting || selectedList.length === 0}
+                  disabled={submitting}
                   className="w-full h-11 text-xs font-black uppercase tracking-widest transition-all active:scale-95 shadow-md bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 rounded-xl"
                 >
                   {submitting ? (
@@ -1133,6 +1132,11 @@ export default function ServiceInvoicingModulePage() {
                           <Badge variant="outline" className="text-[9px] font-mono text-emerald-700 bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200">
                             {parent.transaction_status || "Onboarded"}
                           </Badge>
+                          {(!parent.children || parent.children.length === 0) && (
+                            <Badge variant="outline" className="text-[9px] font-mono text-muted-foreground border-border/60">
+                              Standalone (0 Linked)
+                            </Badge>
+                          )}
                         </div>
                         <div className="text-[10px] font-bold text-muted-foreground uppercase flex flex-wrap gap-x-3 gap-y-1">
                           <span className="flex items-center gap-1"><User size={10} /> Salesman: {salesm ? salesm.salesman_name : `ID: ${parent.salesman_id}`}</span>
@@ -1162,36 +1166,44 @@ export default function ServiceInvoicingModulePage() {
                     {/* Child Invoices Expansion Sub-table */}
                     {isExpanded && (
                       <div className="px-5 pb-5 pt-1 border-t border-border/30 bg-muted/5 animate-in slide-in-from-top-1 duration-200">
-                        <div className="rounded-xl border border-border/50 bg-background overflow-hidden mt-2">
-                          <Table>
-                            <TableHeader className="bg-muted/50">
-                              <TableRow className="border-border">
-                                <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Child Invoice No</TableHead>
-                                <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Invoice Date</TableHead>
-                                <TableHead className="text-[9px] font-black uppercase tracking-widest text-right text-muted-foreground">Original Amount</TableHead>
-                                <TableHead className="text-[9px] font-black uppercase tracking-widest text-right text-indigo-600 dark:text-indigo-400">Consolidated Share</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {parent.children.map((child: HistoryChildInvoice) => (
-                                <TableRow key={child.mapping_id} className="border-border hover:bg-muted/10 transition-colors">
-                                  <TableCell className="p-2.5 text-xs font-bold text-foreground">
-                                    {child.child_invoice_no}
-                                  </TableCell>
-                                  <TableCell className="p-2.5 text-[10px] font-bold text-muted-foreground font-mono">
-                                    {formatInvoiceDate(child.child_date)}
-                                  </TableCell>
-                                  <TableCell className="p-2.5 text-xs font-bold text-right text-foreground">
-                                    ₱{Number(child.child_total_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                  </TableCell>
-                                  <TableCell className="p-2.5 text-xs font-black text-right text-indigo-600 dark:text-indigo-400">
-                                    ₱{Number(child.amount_applied || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                  </TableCell>
+                        {(!parent.children || parent.children.length === 0) ? (
+                          <div className="rounded-xl border border-dashed border-border/60 bg-background/50 p-4 text-center mt-2">
+                            <p className="text-xs font-semibold text-muted-foreground">
+                              No child sales invoices linked to this service invoice.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="rounded-xl border border-border/50 bg-background overflow-hidden mt-2">
+                            <Table>
+                              <TableHeader className="bg-muted/50">
+                                <TableRow className="border-border">
+                                  <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Child Invoice No</TableHead>
+                                  <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Invoice Date</TableHead>
+                                  <TableHead className="text-[9px] font-black uppercase tracking-widest text-right text-muted-foreground">Original Amount</TableHead>
+                                  <TableHead className="text-[9px] font-black uppercase tracking-widest text-right text-indigo-600 dark:text-indigo-400">Consolidated Share</TableHead>
                                 </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
+                              </TableHeader>
+                              <TableBody>
+                                {parent.children.map((child: HistoryChildInvoice) => (
+                                  <TableRow key={child.mapping_id} className="border-border hover:bg-muted/10 transition-colors">
+                                    <TableCell className="p-2.5 text-xs font-bold text-foreground">
+                                      {child.child_invoice_no}
+                                    </TableCell>
+                                    <TableCell className="p-2.5 text-[10px] font-bold text-muted-foreground font-mono">
+                                      {formatInvoiceDate(child.child_date)}
+                                    </TableCell>
+                                    <TableCell className="p-2.5 text-xs font-bold text-right text-foreground">
+                                      ₱{Number(child.child_total_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                    </TableCell>
+                                    <TableCell className="p-2.5 text-xs font-black text-right text-indigo-600 dark:text-indigo-400">
+                                      ₱{Number(child.amount_applied || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        )}
                       </div>
                     )}
                   </Card>
