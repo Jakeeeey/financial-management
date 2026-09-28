@@ -76,10 +76,7 @@ export type DisbursementRow = {
     fund_source_id?: unknown;
     status?: unknown;
     supporting_documents_url?: unknown;
-};
-
-type DisbursementDraftDocRow = {
-    doc_no?: unknown;
+    source_type?: unknown;
 };
 
 export type DisbursementPaymentState =
@@ -447,22 +444,9 @@ async function getSupplierIds(search: string) {
         .filter((id): id is number => Boolean(id));
 }
 
-async function getWerDocumentNumbers() {
-    const res = await directusFetch<DirectusList<DisbursementDraftDocRow>>(
-        "/items/disbursement_draft?fields=doc_no&limit=-1",
-    );
-
-    return Array.from(new Set(
-        (res.data ?? [])
-            .map((row) => asString(row.doc_no).trim().toUpperCase())
-            .filter(Boolean),
-    ));
-}
-
 function buildDisbursementParams(
     searchParams: URLSearchParams,
     supplierIds: number[],
-    werDocumentNumbers: string[] = [],
 ) {
     const page = normalizePage(searchParams.get("page"));
     const size = normalizeSize(searchParams.get("size"));
@@ -511,6 +495,7 @@ function buildDisbursementParams(
             "department_id.department_name",
             "fund_source_id",
             "supporting_documents_url",
+            "source_type",
             "status",
         ].join(","),
     );
@@ -521,7 +506,7 @@ function buildDisbursementParams(
         filterIndex = appendFilter(params, filterIndex, "transaction_type", "_eq", "2");
     }
     if (source.trim().toUpperCase() === "WER") {
-        filterIndex = appendFilter(params, filterIndex, "doc_no", "_in", werDocumentNumbers.join(","));
+        filterIndex = appendFilter(params, filterIndex, "source_type", "_eq", "LOGISTICS_WER");
     }
     if (status && status !== "All") {
         const op = status.includes(",") ? "_in" : "_eq";
@@ -795,6 +780,7 @@ export function normalizeDisbursement(
         fundSourceId: asNumber(row.fund_source_id),
         status,
         supportingDocumentsUrl: asString(row.supporting_documents_url),
+        sourceType: asString(row.source_type) || null,
         payables,
         payments,
     };
@@ -962,22 +948,7 @@ export async function GET(request: NextRequest) {
             });
         }
 
-        const source = searchParams.get("source")?.trim().toUpperCase() || "";
-        const werDocumentNumbers = source === "WER"
-            ? await getWerDocumentNumbers()
-            : [];
-
-        if (source === "WER" && werDocumentNumbers.length === 0) {
-            return NextResponse.json({
-                content: [],
-                totalElements: 0,
-                totalPages: 0,
-                number: normalizePage(searchParams.get("page")),
-                size: normalizeSize(searchParams.get("size")),
-            });
-        }
-
-        const query = buildDisbursementParams(searchParams, supplierIds, werDocumentNumbers);
+        const query = buildDisbursementParams(searchParams, supplierIds);
         const disbursementsRes = await directusFetch<DirectusList<DisbursementRow>>(
             `/items/disbursement?${query.params.toString()}`,
         );
