@@ -30,13 +30,13 @@
 /src/app/layout.tsx @Jakeeeey @ECuerdo @Xerman09 @Erwinrillorta0830
 /src/app/favicon.ico @Jakeeeey @ECuerdo @Xerman09 @Erwinrillorta0830
 /src/app/(public)/ @Jakeeeey @ECuerdo @Xerman09 @Erwinrillorta0830
-/src/app/(customer-relationship-management)/ @Jakeeeey @ECuerdo @Xerman09 @Erwinrillorta0830
+/src/app/(financial-management)/ @Jakeeeey @ECuerdo @Xerman09 @Erwinrillorta0830
 /src/app/main-dashboard/ @Jakeeeey @ECuerdo @Xerman09 @Erwinrillorta0830
 /src/app/api/auth/ @Jakeeeey @ECuerdo @Xerman09 @Erwinrillorta0830
 
 # ==========================================
 # EXEMPTED PATHS (No approval required)
 # ==========================================
-/src/app/(human-resource-management)/hrm/
+/src/app/(financial-management)/fm/
 /src/app/api/
-/src/modules/human-resource-management/
+/src/modules/financial-management/
