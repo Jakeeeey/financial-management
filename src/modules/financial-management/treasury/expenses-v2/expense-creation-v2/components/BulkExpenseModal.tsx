@@ -141,7 +141,7 @@ export const BulkExpenseModal: React.FC<BulkExpenseModalProps> = ({
           let currentDeptId = r.department_id;
           if (currentDeptId && newDivisionId) {
             const deptObj = departments.find((d) => d.department_id === currentDeptId);
-            if (deptObj && deptObj.division_id && deptObj.division_id !== newDivisionId) {
+            if (deptObj && deptObj.division_id !== newDivisionId) {
               currentDeptId = null;
             }
           }

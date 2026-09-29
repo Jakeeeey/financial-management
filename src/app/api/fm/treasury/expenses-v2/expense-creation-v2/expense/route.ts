@@ -79,9 +79,10 @@ async function generateSequentialDocNo(count: number = 1): Promise<string[]> {
   } catch (err) {
     console.error("Error generating sequential doc_no:", err);
     const docNos: string[] = [];
-    const timeHex = Date.now().toString(36).toUpperCase();
+    const baseOffset = Math.floor(Date.now() % 800000);
     for (let i = 0; i < count; i++) {
-      docNos.push(`${prefix}${timeHex}${Math.floor(Math.random() * 90 + 10)}${i ? `-${i + 1}` : ""}`);
+      const seq = String(baseOffset + i + 1).padStart(6, "0");
+      docNos.push(`${prefix}${seq}`);
     }
     return docNos;
   }
@@ -142,6 +143,7 @@ export async function POST(req: Request) {
       const generatedDocNos = await generateSequentialDocNo(body.length);
       const itemsWithDocNo = body.map((item: Record<string, unknown>, idx: number) => ({
         ...item,
+        is_employee: item.is_employee ? 1 : 0,
         doc_no: item.doc_no || generatedDocNos[idx],
         created_by: userId || item.created_by || null,
         current_approval_level: item.status === "Pending Approval" ? 1 : 0,
@@ -180,6 +182,7 @@ export async function POST(req: Request) {
       const generatedDocNos = await generateSequentialDocNo(1);
       const payload = {
         ...body,
+        is_employee: body.is_employee ? 1 : 0,
         doc_no: body.doc_no || generatedDocNos[0],
         created_by: userId || body.created_by || null,
         current_approval_level: body.status === "Pending Approval" ? 1 : 0,
@@ -235,7 +238,45 @@ export async function PATCH(req: Request) {
     const body = await req.json();
 
     // Extract non-DB audit parameters before sending payload to Directus
-    const { is_resubmit, log_remarks, ...directusPayload } = body;
+    const { is_resubmit, ...directusPayload } = body;
+
+    if (directusPayload.is_employee !== undefined) {
+      directusPayload.is_employee = directusPayload.is_employee ? 1 : 0;
+    }
+
+    // Fetch current expense record for data integrity validation and audit logging
+    let currentExpense: Record<string, unknown> | null = null;
+    const getRes = await fetch(`${API_BASE_URL}/items/expense/${id}`, {
+      headers: AUTH_HEADERS,
+      cache: "no-store",
+    });
+    if (getRes.ok) {
+      const getJson = await getRes.json();
+      currentExpense = getJson.data || null;
+    }
+
+    // Server-side guard: Verify mandatory fields if status is transitioning to Pending Approval
+    if (directusPayload.status === "Pending Approval" && currentExpense) {
+      const merged = { ...currentExpense, ...directusPayload };
+      if (
+        !merged.expense_date ||
+        !merged.payee ||
+        !merged.division_id ||
+        !merged.department_id ||
+        !merged.coa_id ||
+        !merged.amount ||
+        Number(merged.amount) <= 0 ||
+        !merged.receipt_url
+      ) {
+        return NextResponse.json(
+          {
+            message:
+              "Cannot submit for approval: Missing mandatory fields (Date, Payee, Division, Department, COA, Amount, or Receipt Image)",
+          },
+          { status: 400 }
+        );
+      }
+    }
 
     const res = await fetch(`${API_BASE_URL}/items/expense/${id}`, {
       method: "PATCH",
@@ -262,11 +303,18 @@ export async function PATCH(req: Request) {
     }
 
     if (updated?.id) {
+      // Prioritize actual expense.remarks from updated response, body, or current DB record
+      const resolvedRemarks =
+        updated.remarks ||
+        body.remarks ||
+        (currentExpense?.remarks as string | null) ||
+        null;
+
       await createExpenseLog({
         expense_id: updated.id,
         action: logAction,
-        remarks: log_remarks || body.remarks || "Updated expense item",
-        receipt_url: updated.receipt_url || body.receipt_url || null,
+        remarks: resolvedRemarks,
+        receipt_url: updated.receipt_url || body.receipt_url || (currentExpense?.receipt_url as string | null) || null,
         created_by: userId,
       });
     }

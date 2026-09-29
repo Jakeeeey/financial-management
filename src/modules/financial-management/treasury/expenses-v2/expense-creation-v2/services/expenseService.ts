@@ -118,12 +118,12 @@ export async function submitDraftExpense(id: number): Promise<ExpenseItem> {
     body: JSON.stringify({
       status: "Pending Approval",
       current_approval_level: 1,
-      log_remarks: "Submitted draft to approval pipeline",
     }),
   });
 
   if (!res.ok) {
-    throw new Error("Failed to submit draft expense");
+    const err = await res.json().catch(() => ({ message: "Submission failed" }));
+    throw new Error(err.message || "Failed to submit draft expense");
   }
 
   const result = await res.json();

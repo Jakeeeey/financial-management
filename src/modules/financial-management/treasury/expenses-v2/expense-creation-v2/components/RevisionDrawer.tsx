@@ -54,6 +54,7 @@ import {
   ZoomOut,
   RotateCcw,
   Move,
+  User,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -164,6 +165,18 @@ export const RevisionDrawer: React.FC<RevisionDrawerProps> = ({
   const [departmentSearch, setDepartmentSearch] = useState("");
 
   const latestConcernLog = logs.find((l) => l.action === "With Concern");
+
+  const renderApproverName = (createdBy: ExpenseLog["created_by"]) => {
+    if (!createdBy) return null;
+    if (typeof createdBy === "object") {
+      const fname = createdBy.user_fname || "";
+      const lname = createdBy.user_lname || "";
+      const fullName = `${fname} ${lname}`.trim();
+      if (fullName) return fullName;
+      return `User #${createdBy.user_id}`;
+    }
+    return `User #${createdBy}`;
+  };
 
   const filteredSuppliers = suppliers.filter((s) =>
     (s.supplier_name || "").toLowerCase().includes((payeeSearch || "").toLowerCase())
@@ -328,9 +341,20 @@ export const RevisionDrawer: React.FC<RevisionDrawerProps> = ({
                   <span>Loading approver logs...</span>
                 </div>
               ) : latestConcernLog ? (
-                <blockquote className="text-xs font-semibold text-foreground italic bg-background/80 dark:bg-zinc-900/90 p-3 rounded-lg border border-amber-500/30 shadow-xs">
-                  &quot;{latestConcernLog.remarks || "Needs correction"}&quot;
-                </blockquote>
+                <div className="space-y-2">
+                  <blockquote className="text-xs font-semibold text-foreground italic bg-background/80 dark:bg-zinc-900/90 p-3 rounded-lg border border-amber-500/30 shadow-xs">
+                    &quot;{latestConcernLog.remarks || "Needs correction"}&quot;
+                  </blockquote>
+                  {latestConcernLog.created_by && (
+                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-medium pl-0.5">
+                      <User className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                      <span>Approver:</span>
+                      <span className="font-bold text-foreground">
+                        {renderApproverName(latestConcernLog.created_by)}
+                      </span>
+                    </div>
+                  )}
+                </div>
               ) : (
                 <p className="text-xs text-muted-foreground italic">No explicit concern note logged.</p>
               )}

@@ -124,7 +124,6 @@ export const ExpenseCreationV2Module: React.FC = () => {
   };
 
   const handleDeleteExpense = async (id: number) => {
-    if (!confirm("Are you sure you want to delete this draft expense receipt?")) return;
     try {
       await deleteExpense(id);
       toast.success("Expense receipt deleted!");
@@ -192,7 +191,7 @@ export const ExpenseCreationV2Module: React.FC = () => {
               <TabsTrigger value="draft" className="text-xs">
                 Drafts ({expenses.filter((e) => e.status === "Draft").length})
               </TabsTrigger>
-              <TabsTrigger value="pending" className="text-xs">
+              <TabsTrigger value="pending" className="text-xs text-blue-600 dark:text-blue-400 font-bold data-[state=active]:bg-blue-500/20 data-[state=active]:text-blue-600">
                 Pending ({expenses.filter((e) => e.status === "Pending Approval").length})
               </TabsTrigger>
               <TabsTrigger value="concern" className="text-xs text-orange-500 font-bold">

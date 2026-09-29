@@ -8,9 +8,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ExpenseItem, ExpenseLog, LogAction } from "../types";
 import { fetchExpenseLogs } from "../services/expenseService";
-import { History, Loader2, CheckCircle2, AlertTriangle, RefreshCw, XCircle, FileText } from "lucide-react";
+import { History, CheckCircle2, AlertTriangle, RefreshCw, XCircle, FileText } from "lucide-react";
 
 interface HistoryLogModalProps {
   open: boolean;
@@ -51,6 +52,15 @@ export const HistoryLogModal: React.FC<HistoryLogModalProps> = ({
 }) => {
   const [logs, setLogs] = useState<ExpenseLog[]>([]);
   const [loading, setLoading] = useState(false);
+
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (prevOpen !== open) {
+    setPrevOpen(open);
+    if (open) {
+      setLoading(true);
+      setLogs([]);
+    }
+  }
 
   useEffect(() => {
     let isMounted = true;
@@ -134,8 +144,27 @@ export const HistoryLogModal: React.FC<HistoryLogModalProps> = ({
 
         <div className="py-2">
           {loading ? (
-            <div className="flex items-center justify-center p-8">
-              <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            <div className="relative border-l-2 border-border/60 ml-3 space-y-6 pl-4 my-2">
+              {[1, 2, 3].map((idx) => (
+                <div key={idx} className="relative space-y-2">
+                  {/* Node Circle Skeleton */}
+                  <div className="absolute -left-[23px] top-0.5">
+                    <Skeleton className="w-5 h-5 rounded-full" />
+                  </div>
+
+                  {/* Header: Badge & Timestamp */}
+                  <div className="flex items-center justify-between gap-2">
+                    <Skeleton className="w-32 h-5 rounded-md" />
+                    <Skeleton className="w-24 h-3.5 rounded-md" />
+                  </div>
+
+                  {/* Remarks Box */}
+                  <Skeleton className="w-full h-10 rounded-md" />
+
+                  {/* User label */}
+                  <Skeleton className="w-28 h-3 rounded-md" />
+                </div>
+              ))}
             </div>
           ) : logs.length === 0 ? (
             <p className="text-xs text-center text-muted-foreground py-8">No history logs recorded.</p>

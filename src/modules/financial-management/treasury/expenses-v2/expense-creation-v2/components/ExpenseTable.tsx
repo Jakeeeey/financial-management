@@ -30,6 +30,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
@@ -127,7 +128,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
       setSelectedYear("");
       setSelectedMonths([]);
     } else {
-      setSelectedYear((prev) => (prev === "" || prev === "all" ? String(new Date().getFullYear()) : prev));
+      setSelectedYear((prev) => (prev === "" ? "all" : prev));
       setSelectedMonths((prev) => (prev.length === 0 ? ALL_MONTH_VALUES : prev));
     }
   }, [groupBy]);
@@ -177,8 +178,15 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
     docNo?: string;
   } | null>(null);
 
+  const [actionConfirmModal, setActionConfirmModal] = useState<{
+    type: "submit" | "delete";
+    item: ExpenseItem;
+  } | null>(null);
+
   const getRowBgClass = (status: ExpenseStatus) => {
     switch (status) {
+      case "Pending Approval":
+        return "bg-blue-100/90 dark:bg-blue-950/70 border-l-4 border-l-blue-500 hover:bg-blue-200/90 dark:hover:bg-blue-900/80 transition-colors";
       case "Submitted To Disbursement":
         return "bg-emerald-100/90 dark:bg-emerald-950/70 border-l-4 border-l-emerald-500 hover:bg-emerald-200/90 dark:hover:bg-emerald-900/80 transition-colors";
       case "With Concern":
@@ -192,6 +200,8 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
 
   const getCardBgClass = (status: ExpenseStatus) => {
     switch (status) {
+      case "Pending Approval":
+        return "bg-blue-50/80 dark:bg-blue-950/50 border-l-4 border-l-blue-500 border-blue-200/70 dark:border-blue-900/70 hover:border-blue-400";
       case "Submitted To Disbursement":
         return "bg-emerald-50/70 dark:bg-emerald-950/40 border-l-4 border-l-emerald-500 border-emerald-200/60 dark:border-emerald-900/60 hover:border-emerald-400";
       case "With Concern":
@@ -225,15 +235,21 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
     [coas]
   );
 
-  const getDivisionName = (id?: number | null) => {
-    if (!id) return "-";
-    return divisions.find((d) => d.division_id === id)?.division_name || `Division #${id}`;
-  };
+  const getDivisionName = React.useCallback(
+    (id?: number | null) => {
+      if (!id) return "-";
+      return divisions.find((d) => d.division_id === id)?.division_name || `Division #${id}`;
+    },
+    [divisions]
+  );
 
-  const getDepartmentName = (id?: number | null) => {
-    if (!id) return "-";
-    return departments.find((d) => d.department_id === id)?.department_name || `Department #${id}`;
-  };
+  const getDepartmentName = React.useCallback(
+    (id?: number | null) => {
+      if (!id) return "-";
+      return departments.find((d) => d.department_id === id)?.department_name || `Department #${id}`;
+    },
+    [departments]
+  );
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat("en-PH", {
@@ -261,7 +277,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
       case "Pending Approval":
         return (
           <div className="flex items-center gap-1">
-            <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30 font-semibold">
+            <Badge variant="outline" className="bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-500/40 font-bold">
               Pending Approval
             </Badge>
             {resubBadge}
@@ -407,14 +423,23 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
   };
 
   const getDayLabel = (dateStr: string) => {
+    if (!dateStr) return "Unknown Date";
+    const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      const [, yearStr, monthStr, dayStr] = match;
+      const year = parseInt(yearStr, 10);
+      const month = parseInt(monthStr, 10) - 1;
+      const day = parseInt(dayStr, 10);
+      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      const d = new Date(year, month, day);
+      const dayOfWeek = isNaN(d.getTime()) ? "" : days[d.getDay()];
+      const monthName = months[month] || "";
+      return `${dayOfWeek ? `${dayOfWeek}, ` : ""}${monthName} ${day}, ${year}`;
+    }
     const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr || "Unknown Date";
-    return d.toLocaleDateString("en-US", {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
   };
 
   const formatDisplayDate = (dateStr?: string | null) => {
@@ -462,17 +487,30 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
         }
       }
 
-      // Search Filter
+      // Search Filter (Includes doc_no, payee, coa, division, department, and remarks)
       if (!searchTerm.trim()) return true;
       const query = searchTerm.toLowerCase();
       return (
         (item.doc_no || "").toLowerCase().includes(query) ||
         (getSupplierName(item.payee) || "").toLowerCase().includes(query) ||
         (getCoaName(item.coa_id) || "").toLowerCase().includes(query) ||
+        (getDivisionName(item.division_id) || "").toLowerCase().includes(query) ||
+        (getDepartmentName(item.department_id) || "").toLowerCase().includes(query) ||
         (item.remarks || "").toLowerCase().includes(query)
       );
     });
-  }, [expenses, activeTab, searchTerm, getSupplierName, getCoaName, groupBy, selectedYear, selectedMonths]);
+  }, [
+    expenses,
+    activeTab,
+    searchTerm,
+    getSupplierName,
+    getCoaName,
+    getDivisionName,
+    getDepartmentName,
+    groupBy,
+    selectedYear,
+    selectedMonths,
+  ]);
 
   // Group expenses according to selected groupBy state
   const groupedData = useMemo(() => {
@@ -536,7 +574,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
           size="icon"
           className="h-8 w-8 text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10"
           title="Submit to Approval"
-          onClick={() => onSubmitDraft(item.id)}
+          onClick={() => setActionConfirmModal({ type: "submit", item })}
         >
           <Send className="w-4 h-4" />
         </Button>
@@ -562,7 +600,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
           size="icon"
           className="h-8 w-8 text-rose-500 hover:text-rose-400 hover:bg-rose-500/10"
           title="Delete Draft"
-          onClick={() => onDeleteExpense(item.id)}
+          onClick={() => setActionConfirmModal({ type: "delete", item })}
         >
           <Trash2 className="w-4 h-4" />
         </Button>
@@ -1003,9 +1041,103 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
         receiptUrl={selectedReceiptModal?.url}
         docNo={selectedReceiptModal?.docNo}
       />
+
+      {/* Action Confirmation Dialog (Submit / Delete Draft) */}
+      <Dialog
+        open={!!actionConfirmModal}
+        onOpenChange={(open) => !open && setActionConfirmModal(null)}
+      >
+        <DialogContent className="sm:max-w-md border-border bg-card">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div
+                className={`p-2.5 rounded-full ${
+                  actionConfirmModal?.type === "submit"
+                    ? "bg-emerald-500/10 text-emerald-500"
+                    : "bg-rose-500/10 text-rose-500"
+                }`}
+              >
+                {actionConfirmModal?.type === "submit" ? (
+                  <Send className="w-5 h-5" />
+                ) : (
+                  <Trash2 className="w-5 h-5" />
+                )}
+              </div>
+              <DialogTitle className="text-base font-bold text-foreground">
+                {actionConfirmModal?.type === "submit"
+                  ? "Submit Draft for Approval"
+                  : "Delete Draft Receipt"}
+              </DialogTitle>
+            </div>
+            <DialogDescription className="text-xs text-muted-foreground pt-2 leading-relaxed">
+              {actionConfirmModal?.type === "submit"
+                ? "Are you sure you want to submit this draft receipt for approval? Once submitted, it will be forwarded to the assigned approvers for review."
+                : "Are you sure you want to delete this draft receipt? This action is permanent and cannot be undone."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Compact Summary Card */}
+          {actionConfirmModal?.item && (
+            <div className="my-2 p-3 bg-muted/40 rounded-lg border border-border space-y-1.5 text-xs">
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground font-mono text-[11px]">
+                  {actionConfirmModal.item.doc_no || "Draft Receipt"}
+                </span>
+                <span className="font-bold text-foreground">
+                  ₱{Number(actionConfirmModal.item.amount || 0).toLocaleString("en-US", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </span>
+              </div>
+              <div className="text-muted-foreground truncate">
+                <span className="font-medium text-foreground">Payee/Supplier:</span>{" "}
+                {getSupplierName(actionConfirmModal.item.payee) || "N/A"}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0 mt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setActionConfirmModal(null)}
+              className="text-xs font-semibold"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className={`text-xs font-semibold text-white ${
+                actionConfirmModal?.type === "submit"
+                  ? "bg-emerald-600 hover:bg-emerald-700"
+                  : "bg-rose-600 hover:bg-rose-700"
+              }`}
+              onClick={() => {
+                if (!actionConfirmModal) return;
+                const { type, item } = actionConfirmModal;
+                setActionConfirmModal(null);
+                if (type === "submit" && onSubmitDraft) {
+                  onSubmitDraft(item.id);
+                } else if (type === "delete" && onDeleteExpense) {
+                  onDeleteExpense(item.id);
+                }
+              }}
+            >
+              {actionConfirmModal?.type === "submit"
+                ? "Yes, Submit Receipt"
+                : "Yes, Delete Draft"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
+
+export default ExpenseTable;
 
 // Standalone High-Performance Receipt Zoom Modal Component
 interface ReceiptZoomModalProps {

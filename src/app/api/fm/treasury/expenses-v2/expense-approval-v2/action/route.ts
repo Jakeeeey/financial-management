@@ -80,9 +80,18 @@ export async function POST(req: Request) {
     let payableId: number | null = null;
 
     if (action === "Approve") {
-      // 1. Fetch active approvers for this division to determine max hierarchy level
+      // Idempotency check: Guard against duplicate approvals if already finalized
+      if (currentExpense.status === "Submitted To Disbursement") {
+        return NextResponse.json(
+          { error: "Expense is already approved and submitted to disbursement." },
+          { status: 400 }
+        );
+      }
+
+      // 1. Fetch active approvers for this division to check hierarchy authorization and max level
       const divisionId = currentExpense.division_id;
       let maxLevel = 1;
+      let isUserAuthorizedForCurrentLevel = false;
 
       if (divisionId) {
         const approversRes = await fetch(
@@ -97,8 +106,32 @@ export async function POST(req: Request) {
             maxLevel = Math.max(
               ...approversList.map((a: { approver_hierarchy?: number }) => Number(a.approver_hierarchy || 1))
             );
+
+            // Verify if logged-in user is configured for current_approval_level
+            isUserAuthorizedForCurrentLevel = approversList.some(
+              (a: { approver_id?: { user_id: number } | number; approver_hierarchy?: number }) => {
+                const appUserId =
+                  typeof a.approver_id === "object" && a.approver_id !== null
+                    ? a.approver_id.user_id
+                    : Number(a.approver_id);
+                return (
+                  Number(appUserId) === Number(userId) &&
+                  Number(a.approver_hierarchy) === Number(nextLevel)
+                );
+              }
+            );
           }
         }
+      }
+
+      // Authorization guard: Reject approval if logged in user is not authorized for this specific tier level
+      if (!isUserAuthorizedForCurrentLevel && userId) {
+        return NextResponse.json(
+          {
+            error: `Unauthorized: You are not assigned to approve Tier ${nextLevel} for this division.`,
+          },
+          { status: 403 }
+        );
       }
 
       const isFinalTier = nextLevel >= maxLevel;
@@ -109,6 +142,15 @@ export async function POST(req: Request) {
         // Resolve Non-Trade Transaction Type ID
         const nonTradeTypeId = await getNonTradeTransactionTypeId();
 
+        // Resolve encoder ID accurately
+        const rawCreatedBy = currentExpense.created_by;
+        let resolvedEncoderId = userId || 0;
+        if (typeof rawCreatedBy === "object" && rawCreatedBy !== null && rawCreatedBy.user_id) {
+          resolvedEncoderId = Number(rawCreatedBy.user_id);
+        } else if (typeof rawCreatedBy === "number" && rawCreatedBy > 0) {
+          resolvedEncoderId = rawCreatedBy;
+        }
+
         // Step 1: Create disbursement header record
         const dsbPayload = {
           doc_no: `DSB-${currentExpense.doc_no || currentExpense.id}`,
@@ -118,10 +160,7 @@ export async function POST(req: Request) {
           remarks: "From Expense",
           total_amount: Number(currentExpense.amount || 0),
           paid_amount: 0,
-          encoder_id:
-            typeof currentExpense.created_by === "object" && currentExpense.created_by !== null
-              ? Number(currentExpense.created_by.user_id)
-              : Number(currentExpense.created_by || userId || 0),
+          encoder_id: resolvedEncoderId,
           submitted_by: userId,
           approver_id: userId,
           division_id: currentExpense.division_id || null,
@@ -200,7 +239,7 @@ export async function POST(req: Request) {
     const expensePatchPayload: Record<string, string | number | boolean | null> = {
       status: nextStatus,
       current_approval_level: nextLevel,
-      update_at: currentTimestamp,
+      updated_at: currentTimestamp,
     };
 
     if (nextStatus === "Submitted To Disbursement") {

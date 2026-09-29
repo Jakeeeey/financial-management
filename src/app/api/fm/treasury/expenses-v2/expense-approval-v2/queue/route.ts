@@ -31,9 +31,9 @@ export async function GET() {
       return NextResponse.json({ data: [] });
     }
 
-    // 1. Fetch active division assignments for current logged-in approver
+    // 1. Fetch active division assignments AND hierarchy levels for current logged-in approver
     const approverRes = await fetch(
-      `${API_BASE_URL}/items/expense_approvers?filter[approver_id][_eq]=${userId}&filter[is_deleted][_eq]=false&fields=division_id`,
+      `${API_BASE_URL}/items/expense_approvers?filter[approver_id][_eq]=${userId}&filter[is_deleted][_eq]=false&fields=division_id,approver_hierarchy`,
       {
         headers: AUTH_HEADERS,
         cache: "no-store",
@@ -51,10 +51,22 @@ export async function GET() {
       return NextResponse.json({ data: [] });
     }
 
-    // Extract division IDs assigned to this approver
-    const assignedDivisionIds = records
-      .map((r: { division_id?: { division_id: number } | number }) => (typeof r.division_id === "object" ? r.division_id?.division_id : r.division_id))
-      .filter((id: number | undefined | null) => id !== null && id !== undefined);
+    // Build a map of division_id -> Set of allowed approver_hierarchy levels for this user
+    const userHierarchyMap: Record<number, Set<number>> = {};
+    const assignedDivisionIds: number[] = [];
+
+    records.forEach((r: { division_id?: { division_id: number } | number; approver_hierarchy?: number }) => {
+      const divId = typeof r.division_id === "object" ? r.division_id?.division_id : r.division_id;
+      const hierarchy = Number(r.approver_hierarchy || 1);
+      if (divId) {
+        const numericDivId = Number(divId);
+        if (!userHierarchyMap[numericDivId]) {
+          userHierarchyMap[numericDivId] = new Set<number>();
+          assignedDivisionIds.push(numericDivId);
+        }
+        userHierarchyMap[numericDivId].add(hierarchy);
+      }
+    });
 
     if (assignedDivisionIds.length === 0) {
       return NextResponse.json({ data: [] });
@@ -96,7 +108,16 @@ export async function GET() {
     }
 
     const data = await res.json();
-    const rawItems = data.data || [];
+    const fetchedItems = data.data || [];
+
+    // Filter items to ensure user only sees expenses where current_approval_level matches their assigned hierarchy
+    const rawItems = fetchedItems.filter((item: { division_id?: number; current_approval_level?: number }) => {
+      if (!item.division_id) return false;
+      const divId = Number(item.division_id);
+      const level = Number(item.current_approval_level || 1);
+      const allowedLevels = userHierarchyMap[divId];
+      return allowedLevels ? allowedLevels.has(level) : false;
+    });
 
     if (rawItems.length === 0) {
       return NextResponse.json({ data: [] });

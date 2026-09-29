@@ -222,10 +222,8 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
     (d.division_name || "").toLowerCase().includes((divisionSearch || "").toLowerCase())
   );
 
-  const availableDepartments = departmentId
-    ? departments
-    : divisionId
-    ? departments.filter((d) => !d.division_id || d.division_id === divisionId)
+  const availableDepartments = divisionId
+    ? departments.filter((d) => d.division_id === divisionId)
     : departments;
 
   const filteredDepartments = availableDepartments.filter((d) =>

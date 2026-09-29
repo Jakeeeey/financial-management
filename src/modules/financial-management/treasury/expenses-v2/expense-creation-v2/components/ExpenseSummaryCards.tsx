@@ -17,7 +17,7 @@ export const ExpenseSummaryCards: React.FC<ExpenseSummaryCardsProps> = ({ expens
   const approvedCount = expenses.filter((e) => e.status === "Submitted To Disbursement").length;
 
   const totalAmount = expenses.reduce((acc, curr) => {
-    if (curr.status !== "Rejected") {
+    if (curr.status !== "Rejected" && curr.status !== "Draft") {
       return acc + (Number(curr.amount) || 0);
     }
     return acc;
