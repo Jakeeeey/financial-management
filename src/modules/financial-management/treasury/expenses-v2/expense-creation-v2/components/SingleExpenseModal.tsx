@@ -28,7 +28,7 @@ import {
   UserDefaultsOption,
 } from "../types";
 import { uploadReceiptFile } from "../services/uploadService";
-import { Loader2, Save, Send, Search } from "lucide-react";
+import { Loader2, Save, Send, Search, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 
 interface SingleExpenseModalProps {
@@ -244,6 +244,19 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-5 py-3 space-y-4">
+          {/* Missing Supplier Profile Notice Banner */}
+          {!payee && (
+            <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-3 text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-semibold">No Supplier/Payee Profile Found</p>
+                <p className="text-[11px] text-muted-foreground dark:text-amber-300/80 leading-relaxed">
+                  Your account has not yet been linked to a Supplier/Payee record in the database. Please contact our MIS or HR to set up your supplier profile before encoding your expenses.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Expense Date & Payee */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -529,12 +542,15 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
           <Button
             variant="secondary"
             onClick={() => handleSave(false)}
-            disabled={isSubmitting || isUploading}
+            disabled={isSubmitting || isUploading || (!!userDefaults && !userDefaults.supplier_id)}
           >
             {isSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
             Save as Draft
           </Button>
-          <Button onClick={() => handleSave(true)} disabled={isSubmitting || isUploading}>
+          <Button
+            onClick={() => handleSave(true)}
+            disabled={isSubmitting || isUploading || (!!userDefaults && !userDefaults.supplier_id)}
+          >
             {isSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
             Save & Submit
           </Button>

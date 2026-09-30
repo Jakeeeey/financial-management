@@ -97,11 +97,6 @@ export const EncoderCardsGrid: React.FC<EncoderCardsGridProps> = ({
                       <h4 className="font-bold text-sm text-foreground truncate group-hover:text-primary transition-colors" title={fullName}>
                         {fullName}
                       </h4>
-                      {group.user_email ? (
-                        <p className="text-[11px] text-muted-foreground truncate" title={group.user_email}>
-                          {group.user_email}
-                        </p>
-                      ) : null}
                     </div>
                   </div>
 

@@ -426,6 +426,19 @@ export const BulkExpenseModal: React.FC<BulkExpenseModalProps> = ({
           {/* RIGHT CANVAS: Detailed Form for Selected Receipt */}
           {activeRow ? (
             <div className="flex-1 overflow-y-auto p-6 bg-card space-y-5">
+              {/* Missing Supplier Profile Notice Banner */}
+              {!activeRow.payee && (
+                <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-3 text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="font-semibold">No Supplier/Payee Profile Found</p>
+                    <p className="text-[11px] text-muted-foreground dark:text-amber-300/80 leading-relaxed">
+                      Your account has not yet been linked to a Supplier/Payee record in the database. Please contact our MIS or HR to set up your supplier profile before encoding your expenses.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center justify-between border-b border-border/50 pb-3">
                 <h3 className="font-semibold text-sm">
                   Editing Receipt Entry #{rows.findIndex((r) => r.id === activeRow.id) + 1}
@@ -729,11 +742,18 @@ export const BulkExpenseModal: React.FC<BulkExpenseModalProps> = ({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
             Cancel
           </Button>
-          <Button variant="secondary" onClick={() => handleSaveBulk(false)} disabled={isSubmitting}>
+          <Button
+            variant="secondary"
+            onClick={() => handleSaveBulk(false)}
+            disabled={isSubmitting || (!!userDefaults && !userDefaults.supplier_id)}
+          >
             {isSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
             Save All as Draft
           </Button>
-          <Button onClick={() => handleSaveBulk(true)} disabled={isSubmitting}>
+          <Button
+            onClick={() => handleSaveBulk(true)}
+            disabled={isSubmitting || (!!userDefaults && !userDefaults.supplier_id)}
+          >
             {isSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
             Save & Submit All
           </Button>

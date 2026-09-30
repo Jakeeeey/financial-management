@@ -10,6 +10,7 @@ import {
   DepartmentOption,
   SummaryFilterState,
   EncoderSummaryGroup,
+  ExpenseApproverOption,
 } from "./types";
 import { SummaryMetricsCards } from "./components/SummaryMetricsCards";
 import { SummaryFiltersBar } from "./components/SummaryFiltersBar";
@@ -24,6 +25,7 @@ export const ExpenseSummaryV2Module: React.FC = () => {
   const [coas, setCoas] = useState<ChartOfAccountOption[]>([]);
   const [divisions, setDivisions] = useState<DivisionInfo[]>([]);
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
+  const [approvers, setApprovers] = useState<ExpenseApproverOption[]>([]);
 
   // Navigation state: null = Encoders List (Screen 1), number = Selected Encoder ID (Screen 2)
   const [selectedEncoderId, setSelectedEncoderId] = useState<number | null>(null);
@@ -36,10 +38,12 @@ export const ExpenseSummaryV2Module: React.FC = () => {
     search: "",
     dateFrom: "",
     dateTo: "",
-    status: "ALL",
+    statuses: [],
     divisionId: "ALL",
+    divisionIds: [],
     departmentId: "ALL",
-    coaId: "ALL",
+    coaIds: [],
+    encoderIds: [],
   });
 
   const fetchData = async () => {
@@ -70,6 +74,11 @@ export const ExpenseSummaryV2Module: React.FC = () => {
       const deptRes = await fetch("/api/fm/treasury/expenses-v2/expense-creation-v2/department");
       const deptJson = await deptRes.json();
       setDepartments(deptJson.data || []);
+
+      // Fetch Approvers
+      const appRes = await fetch("/api/fm/treasury/expenses-v2/expense-approval-v2/approvers");
+      const appJson = await appRes.json();
+      setApprovers(appJson.data || []);
     } catch (e) {
       console.error("Error fetching Expense Summary V2 data:", e);
     } finally {
@@ -81,7 +90,10 @@ export const ExpenseSummaryV2Module: React.FC = () => {
     fetchData();
   }, []);
 
-  const handleFilterChange = (key: keyof SummaryFilterState, value: string) => {
+  const handleFilterChange = <K extends keyof SummaryFilterState>(
+    key: K,
+    value: SummaryFilterState[K]
+  ) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -90,43 +102,84 @@ export const ExpenseSummaryV2Module: React.FC = () => {
       search: "",
       dateFrom: "",
       dateTo: "",
-      status: "ALL",
+      statuses: [],
       divisionId: "ALL",
+      divisionIds: [],
       departmentId: "ALL",
-      coaId: "ALL",
+      coaIds: [],
+      encoderIds: [],
     });
   };
+
+  // Distinct Encoders extracted from all raw expenses for the Page 1 Encoders multi-select filter
+  const allEncoders = useMemo(() => {
+    const map = new Map<number, { user_id: number; user_fname: string; user_lname: string; user_email?: string; division_id?: number | null }>();
+    expenses.forEach((item) => {
+      const userObj =
+        typeof item.created_by === "object" && item.created_by !== null
+          ? item.created_by
+          : null;
+      const userId = userObj ? userObj.user_id : (item.created_by as number) || 0;
+      if (!map.has(userId)) {
+        map.set(userId, {
+          user_id: userId,
+          user_fname: userObj ? userObj.user_fname : "Unknown",
+          user_lname: userObj ? userObj.user_lname : `Encoder #${userId}`,
+          user_email: userObj ? userObj.user_email : undefined,
+          division_id: item.division_id,
+        });
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.user_fname.localeCompare(b.user_fname));
+  }, [expenses]);
 
   // 1. Filtered expense list according to top filter controls
   const filteredExpenses = useMemo(() => {
     return expenses.filter((item) => {
-      // Search Query
-      if (filters.search.trim()) {
+      const userObj =
+        typeof item.created_by === "object" && item.created_by !== null
+          ? item.created_by
+          : null;
+      const userId = userObj ? userObj.user_id : (item.created_by as number) || 0;
+
+      // Screen 1: Encoders Multi-Select Filter
+      if (!selectedEncoderId && filters.encoderIds && filters.encoderIds.length > 0) {
+        if (!filters.encoderIds.includes(userId)) return false;
+      }
+
+      // Screen 1: Divisions Multi-Select Filter
+      if (!selectedEncoderId && filters.divisionIds && filters.divisionIds.length > 0) {
+        if (!item.division_id || !filters.divisionIds.includes(Number(item.division_id))) return false;
+      }
+
+      // Screen 2: Search Query (Doc Code, Payee, COA title, Remarks)
+      if (selectedEncoderId && filters.search.trim()) {
         const q = filters.search.toLowerCase();
         const docMatch = (item.doc_no || "").toLowerCase().includes(q);
         const remarksMatch = (item.remarks || "").toLowerCase().includes(q);
         const payeeObj = suppliers.find((s) => s.id === item.payee);
         const payeeMatch = (payeeObj?.supplier_name || "").toLowerCase().includes(q);
-        if (!docMatch && !remarksMatch && !payeeMatch) return false;
+        const coaObj = coas.find((c) => c.coa_id === item.coa_id);
+        const coaMatch =
+          (coaObj?.account_title || "").toLowerCase().includes(q) ||
+          (coaObj?.gl_code || "").toLowerCase().includes(q);
+        if (!docMatch && !remarksMatch && !payeeMatch && !coaMatch) return false;
       }
 
-      // Status Filter
-      if (filters.status !== "ALL") {
-        if (filters.status === "With Concern") {
-          if (item.status !== "With Concern" && !item.has_concern) return false;
-        } else if (item.status !== filters.status) {
-          return false;
-        }
+      // Statuses Filter (Multi-select)
+      if (filters.statuses && filters.statuses.length > 0) {
+        const hasMatch = filters.statuses.some((statusKey) => {
+          if (statusKey === "With Concern") {
+            return item.status === "With Concern" || !!item.has_concern;
+          }
+          return item.status === statusKey;
+        });
+        if (!hasMatch) return false;
       }
 
-      // Division Filter
-      if (filters.divisionId !== "ALL") {
-        if (String(item.division_id) !== filters.divisionId) return false;
-      }
-
-      // COA Filter
-      if (filters.coaId !== "ALL") {
-        if (String(item.coa_id) !== filters.coaId) return false;
+      // COA Filter (Multi-select)
+      if (filters.coaIds && filters.coaIds.length > 0) {
+        if (!filters.coaIds.includes(item.coa_id)) return false;
       }
 
       // Date Range Filter
@@ -139,7 +192,7 @@ export const ExpenseSummaryV2Module: React.FC = () => {
 
       return true;
     });
-  }, [expenses, filters, suppliers]);
+  }, [expenses, filters, suppliers, coas, selectedEncoderId]);
 
   // 2. Group filtered expenses per Encoder / Submitter (created_by)
   const encoderGroups = useMemo<EncoderSummaryGroup[]>(() => {
@@ -177,18 +230,60 @@ export const ExpenseSummaryV2Module: React.FC = () => {
     return Object.values(groupsMap);
   }, [filteredExpenses]);
 
-  // Selected encoder details group
-  const selectedEncoderGroup = useMemo(() => {
-    if (!selectedEncoderId) return null;
-    return encoderGroups.find((g) => g.user_id === selectedEncoderId) || null;
-  }, [selectedEncoderId, encoderGroups]);
+  // Selected encoder raw items (unfiltered by screen 2 filters, but scoped to encoder)
+  const selectedEncoderExpenses = useMemo(() => {
+    if (!selectedEncoderId) return [];
+    return expenses.filter((item) => {
+      const userObj =
+        typeof item.created_by === "object" && item.created_by !== null
+          ? item.created_by
+          : null;
+      const userId = userObj ? userObj.user_id : (item.created_by as number) || 0;
+      return userId === selectedEncoderId;
+    });
+  }, [expenses, selectedEncoderId]);
 
-  // Auto return to Encoders list if selected encoder has 0 items after filter change
-  useEffect(() => {
-    if (selectedEncoderId && !selectedEncoderGroup) {
-      setSelectedEncoderId(null);
-    }
-  }, [selectedEncoderId, selectedEncoderGroup]);
+  // Selected encoder user info (resolved even when filtered count is 0)
+  const selectedEncoderUser = useMemo(() => {
+    if (!selectedEncoderId) return null;
+    const item = expenses.find((i) => {
+      const userObj =
+        typeof i.created_by === "object" && i.created_by !== null
+          ? i.created_by
+          : null;
+      const userId = userObj ? userObj.user_id : (i.created_by as number) || 0;
+      return userId === selectedEncoderId;
+    });
+    if (!item) return null;
+    const userObj =
+      typeof item.created_by === "object" && item.created_by !== null
+        ? item.created_by
+        : null;
+    return {
+      user_id: selectedEncoderId,
+      user_fname: userObj ? userObj.user_fname : "Encoder",
+      user_lname: userObj ? userObj.user_lname : `#${selectedEncoderId}`,
+      user_email: userObj ? userObj.user_email : undefined,
+    };
+  }, [expenses, selectedEncoderId]);
+
+  // Selected encoder filtered items (passed to Screen 2 table)
+  const selectedEncoderFilteredItems = useMemo(() => {
+    if (!selectedEncoderId) return [];
+    return filteredExpenses.filter((item) => {
+      const userObj =
+        typeof item.created_by === "object" && item.created_by !== null
+          ? item.created_by
+          : null;
+      const userId = userObj ? userObj.user_id : (item.created_by as number) || 0;
+      return userId === selectedEncoderId;
+    });
+  }, [filteredExpenses, selectedEncoderId]);
+
+  // Expenses to pass into KPI Cards: Global expenses on Screen 1, Scoped encoder expenses on Screen 2
+  const kpiExpenses = useMemo(() => {
+    return selectedEncoderId ? selectedEncoderExpenses : expenses;
+  }, [selectedEncoderId, selectedEncoderExpenses, expenses]);
 
   return (
     <div className="space-y-4">
@@ -199,7 +294,9 @@ export const ExpenseSummaryV2Module: React.FC = () => {
             Expense Summary V2
           </h2>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Comprehensive overview, encoder breakdowns, and audit log history for division expense records.
+            {selectedEncoderUser
+              ? `Reviewing submitted expense records and timeline for ${selectedEncoderUser.user_fname} ${selectedEncoderUser.user_lname}.`
+              : "Comprehensive overview, encoder breakdowns, and audit log history for division expense records."}
           </p>
         </div>
 
@@ -215,15 +312,32 @@ export const ExpenseSummaryV2Module: React.FC = () => {
         </div>
       </div>
 
-      {/* KPI Metrics Cards */}
-      <SummaryMetricsCards expenses={filteredExpenses} />
+      {/* KPI Metrics Cards (Global on Screen 1, Encoder-Scoped on Screen 2) */}
+      <SummaryMetricsCards
+        expenses={kpiExpenses}
+        activeFilterStatuses={filters.statuses}
+        onSelectFilter={(statusKey) => {
+          if (statusKey === "ALL") {
+            handleFilterChange("statuses", []);
+          } else {
+            const current = filters.statuses || [];
+            if (current.includes(statusKey)) {
+              handleFilterChange("statuses", current.filter((s) => s !== statusKey));
+            } else {
+              handleFilterChange("statuses", [...current, statusKey]);
+            }
+          }
+        }}
+      />
 
-      {/* Filter Controls Bar */}
+      {/* Filter Controls Bar (Adaptive controls for Screen 1 vs Screen 2) */}
       <SummaryFiltersBar
         filters={filters}
         divisions={divisions}
         departments={departments}
         coas={coas}
+        encoders={allEncoders}
+        isEncoderSelected={!!selectedEncoderId}
         onFilterChange={handleFilterChange}
         onResetFilters={handleResetFilters}
       />
@@ -237,14 +351,15 @@ export const ExpenseSummaryV2Module: React.FC = () => {
         />
       ) : (
         <ExpenseSummaryTable
-          expenses={selectedEncoderGroup ? selectedEncoderGroup.items : []}
+          expenses={selectedEncoderFilteredItems}
           suppliers={suppliers}
           coas={coas}
           divisions={divisions}
           departments={departments}
+          approvers={approvers}
           selectedEncoderName={
-            selectedEncoderGroup
-              ? `${selectedEncoderGroup.user_fname} ${selectedEncoderGroup.user_lname}`
+            selectedEncoderUser
+              ? `${selectedEncoderUser.user_fname} ${selectedEncoderUser.user_lname}`
               : undefined
           }
           onBackToEncoders={() => setSelectedEncoderId(null)}

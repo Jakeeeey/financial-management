@@ -11,16 +11,21 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   ExpenseSummaryItem,
   SupplierOption,
   ChartOfAccountOption,
   DivisionInfo,
   DepartmentOption,
+  ExpenseApproverOption,
 } from "../types";
 import {
-  Search,
   Inbox,
   ArrowLeft,
   User,
@@ -33,6 +38,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock,
+  Check,
 } from "lucide-react";
 
 interface ExpenseSummaryTableProps {
@@ -41,6 +47,7 @@ interface ExpenseSummaryTableProps {
   coas: ChartOfAccountOption[];
   divisions: DivisionInfo[];
   departments: DepartmentOption[];
+  approvers?: ExpenseApproverOption[];
   selectedEncoderName?: string;
   onBackToEncoders?: () => void;
   onViewDetails: (item: ExpenseSummaryItem) => void;
@@ -50,11 +57,13 @@ export const ExpenseSummaryTable: React.FC<ExpenseSummaryTableProps> = ({
   expenses,
   suppliers,
   coas,
+  divisions,
+  departments,
+  approvers = [],
   selectedEncoderName,
   onBackToEncoders,
   onViewDetails,
 }) => {
-  const [searchTerm, setSearchTerm] = useState("");
   const [groupBy, setGroupBy] = useState<"receipt" | "day" | "week">("week");
   const [selectedGroupKey, setSelectedGroupKey] = useState<string>("");
 
@@ -73,6 +82,22 @@ export const ExpenseSummaryTable: React.FC<ExpenseSummaryTableProps> = ({
     [coas]
   );
 
+  const getDivisionName = useCallback(
+    (id?: number | null) => {
+      if (!id) return "-";
+      return divisions.find((d) => d.division_id === id)?.division_name || `Div #${id}`;
+    },
+    [divisions]
+  );
+
+  const getDepartmentName = useCallback(
+    (id?: number | null) => {
+      if (!id) return "-";
+      return departments.find((d) => d.department_id === id)?.department_name || `Dept #${id}`;
+    },
+    [departments]
+  );
+
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat("en-PH", {
       style: "currency",
@@ -89,15 +114,42 @@ export const ExpenseSummaryTable: React.FC<ExpenseSummaryTableProps> = ({
     return `Week ${weekNum} (${d.getFullYear()})`;
   };
 
-  const getDayLabel = (dateStr: string) => {
+  const formatDisplayDate = (dateStr?: string | null) => {
+    if (!dateStr) return "-";
+    const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      const [, yearStr, monthStr, dayStr] = match;
+      const year = parseInt(yearStr, 10);
+      const month = parseInt(monthStr, 10) - 1;
+      const day = parseInt(dayStr, 10);
+      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const monthName = months[month] || "";
+      return `${monthName} ${day} ${year}`;
+    }
     const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr || "Unknown Date";
-    return d.toLocaleDateString("en-US", {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
+    if (isNaN(d.getTime())) return dateStr;
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return `${months[d.getMonth()]} ${d.getDate()} ${d.getFullYear()}`;
+  };
+
+  const getDayLabel = (dateStr: string) => {
+    if (!dateStr) return "Unknown Date";
+    const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      const [, yearStr, monthStr, dayStr] = match;
+      const year = parseInt(yearStr, 10);
+      const month = parseInt(monthStr, 10) - 1;
+      const day = parseInt(dayStr, 10);
+      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      const d = new Date(year, month, day);
+      const dayOfWeek = isNaN(d.getTime()) ? "" : days[d.getDay()];
+      const monthName = months[month] || "";
+      return `${dayOfWeek ? `${dayOfWeek}, ` : ""}${monthName} ${day}, ${year}`;
+    }
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
   };
 
   // 1. Group expenses according to selected groupBy state
@@ -142,38 +194,149 @@ export const ExpenseSummaryTable: React.FC<ExpenseSummaryTableProps> = ({
     return groupedData.find((g) => g.key === targetKey) || groupedData[0] || null;
   }, [groupedData, selectedGroupKey]);
 
-  // 4. Filter items in active group by search query
-  const filteredActiveGroupItems = useMemo(() => {
+  // Active group items for detail receipts table
+  const activeGroupItems = useMemo(() => {
     if (!activeGroup) return [];
-    if (!searchTerm.trim()) return activeGroup.items;
-    const q = searchTerm.toLowerCase();
-    return activeGroup.items.filter((item) => {
-      return (
-        (item.doc_no || "").toLowerCase().includes(q) ||
-        (getSupplierName(item.payee) || "").toLowerCase().includes(q) ||
-        (getCoaName(item.coa_id) || "").toLowerCase().includes(q) ||
-        (item.remarks || "").toLowerCase().includes(q)
-      );
-    });
-  }, [activeGroup, searchTerm, getSupplierName, getCoaName]);
+    return activeGroup.items;
+  }, [activeGroup]);
 
-  // Total amount across all items for this encoder
-  const totalEncoderAmount = useMemo(() => {
-    return expenses.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  }, [expenses]);
+  const renderApprovalTierStepper = (
+    currentLevel: number = 1,
+    divisionId?: number | null,
+    itemStatus?: string,
+    isFinalApproved?: boolean | number
+  ) => {
+    // For Draft, show a dash
+    if (itemStatus === "Draft") {
+      return <span className="text-muted-foreground text-xs font-mono">-</span>;
+    }
+    if (itemStatus === "Rejected") {
+      return (
+        <Badge variant="outline" className="bg-rose-500/10 text-rose-500 border-rose-500/30 text-[10px] font-mono font-bold flex items-center gap-1 w-fit">
+          <AlertTriangle className="w-3 h-3" /> Rejected
+        </Badge>
+      );
+    }
+
+    const isApproved = itemStatus === "Submitted To Disbursement" || !!isFinalApproved;
+
+    // Filter approvers matching this expense's division
+    const divisionApprovers = approvers.filter((a) => {
+      if (!divisionId || !a.division_id) return false;
+      const divId = typeof a.division_id === "object" ? a.division_id.division_id : a.division_id;
+      return Number(divId) === Number(divisionId);
+    });
+
+    // Calculate maximum hierarchy for this division (default to 3 if none configured)
+    const highestHierarchy = divisionApprovers.reduce((max, a) => {
+      const levelNum = Number(a.approver_hierarchy || 0);
+      return levelNum > max ? levelNum : max;
+    }, 0);
+
+    const actualMaxLevels = highestHierarchy > 0 ? highestHierarchy : 3;
+    const levels = Array.from({ length: actualMaxLevels }, (_, i) => i + 1);
+
+    // If fully approved, all levels are considered passed
+    const safeCurrent = isApproved ? actualMaxLevels + 1 : Math.max(1, currentLevel);
+
+    const getApproverNameForLevel = (lvl: number) => {
+      const match = divisionApprovers.find((a) => Number(a.approver_hierarchy) === lvl);
+      if (match && match.approver_id && typeof match.approver_id === "object") {
+        const fname = match.approver_id.user_fname || "";
+        const lname = match.approver_id.user_lname || "";
+        const fullName = `${fname} ${lname}`.trim();
+        if (fullName) return fullName;
+      }
+      return null;
+    };
+
+    return (
+      <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full border shadow-2xs ${
+        isApproved
+          ? "bg-emerald-500/5 dark:bg-emerald-950/40 border-emerald-500/30"
+          : "bg-background/80 dark:bg-zinc-950/80 border-blue-200 dark:border-blue-900/60"
+      }`}>
+        {levels.map((lvl, index) => {
+          const isPassed = lvl < safeCurrent;
+          const isActive = !isApproved && lvl === safeCurrent;
+          const approverName = getApproverNameForLevel(lvl);
+
+          return (
+            <React.Fragment key={lvl}>
+              {/* Connector Line */}
+              {index > 0 && (
+                <div
+                  className={`h-0.5 w-1.5 transition-colors ${
+                    isPassed
+                      ? "bg-emerald-500"
+                      : isActive
+                      ? "bg-blue-500"
+                      : "bg-slate-200 dark:bg-slate-700"
+                  }`}
+                />
+              )}
+
+              {/* Individual Per-Node Tooltip */}
+              <TooltipProvider delayDuration={100}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="cursor-help transition-transform hover:scale-110">
+                      {isPassed ? (
+                        <div className="w-4 h-4 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-2xs" title={`Tier ${lvl} Approved`}>
+                          <Check className="w-2.5 h-2.5 stroke-[3]" />
+                        </div>
+                      ) : isActive ? (
+                        <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-[10px] shrink-0 font-mono shadow-md shadow-blue-500/30 animate-pulse ring-2 ring-blue-400/40">
+                          {lvl}
+                        </div>
+                      ) : (
+                        <div className="w-4 h-4 rounded-full border border-slate-300 dark:border-slate-700 bg-muted/40 text-slate-400 dark:text-slate-500 flex items-center justify-center text-[9px] shrink-0 font-mono font-medium">
+                          {lvl}
+                        </div>
+                      )}
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    side="top"
+                    className="p-2 text-xs bg-zinc-900 text-zinc-100 dark:bg-zinc-100 dark:text-zinc-900 font-medium shadow-xl z-50"
+                  >
+                    <div className="space-y-1">
+                      <div className={`font-bold border-b pb-1 text-[11px] ${
+                        isPassed
+                          ? "text-emerald-400 dark:text-emerald-600 border-emerald-700/50"
+                          : "text-blue-400 dark:text-blue-600 border-zinc-700 dark:border-zinc-300"
+                      }`}>
+                        Tier {lvl} of {actualMaxLevels} {isPassed ? "Approved" : "Approval"}
+                      </div>
+                      <div className="text-[11px]">
+                        <span className="text-zinc-400 dark:text-zinc-500">Approver: </span>
+                        <span className="font-bold text-white dark:text-zinc-900">
+                          {approverName || `Tier ${lvl} Approver`}
+                        </span>
+                      </div>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </React.Fragment>
+          );
+        })}
+      </div>
+    );
+  };
 
   const renderStatusBadge = (item: ExpenseSummaryItem) => {
     if (item.status === "Submitted To Disbursement" || item.is_final_approved) {
       return (
         <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30 text-[10px] font-mono font-bold flex items-center gap-1 w-fit">
-          <CheckCircle2 className="w-3 h-3" /> Approved / Disbursement
+          <CheckCircle2 className="w-3 h-3" /> Approved
         </Badge>
       );
     }
     if (item.status === "Pending Approval") {
       return (
         <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30 text-[10px] font-mono font-bold flex items-center gap-1 w-fit">
-          <Clock className="w-3 h-3" /> Pending Approval
+          <Clock className="w-3 h-3" /> Pending Review
         </Badge>
       );
     }
@@ -223,7 +386,7 @@ export const ExpenseSummaryTable: React.FC<ExpenseSummaryTableProps> = ({
           ) : null}
         </div>
 
-        <div className="flex items-center gap-3 self-start sm:self-auto flex-wrap">
+        <div className="flex items-center gap-3 self-start sm:self-auto">
           {/* Segmented Icon Toggle Group for Group By */}
           <div className="flex items-center gap-1 bg-muted/60 dark:bg-zinc-950 p-1 rounded-lg border border-border/80 dark:border-zinc-700/80">
             <Button
@@ -268,16 +431,6 @@ export const ExpenseSummaryTable: React.FC<ExpenseSummaryTableProps> = ({
             >
               <CalendarRange className="w-3.5 h-3.5" />
             </Button>
-          </div>
-
-          {/* Compact Right-Side Financial Metric Pills */}
-          <div className="flex items-center gap-2 font-mono text-xs">
-            <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border border-amber-500/30 dark:border-amber-500/50 px-2.5 py-1 text-xs">
-              {expenses.length} {expenses.length === 1 ? "Receipt Record" : "Receipt Records"}
-            </Badge>
-            <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/30 dark:border-emerald-500/50 px-2.5 py-1 text-xs font-bold">
-              Total Amount: {formatCurrency(totalEncoderAmount)}
-            </Badge>
           </div>
         </div>
       </div>
@@ -366,44 +519,42 @@ export const ExpenseSummaryTable: React.FC<ExpenseSummaryTableProps> = ({
 
         {/* RIGHT COLUMN: DETAIL RECEIPTS TABLE (9 Cols - 75%) */}
         <div className="lg:col-span-9 flex flex-col min-h-[calc(100vh-285px)] space-y-3">
-          {/* Detail Search Control Bar */}
-          <div className="flex items-center justify-between gap-3 bg-card border border-border dark:border-zinc-700/80 dark:bg-zinc-900/80 p-3.5 rounded-xl shadow-xs shrink-0">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search doc code, payee, COA in this group..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 bg-background border border-border dark:border-zinc-700/80 text-xs"
-              />
-            </div>
-
-            {activeGroup && (
-              <div className="text-xs font-mono font-bold text-primary hidden sm:block">
-                Group Total: {formatCurrency(activeGroup.totalAmount)}
-              </div>
-            )}
-          </div>
-
           {/* Receipts Data Table Container */}
           <div className="flex-1 flex flex-col rounded-xl border border-border dark:border-zinc-700/80 bg-card dark:bg-zinc-900/80 overflow-hidden shadow-xs min-h-[340px]">
+            {/* Header info bar with active group title & total */}
+            {activeGroup && (
+              <div className="flex items-center justify-between px-4 py-2.5 bg-muted/40 dark:bg-zinc-900/60 border-b border-border/80 dark:border-zinc-700/80 text-xs shrink-0">
+                <div className="font-semibold text-foreground flex items-center gap-2">
+                  <span>{activeGroup.title}</span>
+                  <Badge variant="secondary" className="font-mono text-[10px] px-1.5 py-0">
+                    {activeGroup.items.length} {activeGroup.items.length === 1 ? "receipt" : "receipts"}
+                  </Badge>
+                </div>
+                <div className="font-mono font-bold text-primary">
+                  Group Total: {formatCurrency(activeGroup.totalAmount)}
+                </div>
+              </div>
+            )}
+
             <div className="flex-1 overflow-y-auto max-h-[calc(100vh-375px)]">
               <Table>
                 <TableHeader className="sticky top-0 z-10 bg-muted/90 dark:bg-zinc-900 backdrop-blur-xs border-b border-border dark:border-zinc-700/80 shadow-xs">
                   <TableRow className="border-b border-border dark:border-zinc-700/80">
                     <TableHead className="w-[120px] font-bold text-foreground">Doc Code</TableHead>
-                    <TableHead className="w-[100px] font-bold text-foreground">Date</TableHead>
+                    <TableHead className="w-[95px] font-bold text-foreground">Date</TableHead>
                     <TableHead className="font-bold text-foreground">Payee / Supplier</TableHead>
+                    <TableHead className="font-bold text-foreground">Division / Dept</TableHead>
                     <TableHead className="font-bold text-foreground">Chart of Accounts</TableHead>
+                    <TableHead className="w-[110px] font-bold text-foreground">Approval Tier</TableHead>
                     <TableHead className="w-[130px] font-bold text-foreground">Status</TableHead>
                     <TableHead className="text-right font-bold text-foreground">Amount</TableHead>
-                    <TableHead className="text-center w-[90px] font-bold text-foreground">Action</TableHead>
+                    <TableHead className="text-center w-[85px] font-bold text-foreground">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredActiveGroupItems.length === 0 ? (
+                  {activeGroupItems.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="h-44 text-center text-muted-foreground text-xs">
+                      <TableCell colSpan={9} className="h-44 text-center text-muted-foreground text-xs">
                         <div className="flex flex-col items-center justify-center gap-2 py-4">
                           <Inbox className="w-8 h-8 text-muted-foreground/50" />
                           <span>No expense receipts in this selected group.</span>
@@ -411,8 +562,11 @@ export const ExpenseSummaryTable: React.FC<ExpenseSummaryTableProps> = ({
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredActiveGroupItems.map((item) => {
+                    activeGroupItems.map((item) => {
                       const hasConcern = !!item.has_concern;
+                      const divName = getDivisionName(item.division_id);
+                      const deptName = getDepartmentName(item.department_id);
+
                       return (
                         <TableRow
                           key={item.id}
@@ -433,15 +587,33 @@ export const ExpenseSummaryTable: React.FC<ExpenseSummaryTableProps> = ({
                               </Badge>
                             )}
                           </TableCell>
-                          <TableCell className="text-xs">{item.expense_date}</TableCell>
+                          <TableCell className="text-xs font-medium whitespace-nowrap">
+                            {formatDisplayDate(item.expense_date)}
+                          </TableCell>
                           <TableCell className="font-medium text-xs">
                             {getSupplierName(item.payee)}
                             {item.is_employee ? (
                               <span className="ml-1 text-[10px] text-muted-foreground font-normal">(Employee)</span>
                             ) : null}
                           </TableCell>
-                          <TableCell className="text-xs max-w-[180px] truncate" title={getCoaName(item.coa_id)}>
+                          <TableCell className="text-xs">
+                            <div className="font-medium text-foreground truncate max-w-[130px]" title={divName}>
+                              {divName}
+                            </div>
+                            <div className="text-[11px] text-muted-foreground truncate max-w-[130px]" title={deptName}>
+                              {deptName}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-xs max-w-[170px] truncate" title={getCoaName(item.coa_id)}>
                             {getCoaName(item.coa_id)}
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            {renderApprovalTierStepper(
+                              item.current_approval_level,
+                              item.division_id,
+                              item.status,
+                              item.is_final_approved
+                            )}
                           </TableCell>
                           <TableCell className="text-xs">
                             {renderStatusBadge(item)}

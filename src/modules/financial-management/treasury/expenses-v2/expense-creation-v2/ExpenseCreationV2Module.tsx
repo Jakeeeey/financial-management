@@ -183,7 +183,11 @@ export const ExpenseCreationV2Module: React.FC = () => {
       </div>
 
       {/* Summary KPI Cards */}
-      <ExpenseSummaryCards expenses={expenses} />
+      <ExpenseSummaryCards
+        expenses={expenses}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+      />
 
       {/* Status Filter Tabs & Main Table */}
       <div className="space-y-4">

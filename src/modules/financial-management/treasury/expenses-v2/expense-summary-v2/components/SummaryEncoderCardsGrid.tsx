@@ -70,11 +70,6 @@ export const SummaryEncoderCardsGrid: React.FC<SummaryEncoderCardsGridProps> = (
                           <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" title="Has items with concern" />
                         )}
                       </h4>
-                      {group.user_email ? (
-                        <p className="text-[11px] text-muted-foreground truncate" title={group.user_email}>
-                          {group.user_email}
-                        </p>
-                      ) : null}
                     </div>
                   </div>
 
@@ -88,19 +83,21 @@ export const SummaryEncoderCardsGrid: React.FC<SummaryEncoderCardsGridProps> = (
                 </div>
 
                 {/* Submissions Insight Metrics */}
-                <div className="grid grid-cols-2 gap-2 bg-muted/50 dark:bg-zinc-950/80 p-2.5 rounded-lg border border-border/70 dark:border-zinc-700/70 text-xs">
-                  <div>
-                    <span className="text-[10px] text-muted-foreground block font-medium">Expense Receipts</span>
-                    <span className="font-mono font-bold text-foreground flex items-center gap-1 mt-0.5">
-                      <Receipt className="w-3.5 h-3.5 text-primary" /> {group.total_count} {group.total_count === 1 ? "item" : "items"}
-                    </span>
-                  </div>
+                <div className="bg-muted/50 dark:bg-zinc-950/80 p-2.5 rounded-lg border border-border/70 dark:border-zinc-700/70 text-xs">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <span className="text-[10px] text-muted-foreground block font-medium">Expense Receipts</span>
+                      <span className="font-mono font-bold text-foreground flex items-center gap-1 mt-0.5">
+                        <Receipt className="w-3.5 h-3.5 text-primary" /> {group.total_count} {group.total_count === 1 ? "item" : "items"}
+                      </span>
+                    </div>
 
-                  <div className="text-right">
-                    <span className="text-[10px] text-muted-foreground block font-medium">Total Amount</span>
-                    <span className="font-mono font-bold text-emerald-500 mt-0.5 block">
-                      {formatCurrency(group.total_amount)}
-                    </span>
+                    <div className="text-right">
+                      <span className="text-[10px] text-muted-foreground block font-medium">Total Amount</span>
+                      <span className="font-mono font-bold text-emerald-500 mt-0.5 block">
+                        {formatCurrency(group.total_amount)}
+                      </span>
+                    </div>
                   </div>
                 </div>
 

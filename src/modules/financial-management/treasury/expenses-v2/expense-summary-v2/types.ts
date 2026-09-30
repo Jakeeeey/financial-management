@@ -85,8 +85,18 @@ export interface SummaryFilterState {
   search: string;
   dateFrom: string;
   dateTo: string;
-  status: string;
+  statuses: string[];
   divisionId: string;
+  divisionIds: number[];
   departmentId: string;
-  coaId: string;
+  coaIds: number[];
+  encoderIds: number[];
 }
+
+export interface ExpenseApproverOption {
+  id: number;
+  approver_hierarchy: number;
+  division_id?: { division_id: number; division_name?: string; division_code?: string } | number | null;
+  approver_id?: { user_id: number; user_fname: string; user_lname: string; user_email?: string; user_position?: string } | null;
+}
+

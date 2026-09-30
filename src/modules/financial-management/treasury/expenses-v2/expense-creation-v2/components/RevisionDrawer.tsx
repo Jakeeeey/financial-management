@@ -192,7 +192,14 @@ export const RevisionDrawer: React.FC<RevisionDrawerProps> = ({
     (d.division_name || "").toLowerCase().includes((divisionSearch || "").toLowerCase())
   );
 
-  const filteredDepartments = departments.filter((d) =>
+  const availableDepartments = divisionId
+    ? departments.filter((d) => {
+        const div = d.division_id ?? d.parent_division ?? d.parentDivision;
+        return !div || div === divisionId;
+      })
+    : departments;
+
+  const filteredDepartments = availableDepartments.filter((d) =>
     (d.department_name || "").toLowerCase().includes((departmentSearch || "").toLowerCase())
   );
 
