@@ -40,7 +40,7 @@ export function BankRegistrationModule() {
       } else {
         toast.error(data.error || "Failed to fetch banks");
       }
-    } catch (error) {
+    } catch (_error) {
       toast.error("An error occurred while fetching banks");
     } finally {
       setIsLoading(false);
@@ -93,7 +93,7 @@ export function BankRegistrationModule() {
       } else {
         toast.error(data.error || "Failed to save bank");
       }
-    } catch (error) {
+    } catch (_error) {
       toast.error("An error occurred while saving the bank");
     } finally {
       setIsSubmitting(false);
