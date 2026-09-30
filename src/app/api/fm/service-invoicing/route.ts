@@ -459,10 +459,6 @@ export async function POST(request: NextRequest) {
                 normalizeRelationId(childInvoicesById.get(childInvoiceId)?.branch_id)
             );
             const distinctBranchIds = Array.from(new Set(branchIds.filter((branchId): branchId is number => branchId !== null)));
-            const hasMixedBranchValues = branchIds.some((branchId) => branchId === null) && distinctBranchIds.length > 0;
-            if (distinctBranchIds.length > 1 || hasMixedBranchValues) {
-                return NextResponse.json({ error: "All selected child invoices must belong to the same branch." }, { status: 400 });
-            }
             branchId = distinctBranchIds[0] ?? null;
         }
 
