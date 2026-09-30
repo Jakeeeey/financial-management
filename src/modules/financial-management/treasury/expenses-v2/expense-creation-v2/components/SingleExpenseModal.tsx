@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -12,7 +12,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -26,6 +25,7 @@ import {
   ChartOfAccountOption,
   DivisionOption,
   DepartmentOption,
+  UserDefaultsOption,
 } from "../types";
 import { uploadReceiptFile } from "../services/uploadService";
 import { Loader2, Save, Send, Search } from "lucide-react";
@@ -38,6 +38,7 @@ interface SingleExpenseModalProps {
   coas: ChartOfAccountOption[];
   divisions: DivisionOption[];
   departments: DepartmentOption[];
+  userDefaults?: UserDefaultsOption | null;
   onSubmit: (values: ExpenseFormValues, asSubmit: boolean) => Promise<void>;
 }
 
@@ -48,6 +49,7 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
   coas,
   divisions,
   departments,
+  userDefaults,
   onSubmit,
 }) => {
   const [expenseDate, setExpenseDate] = useState<string>(
@@ -73,11 +75,11 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
 
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setExpenseDate(new Date().toISOString().split("T")[0]);
-    setPayee(null);
-    setIsEmployee(false);
-    setDivisionId(null);
+    setPayee(userDefaults?.supplier_id ?? null);
+    setIsEmployee(true);
+    setDivisionId(userDefaults?.division_id ?? null);
     setDepartmentId(null);
     setCoaId(null);
     setAmount("");
@@ -91,19 +93,20 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
-  };
+  }, [userDefaults]);
 
-  // Reset form inputs whenever modal opens or closes
+  // Reset form inputs whenever modal opens, closes, or userDefaults changes
   useEffect(() => {
     resetForm();
-  }, [open]);
+  }, [open, resetForm]);
 
   // Reset department if division changes and selected department does not belong to new division
   const handleDivisionChange = (newDivId: number | null) => {
     setDivisionId(newDivId);
     if (departmentId && newDivId) {
       const deptObj = departments.find((d) => d.department_id === departmentId);
-      if (deptObj && deptObj.division_id && deptObj.division_id !== newDivId) {
+      const deptDivId = deptObj?.division_id ?? deptObj?.parent_division ?? deptObj?.parentDivision;
+      if (deptDivId && deptDivId !== newDivId) {
         setDepartmentId(null);
       }
     }
@@ -223,7 +226,10 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
   );
 
   const availableDepartments = divisionId
-    ? departments.filter((d) => d.division_id === divisionId)
+    ? departments.filter((d) => {
+        const div = d.division_id ?? d.parent_division ?? d.parentDivision;
+        return !div || div === divisionId;
+      })
     : departments;
 
   const filteredDepartments = availableDepartments.filter((d) =>
@@ -232,12 +238,12 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="max-w-xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+        <DialogHeader className="p-4 sm:p-5 pb-3 border-b border-border/80 shrink-0 bg-background">
           <DialogTitle>Create New Expense Receipt</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5 py-3 space-y-4">
           {/* Expense Date & Payee */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -258,8 +264,9 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
               <Select
                 value={payee ? String(payee) : ""}
                 onValueChange={(v) => setPayee(parseInt(v, 10))}
+                disabled={true}
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="w-full bg-muted/60 cursor-not-allowed opacity-90">
                   <SelectValue placeholder="Select Supplier" />
                 </SelectTrigger>
                 <SelectContent
@@ -301,18 +308,6 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
             </div>
           </div>
 
-          {/* Is Employee Flag */}
-          <div className="flex items-center space-x-2 pt-1">
-            <Checkbox
-              id="is_employee"
-              checked={isEmployee}
-              onCheckedChange={(checked) => setIsEmployee(!!checked)}
-            />
-            <label htmlFor="is_employee" className="text-xs font-medium text-muted-foreground cursor-pointer">
-              Is this payee an Employee? (Mark if applicable)
-            </label>
-          </div>
-
           {/* Division & Department */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -322,8 +317,9 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
               <Select
                 value={divisionId ? String(divisionId) : ""}
                 onValueChange={(v) => handleDivisionChange(v ? parseInt(v, 10) : null)}
+                disabled={true}
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="w-full bg-muted/60 cursor-not-allowed opacity-90">
                   <SelectValue placeholder="Select Division" />
                 </SelectTrigger>
                 <SelectContent
@@ -526,7 +522,7 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
           </div>
         </div>
 
-        <DialogFooter className="gap-2">
+        <DialogFooter className="p-4 sm:p-5 pt-3 border-t border-border/80 shrink-0 bg-background flex-row justify-end gap-2">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
             Cancel
           </Button>

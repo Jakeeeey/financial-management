@@ -15,6 +15,7 @@ import {
   DivisionOption,
   DepartmentOption,
   ExpenseApproverOption,
+  UserDefaultsOption,
 } from "./types";
 import {
   fetchExpenses,
@@ -30,6 +31,7 @@ import {
   fetchChartOfAccounts,
   fetchSuppliers,
   fetchExpenseApprovers,
+  fetchUserDefaults,
 } from "./services/referenceService";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -43,6 +45,7 @@ export const ExpenseCreationV2Module: React.FC = () => {
   const [coas, setCoas] = useState<ChartOfAccountOption[]>([]);
   const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
   const [approvers, setApprovers] = useState<ExpenseApproverOption[]>([]);
+  const [userDefaults, setUserDefaults] = useState<UserDefaultsOption | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("all");
@@ -59,13 +62,14 @@ export const ExpenseCreationV2Module: React.FC = () => {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [expenseData, divData, deptData, coaData, suppData, approverData] = await Promise.all([
+      const [expenseData, divData, deptData, coaData, suppData, approverData, defaultsData] = await Promise.all([
         fetchExpenses(),
         fetchDivisions(),
         fetchDepartments(),
         fetchChartOfAccounts(),
         fetchSuppliers(),
         fetchExpenseApprovers(),
+        fetchUserDefaults(),
       ]);
 
       setExpenses(expenseData);
@@ -74,6 +78,7 @@ export const ExpenseCreationV2Module: React.FC = () => {
       setCoas(coaData);
       setSuppliers(suppData);
       setApprovers(approverData);
+      setUserDefaults(defaultsData);
     } catch (err) {
       toast.error("Failed to load module data");
       console.error(err);
@@ -236,6 +241,7 @@ export const ExpenseCreationV2Module: React.FC = () => {
         coas={coas}
         divisions={divisions}
         departments={departments}
+        userDefaults={userDefaults}
         onSubmit={handleCreateSingle}
       />
 
@@ -247,6 +253,7 @@ export const ExpenseCreationV2Module: React.FC = () => {
         coas={coas}
         divisions={divisions}
         departments={departments}
+        userDefaults={userDefaults}
         onSubmitBulk={handleCreateBulk}
       />
 

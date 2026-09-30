@@ -65,6 +65,8 @@ export interface DepartmentOption {
   department_id: number;
   department_name: string;
   division_id?: number | null;
+  parent_division?: number | null;
+  parentDivision?: number | null;
 }
 
 export interface ChartOfAccountOption {
@@ -113,3 +115,13 @@ export interface ExpenseApproverOption {
   division_id?: { division_id: number; division_name?: string; division_code?: string } | number | null;
   approver_id?: { user_id: number; user_fname: string; user_lname: string; user_email?: string; user_position?: string } | null;
 }
+
+export interface UserDefaultsOption {
+  user_id: number;
+  supplier_id: number | null;
+  supplier_name: string | null;
+  division_id: number | null;
+  division_name: string | null;
+  is_employee: boolean;
+}
+

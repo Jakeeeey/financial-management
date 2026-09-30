@@ -124,7 +124,8 @@ export const ExpenseApprovalV2Module: React.FC = () => {
 
   // Action callback: Approve / Return with Concern / Reject
   const handleConfirmAction = async (payload: {
-    expense_id: number;
+    expense_id?: number;
+    expense_ids?: number[];
     action: "Approve" | "With Concern" | "Reject";
     remarks?: string;
     created_at: string;

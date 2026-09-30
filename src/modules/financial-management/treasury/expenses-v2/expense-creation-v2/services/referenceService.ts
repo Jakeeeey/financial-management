@@ -4,9 +4,21 @@ import {
   DivisionOption,
   SupplierOption,
   ExpenseApproverOption,
+  UserDefaultsOption,
 } from "../types";
 
 const BASE_URL = "/api/fm/treasury/expenses-v2/expense-creation-v2";
+
+export async function fetchUserDefaults(): Promise<UserDefaultsOption | null> {
+  try {
+    const res = await fetch(`${BASE_URL}/user-defaults`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json.data || null;
+  } catch {
+    return null;
+  }
+}
 
 export async function fetchDivisions(): Promise<DivisionOption[]> {
   try {

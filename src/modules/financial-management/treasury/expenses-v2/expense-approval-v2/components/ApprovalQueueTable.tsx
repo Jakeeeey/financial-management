@@ -26,6 +26,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Search,
   CheckSquare,
@@ -39,8 +40,10 @@ import {
   CalendarRange,
   AlertTriangle,
   Check,
+  ListChecks,
 } from "lucide-react";
 import { ApprovalActionModal } from "./ApprovalActionModal";
+import { BulkApprovalActionModal } from "./BulkApprovalActionModal";
 
 interface ApprovalQueueTableProps {
   expenses: ExpenseItem[];
@@ -52,7 +55,8 @@ interface ApprovalQueueTableProps {
   selectedEncoderName?: string;
   onBackToEncoders?: () => void;
   onConfirmAction: (payload: {
-    expense_id: number;
+    expense_id?: number;
+    expense_ids?: number[];
     action: "Approve" | "With Concern" | "Reject";
     remarks?: string;
     created_at: string;
@@ -74,6 +78,10 @@ export const ApprovalQueueTable: React.FC<ApprovalQueueTableProps> = ({
   const [groupBy, setGroupBy] = useState<"receipt" | "day" | "week">("week");
   const [selectedGroupKey, setSelectedGroupKey] = useState<string>("");
   const [activeItem, setActiveItem] = useState<ExpenseItem | null>(null);
+
+  // Multi-select & Bulk approval states
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
 
   const getSupplierName = useCallback(
     (id: number) => {
@@ -477,6 +485,25 @@ export const ApprovalQueueTable: React.FC<ApprovalQueueTableProps> = ({
               <Table>
                 <TableHeader className="sticky top-0 z-10 bg-muted/90 dark:bg-zinc-900 backdrop-blur-xs border-b border-border dark:border-zinc-700/80 shadow-xs">
                   <TableRow className="border-b border-border dark:border-zinc-700/80">
+                    <TableHead className="w-[40px] text-center">
+                      <Checkbox
+                        className="border-2 border-slate-400 dark:border-zinc-500 data-[state=checked]:bg-primary data-[state=checked]:border-primary shadow-2xs hover:border-primary transition-colors cursor-pointer"
+                        checked={
+                          filteredActiveGroupItems.length > 0 &&
+                          filteredActiveGroupItems.every((item) => selectedIds.has(item.id))
+                        }
+                        onCheckedChange={(checked) => {
+                          const next = new Set(selectedIds);
+                          if (checked) {
+                            filteredActiveGroupItems.forEach((item) => next.add(item.id));
+                          } else {
+                            filteredActiveGroupItems.forEach((item) => next.delete(item.id));
+                          }
+                          setSelectedIds(next);
+                        }}
+                        aria-label="Select all receipts in group"
+                      />
+                    </TableHead>
                     <TableHead className="w-[120px] font-bold text-foreground">Doc Code</TableHead>
                     <TableHead className="w-[100px] font-bold text-foreground">Date</TableHead>
                     <TableHead className="font-bold text-foreground">Payee / Supplier</TableHead>
@@ -489,7 +516,7 @@ export const ApprovalQueueTable: React.FC<ApprovalQueueTableProps> = ({
                 <TableBody>
                   {filteredActiveGroupItems.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="h-44 text-center text-muted-foreground text-xs">
+                      <TableCell colSpan={8} className="h-44 text-center text-muted-foreground text-xs">
                         <div className="flex flex-col items-center justify-center gap-2 py-4">
                           <Inbox className="w-8 h-8 text-muted-foreground/50" />
                           <span>No pending expense receipts in this selected group.</span>
@@ -499,15 +526,34 @@ export const ApprovalQueueTable: React.FC<ApprovalQueueTableProps> = ({
                   ) : (
                     filteredActiveGroupItems.map((item) => {
                       const hasConcern = !!item.has_concern;
+                      const isSelected = selectedIds.has(item.id);
                       return (
                         <TableRow
                           key={item.id}
                           className={`border-b border-border/60 dark:border-zinc-700/70 transition-colors ${
-                            hasConcern
+                            isSelected
+                              ? "bg-primary/10 dark:bg-primary/20"
+                              : hasConcern
                               ? "bg-amber-100/90 dark:bg-amber-950/70 border-l-4 border-l-amber-500 hover:bg-amber-200/90 dark:hover:bg-amber-900/80"
                               : "hover:bg-muted/50 dark:hover:bg-zinc-800/60"
                           }`}
                         >
+                          <TableCell className="text-center">
+                            <Checkbox
+                              className="border-2 border-slate-400 dark:border-zinc-500 data-[state=checked]:bg-primary data-[state=checked]:border-primary shadow-2xs hover:border-primary transition-colors cursor-pointer"
+                              checked={isSelected}
+                              onCheckedChange={(checked) => {
+                                const next = new Set(selectedIds);
+                                if (checked) {
+                                  next.add(item.id);
+                                } else {
+                                  next.delete(item.id);
+                                }
+                                setSelectedIds(next);
+                              }}
+                              aria-label={`Select receipt ${item.doc_no}`}
+                            />
+                          </TableCell>
                           <TableCell className="font-mono text-xs font-semibold text-primary">
                             <div>{item.doc_no}</div>
                             {hasConcern && (
@@ -555,7 +601,33 @@ export const ApprovalQueueTable: React.FC<ApprovalQueueTableProps> = ({
         </div>
       </div>
 
-      {/* Approval Action Review Modal */}
+      {/* FLOATING BATCH ACTION CONTROL BAR */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 right-6 z-40 bg-zinc-900/95 dark:bg-zinc-950/95 text-zinc-100 border border-zinc-700/80 p-3 rounded-2xl shadow-2xl backdrop-blur-md flex items-center gap-3 animate-in fade-in slide-in-from-bottom-5">
+          <Badge className="bg-primary text-primary-foreground font-mono font-bold text-xs px-2.5 py-1">
+            {selectedIds.size} Selected
+          </Badge>
+
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={() => setIsBulkModalOpen(true)}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold gap-1.5 shadow-md"
+            >
+              <ListChecks className="w-4 h-4" /> Review ({selectedIds.size})
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => setSelectedIds(new Set())}
+              className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-600 shadow-sm font-semibold transition-all"
+            >
+              Deselect All
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Single Item Approval Action Review Modal */}
       <ApprovalActionModal
         isOpen={!!activeItem}
         onClose={() => setActiveItem(null)}
@@ -565,6 +637,29 @@ export const ApprovalQueueTable: React.FC<ApprovalQueueTableProps> = ({
         divisions={divisions}
         departments={departments}
         onConfirmAction={onConfirmAction}
+      />
+
+      {/* Bulk Approval Action Modal */}
+      <BulkApprovalActionModal
+        isOpen={isBulkModalOpen}
+        onClose={() => setIsBulkModalOpen(false)}
+        selectedItems={expenses.filter((e) => selectedIds.has(e.id))}
+        suppliers={suppliers}
+        coas={coas}
+        divisions={divisions}
+        departments={departments}
+        onConfirmAction={onConfirmAction}
+        onSuccess={(succeededIds) => {
+          if (succeededIds && succeededIds.length > 0) {
+            setSelectedIds((prev) => {
+              const next = new Set(prev);
+              succeededIds.forEach((id) => next.delete(id));
+              return next;
+            });
+          } else {
+            setSelectedIds(new Set());
+          }
+        }}
       />
     </div>
   );

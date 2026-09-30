@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -12,7 +12,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -26,6 +25,7 @@ import {
   ChartOfAccountOption,
   DivisionOption,
   DepartmentOption,
+  UserDefaultsOption,
 } from "../types";
 import { uploadReceiptFile } from "../services/uploadService";
 import { Plus, Trash2, Loader2, Save, Send, Search, FileText, CheckCircle2, AlertCircle } from "lucide-react";
@@ -38,6 +38,7 @@ interface BulkExpenseModalProps {
   coas: ChartOfAccountOption[];
   divisions: DivisionOption[];
   departments: DepartmentOption[];
+  userDefaults?: UserDefaultsOption | null;
   onSubmitBulk: (items: ExpenseFormValues[], asSubmit: boolean) => Promise<void>;
 }
 
@@ -62,21 +63,22 @@ export const BulkExpenseModal: React.FC<BulkExpenseModalProps> = ({
   coas,
   divisions,
   departments,
+  userDefaults,
   onSubmitBulk,
 }) => {
-  const createEmptyRow = (): BulkRowItem => ({
+  const createEmptyRow = useCallback((): BulkRowItem => ({
     id: Math.random().toString(36).substring(2, 9),
     expense_date: new Date().toISOString().split("T")[0],
-    payee: null,
-    is_employee: false,
-    division_id: null,
+    payee: userDefaults?.supplier_id ?? null,
+    is_employee: true,
+    division_id: userDefaults?.division_id ?? null,
     department_id: null,
     coa_id: null,
     amount: "",
     remarks: "",
     selectedFile: null,
     receipt_url: "",
-  });
+  }), [userDefaults]);
 
   const [rows, setRows] = useState<BulkRowItem[]>([]);
   const [activeRowId, setActiveRowId] = useState<string>("");
@@ -88,7 +90,7 @@ export const BulkExpenseModal: React.FC<BulkExpenseModalProps> = ({
   const [divisionSearch, setDivisionSearch] = useState("");
   const [departmentSearch, setDepartmentSearch] = useState("");
 
-  // Reset bulk rows & select initial item when modal opens/closes
+  // Reset bulk rows & select initial item when modal opens/closes or userDefaults changes
   useEffect(() => {
     if (!open) {
       setRows([]);
@@ -98,7 +100,7 @@ export const BulkExpenseModal: React.FC<BulkExpenseModalProps> = ({
       setDivisionSearch("");
       setDepartmentSearch("");
     } else {
-      const initialRows = [createEmptyRow(), createEmptyRow(), createEmptyRow()];
+      const initialRows = [createEmptyRow()];
       setRows(initialRows);
       setActiveRowId(initialRows[0].id);
       setPayeeSearch("");
@@ -106,7 +108,7 @@ export const BulkExpenseModal: React.FC<BulkExpenseModalProps> = ({
       setDivisionSearch("");
       setDepartmentSearch("");
     }
-  }, [open]);
+  }, [open, createEmptyRow]);
 
   const activeRow = rows.find((r) => r.id === activeRowId) || rows[0];
 
@@ -141,7 +143,8 @@ export const BulkExpenseModal: React.FC<BulkExpenseModalProps> = ({
           let currentDeptId = r.department_id;
           if (currentDeptId && newDivisionId) {
             const deptObj = departments.find((d) => d.department_id === currentDeptId);
-            if (deptObj && deptObj.division_id !== newDivisionId) {
+            const deptDivId = deptObj?.division_id ?? deptObj?.parent_division ?? deptObj?.parentDivision;
+            if (deptDivId && deptDivId !== newDivisionId) {
               currentDeptId = null;
             }
           }
@@ -317,7 +320,10 @@ export const BulkExpenseModal: React.FC<BulkExpenseModalProps> = ({
   const availableDepartments = activeRow?.department_id
     ? departments
     : activeRow?.division_id
-    ? departments.filter((d) => !d.division_id || d.division_id === activeRow.division_id)
+    ? departments.filter((d) => {
+        const div = d.division_id ?? d.parent_division ?? d.parentDivision;
+        return !div || div === activeRow.division_id;
+      })
     : departments;
 
   const filteredDepartments = availableDepartments.filter((d) =>
@@ -455,8 +461,9 @@ export const BulkExpenseModal: React.FC<BulkExpenseModalProps> = ({
                   <Select
                     value={activeRow.payee ? String(activeRow.payee) : ""}
                     onValueChange={(v) => updateActiveRow("payee", parseInt(v, 10))}
+                    disabled={true}
                   >
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger className="w-full bg-muted/60 cursor-not-allowed opacity-90">
                       <SelectValue placeholder="Select Supplier" />
                     </SelectTrigger>
                     <SelectContent
@@ -498,21 +505,6 @@ export const BulkExpenseModal: React.FC<BulkExpenseModalProps> = ({
                 </div>
               </div>
 
-              {/* Is Employee Flag */}
-              <div className="flex items-center space-x-2 pt-1">
-                <Checkbox
-                  id={`is_emp_${activeRow.id}`}
-                  checked={activeRow.is_employee}
-                  onCheckedChange={(checked) => updateActiveRow("is_employee", !!checked)}
-                />
-                <label
-                  htmlFor={`is_emp_${activeRow.id}`}
-                  className="text-xs font-medium text-muted-foreground cursor-pointer"
-                >
-                  Is this payee an Employee? (Mark if applicable)
-                </label>
-              </div>
-
               {/* Division & Department */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -522,8 +514,9 @@ export const BulkExpenseModal: React.FC<BulkExpenseModalProps> = ({
                   <Select
                     value={activeRow.division_id ? String(activeRow.division_id) : ""}
                     onValueChange={(v) => updateActiveRow("division_id", v ? parseInt(v, 10) : null)}
+                    disabled={true}
                   >
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger className="w-full bg-muted/60 cursor-not-allowed opacity-90">
                       <SelectValue placeholder="Select Division" />
                     </SelectTrigger>
                     <SelectContent
