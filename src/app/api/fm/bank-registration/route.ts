@@ -3,7 +3,7 @@ import { fetchAllBanks, createBank } from "@/modules/financial-management/bank-r
 import { BankSchema } from "@/modules/financial-management/bank-registration/types/bank.schema";
 import { ZodError } from "zod";
 
-export async function GET(_request: NextRequest) {
+export async function GET() {
   try {
     const banks = await fetchAllBanks();
     return NextResponse.json({
