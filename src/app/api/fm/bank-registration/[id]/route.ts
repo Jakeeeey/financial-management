@@ -34,7 +34,7 @@ export async function PUT(
         {
           success: false,
           error: "Validation failed",
-          details: error.errors,
+          details: error,
         },
         { status: 400 }
       );
