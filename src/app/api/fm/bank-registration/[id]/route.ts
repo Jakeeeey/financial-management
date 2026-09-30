@@ -7,8 +7,8 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id: rawId } = await params;
   try {
-    const { id: rawId } = await params;
     const id = parseInt(rawId, 10);
     if (isNaN(id)) {
       return NextResponse.json(
@@ -28,7 +28,7 @@ export async function PUT(
       message: "Bank updated successfully",
     });
   } catch (error) {
-    console.error(`PUT /api/fm/bank-registration/${params.id} error:`, error);
+    console.error(`PUT /api/fm/bank-registration/${rawId} error:`, error);
 
     if (error instanceof ZodError) {
       return NextResponse.json(
@@ -55,8 +55,8 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id: rawId } = await params;
   try {
-    const { id: rawId } = await params;
     const id = parseInt(rawId, 10);
     if (isNaN(id)) {
       return NextResponse.json(
@@ -72,7 +72,7 @@ export async function DELETE(
       message: "Bank deleted successfully",
     });
   } catch (error) {
-    console.error(`DELETE /api/fm/bank-registration/${params.id} error:`, error);
+    console.error(`DELETE /api/fm/bank-registration/${rawId} error:`, error);
     return NextResponse.json(
       {
         success: false,
