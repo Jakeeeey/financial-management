@@ -12,7 +12,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -55,6 +54,7 @@ import {
   RotateCcw,
   Move,
   User,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -225,6 +225,11 @@ export const RevisionDrawer: React.FC<RevisionDrawerProps> = ({
     }
 
     setSelectedFile(file);
+  };
+
+  const handleRemoveFile = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedFile(null);
   };
 
   const handleConfirmResubmit = async () => {
@@ -435,19 +440,6 @@ export const RevisionDrawer: React.FC<RevisionDrawerProps> = ({
                 </div>
               </div>
 
-              {/* Is Employee */}
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="rev_employee"
-                  checked={isEmployee}
-                  onCheckedChange={(checked) => setIsEmployee(!!checked)}
-                  disabled
-                />
-                <label htmlFor="rev_employee" className="text-xs text-muted-foreground cursor-not-allowed opacity-70">
-                  Is Payee an Employee?
-                </label>
-              </div>
-
               {/* Division & Dept */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
@@ -633,16 +625,49 @@ export const RevisionDrawer: React.FC<RevisionDrawerProps> = ({
                 <Label className="text-xs font-bold text-foreground">
                   Replace Receipt Image (Optional)
                 </Label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif"
-                    onChange={handleFileChange}
-                    disabled={isUploading || isSubmitting}
-                    className="text-xs bg-background"
-                  />
-                  {isUploading || isSubmitting ? <Loader2 className="w-4 h-4 animate-spin text-primary" /> : null}
-                </div>
+
+                {selectedFile ? (
+                  /* Selected New File Preview Card */
+                  <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-md bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                        <ImageIcon className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-foreground truncate" title={selectedFile.name}>
+                          {selectedFile.name}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {selectedFile.size < 1024 * 1024
+                            ? `${(selectedFile.size / 1024).toFixed(1)} KB`
+                            : `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB`}{" "}
+                          • <span className="text-blue-500 font-medium">Will upload on resubmit</span>
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleRemoveFile}
+                      disabled={isUploading || isSubmitting}
+                      className="h-7 text-xs text-rose-500 hover:text-rose-600 hover:bg-rose-500/10 gap-1 shrink-0"
+                    >
+                      <X className="w-3.5 h-3.5" /> Remove
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      onChange={handleFileChange}
+                      disabled={isUploading || isSubmitting}
+                      className="text-xs bg-background"
+                    />
+                    {isUploading || isSubmitting ? <Loader2 className="w-4 h-4 animate-spin text-primary" /> : null}
+                  </div>
+                )}
                 
                 {/* Encoder Helper Note Box */}
                 <div className="rounded-xl bg-blue-500/10 border border-blue-500/20 p-2.5 text-[11px] text-blue-600 dark:text-blue-400 space-y-1">
@@ -654,12 +679,6 @@ export const RevisionDrawer: React.FC<RevisionDrawerProps> = ({
                     <li>Maximum file size limit: <strong>5 MB</strong>.</li>
                   </ul>
                 </div>
-
-                {selectedFile ? (
-                  <p className="text-xs text-blue-500 font-semibold flex items-center gap-1">
-                    <ImageIcon className="w-3.5 h-3.5" /> Selected new file: {selectedFile.name} (Will upload on resubmit)
-                  </p>
-                ) : null}
               </div>
 
               {/* Resubmission Explanation Note */}
