@@ -40,7 +40,7 @@ export async function fetchSupplierProducts(
   try {
     const filter = { supplier_id: { _eq: supplierId } };
     const fields =
-      "id,supplier_id,product_id,discount_type,product_id.product_id,product_id.product_name,product_id.product_code,product_id.short_description,product_id.unit_of_measurement";
+      "id,supplier_id,product_id,discount_type,price_changeable,product_id.product_id,product_id.product_name,product_id.product_code,product_id.short_description,product_id.unit_of_measurement";
 
     const url = `${API_BASE}/product_per_supplier?limit=-1&fields=${fields}&filter=${encodeURIComponent(
       JSON.stringify(filter),
@@ -81,6 +81,7 @@ export async function fetchSupplierProducts(
         supplier_id: number;
         product_id: unknown;
         discount_type: number | null;
+        price_changeable?: boolean;
       }) => {
         const isObject =
           typeof item.product_id === "object" && item.product_id !== null;
@@ -95,6 +96,7 @@ export async function fetchSupplierProducts(
             ? ((expanded.product_id || expanded.id) as number)
             : (item.product_id as number),
           discount_type: item.discount_type,
+          price_changeable: Boolean(item.price_changeable),
           product_name:
              (expanded?.product_name as string) || "Unknown Product",
           product_code: (expanded?.product_code as string) || null,
@@ -195,6 +197,76 @@ export async function updateProductDiscount(
     return result.data;
   } catch (error) {
     console.error(`Error updating discount for product ${id}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Update price changeable for product-supplier relationship
+ */
+export async function updateProductPriceChangeable(
+  id: number,
+  priceChangeable: boolean,
+): Promise<ProductPerSupplier> {
+  try {
+    const response = await fetch(`${API_BASE}/product_per_supplier/${id}`, {
+      method: "PATCH",
+      headers: getHeaders(),
+      body: JSON.stringify({ price_changeable: priceChangeable }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(
+        error.errors?.[0]?.message || "Failed to update price changeable",
+      );
+    }
+
+    const result: ProductPerSupplierResponse = await response.json();
+    return result.data;
+  } catch (error) {
+    console.error(`Error updating price_changeable for product ${id}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Bulk update price changeable for multiple product-supplier relationships (with chunking)
+ */
+export async function updateBulkProductPriceChangeable(
+  ids: number[],
+  priceChangeable: boolean,
+): Promise<void> {
+  if (ids.length === 0) return;
+
+  const CHUNK_SIZE = 250;
+  const chunks: number[][] = [];
+  for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+    chunks.push(ids.slice(i, i + CHUNK_SIZE));
+  }
+
+  try {
+    await Promise.all(
+      chunks.map(async (chunkKeys) => {
+        const response = await fetch(`${API_BASE}/product_per_supplier`, {
+          method: "PATCH",
+          headers: getHeaders(),
+          body: JSON.stringify({
+            keys: chunkKeys,
+            data: { price_changeable: priceChangeable },
+          }),
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(
+            error.errors?.[0]?.message || "Failed to bulk update price changeable",
+          );
+        }
+      }),
+    );
+  } catch (error) {
+    console.error("Error bulk updating price_changeable:", error);
     throw error;
   }
 }
