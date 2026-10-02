@@ -31,6 +31,7 @@ type BankAccountRow = {
   branch?: unknown;
   ifsc_code?: unknown;
   opening_balance?: unknown;
+  country?: unknown;
   region?: unknown;
   province?: unknown;
   city?: unknown;
@@ -72,6 +73,7 @@ type NormalizedPayload = {
   branch: string;
   ifsc_code: string;
   opening_balance?: number;
+  country: string;
   region: string;
   province: string;
   city: string;
@@ -110,6 +112,7 @@ const fullAccountFields = [
   "branch",
   "ifsc_code",
   "opening_balance",
+  "country",
   "region",
   "province",
   "city",
@@ -139,6 +142,7 @@ const baseAccountFields = [
   "branch",
   "ifsc_code",
   "opening_balance",
+  "country",
   "region",
   "province",
   "city",
@@ -179,6 +183,7 @@ const accountFieldMap = {
   branch: "branch",
   ifsc_code: "ifscCode",
   opening_balance: "openingBalance",
+  country: "country",
   region: "region",
   province: "province",
   city: "city",
@@ -219,6 +224,7 @@ function normalizeAccount(row: BankAccountRow) {
     branch: asString(row.branch),
     ifscCode: asString(row.ifsc_code),
     openingBalance: asNumber(row.opening_balance) ?? 0,
+    country: asString(row.country),
     region: asString(row.region),
     province: asString(row.province),
     city: asString(row.city),
@@ -549,6 +555,7 @@ function normalizeCreatePayload(
     branch: asString(body.branch),
     ifsc_code: asString(body.ifscCode ?? body.ifsc_code),
     opening_balance: openingBalance ?? 0,
+    country: asString(body.country),
     region: asString(body.region),
     province: asString(body.province),
     city: asString(body.city),
