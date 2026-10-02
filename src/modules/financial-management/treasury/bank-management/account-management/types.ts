@@ -9,9 +9,19 @@ export type BankAccount = {
   branch: string;
   ifscCode: string;
   openingBalance: number;
+  region: string;
   province: string;
   city: string;
   baranggay: string;
+  zip_code: string;
+  unit_building: string;
+  house_no: string;
+  block: string;
+  lot: string;
+  phase: string;
+  street: string;
+  subdivision: string;
+  purok_sitio: string;
   email: string;
   mobileNo: string;
   contactPerson: string;
@@ -34,6 +44,7 @@ export type AccountTypeOption = {
 export type PsgcOption = {
   code: string;
   name: string;
+  regionCode?: string;
   provinceCode?: string;
   cityCode?: string;
 };
@@ -68,9 +79,19 @@ export type AccountManagementFormValues = {
   branch: string;
   ifscCode: string;
   openingBalance: string;
+  region: string;
   province: string;
   city: string;
   baranggay: string;
+  zip_code: string;
+  unit_building: string;
+  house_no: string;
+  block: string;
+  lot: string;
+  phase: string;
+  street: string;
+  subdivision: string;
+  purok_sitio: string;
   email: string;
   mobileNo: string;
   contactPerson: string;

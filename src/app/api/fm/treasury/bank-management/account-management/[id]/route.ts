@@ -28,9 +28,19 @@ type BankAccountRow = {
   branch?: unknown;
   ifsc_code?: unknown;
   opening_balance?: unknown;
+  region?: unknown;
   province?: unknown;
   city?: unknown;
   baranggay?: unknown;
+  zip_code?: unknown;
+  unit_building?: unknown;
+  house_no?: unknown;
+  block?: unknown;
+  lot?: unknown;
+  phase?: unknown;
+  street?: unknown;
+  subdivision?: unknown;
+  purok_sitio?: unknown;
   email?: unknown;
   mobile_no?: unknown;
   contact_person?: unknown;
@@ -61,9 +71,19 @@ const accountFieldMap = {
   branch: "branch",
   ifsc_code: "ifscCode",
   opening_balance: "openingBalance",
+  region: "region",
   province: "province",
   city: "city",
   baranggay: "baranggay",
+  zip_code: "zip_code",
+  unit_building: "unit_building",
+  house_no: "house_no",
+  block: "block",
+  lot: "lot",
+  phase: "phase",
+  street: "street",
+  subdivision: "subdivision",
+  purok_sitio: "purok_sitio",
   email: "email",
   mobile_no: "mobileNo",
   contact_person: "contactPerson",
@@ -80,9 +100,19 @@ function normalizeAccount(row: BankAccountRow) {
     branch: asString(row.branch),
     ifscCode: asString(row.ifsc_code),
     openingBalance: asNumber(row.opening_balance) ?? 0,
+    region: asString(row.region),
     province: asString(row.province),
     city: asString(row.city),
     baranggay: asString(row.baranggay),
+    zip_code: asString(row.zip_code),
+    unit_building: asString(row.unit_building),
+    house_no: asString(row.house_no),
+    block: asString(row.block),
+    lot: asString(row.lot),
+    phase: asString(row.phase),
+    street: asString(row.street),
+    subdivision: asString(row.subdivision),
+    purok_sitio: asString(row.purok_sitio),
     email: asString(row.email),
     mobileNo: asString(row.mobile_no),
     contactPerson: asString(row.contact_person),
@@ -287,10 +317,25 @@ async function buildUpdatePayload(body: Record<string, unknown>) {
     else payload.ifsc_code = ifscCode;
   }
 
+  if ("region" in body) {
+    payload.region = asString(body.region);
+  }
   if ("province" in body) {
-    const province = asString(body.province);
-    if (!province) fieldErrors.province = "This field is required";
-    else payload.province = province;
+    payload.province = asString(body.province);
+  }
+  const addressDetailFields = [
+    "zip_code",
+    "unit_building",
+    "house_no",
+    "block",
+    "lot",
+    "phase",
+    "street",
+    "subdivision",
+    "purok_sitio",
+  ] as const;
+  for (const field of addressDetailFields) {
+    if (field in body) payload[field] = asString(body[field]);
   }
   if ("city" in body) {
     const city = asString(body.city);
