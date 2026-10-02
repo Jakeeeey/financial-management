@@ -38,6 +38,7 @@ import {
 } from "../types";
 import { fetchExpenseLogs } from "../services/expenseService";
 import { uploadReceiptFile } from "../services/uploadService";
+import { getAssetUrl } from "../../utils/assetUrl";
 import {
   Loader2,
   AlertTriangle,
@@ -898,7 +899,7 @@ const ReceiptZoomModal: React.FC<ReceiptZoomModalProps> = ({
 
               {receiptUrl && (
                 <a
-                  href={receiptUrl}
+                  href={getAssetUrl(receiptUrl)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs text-primary hover:underline font-semibold flex items-center gap-1 mr-6"
@@ -931,7 +932,7 @@ const ReceiptZoomModal: React.FC<ReceiptZoomModalProps> = ({
             /* eslint-disable-next-line @next/next/no-img-element */
             <img
               ref={imgRef}
-              src={receiptUrl}
+              src={getAssetUrl(receiptUrl)}
               alt="Receipt Attachment"
               draggable={false}
               style={{

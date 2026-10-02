@@ -218,7 +218,11 @@ export async function POST(req: Request) {
             approver_id: userId,
             division_id: firstItem.division_id || null,
             department_id: firstItem.department_id || null,
-            supporting_documents_url: firstItem.receipt_url || null,
+            supporting_documents_url: firstItem.receipt_url
+              ? firstItem.receipt_url.startsWith("http")
+                ? firstItem.receipt_url
+                : `${API_BASE_URL}/assets/${firstItem.receipt_url}`
+              : null,
             status: "Submitted",
             source_type: "EXPENSE_V2",
             source_reference_id: Number(firstItem.id),
