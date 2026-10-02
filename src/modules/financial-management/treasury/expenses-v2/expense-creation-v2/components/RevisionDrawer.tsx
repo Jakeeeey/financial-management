@@ -336,7 +336,7 @@ export const RevisionDrawer: React.FC<RevisionDrawerProps> = ({
                   className="bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/50 text-[10px] font-mono font-bold flex items-center gap-1.5 py-0.5 px-2"
                 >
                   <AlertTriangle className="w-3 h-3 text-amber-600 dark:text-amber-400" />
-                  APPROVER FEEDBACK / CONCERN
+                  FEEDBACK / CONCERN
                 </Badge>
 
                 {!loadingLogs && latestConcernLog?.created_at && (
@@ -360,7 +360,7 @@ export const RevisionDrawer: React.FC<RevisionDrawerProps> = ({
                   {latestConcernLog.created_by && (
                     <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-medium pl-0.5">
                       <User className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                      <span>Approver:</span>
+                      <span>Concerned By:</span>
                       <span className="font-bold text-foreground">
                         {renderApproverName(latestConcernLog.created_by)}
                       </span>

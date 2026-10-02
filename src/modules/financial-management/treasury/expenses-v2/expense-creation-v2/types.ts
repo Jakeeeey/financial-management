@@ -123,5 +123,9 @@ export interface UserDefaultsOption {
   division_id: number | null;
   division_name: string | null;
   is_employee: boolean;
+  is_salesman?: boolean;
+  salesman_id?: number | null;
+  salesman_name?: string | null;
+  salesman_code?: string | null;
 }
 

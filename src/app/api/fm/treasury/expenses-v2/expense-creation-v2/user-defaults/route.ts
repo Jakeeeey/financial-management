@@ -58,6 +58,11 @@ export async function GET() {
       console.error("Error fetching supplier by user_id:", e);
     }
 
+    let isSalesman = false;
+    let salesmanId: number | null = null;
+    let salesmanName: string | null = null;
+    let salesmanCode: string | null = null;
+
     // 2. Check salesman where encoder_id = userId OR employee_id = userId for division_id
     try {
       const salesRes = await fetch(
@@ -68,6 +73,10 @@ export async function GET() {
         const salesJson = await salesRes.json();
         if (salesJson.data && salesJson.data.length > 0) {
           const salesman = salesJson.data[0];
+          isSalesman = true;
+          salesmanId = Number(salesman.id);
+          salesmanName = salesman.salesman_name || null;
+          salesmanCode = salesman.salesman_code || null;
           if (salesman.division_id) {
             divisionId = Number(salesman.division_id);
           }
@@ -101,6 +110,10 @@ export async function GET() {
         division_id: divisionId,
         division_name: divisionName,
         is_employee: true,
+        is_salesman: isSalesman,
+        salesman_id: salesmanId,
+        salesman_name: salesmanName,
+        salesman_code: salesmanCode,
       },
     });
   } catch (err: unknown) {
