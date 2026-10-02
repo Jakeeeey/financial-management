@@ -28,6 +28,7 @@ type BankAccountRow = {
   branch?: unknown;
   ifsc_code?: unknown;
   opening_balance?: unknown;
+  country?: unknown;
   region?: unknown;
   province?: unknown;
   city?: unknown;
@@ -71,6 +72,7 @@ const accountFieldMap = {
   branch: "branch",
   ifsc_code: "ifscCode",
   opening_balance: "openingBalance",
+  country: "country",
   region: "region",
   province: "province",
   city: "city",
@@ -100,6 +102,7 @@ function normalizeAccount(row: BankAccountRow) {
     branch: asString(row.branch),
     ifscCode: asString(row.ifsc_code),
     openingBalance: asNumber(row.opening_balance) ?? 0,
+    country: asString(row.country),
     region: asString(row.region),
     province: asString(row.province),
     city: asString(row.city),
@@ -317,6 +320,9 @@ async function buildUpdatePayload(body: Record<string, unknown>) {
     else payload.ifsc_code = ifscCode;
   }
 
+  if ("country" in body) {
+    payload.country = asString(body.country);
+  }
   if ("region" in body) {
     payload.region = asString(body.region);
   }

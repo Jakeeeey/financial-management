@@ -228,6 +228,16 @@ export function AccountFormDialog({
                   error={formErrors.branch}
                   onChange={onValueChange}
                 />
+                <div className="md:col-span-2">
+                  <TextField
+                    id="country"
+                    label="Country"
+                    value={formValues.country}
+                    disabled={saving}
+                    error={formErrors.country}
+                    onChange={onValueChange}
+                  />
+                </div>
                 <div className="grid min-w-0 gap-1.5" data-invalid={Boolean(formErrors.region) || undefined}>
                   <Label>
                     Region

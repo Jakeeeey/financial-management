@@ -9,6 +9,7 @@ export type BankAccount = {
   branch: string;
   ifscCode: string;
   openingBalance: number;
+  country: string;
   region: string;
   province: string;
   city: string;
@@ -79,6 +80,7 @@ export type AccountManagementFormValues = {
   branch: string;
   ifscCode: string;
   openingBalance: string;
+  country: string;
   region: string;
   province: string;
   city: string;
