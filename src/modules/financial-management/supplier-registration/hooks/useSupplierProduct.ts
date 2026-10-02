@@ -109,6 +109,112 @@ export function useSupplierProducts(supplierId: number | null) {
   );
 
   /**
+   * Update price changeable status for product
+   */
+  const updatePriceChangeable = useCallback(
+    async (itemId: number, priceChangeable: boolean) => {
+      if (!supplierId) return false;
+
+      // Optimistic update
+      setProducts((prev) =>
+        prev.map((item) =>
+          item.id === itemId
+            ? { ...item, price_changeable: priceChangeable }
+            : item,
+        ),
+      );
+
+      try {
+        const response = await fetch(
+          `/api/fm/supplier-registration/products-per-supplier/${itemId}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ price_changeable: priceChangeable }),
+          },
+        );
+
+        if (!response.ok) throw new Error("Update failed");
+        toast.success(
+          priceChangeable
+            ? "Price changeable enabled"
+            : "Price changeable disabled",
+        );
+        await fetchProducts(supplierId, true);
+        return true;
+      } catch {
+        // Rollback on error
+        setProducts((prev) =>
+          prev.map((item) =>
+            item.id === itemId
+              ? { ...item, price_changeable: !priceChangeable }
+              : item,
+          ),
+        );
+        toast.error("Failed to update price changeable status");
+        return false;
+      }
+    },
+    [supplierId, fetchProducts],
+  );
+
+  const [isBatchUpdating, setIsBatchUpdating] = useState(false);
+
+  /**
+   * Bulk toggle price changeable status for multiple products
+   */
+  const toggleAllPriceChangeable = useCallback(
+    async (targetIds: number[], priceChangeable: boolean) => {
+      if (!supplierId || targetIds.length === 0 || isBatchUpdating) return false;
+
+      setIsBatchUpdating(true);
+      const targetSet = new Set(targetIds);
+
+      // Save previous states for rollback
+      let previousProducts: ProductPerSupplierWithDetails[] = [];
+      setProducts((prev) => {
+        previousProducts = prev;
+        return prev.map((item) =>
+          targetSet.has(item.id)
+            ? { ...item, price_changeable: priceChangeable }
+            : item,
+        );
+      });
+
+      try {
+        const response = await fetch(
+          `/api/fm/supplier-registration/products-per-supplier/bulk-price-changeable`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ids: targetIds,
+              price_changeable: priceChangeable,
+            }),
+          },
+        );
+
+        if (!response.ok) throw new Error("Bulk update failed");
+        toast.success(
+          priceChangeable
+            ? `Price changeable enabled for ${targetIds.length} product(s)`
+            : `Price changeable disabled for ${targetIds.length} product(s)`,
+        );
+        await fetchProducts(supplierId, true);
+        return true;
+      } catch {
+        // Rollback
+        setProducts(previousProducts);
+        toast.error("Failed to update products in bulk");
+        return false;
+      } finally {
+        setIsBatchUpdating(false);
+      }
+    },
+    [supplierId, fetchProducts, isBatchUpdating],
+  );
+
+  /**
    * Remove product from supplier
    */
   const removeProduct = useCallback(
@@ -197,10 +303,13 @@ export function useSupplierProducts(supplierId: number | null) {
   return {
     products,
     isLoading,
+    isBatchUpdating,
     error,
     addProduct,
     addProductsBulk,
     updateDiscount,
+    updatePriceChangeable,
+    toggleAllPriceChangeable,
     removeProduct,
     refresh,
   };

@@ -68,7 +68,7 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { product_id, discount_type } = body;
+    const { product_id, discount_type, price_changeable } = body;
 
     if (!product_id) {
       return NextResponse.json(
@@ -90,6 +90,7 @@ export async function POST(
       supplier_id: supplierId,
       product_id,
       discount_type: discount_type || null,
+      price_changeable: price_changeable ?? false,
     });
 
     return NextResponse.json(

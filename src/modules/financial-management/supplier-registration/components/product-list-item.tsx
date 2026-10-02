@@ -10,6 +10,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import { DiscountType } from "../types/discount-type.schema";
@@ -23,6 +24,10 @@ interface ProductListItemProps {
     productPerSupplierId: number,
     discountTypeId: number | null,
   ) => Promise<boolean>;
+  onPriceChangeableChange?: (
+    productPerSupplierId: number,
+    priceChangeable: boolean,
+  ) => Promise<boolean>;
   onRemove: (productPerSupplierId: number) => Promise<boolean>;
 }
 
@@ -30,12 +35,13 @@ export function ProductListItem({
   product,
   discountTypes,
   onDiscountChange,
+  onPriceChangeableChange,
   onRemove,
 }: ProductListItemProps) {
   const [isUpdating, setIsUpdating] = useState(false);
 
   return (
-    <div className="grid grid-cols-[1fr_200px_40px] gap-4 items-center px-6 py-3 hover:bg-muted/30 transition-colors group">
+    <div className="grid grid-cols-[1fr_180px_160px_40px] gap-4 items-center px-6 py-3 hover:bg-muted/30 transition-colors group">
       {/* Product info */}
       <div className="min-w-0">
         <p className="text-sm font-medium truncate">{product.product_name}</p>
@@ -65,6 +71,21 @@ export function ProductListItem({
         disabled={isUpdating}
         placeholder="No Discount"
       />
+
+      {/* Price Changeable Toggle */}
+      <div className="flex justify-center items-center">
+        <Switch
+          checked={Boolean(product.price_changeable)}
+          disabled={isUpdating}
+          onCheckedChange={async (checked) => {
+            if (onPriceChangeableChange) {
+              setIsUpdating(true);
+              await onPriceChangeableChange(product.id, checked);
+              setIsUpdating(false);
+            }
+          }}
+        />
+      </div>
 
       {/* Remove */}
       <AlertDialog>

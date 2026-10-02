@@ -220,11 +220,17 @@ export async function GET(request: NextRequest) {
             const mappingData = await mappingRes.json();
             const mappingsList = mappingData.data || [];
 
-            if (mappingsList.length === 0) {
-                return NextResponse.json([]);
-            }
+            // Also fetch all parent service invoices directly (by transaction_status = "Serviced")
+            // so invoices created without child mappings are included in reports
+            const servicedUrl = `${DIRECTUS_URL}/items/sales_invoice?limit=-1&filter[transaction_status][_eq]=Serviced&fields=invoice_id`;
+            const servicedRes = await fetch(servicedUrl, { headers, cache: "no-store" });
+            await assertDirectusOk(servicedRes, "Directus serviced invoices query failed");
+            const servicedData = await servicedRes.json();
+            const servicedList = servicedData.data || [];
+            const servicedParentIds = servicedList.map((inv: { invoice_id?: unknown }) => Number(inv.invoice_id)).filter(Boolean);
 
-            const parentIds = Array.from(new Set(mappingsList.map((m: DirectusMapping) => Number(m.parent_invoice_id)).filter(Boolean)));
+            const mappedParentIds = mappingsList.map((m: DirectusMapping) => Number(m.parent_invoice_id)).filter(Boolean);
+            const parentIds = Array.from(new Set([...servicedParentIds, ...mappedParentIds]));
             const childIds = Array.from(new Set(mappingsList.map((m: DirectusMapping) => Number(m.child_invoice_id)).filter(Boolean)));
             const allInvoiceIds = Array.from(new Set([...parentIds, ...childIds])) as number[];
 
@@ -258,6 +264,10 @@ export async function GET(request: NextRequest) {
             });
 
             const parentGroups: Record<number, DirectusMapping[]> = {};
+            // Initialize for all known parent IDs
+            parentIds.forEach((pId) => {
+                parentGroups[pId] = [];
+            });
             mappingsList.forEach((m: DirectusMapping) => {
                 const pId = Number(m.parent_invoice_id);
                 if (!parentGroups[pId]) {
@@ -349,8 +359,8 @@ export async function POST(request: NextRequest) {
             mappings
         } = payload;
 
-        if (!invoice_no || !customer_code || !salesman_id || !invoice_type || !Array.isArray(mappings) || mappings.length === 0) {
-            return NextResponse.json({ error: "Missing required fields or empty mappings array." }, { status: 400 });
+        if (!invoice_no || !customer_code || !salesman_id || !invoice_type || !Array.isArray(mappings)) {
+            return NextResponse.json({ error: "Missing required fields or invalid mappings format." }, { status: 400 });
         }
 
         const normalizedInvoiceNo = String(invoice_no).trim();
@@ -410,47 +420,47 @@ export async function POST(request: NextRequest) {
         }
 
         // Verify that the selected child invoices still exist, belong to the selected customer,
-        // and have a compatible branch before creating the parent invoice.
+        // and have a compatible branch before creating the parent invoice (if any child invoices are selected).
         const childInvoiceIds = Array.from(new Set(normalizedMappings.map((mapping) => mapping.child_invoice_id)));
-        const childInvoicesUrl = `${DIRECTUS_URL}/items/sales_invoice?limit=-1&filter[invoice_id][_in]=${encodeURIComponent(childInvoiceIds.join(","))}&fields=invoice_id,customer_code,branch_id`;
-        const childInvoicesRes = await fetch(childInvoicesUrl, { headers, cache: "no-store" });
-        await assertDirectusOk(childInvoicesRes, "Failed to validate selected child invoices");
-        const childInvoicesData = await childInvoicesRes.json();
-        const childInvoicesById = new Map<number, { customer_code?: unknown; branch_id?: unknown }>();
+        let branchId: number | null = null;
 
-        for (const childInvoice of Array.isArray(childInvoicesData.data) ? childInvoicesData.data : []) {
-            const record = childInvoice as {
-                invoice_id?: unknown;
-                customer_code?: unknown;
-                branch_id?: unknown;
-            };
-            const childInvoiceId = normalizeRelationId(record.invoice_id);
-            if (childInvoiceId !== null) {
-                childInvoicesById.set(childInvoiceId, record);
+        if (childInvoiceIds.length > 0) {
+            const childInvoicesUrl = `${DIRECTUS_URL}/items/sales_invoice?limit=-1&filter[invoice_id][_in]=${encodeURIComponent(childInvoiceIds.join(","))}&fields=invoice_id,customer_code,branch_id`;
+            const childInvoicesRes = await fetch(childInvoicesUrl, { headers, cache: "no-store" });
+            await assertDirectusOk(childInvoicesRes, "Failed to validate selected child invoices");
+            const childInvoicesData = await childInvoicesRes.json();
+            const childInvoicesById = new Map<number, { customer_code?: unknown; branch_id?: unknown }>();
+
+            for (const childInvoice of Array.isArray(childInvoicesData.data) ? childInvoicesData.data : []) {
+                const record = childInvoice as {
+                    invoice_id?: unknown;
+                    customer_code?: unknown;
+                    branch_id?: unknown;
+                };
+                const childInvoiceId = normalizeRelationId(record.invoice_id);
+                if (childInvoiceId !== null) {
+                    childInvoicesById.set(childInvoiceId, record);
+                }
             }
-        }
 
-        if (childInvoicesById.size !== childInvoiceIds.length) {
-            return NextResponse.json({ error: "One or more selected child invoices no longer exist." }, { status: 400 });
-        }
+            if (childInvoicesById.size !== childInvoiceIds.length) {
+                return NextResponse.json({ error: "One or more selected child invoices no longer exist." }, { status: 400 });
+            }
 
-        const hasCustomerMismatch = childInvoiceIds.some((childInvoiceId) => {
-            const childInvoice = childInvoicesById.get(childInvoiceId);
-            return String(childInvoice?.customer_code ?? "").trim() !== normalizedCustomerCode;
-        });
-        if (hasCustomerMismatch) {
-            return NextResponse.json({ error: "All selected child invoices must belong to the selected customer." }, { status: 400 });
-        }
+            const hasCustomerMismatch = childInvoiceIds.some((childInvoiceId) => {
+                const childInvoice = childInvoicesById.get(childInvoiceId);
+                return String(childInvoice?.customer_code ?? "").trim() !== normalizedCustomerCode;
+            });
+            if (hasCustomerMismatch) {
+                return NextResponse.json({ error: "All selected child invoices must belong to the selected customer." }, { status: 400 });
+            }
 
-        const branchIds = childInvoiceIds.map((childInvoiceId) =>
-            normalizeRelationId(childInvoicesById.get(childInvoiceId)?.branch_id)
-        );
-        const distinctBranchIds = Array.from(new Set(branchIds.filter((branchId): branchId is number => branchId !== null)));
-        const hasMixedBranchValues = branchIds.some((branchId) => branchId === null) && distinctBranchIds.length > 0;
-        if (distinctBranchIds.length > 1 || hasMixedBranchValues) {
-            return NextResponse.json({ error: "All selected child invoices must belong to the same branch." }, { status: 400 });
+            const branchIds = childInvoiceIds.map((childInvoiceId) =>
+                normalizeRelationId(childInvoicesById.get(childInvoiceId)?.branch_id)
+            );
+            const distinctBranchIds = Array.from(new Set(branchIds.filter((branchId): branchId is number => branchId !== null)));
+            branchId = distinctBranchIds[0] ?? null;
         }
-        const branchId = distinctBranchIds[0] ?? null;
 
         // Fetch salesman details to construct order_id and preserve relational values.
         const salesmanDetailsUrl = `${DIRECTUS_URL}/items/salesman/${salesman_id}?fields=salesman_code,operation,price_type`;
@@ -521,29 +531,33 @@ export async function POST(request: NextRequest) {
             throw new Error("Parent invoice created but ID was not returned.");
         }
 
-        // 4. Create Mappings in bulk in Directus
-        const mappingsPayload = normalizedMappings.map((mapping) => ({
-            parent_invoice_id: parentInvoiceId,
-            child_invoice_id: mapping.child_invoice_id,
-            amount_applied: mapping.amount_applied,
-            created_by: createdBy
-        }));
+        // 4. Create Mappings in bulk in Directus (if child invoices were provided)
+        let createdMappings = [];
+        if (normalizedMappings.length > 0) {
+            const mappingsPayload = normalizedMappings.map((mapping) => ({
+                parent_invoice_id: parentInvoiceId,
+                child_invoice_id: mapping.child_invoice_id,
+                amount_applied: mapping.amount_applied,
+                created_by: createdBy
+            }));
 
-        const createMappingsUrl = `${DIRECTUS_URL}/items/service_invoice_mapping`;
-        const createMappingsRes = await fetch(createMappingsUrl, {
-            method: "POST",
-            headers,
-            body: JSON.stringify(mappingsPayload)
-        });
+            const createMappingsUrl = `${DIRECTUS_URL}/items/service_invoice_mapping`;
+            const createMappingsRes = await fetch(createMappingsUrl, {
+                method: "POST",
+                headers,
+                body: JSON.stringify(mappingsPayload)
+            });
 
-        await assertDirectusOk(createMappingsRes, "Failed to create mappings");
+            await assertDirectusOk(createMappingsRes, "Failed to create mappings");
 
-        const mappingsResult = await createMappingsRes.json();
+            const mappingsResult = await createMappingsRes.json();
+            createdMappings = mappingsResult.data || [];
+        }
 
         return NextResponse.json({
             success: true,
             parent_invoice_id: parentInvoiceId,
-            mappings: mappingsResult.data
+            mappings: createdMappings
         });
     } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
