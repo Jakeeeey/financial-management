@@ -238,7 +238,7 @@ export async function PATCH(req: Request) {
     const body = await req.json();
 
     // Extract non-DB audit parameters before sending payload to Directus
-    const { is_resubmit, ...directusPayload } = body;
+    const { is_resubmit, log_remarks, ...directusPayload } = body;
 
     if (directusPayload.is_employee !== undefined) {
       directusPayload.is_employee = directusPayload.is_employee ? 1 : 0;
@@ -303,8 +303,10 @@ export async function PATCH(req: Request) {
     }
 
     if (updated?.id) {
-      // Prioritize actual expense.remarks from updated response, body, or current DB record
+      // Prioritize explicit log_remarks (e.g., from resubmission note/explanation for approver) over general expense description
       const resolvedRemarks =
+        (typeof log_remarks === "string" && log_remarks.trim() ? log_remarks.trim() : null) ||
+        (is_resubmit ? "Resubmitted expense with updates" : null) ||
         updated.remarks ||
         body.remarks ||
         (currentExpense?.remarks as string | null) ||
