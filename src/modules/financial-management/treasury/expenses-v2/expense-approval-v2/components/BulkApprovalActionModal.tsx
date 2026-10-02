@@ -18,6 +18,7 @@ import {
   DivisionInfo,
   DepartmentOption,
 } from "../types";
+import { getAssetUrl } from "../../utils/assetUrl";
 import {
   CheckCircle2,
   AlertTriangle,
@@ -572,7 +573,7 @@ export const BulkApprovalActionModal: React.FC<BulkApprovalActionModalProps> = (
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={activeItem.receipt_url}
+                          src={getAssetUrl(activeItem.receipt_url)}
                           alt={`Receipt for ${activeItem.doc_no}`}
                           className="max-h-[75vh] w-auto object-contain rounded-sm shadow-md pointer-events-none select-none"
                         />
@@ -674,7 +675,7 @@ export const BulkApprovalActionModal: React.FC<BulkApprovalActionModalProps> = (
             </Button>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={activeItem.receipt_url}
+              src={getAssetUrl(activeItem.receipt_url)}
               alt={`Fullscreen receipt ${activeItem.doc_no}`}
               className="max-h-[92vh] max-w-[92vw] object-contain"
             />

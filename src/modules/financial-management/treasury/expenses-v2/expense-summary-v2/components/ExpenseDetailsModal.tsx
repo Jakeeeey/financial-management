@@ -17,6 +17,7 @@ import {
   DivisionInfo,
   DepartmentOption,
 } from "../types";
+import { getAssetUrl } from "../../utils/assetUrl";
 import {
   FileText,
   User,
@@ -436,7 +437,7 @@ export const ExpenseDetailsModal: React.FC<ExpenseDetailsModalProps> = ({
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={item.receipt_url}
+                          src={getAssetUrl(item.receipt_url)}
                           alt={`Receipt for ${item.doc_no}`}
                           className="max-h-[75vh] w-auto object-contain rounded-sm shadow-md pointer-events-none select-none"
                         />
@@ -537,7 +538,7 @@ export const ExpenseDetailsModal: React.FC<ExpenseDetailsModalProps> = ({
           </Button>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={item.receipt_url}
+            src={getAssetUrl(item.receipt_url)}
             alt={`Fullscreen receipt ${item.doc_no}`}
             className="max-h-[92vh] max-w-[92vw] object-contain"
           />
