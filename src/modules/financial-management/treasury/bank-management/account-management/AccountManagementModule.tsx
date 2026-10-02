@@ -39,9 +39,19 @@ const emptyForm: AccountManagementFormValues = {
   branch: "",
   ifscCode: "",
   openingBalance: "",
+  region: "",
   province: "",
   city: "",
   baranggay: "",
+  zip_code: "",
+  unit_building: "",
+  house_no: "",
+  block: "",
+  lot: "",
+  phase: "",
+  street: "",
+  subdivision: "",
+  purok_sitio: "",
   email: "",
   mobileNo: "",
   contactPerson: "",
@@ -58,12 +68,14 @@ type AccountTypeMatch = {
 };
 
 type LocationCodes = {
+  regionCode: string;
   provinceCode: string;
   cityCode: string;
   barangayCode: string;
 };
 
 type PsgcLoadingState = {
+  regions: boolean;
   provinces: boolean;
   cities: boolean;
   barangays: boolean;
@@ -153,16 +165,26 @@ function accountToForm(account: BankAccount): AccountManagementFormValues {
     branch: account.branch,
     ifscCode: account.ifscCode,
     openingBalance: String(account.openingBalance ?? 0),
+    region: account.region ?? "",
     province: account.province,
     city: account.city,
     baranggay: account.baranggay,
+    zip_code: account.zip_code ?? "",
+    unit_building: account.unit_building ?? "",
+    house_no: account.house_no ?? "",
+    block: account.block ?? "",
+    lot: account.lot ?? "",
+    phase: account.phase ?? "",
+    street: account.street ?? "",
+    subdivision: account.subdivision ?? "",
+    purok_sitio: account.purok_sitio ?? "",
     email: account.email,
     mobileNo: sanitizeMobileNumber(account.mobileNo),
     contactPerson: account.contactPerson,
   };
 }
 
-function validateForm(values: AccountManagementFormValues, mode: AccountManagementFormMode) {
+function validateForm(values: AccountManagementFormValues, mode: AccountManagementFormMode, regionHasNoProvince: boolean) {
   const errors: AccountManagementFieldErrors = {};
   const accountNumber = sanitizeAccountNumber(values.accountNumber);
   const mobileNo = sanitizeMobileNumber(values.mobileNo);
@@ -180,7 +202,7 @@ function validateForm(values: AccountManagementFormValues, mode: AccountManageme
       errors.openingBalance = "Opening balance must be a valid amount";
     }
   }
-  if (!values.province.trim()) errors.province = "This field is required";
+  if (!regionHasNoProvince && !values.province.trim()) errors.province = "This field is required";
   if (!values.city.trim()) errors.city = "This field is required";
   if (!values.baranggay.trim()) errors.baranggay = "This field is required";
   if (!values.email.trim()) errors.email = "This field is required";
@@ -219,21 +241,25 @@ export default function AccountManagementModule() {
   const [accountTypeSaving, setAccountTypeSaving] = useState(false);
   const [pendingAccountType, setPendingAccountType] = useState<string | null>(null);
   const [pendingAccountTypeMatches, setPendingAccountTypeMatches] = useState<AccountTypeMatch[]>([]);
+  const [regionOptions, setRegionOptions] = useState<PsgcOption[]>([]);
   const [provinceOptions, setProvinceOptions] = useState<PsgcOption[]>([]);
   const [cityOptions, setCityOptions] = useState<PsgcOption[]>([]);
   const [barangayOptions, setBarangayOptions] = useState<PsgcOption[]>([]);
+  const [regionHasNoProvince, setRegionHasNoProvince] = useState(false);
   const [locationCodes, setLocationCodes] = useState<LocationCodes>({
+    regionCode: "",
     provinceCode: "",
     cityCode: "",
     barangayCode: "",
   });
   const [psgcLoading, setPsgcLoading] = useState<PsgcLoadingState>({
+    regions: false,
     provinces: false,
     cities: false,
     barangays: false,
   });
   const [psgcError, setPsgcError] = useState<string | null>(null);
-  const psgcSeqRef = useRef({ provinces: 0, cities: 0, barangays: 0 });
+  const psgcSeqRef = useRef({ regions: 0, provinces: 0, cities: 0, barangays: 0 });
 
   const activeCount = useMemo(() => data.accounts.filter((account) => account.isActive).length, [data.accounts]);
   const inactiveCount = data.accounts.length - activeCount;
@@ -283,8 +309,8 @@ export default function AccountManagementModule() {
   );
 
   const loadPsgcOptions = useCallback(async (
-    kind: "provinces" | "cities" | "barangays",
-    filters: { provinceCode?: string; cityCode?: string } = {},
+    kind: "regions" | "provinces" | "cities" | "barangays",
+    filters: { regionCode?: string; provinceCode?: string; cityCode?: string } = {},
   ) => {
     const seq = psgcSeqRef.current[kind] + 1;
     psgcSeqRef.current[kind] = seq;
@@ -296,6 +322,7 @@ export default function AccountManagementModule() {
       const options = await accountManagementApi.getPsgcOptions({ kind, ...filters });
       if (seq !== psgcSeqRef.current[kind]) return options;
 
+      if (kind === "regions") setRegionOptions(options);
       if (kind === "provinces") setProvinceOptions(options);
       if (kind === "cities") setCityOptions(options);
       if (kind === "barangays") setBarangayOptions(options);
@@ -319,10 +346,13 @@ export default function AccountManagementModule() {
   }, [accountQuery, loadAccounts]);
 
   useEffect(() => {
+    void loadPsgcOptions("regions");
+  }, [loadPsgcOptions]);
+
+  useEffect(() => {
     if (!dialogOpen) return;
 
-    void loadPsgcOptions("provinces");
-    void loadPsgcOptions("cities");
+    void loadPsgcOptions("regions");
   }, [dialogOpen, loadPsgcOptions]);
 
   useEffect(() => {
@@ -370,7 +400,8 @@ export default function AccountManagementModule() {
     setPendingAccountType(null);
     setPendingAccountTypeMatches([]);
     setPsgcError(null);
-    setLocationCodes({ provinceCode: "", cityCode: "", barangayCode: "" });
+    setRegionHasNoProvince(false);
+    setLocationCodes({ regionCode: "", provinceCode: "", cityCode: "", barangayCode: "" });
     setDialogOpen(true);
   }
 
@@ -387,16 +418,105 @@ export default function AccountManagementModule() {
     setPendingAccountType(null);
     setPendingAccountTypeMatches([]);
     setPsgcError(null);
-    setLocationCodes({ provinceCode: "", cityCode: "", barangayCode: "" });
+    setRegionHasNoProvince(false);
+    setLocationCodes({ regionCode: "", provinceCode: "", cityCode: "", barangayCode: "" });
     setDialogOpen(true);
+    void hydrateEditLocation(account);
   }
 
-  function selectProvince(option: PsgcOption) {
+  async function hydrateEditLocation(account: BankAccount) {
+    const normalizeName = (value: string) => value.trim().toLowerCase();
+    const regions = regionOptions.length > 0 ? regionOptions : await loadPsgcOptions("regions");
+    let regionName = account.region || "";
+    let regionCode = regions.find((region) => normalizeName(region.name) === normalizeName(regionName))?.code ?? "";
+
+    if (!regionCode && account.province) {
+      const catalog = await loadPsgcOptions("provinces");
+      const entry = catalog.find((province) => normalizeName(province.name) === normalizeName(account.province));
+      if (entry?.regionCode) {
+        regionCode = entry.regionCode;
+        regionName = regions.find((region) => region.code === regionCode)?.name ?? "";
+        if (regionName) {
+          setFormValues((current) => ({ ...current, region: regionName }));
+        }
+      }
+    }
+
+    if (!regionCode) {
+      const cities = await loadPsgcOptions("cities");
+      const city = cities.find((item) => normalizeName(item.name) === normalizeName(account.city));
+      setLocationCodes((current) => ({
+        ...current,
+        provinceCode: city?.provinceCode || "",
+        cityCode: city?.code || "",
+      }));
+      return;
+    }
+
+    setLocationCodes((current) => ({ ...current, regionCode }));
+    const provinces = await loadPsgcOptions("provinces", { regionCode });
+
+    if (provinces.length === 0) {
+      setRegionHasNoProvince(true);
+      const cities = await loadPsgcOptions("cities", { regionCode });
+      const city = cities.find((item) => normalizeName(item.name) === normalizeName(account.city));
+      if (!city) return;
+      setLocationCodes((current) => ({ ...current, cityCode: city.code }));
+      await loadPsgcOptions("barangays", { cityCode: city.code });
+      return;
+    }
+
+    setRegionHasNoProvince(false);
+    const province = provinces.find((item) => normalizeName(item.name) === normalizeName(account.province));
+    if (!province) return;
+    setLocationCodes((current) => ({ ...current, provinceCode: province.code }));
+    const cities = await loadPsgcOptions("cities", { provinceCode: province.code });
+    const city = cities.find((item) => normalizeName(item.name) === normalizeName(account.city));
+    if (!city) return;
+    setLocationCodes((current) => ({ ...current, cityCode: city.code }));
+    await loadPsgcOptions("barangays", { cityCode: city.code });
+  }
+
+  async function selectRegion(option: PsgcOption) {
     setLocationCodes({
-      provinceCode: option.code,
+      regionCode: option.code,
+      provinceCode: "",
       cityCode: "",
       barangayCode: "",
     });
+    setFormValues((current) => ({
+      ...current,
+      region: option.name,
+      province: "",
+      city: "",
+      baranggay: "",
+    }));
+    setFormErrors((current) => ({
+      ...current,
+      region: undefined,
+      province: undefined,
+      city: undefined,
+      baranggay: undefined,
+    }));
+    setProvinceOptions([]);
+    setCityOptions([]);
+    setBarangayOptions([]);
+    setRegionHasNoProvince(false);
+
+    const provinces = await loadPsgcOptions("provinces", { regionCode: option.code });
+    if (provinces.length === 0) {
+      setRegionHasNoProvince(true);
+      await loadPsgcOptions("cities", { regionCode: option.code });
+    }
+  }
+
+  function selectProvince(option: PsgcOption) {
+    setLocationCodes((current) => ({
+      ...current,
+      provinceCode: option.code,
+      cityCode: "",
+      barangayCode: "",
+    }));
     setFormValues((current) => ({
       ...current,
       province: option.name,
@@ -416,11 +536,12 @@ export default function AccountManagementModule() {
   function selectCity(option: PsgcOption) {
     const province = provinceOptions.find((item) => item.code === option.provinceCode);
 
-    setLocationCodes({
-      provinceCode: option.provinceCode || "",
+    setLocationCodes((current) => ({
+      ...current,
+      provinceCode: option.provinceCode || (regionHasNoProvince ? "" : current.provinceCode),
       cityCode: option.code,
       barangayCode: "",
-    });
+    }));
     setFormValues((current) => ({
       ...current,
       province: province?.name || "",
@@ -443,11 +564,12 @@ export default function AccountManagementModule() {
     const city = cityOptions.find((item) => item.code === option.cityCode);
     const province = provinceOptions.find((item) => item.code === (city?.provinceCode || option.provinceCode));
 
-    setLocationCodes({
-      provinceCode: city?.provinceCode || option.provinceCode || "",
+    setLocationCodes((current) => ({
+      ...current,
+      provinceCode: city?.provinceCode || option.provinceCode || (regionHasNoProvince ? "" : current.provinceCode),
       cityCode: city?.code || option.cityCode || "",
       barangayCode: option.code,
-    });
+    }));
     setFormValues((current) => ({
       ...current,
       province: province?.name || current.province,
@@ -568,7 +690,7 @@ export default function AccountManagementModule() {
 
   async function submitForm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const validationError = validateForm(formValues, formMode);
+    const validationError = validateForm(formValues, formMode, regionHasNoProvince);
     if (hasFieldErrors(validationError)) {
       setFormErrors(validationError);
       setFormError("Please review the highlighted fields.");
@@ -715,9 +837,11 @@ export default function AccountManagementModule() {
         bankNameSaving={bankNameSaving}
         accountTypeError={accountTypeError}
         accountTypeSaving={accountTypeSaving}
+        regionOptions={regionOptions}
         provinceOptions={displayedProvinceOptions}
         cityOptions={displayedCityOptions}
         barangayOptions={barangayOptions}
+        hideProvince={regionHasNoProvince}
         psgcLoading={psgcLoading}
         onOpenChange={(open) => {
           if (!saving) setDialogOpen(open);
@@ -736,6 +860,7 @@ export default function AccountManagementModule() {
         }}
         onCreateBankName={requestBankNameCreate}
         onCreateAccountType={requestAccountTypeCreate}
+        onSelectRegion={selectRegion}
         onSelectProvince={selectProvince}
         onSelectCity={selectCity}
         onSelectBarangay={selectBarangay}

@@ -128,11 +128,13 @@ export const accountManagementApi = {
   },
 
   async getPsgcOptions(query: {
-    kind: "provinces" | "cities" | "barangays";
+    kind: "regions" | "provinces" | "cities" | "barangays";
+    regionCode?: string;
     provinceCode?: string;
     cityCode?: string;
   }): Promise<PsgcOption[]> {
     const params = new URLSearchParams({ kind: query.kind });
+    if (query.regionCode) params.set("region_code", query.regionCode);
     if (query.provinceCode) params.set("province_code", query.provinceCode);
     if (query.cityCode) params.set("city_code", query.cityCode);
 

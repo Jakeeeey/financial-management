@@ -4,11 +4,12 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type PsgcKind = "provinces" | "cities" | "barangays";
+type PsgcKind = "regions" | "provinces" | "cities" | "barangays";
 
 type PsgcRow = {
   code?: unknown;
   name?: unknown;
+  regionCode?: unknown;
   provinceCode?: unknown;
   cityCode?: unknown;
   municipalityCode?: unknown;
@@ -19,6 +20,7 @@ type PsgcRow = {
 type PsgcOption = {
   code: string;
   name: string;
+  regionCode?: string;
   provinceCode?: string;
   cityCode?: string;
 };
@@ -51,10 +53,19 @@ function deriveCityCodeFromBarangayCode(code: string) {
   return code.length >= 6 ? `${code.slice(0, 6)}000` : undefined;
 }
 
-function normalizeProvince(row: PsgcRow): PsgcOption | null {
+function normalizeRegion(row: PsgcRow): PsgcOption | null {
   const code = asCode(row.code);
   const name = asString(row.name);
   return code && name ? { code, name } : null;
+}
+
+function normalizeProvince(row: PsgcRow): PsgcOption | null {
+  const code = asCode(row.code);
+  const name = asString(row.name);
+  if (!code || !name) return null;
+
+  const regionCode = asCode(row.regionCode);
+  return regionCode ? { code, name, regionCode } : { code, name };
 }
 
 function normalizeCity(row: PsgcRow): PsgcOption | null {
@@ -89,11 +100,13 @@ function normalizeBarangay(row: PsgcRow): PsgcOption | null {
 
 function normalizeRows(kind: PsgcKind, rows: PsgcRow[]) {
   const normalizer =
-    kind === "provinces"
-      ? normalizeProvince
-      : kind === "cities"
-        ? normalizeCity
-        : normalizeBarangay;
+    kind === "regions"
+      ? normalizeRegion
+      : kind === "provinces"
+        ? normalizeProvince
+        : kind === "cities"
+          ? normalizeCity
+          : normalizeBarangay;
 
   return rows
     .map(normalizer)
@@ -149,14 +162,24 @@ async function fetchPsgc(path: string) {
 }
 
 function buildPath(kind: PsgcKind, searchParams: URLSearchParams) {
+  const regionCode = asString(searchParams.get("region_code"));
   const provinceCode = asString(searchParams.get("province_code"));
   const cityCode = asString(searchParams.get("city_code"));
 
-  if (kind === "provinces") return "/provinces.json";
+  if (kind === "regions") return "/regions.json";
+  if (kind === "provinces") {
+    return regionCode
+      ? `/regions/${encodeURIComponent(regionCode)}/provinces.json`
+      : "/provinces.json";
+  }
   if (kind === "cities") {
-    return provinceCode
-      ? `/provinces/${encodeURIComponent(provinceCode)}/cities-municipalities.json`
-      : "/cities-municipalities.json";
+    if (provinceCode) {
+      return `/provinces/${encodeURIComponent(provinceCode)}/cities-municipalities.json`;
+    }
+    if (regionCode) {
+      return `/regions/${encodeURIComponent(regionCode)}/cities-municipalities.json`;
+    }
+    return "/cities-municipalities.json";
   }
 
   if (cityCode) {
@@ -175,7 +198,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const kind = searchParams.get("kind") as PsgcKind | null;
 
-    if (kind !== "provinces" && kind !== "cities" && kind !== "barangays") {
+    if (kind !== "regions" && kind !== "provinces" && kind !== "cities" && kind !== "barangays") {
       return NextResponse.json({ error: "Invalid PSGC kind" }, { status: 400 });
     }
 
