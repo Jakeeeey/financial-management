@@ -270,6 +270,7 @@ export const ExpenseCreationV2Module: React.FC = () => {
         coas={coas}
         divisions={divisions}
         departments={departments}
+        userDefaults={userDefaults}
         onResubmit={handleResubmitRevision}
       />
 

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Sheet,
   SheetContent,
@@ -35,6 +35,7 @@ import {
   DivisionOption,
   DepartmentOption,
   ExpenseFormValues,
+  UserDefaultsOption,
 } from "../types";
 import { fetchExpenseLogs } from "../services/expenseService";
 import { uploadReceiptFile } from "../services/uploadService";
@@ -67,6 +68,7 @@ interface RevisionDrawerProps {
   coas: ChartOfAccountOption[];
   divisions: DivisionOption[];
   departments: DepartmentOption[];
+  userDefaults?: UserDefaultsOption | null;
   onResubmit: (id: number, values: ExpenseFormValues, notes: string) => Promise<void>;
 }
 
@@ -105,6 +107,7 @@ export const RevisionDrawer: React.FC<RevisionDrawerProps> = ({
   coas,
   divisions,
   departments,
+  userDefaults,
   onResubmit,
 }) => {
   const [expenseDate, setExpenseDate] = useState("");
@@ -133,7 +136,8 @@ export const RevisionDrawer: React.FC<RevisionDrawerProps> = ({
       setPayee(item.payee || null);
       setIsEmployee(!!item.is_employee);
       setDivisionId(item.division_id || null);
-      setDepartmentId(item.department_id || null);
+      const salesDept = departments.find((d) => (d.department_name || "").trim().toLowerCase() === "sales");
+      setDepartmentId(item.department_id || (salesDept ? salesDept.department_id : null));
       setCoaId(item.coa_id || null);
       setAmount(String(item.amount || ""));
       setRemarks(item.remarks || "");
@@ -158,7 +162,7 @@ export const RevisionDrawer: React.FC<RevisionDrawerProps> = ({
       setDivisionSearch("");
       setDepartmentSearch("");
     }
-  }, [item, open]);
+  }, [item, open, departments]);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
@@ -189,16 +193,24 @@ export const RevisionDrawer: React.FC<RevisionDrawerProps> = ({
       (c.account_title || "").toLowerCase().includes((coaSearch || "").toLowerCase())
   );
 
-  const filteredDivisions = divisions.filter((d) =>
+  const availableDivisions = useMemo(() => {
+    if (userDefaults?.is_salesman && userDefaults?.allowed_division_ids && userDefaults.allowed_division_ids.length > 0) {
+      return divisions.filter((d) => userDefaults.allowed_division_ids!.includes(d.division_id));
+    }
+    return divisions;
+  }, [divisions, userDefaults]);
+
+  const filteredDivisions = availableDivisions.filter((d) =>
     (d.division_name || "").toLowerCase().includes((divisionSearch || "").toLowerCase())
   );
 
-  const availableDepartments = divisionId
-    ? departments.filter((d) => {
-        const div = d.division_id ?? d.parent_division ?? d.parentDivision;
-        return !div || div === divisionId;
-      })
-    : departments;
+  const handleDivisionChange = (newDivId: number | null) => {
+    setDivisionId(newDivId);
+  };
+
+  const availableDepartments = useMemo(() => {
+    return departments.filter((d) => (d.department_name || "").trim().toLowerCase() === "sales");
+  }, [departments]);
 
   const filteredDepartments = availableDepartments.filter((d) =>
     (d.department_name || "").toLowerCase().includes((departmentSearch || "").toLowerCase())
@@ -449,8 +461,7 @@ export const RevisionDrawer: React.FC<RevisionDrawerProps> = ({
                   </Label>
                   <Select
                     value={divisionId ? String(divisionId) : ""}
-                    onValueChange={(v) => setDivisionId(v ? parseInt(v, 10) : null)}
-                    disabled
+                    onValueChange={(v) => handleDivisionChange(v ? parseInt(v, 10) : null)}
                   >
                     <SelectTrigger className="w-full text-xs">
                       <SelectValue placeholder="Select Division" />
@@ -499,7 +510,6 @@ export const RevisionDrawer: React.FC<RevisionDrawerProps> = ({
                   <Select
                     value={departmentId ? String(departmentId) : ""}
                     onValueChange={(v) => setDepartmentId(v ? parseInt(v, 10) : null)}
-                    disabled
                   >
                     <SelectTrigger className="w-full text-xs">
                       <SelectValue placeholder="Select Department" />

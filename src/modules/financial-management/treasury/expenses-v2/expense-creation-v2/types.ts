@@ -127,5 +127,6 @@ export interface UserDefaultsOption {
   salesman_id?: number | null;
   salesman_name?: string | null;
   salesman_code?: string | null;
+  allowed_division_ids?: number[];
 }
 

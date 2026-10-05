@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -66,19 +66,22 @@ export const BulkExpenseModal: React.FC<BulkExpenseModalProps> = ({
   userDefaults,
   onSubmitBulk,
 }) => {
-  const createEmptyRow = useCallback((): BulkRowItem => ({
-    id: Math.random().toString(36).substring(2, 9),
-    expense_date: new Date().toISOString().split("T")[0],
-    payee: userDefaults?.supplier_id ?? null,
-    is_employee: true,
-    division_id: userDefaults?.division_id ?? null,
-    department_id: null,
-    coa_id: null,
-    amount: "",
-    remarks: "",
-    selectedFile: null,
-    receipt_url: "",
-  }), [userDefaults]);
+  const createEmptyRow = useCallback((): BulkRowItem => {
+    const salesDept = departments.find((d) => (d.department_name || "").trim().toLowerCase() === "sales");
+    return {
+      id: Math.random().toString(36).substring(2, 9),
+      expense_date: new Date().toISOString().split("T")[0],
+      payee: userDefaults?.supplier_id ?? null,
+      is_employee: true,
+      division_id: userDefaults?.division_id ?? null,
+      department_id: salesDept ? salesDept.department_id : null,
+      coa_id: null,
+      amount: "",
+      remarks: "",
+      selectedFile: null,
+      receipt_url: "",
+    };
+  }, [userDefaults, departments]);
 
   const [rows, setRows] = useState<BulkRowItem[]>([]);
   const [activeRowId, setActiveRowId] = useState<string>("");
@@ -319,16 +322,20 @@ export const BulkExpenseModal: React.FC<BulkExpenseModalProps> = ({
       (c.account_title || "").toLowerCase().includes(coaSearch.toLowerCase())
   );
 
-  const filteredDivisions = divisions.filter((d) =>
+  const availableDivisions = useMemo(() => {
+    if (userDefaults?.is_salesman && userDefaults?.allowed_division_ids && userDefaults.allowed_division_ids.length > 0) {
+      return divisions.filter((d) => userDefaults.allowed_division_ids!.includes(d.division_id));
+    }
+    return divisions;
+  }, [divisions, userDefaults]);
+
+  const filteredDivisions = availableDivisions.filter((d) =>
     (d.division_name || "").toLowerCase().includes(divisionSearch.toLowerCase())
   );
 
-  const availableDepartments = activeRow?.division_id
-    ? departments.filter((d) => {
-        const div = d.division_id ?? d.parent_division ?? d.parentDivision;
-        return !div || div === activeRow.division_id;
-      })
-    : departments;
+  const availableDepartments = useMemo(() => {
+    return departments.filter((d) => (d.department_name || "").trim().toLowerCase() === "sales");
+  }, [departments]);
 
   const filteredDepartments = availableDepartments.filter((d) =>
     (d.department_name || "").toLowerCase().includes(departmentSearch.toLowerCase())
@@ -531,9 +538,8 @@ export const BulkExpenseModal: React.FC<BulkExpenseModalProps> = ({
                   <Select
                     value={activeRow.division_id ? String(activeRow.division_id) : ""}
                     onValueChange={(v) => updateActiveRow("division_id", v ? parseInt(v, 10) : null)}
-                    disabled={true}
                   >
-                    <SelectTrigger className="w-full bg-muted/60 cursor-not-allowed opacity-90">
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select Division" />
                     </SelectTrigger>
                     <SelectContent
