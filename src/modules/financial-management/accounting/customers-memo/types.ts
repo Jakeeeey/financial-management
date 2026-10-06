@@ -108,6 +108,8 @@ export interface MemoSavePayload {
 export interface MemoApprovalRow {
     id: number;
     memo_number: string;
+    cpNumbers?: string[];
+    invoiceNumbers?: string[];
     amount: number;
     applied_amount: number;
     reason: string;
@@ -137,7 +139,7 @@ export interface DetailedMemoCollection {
     collection_id: {
         id: number;
         docNo: string;
-    };
+    } | null;
 }
 
 export interface DetailedMemo {

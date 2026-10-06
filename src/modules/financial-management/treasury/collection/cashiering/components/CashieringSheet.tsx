@@ -3,7 +3,7 @@
 import React, {useState} from "react";
 import {
     CashieringState, CollectionSummary, Salesman, Bank, Denomination,
-    COA, CheckDetail, PaymentMethod, Customer, UnpaidInvoice, UserDto
+    COA, CheckDetail, PaymentMethod, Customer, UnpaidInvoice, CollectorOption
 } from "../../types";
 import {
     Plus, Calculator, Receipt, ShieldCheck, Check as CheckIcon, ChevronsUpDown, Landmark,
@@ -24,10 +24,12 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
         setIsSheetOpen,
         salesmen,
         users, // 🚀 NEW: User list for "Collected By"
+        collectorLookupError,
         salesmanId,
         setSalesmanId,
         collectedBy, // 🚀 NEW
         setCollectedBy, // 🚀 NEW
+        collectedByName,
         crNo, // 🚀 NEW
         setCrNo, // 🚀 NEW
         banks,
@@ -59,7 +61,8 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
         isSubmitting,
         submissionError,
         editingId,
-        masterList
+        masterList,
+        loadModalLookups,
     } = state;
 
     const [openSalesman, setOpenSalesman] = useState(false);
@@ -189,7 +192,11 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                             <Button variant="outline" role="combobox"
                                                     className={cn("w-full h-10 justify-between text-xs font-bold bg-background", !collectedBy && "text-muted-foreground")}>
                                                 <span className="truncate">
-                                                    {collectedBy ? users.find((u: UserDto) => u.id.toString() === collectedBy)?.name : "Select Collector..."}
+                                                    {collectedBy
+                                                        ? users.find((u: CollectorOption) => u.id.toString() === collectedBy)?.name
+                                                            || collectedByName
+                                                            || `Inactive user #${collectedBy}`
+                                                        : "Select Collector..."}
                                                 </span>
                                                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50"/>
                                             </Button>
@@ -198,9 +205,22 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                             <Command>
                                                 <CommandInput placeholder="Type name..." className="text-xs"/>
                                                 <CommandList className="max-h-[250px] overflow-y-auto custom-scrollbar">
-                                                    <CommandEmpty>No user found.</CommandEmpty>
+                                                    <CommandEmpty>
+                                                        {collectorLookupError ? (
+                                                            <div className="flex flex-col items-center gap-2 px-3 py-2">
+                                                                <span>{collectorLookupError}</span>
+                                                                <Button type="button" variant="link" size="sm" onClick={() => void loadModalLookups()}>
+                                                                    Retry
+                                                                </Button>
+                                                            </div>
+                                                        ) : users.length === 0 ? (
+                                                            "No active collectors available."
+                                                        ) : (
+                                                            "No user found."
+                                                        )}
+                                                    </CommandEmpty>
                                                     <CommandGroup>
-                                                        {users && users.map((u: UserDto) => (
+                                                        {users && users.map((u: CollectorOption) => (
                                                             <CommandItem key={u.id}
                                                                          value={u.name}
                                                                          onSelect={() => {

@@ -18,6 +18,11 @@ export interface UserDto {
     name?: string; // Optional: Combines first & last for easy dropdown rendering
 }
 
+export interface CollectorOption {
+    id: number | string;
+    name: string;
+}
+
 // --- MASTER DATA ---
 export interface Bank {
     id: number;
@@ -197,7 +202,8 @@ export interface CashieringState {
     totalPages: number;
     currentPage: number;
     salesmen: Salesman[];
-    users: UserDto[];                // 🚀 Added: List of users for the dropdown
+    users: CollectorOption[];
+    collectorLookupError: string | null;
     banks: Bank[];
     coas: COA[];
     paymentMethods: PaymentMethod[];
@@ -209,6 +215,7 @@ export interface CashieringState {
     setSalesmanId: (id: string) => void;
 
     collectedBy: string;             // 🚀 Added
+    collectedByName: string;
     setCollectedBy: (id: string) => void; // 🚀 Added
 
     crNo: string;                    // 🚀 Added

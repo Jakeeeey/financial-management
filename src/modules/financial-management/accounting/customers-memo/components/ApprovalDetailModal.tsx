@@ -125,6 +125,13 @@ export function ApprovalDetailModal({ memoId, open, onOpenChange, onApproved, re
     const formatCurrency = (val: number) => 
         new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val);
 
+    const cpNumbers = (details?.collections ?? [])
+        .map(collection => collection.collection_id?.docNo?.trim())
+        .filter((value): value is string => Boolean(value));
+    const invoiceNumbers = (details?.invoices ?? [])
+        .map(invoice => invoice.invoice_id?.invoice_no?.trim())
+        .filter((value): value is string => Boolean(value));
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent showCloseButton={false} className="w-[95vw] sm:max-w-5xl p-0 overflow-hidden rounded-[2rem] border-none shadow-2xl">
@@ -213,6 +220,10 @@ export function ApprovalDetailModal({ memoId, open, onOpenChange, onApproved, re
                                         <DetailItem label="GL Account" value={details.header.chart_of_account.account_title} />
                                         <DetailItem label="Reason / Remarks" value={details.header.reason || "No reason provided"} />
                                         <DetailItem label="Date Created" value={new Date(details.header.created_at).toLocaleString()} />
+                                        <DetailItem
+                                            label="CP# / Invoice No."
+                                            value={`CP#: ${cpNumbers.join(", ") || "-"} / Invoice No.: ${invoiceNumbers.join(", ") || "-"}`}
+                                        />
                                     </div>
                                 </div>
                             </div>
