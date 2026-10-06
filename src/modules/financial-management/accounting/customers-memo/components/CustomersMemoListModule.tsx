@@ -15,7 +15,8 @@ import {
     FilterX,
     Filter,
     Layers,
-    Database
+    Database,
+    Pencil
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -27,6 +28,7 @@ import {
 } from "../service";
 import { MemoApprovalRow, Supplier, Customer, Salesman, ChartOfAccount } from "../types";
 import { ApprovalDetailModal } from "./ApprovalDetailModal";
+import { CustomerMemoEditDialog } from "./CustomerMemoEditDialog";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { MultiSearchableSelect } from "./MultiSearchableSelect";
@@ -67,6 +69,7 @@ export default function CustomersMemoListModule() {
 
     const [selectedMemoId, setSelectedMemoId] = useState<number | null>(null);
     const [detailOpen, setDetailOpen] = useState(false);
+    const [editingMemo, setEditingMemo] = useState<MemoApprovalRow | null>(null);
 
     const loadData = async () => {
         setLoading(true);
@@ -418,7 +421,7 @@ export default function CustomersMemoListModule() {
                                     <TableHead className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400/80 min-w-[220px]">Customer & Salesman Representative</TableHead>
                                     <TableHead className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400/80 min-w-[200px]">COA & Remarks</TableHead>
                                     <TableHead className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400/80 min-w-[160px]">Memo Amount</TableHead>
-                                    <TableHead className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400/80 text-right pr-12 min-w-[160px]">Action</TableHead>
+                                    <TableHead className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400/80 text-right pr-12 min-w-[230px]">Action</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -497,15 +500,27 @@ export default function CustomersMemoListModule() {
                                             </div>
                                         </TableCell>
                                         <TableCell className="text-right pr-12">
-                                            <Button
-                                                onClick={() => {
-                                                    setSelectedMemoId(memo.id);
-                                                    setDetailOpen(true);
-                                                }}
-                                                className="bg-white border-2 border-slate-100 hover:border-blue-500 hover:bg-blue-50 hover:text-blue-700 rounded-[1.25rem] h-12 px-6 font-black text-xs uppercase tracking-[0.2em] text-slate-600 shadow-sm transition-all duration-500 active:scale-90 flex items-center gap-2 ml-auto"
-                                            >
-                                                Details
-                                            </Button>
+                                            <div className="flex justify-end gap-2">
+                                                {memo.type === 1 && memo.status === "FOR APPROVAL" && (
+                                                    <Button
+                                                        variant="outline"
+                                                        onClick={() => setEditingMemo(memo)}
+                                                        className="h-12 rounded-[1.25rem] border-2 border-amber-100 px-4 text-xs font-black uppercase tracking-[0.15em] text-amber-700 shadow-sm transition-all hover:border-amber-400 hover:bg-amber-50"
+                                                    >
+                                                        <Pencil className="mr-2 h-4 w-4" />
+                                                        Edit
+                                                    </Button>
+                                                )}
+                                                <Button
+                                                    onClick={() => {
+                                                        setSelectedMemoId(memo.id);
+                                                        setDetailOpen(true);
+                                                    }}
+                                                    className="bg-white border-2 border-slate-100 hover:border-blue-500 hover:bg-blue-50 hover:text-blue-700 rounded-[1.25rem] h-12 px-6 font-black text-xs uppercase tracking-[0.2em] text-slate-600 shadow-sm transition-all duration-500 active:scale-90 flex items-center gap-2"
+                                                >
+                                                    Details
+                                                </Button>
+                                            </div>
                                         </TableCell>
                                     </TableRow>
                                 ))}
@@ -586,6 +601,21 @@ export default function CustomersMemoListModule() {
                 open={detailOpen}
                 onOpenChange={setDetailOpen}
                 readOnly={true}
+            />
+            <CustomerMemoEditDialog
+                memo={editingMemo}
+                open={editingMemo !== null}
+                onOpenChange={(open) => {
+                    if (!open) setEditingMemo(null);
+                }}
+                suppliers={suppliers}
+                customers={customers}
+                salesmen={salesmen}
+                coas={coas}
+                onSaved={() => {
+                    setEditingMemo(null);
+                    void loadData();
+                }}
             />
         </div>
     );
