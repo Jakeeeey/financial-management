@@ -94,10 +94,13 @@ export default function CustomersMemoListModule() {
         loadData();
     }, []);
 
+    const normalizedSearchQuery = searchQuery.trim().toLowerCase();
     const filteredMemos = memos.filter(m => {
         const matchesSearch =
-            m.memo_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            m.customer_id.customer_name.toLowerCase().includes(searchQuery.toLowerCase());
+            m.memo_number.toLowerCase().includes(normalizedSearchQuery) ||
+            m.customer_id.customer_name.toLowerCase().includes(normalizedSearchQuery) ||
+            (m.cpNumbers ?? []).some(number => number.toLowerCase().includes(normalizedSearchQuery)) ||
+            (m.invoiceNumbers ?? []).some(number => number.toLowerCase().includes(normalizedSearchQuery));
 
         const matchesSupplier = filterSupplier.length === 0 || filterSupplier.includes(String(m.supplier_id?.id || ""));
         const matchesCustomer = filterCustomer.length === 0 || filterCustomer.includes(String(m.customer_id?.id || ""));
@@ -196,7 +199,8 @@ export default function CustomersMemoListModule() {
                     <div className="relative group">
                         <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-300 group-focus-within:text-blue-600 transition-colors" />
                         <Input
-                            placeholder="Find record..."
+                            aria-label="Search memo, customer, CP, or invoice number"
+                            placeholder="Memo, customer, CP#, or invoice no."
                             value={searchQuery}
                             onChange={e => setSearchQuery(e.target.value)}
                             className="pl-12 h-14 w-[350px] rounded-[1.5rem] border-none bg-slate-50/50 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition-all font-bold text-sm text-slate-700"
