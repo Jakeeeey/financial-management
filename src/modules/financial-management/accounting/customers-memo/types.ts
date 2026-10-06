@@ -81,6 +81,15 @@ export interface MemoHeader {
     type: number;
 }
 
+export interface MemoEditHeader {
+    supplier_id: number;
+    customer_id: number;
+    salesman_id: number;
+    chart_of_account: number;
+    amount: number;
+    reason: string;
+}
+
 export interface InvoiceAllocation {
     invoiceId: number;
     invoiceNo: string;
@@ -127,6 +136,7 @@ export interface DetailedMemoInvoice {
     amount: number;
     date_applied: string | null;
     invoice_id: {
+        invoice_id: number;
         invoice_no: string;
         invoice_date: string | null;
         due_date: string | null;

@@ -1,6 +1,7 @@
 // src/app/api/scm/accounting/customers-memo/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
+import { canEditPendingCreditMemo, requireCustomerMemoModuleAccess } from "./_edit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -480,6 +481,7 @@ export async function GET(req: NextRequest) {
                 const invoiceFields = [
                     "amount",
                     "date_applied",
+                    "invoice_id.invoice_id",
                     "invoice_id.invoice_no",
                     "invoice_id.invoice_date",
                     "invoice_id.due_date",
@@ -615,6 +617,65 @@ export async function PATCH(req: NextRequest) {
     try {
         const DIRECTUS_URL = getDirectusBase();
         const body = await req.json();
+        if (body?.action === "edit") {
+            const access = await requireCustomerMemoModuleAccess(req);
+            if (!access.ok) {
+                return NextResponse.json({ error: access.error }, { status: access.status });
+            }
+
+            const id = Number(body.id);
+            const header = body.header;
+            const supplierId = Number(header?.supplier_id);
+            const customerId = Number(header?.customer_id);
+            const salesmanId = Number(header?.salesman_id);
+            const coaId = Number(header?.chart_of_account);
+            const amount = Number(header?.amount);
+
+            if (
+                !Number.isInteger(id) || id <= 0
+                || !Number.isInteger(supplierId) || supplierId <= 0
+                || !Number.isInteger(customerId) || customerId <= 0
+                || !Number.isInteger(salesmanId) || salesmanId <= 0
+                || !Number.isInteger(coaId) || coaId <= 0
+                || !Number.isFinite(amount) || amount <= 0
+                || typeof header?.reason !== "string"
+            ) {
+                return NextResponse.json({ error: "A valid memo and complete header are required." }, { status: 400 });
+            }
+
+            const existingMemo = await directusFetch<DirectusListResponse<{
+                id: number;
+                status: string;
+                type: number;
+            }>>(
+                DIRECTUS_URL + "/items/customers_memo?filter[id][_eq]=" + id + "&fields=id,status,type&limit=1"
+            );
+            const current = existingMemo.data?.[0];
+            if (!current) {
+                return NextResponse.json({ error: "Customer memo not found." }, { status: 404 });
+            }
+            if (!canEditPendingCreditMemo(current.status, current.type)) {
+                return NextResponse.json(
+                    { error: "Only pending credit memos can be edited." },
+                    { status: 409 }
+                );
+            }
+
+            await directusFetch(DIRECTUS_URL + "/items/customers_memo/" + id, {
+                method: "PATCH",
+                body: JSON.stringify({
+                    supplier_id: supplierId,
+                    customer_id: customerId,
+                    salesman_id: salesmanId,
+                    chart_of_account: coaId,
+                    amount,
+                    reason: header.reason,
+                }),
+            });
+
+            return NextResponse.json({ success: true });
+        }
+
         const { id, ids, status, reason } = body;
 
         if (!status) {

@@ -3,7 +3,7 @@
 import {
     Supplier, Customer, Salesman, ChartOfAccount,
     CollectionLookupRow, MemoSavePayload,
-    MemoApprovalRow, DetailedMemo
+    MemoApprovalRow, DetailedMemo, MemoEditHeader
 } from "./types";
 
 const API_BASE = "/api/fm/accounting/customer-credit-memo/customers-memo";
@@ -69,6 +69,15 @@ export async function fetchDetailedMemo(id: number): Promise<DetailedMemo> {
     const res = await fetch(`${API_BASE}?action=memo-details&id=${id}`);
     const json = await res.json();
     return json;
+}
+
+export async function updateMemo(id: number, header: MemoEditHeader) {
+    const res = await fetch(API_BASE, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "edit", id, header })
+    });
+    return res.json();
 }
 
 export async function approveMemo(id: number) {
