@@ -18,6 +18,7 @@ import { DetailedMemo, CompanyProfile } from "../types";
 import { toast } from "sonner";
 import { PrintMemoSettingsDialog } from "./PrintMemoSettingsDialog";
 import { Textarea } from "@/components/ui/textarea";
+import { RelatedTransactionDetailDialog, type RelatedMemoReference } from "./RelatedTransactionDetailDialog";
 
 interface ApprovalDetailModalProps {
     memoId: number | null;
@@ -33,6 +34,7 @@ export function ApprovalDetailModal({ memoId, open, onOpenChange, onApproved, re
     const [loading, setLoading] = useState(false);
     const [approving, setApproving] = useState(false);
     const [printSettingsOpen, setPrintSettingsOpen] = useState(false);
+    const [selectedReference, setSelectedReference] = useState<RelatedMemoReference | null>(null);
     
     // Rejection state
     const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
@@ -49,6 +51,10 @@ export function ApprovalDetailModal({ memoId, open, onOpenChange, onApproved, re
                 })
                 .catch(err => console.error("Failed to fetch company profile:", err));
         }
+    }, [open]);
+
+    useEffect(() => {
+        if (!open) setSelectedReference(null);
     }, [open]);
 
     useEffect(() => {
@@ -125,12 +131,47 @@ export function ApprovalDetailModal({ memoId, open, onOpenChange, onApproved, re
     const formatCurrency = (val: number) => 
         new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val);
 
-    const cpNumbers = (details?.collections ?? [])
-        .map(collection => collection.collection_id?.docNo?.trim())
-        .filter((value): value is string => Boolean(value));
-    const invoiceNumbers = (details?.invoices ?? [])
-        .map(invoice => invoice.invoice_id?.invoice_no?.trim())
-        .filter((value): value is string => Boolean(value));
+    const canOpenRelatedDetails = Number(details?.header.applied_amount ?? 0) > 0;
+    const renderRelatedReferences = (
+        references: Array<{ id: number | null; number: string | null; type: RelatedMemoReference["type"] }>,
+    ) => {
+        const availableReferences = references.flatMap((reference) => {
+            const number = reference.number?.trim();
+            return number ? [{ ...reference, number }] : [];
+        });
+        if (availableReferences.length === 0) return "-";
+
+        return (
+            <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+                {availableReferences.map((reference, index) => {
+                    const { number } = reference;
+                    const referenceId = reference.id;
+                    return (
+                        <React.Fragment key={`${reference.type}-${reference.id ?? number}-${index}`}>
+                            {index > 0 && <span className="text-slate-400">,</span>}
+                            {canOpenRelatedDetails && referenceId !== null && referenceId > 0 ? (
+                                <Button
+                                    type="button"
+                                    variant="link"
+                                    className="h-auto p-0 font-bold text-blue-700 underline underline-offset-2"
+                                    onClick={() => setSelectedReference({
+                                        type: reference.type,
+                                        id: referenceId,
+                                        number,
+                                        customerName: details?.header.customer_id.customer_name,
+                                    })}
+                                >
+                                    {number}
+                                </Button>
+                            ) : (
+                                <span>{number}</span>
+                            )}
+                        </React.Fragment>
+                    );
+                })}
+            </span>
+        );
+    };
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -220,10 +261,20 @@ export function ApprovalDetailModal({ memoId, open, onOpenChange, onApproved, re
                                         <DetailItem label="GL Account" value={details.header.chart_of_account.account_title} />
                                         <DetailItem label="Reason / Remarks" value={details.header.reason || "No reason provided"} />
                                         <DetailItem label="Date Created" value={new Date(details.header.created_at).toLocaleString()} />
-                                        <DetailItem
-                                            label="CP# / Invoice No."
-                                            value={`CP#: ${cpNumbers.join(", ") || "-"} / Invoice No.: ${invoiceNumbers.join(", ") || "-"}`}
-                                        />
+                                        <DetailItem label="CP#" value={renderRelatedReferences(
+                                            (details.collections ?? []).map(collection => ({
+                                                id: collection.collection_id?.id ?? null,
+                                                number: collection.collection_id?.docNo ?? null,
+                                                type: "collection" as const,
+                                            })),
+                                        )} />
+                                        <DetailItem label="Invoice No." value={renderRelatedReferences(
+                                            (details.invoices ?? []).map(invoice => ({
+                                                id: invoice.invoice_id?.invoice_id ?? null,
+                                                number: invoice.invoice_id?.invoice_no ?? null,
+                                                type: "invoice" as const,
+                                            })),
+                                        )} />
                                     </div>
                                 </div>
                             </div>
@@ -288,6 +339,13 @@ export function ApprovalDetailModal({ memoId, open, onOpenChange, onApproved, re
                     company={company}
                 />
             )}
+            <RelatedTransactionDetailDialog
+                reference={selectedReference}
+                open={selectedReference !== null}
+                onOpenChange={(isOpen) => {
+                    if (!isOpen) setSelectedReference(null);
+                }}
+            />
 
             {/* Rejection Remarks Dialog */}
             <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
@@ -374,7 +432,7 @@ export function ApprovalDetailModal({ memoId, open, onOpenChange, onApproved, re
     );
 }
 
-function DetailItem({ label, value }: { label: string; value: string }) {
+function DetailItem({ label, value }: { label: string; value: React.ReactNode }) {
     return (
         <div className="space-y-1">
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{label}</p>

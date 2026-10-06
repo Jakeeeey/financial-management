@@ -39,7 +39,8 @@ interface HeaderFormProps {
 
     reason: string;
     onReasonChange: (val: string) => void;
-
+    allowMemoTypeChange?: boolean;
+    dropdownWithinDialog?: boolean;
 
 }
 
@@ -53,6 +54,8 @@ export const HeaderForm = React.memo(function HeaderForm({
     amount, onAmountChange,
     memoNumber,
     reason, onReasonChange,
+    allowMemoTypeChange = true,
+    dropdownWithinDialog = false,
 }: HeaderFormProps) {
     // Memoize options for search performance
     const supplierOptions = useMemo(() =>
@@ -99,6 +102,7 @@ export const HeaderForm = React.memo(function HeaderForm({
             <CardContent className="p-8">
                 <div className="mb-8 flex flex-col gap-2">
                     <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70">Memo Type <span className="text-red-500">*</span></Label>
+                    {allowMemoTypeChange ? (
                     <div className="flex bg-muted/40 p-1.5 rounded-[1rem] w-full max-w-sm border border-muted">
                         <Button
                             type="button"
@@ -123,6 +127,11 @@ export const HeaderForm = React.memo(function HeaderForm({
                             Debit Memo
                         </Button>
                     </div>
+                    ) : (
+                        <div className="flex h-12 w-full max-w-sm items-center rounded-xl border border-blue-100 bg-blue-50 px-4 font-black text-blue-700">
+                            Credit Memo
+                        </div>
+                    )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
@@ -135,6 +144,7 @@ export const HeaderForm = React.memo(function HeaderForm({
                                 value={selectedSupplier}
                                 onValueChange={onSupplierChange}
                                 placeholder="Select Supplier..."
+                                dropdownWithinDialog={dropdownWithinDialog}
                             />
                         </div>
 
@@ -145,6 +155,7 @@ export const HeaderForm = React.memo(function HeaderForm({
                                 value={selectedCustomer}
                                 onValueChange={onCustomerChange}
                                 placeholder="Select Customer..."
+                                dropdownWithinDialog={dropdownWithinDialog}
                             />
                         </div>
 
@@ -155,6 +166,7 @@ export const HeaderForm = React.memo(function HeaderForm({
                                 value={selectedSalesman}
                                 onValueChange={onSalesmanChange}
                                 placeholder="Select Salesman..."
+                                dropdownWithinDialog={dropdownWithinDialog}
                             />
                         </div>
                     </div>
@@ -190,6 +202,7 @@ export const HeaderForm = React.memo(function HeaderForm({
                                 value={selectedCOA}
                                 onValueChange={onCOAChange}
                                 placeholder="Select GL Account..."
+                                dropdownWithinDialog={dropdownWithinDialog}
                             />
                         </div>
 
