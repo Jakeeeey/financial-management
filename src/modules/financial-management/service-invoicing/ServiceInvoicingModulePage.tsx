@@ -23,8 +23,7 @@ import {
   ArrowRight,
   Sparkles,
   FolderSync,
-  X,
-  Info
+  X
 } from "lucide-react";
 import {
   ChildInvoice,
