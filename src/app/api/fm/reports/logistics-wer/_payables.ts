@@ -469,6 +469,10 @@ interface AccountingLine {
   amount?: unknown;
 }
 
+export interface DispatchBudgetLine extends CoaAmount {
+  id: number | null;
+}
+
 function asRelatedId(value: unknown): number | null {
   if (value && typeof value === "object") {
     const relation = value as Record<string, unknown>;
@@ -485,7 +489,7 @@ function strictAmount(value: unknown, label: string): number {
   return amount;
 }
 
-async function getSpringBudgetLines(planId: number): Promise<CoaAmount[]> {
+async function getSpringBudgetLines(planId: number): Promise<DispatchBudgetLine[]> {
   const encodedId = encodeURIComponent(String(planId));
   let response = await proxySpring(`/api/v1/dispatch-approval/${encodedId}`);
   if (response.status === 404) {
@@ -500,6 +504,10 @@ async function getSpringBudgetLines(planId: number): Promise<CoaAmount[]> {
   }
 
   return normalizeSpringBudgetLines(payload.budgets);
+}
+
+export async function getPlanBudgetLines(planId: number): Promise<DispatchBudgetLine[]> {
+  return getSpringBudgetLines(planId);
 }
 
 async function getDraftAccountingLines(draftIds: number[]): Promise<Map<number, CoaAmount[]>> {
@@ -629,7 +637,7 @@ export async function getPlanFinancialContext(
   };
 }
 
-function normalizeSpringBudgetLines(value: unknown): CoaAmount[] {
+function normalizeSpringBudgetLines(value: unknown): DispatchBudgetLine[] {
   if (!Array.isArray(value)) {
     throw new Error("Dispatch approval response did not include budget lines.");
   }
@@ -637,6 +645,7 @@ function normalizeSpringBudgetLines(value: unknown): CoaAmount[] {
     const line = entry && typeof entry === "object" ? entry as Record<string, unknown> : {};
     const coaId = asRelatedId(line.coaId ?? line.coa_id);
     return {
+      id: asNullableNumber(line.id),
       coaId: coaId && coaId > 0 ? coaId : null,
       amount: strictAmount(line.amount, `Dispatch budget line ${index + 1}`),
       classified: Boolean(coaId && coaId > 0 && asString(line.remarks)),

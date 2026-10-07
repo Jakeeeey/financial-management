@@ -8,6 +8,7 @@ export interface LogisticsWerDispatchPlan {
   status: string | null;
   remarks: string | null;
   amount: number;
+  allocatedExpenseBudget?: number | null;
   isLiquidated?: boolean | null;
 }
 
@@ -78,7 +79,7 @@ export interface LogisticsWerDispatchPlanDetail {
   stops: LogisticsWerStop[];
   budgetTotal: number;
   supplierEligibility?: LogisticsWerSupplierEligibility | null;
-  plannedAmount?: number | null;
+  dispatchPlanValue?: number | null;
   reservedAmount?: number | null;
   remainingAmount?: number | null;
   budgetContextAvailable: boolean;

@@ -22,6 +22,7 @@ import type { LogisticsWerDispatchPlanDetail } from "../types";
 import { dispatchPlanStatusClassName, displayWerStatus } from "../utils/status";
 import { LogisticsWerPayablesSection } from "./LogisticsWerPayablesSection";
 import { BudgetClassificationEditor } from "./BudgetClassificationEditor";
+import { BudgetAllocationEditor } from "./BudgetAllocationEditor";
 
 function formatMoney(value: number): string {
   return `₱${value.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -46,6 +47,10 @@ interface LogisticsWerDetailsSheetProps {
 }
 
 export function LogisticsWerDetailsSheet({ detail, loading, error, onOpenChange, onChanged }: LogisticsWerDetailsSheetProps) {
+  const payableSubmissions = detail?.submissions ?? [];
+  const disbursementLineCount = payableSubmissions.reduce((total, submission) => total + submission.lineCount, 0);
+  const totalDisbursements = payableSubmissions.reduce((total, submission) => total + submission.totalAmount, 0);
+
   return (
     <Sheet open={loading || Boolean(detail)} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-[min(96vw,1120px)] overflow-y-auto sm:max-w-[1120px]">
@@ -90,11 +95,16 @@ export function LogisticsWerDetailsSheet({ detail, loading, error, onOpenChange,
                 </div>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-4">
-                <Metric label="Dispatch plan value" value={formatMoney(detail.plan.amount)} />
-                <Metric label="Budget lines" value={String(detail.budgetLines.length)} />
-                <Metric label="Allocated expense budget" value={formatMoney(detail.allocatedExpenseBudget ?? detail.budgetTotal)} />
-                <Metric label="Route stops" value={String(detail.stops.length)} />
+              <div className="grid gap-3 sm:grid-cols-3">
+                <Metric label="Dispatch Total Value" value={formatMoney(detail.plan.amount)} />
+                <Metric
+                  label="Disbursement Lines"
+                  value={detail.budgetContextAvailable ? String(disbursementLineCount) : "Unavailable"}
+                />
+                <Metric
+                  label="Total Disbursements"
+                  value={detail.budgetContextAvailable ? formatMoney(totalDisbursements) : "Unavailable"}
+                />
               </div>
 
               {detail.plan.remarks && (
@@ -173,11 +183,19 @@ export function LogisticsWerDetailsSheet({ detail, loading, error, onOpenChange,
               </section>
 
               <section className="space-y-3">
-                <div>
-                  <h3 className="font-semibold">Dispatch budget allocations</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Classify each allocation to its expense account before submitting WER lines against it.
-                  </p>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-semibold">Dispatch budget allocations</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Set the expense allowance by account. Payable submissions are checked against each account&apos;s available balance.
+                    </p>
+                  </div>
+                  <BudgetAllocationEditor
+                    planId={detail.plan.id}
+                    budgetLines={detail.budgetLines}
+                    disabled={(detail.plan.status || "").toLowerCase() !== "for clearance" || detail.isLiquidated === true}
+                    onSaved={() => onChanged?.()}
+                  />
                 </div>
 
                 {detail.budgetLines.length === 0 ? (

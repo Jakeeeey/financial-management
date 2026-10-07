@@ -29,6 +29,13 @@ export interface BudgetRequestOverage {
   overAmount: number;
 }
 
+export interface BudgetAllocationOverage {
+  coaId: number;
+  allocatedAmount: number;
+  reservedAmount: number;
+  shortfall: number;
+}
+
 export interface ReservationSubmission {
   id: number;
   status: string | null;
@@ -151,4 +158,29 @@ export function findBudgetRequestOverages(
         : [];
     })
     .sort((left, right) => left.coaId - right.coaId);
+}
+
+export function findBudgetAllocationOverages(
+  allocations: CoaAmount[],
+  balances: CoaBudgetBalance[],
+): BudgetAllocationOverage[] {
+  const allocatedByCoa = new Map<number, number>();
+  for (const allocation of allocations) {
+    if (allocation.coaId === null || !Number.isInteger(allocation.coaId) || allocation.coaId <= 0) continue;
+    const amount = cents(allocation.amount);
+    allocatedByCoa.set(allocation.coaId, (allocatedByCoa.get(allocation.coaId) ?? 0) + amount);
+  }
+
+  return balances.flatMap((balance) => {
+    const allocated = allocatedByCoa.get(balance.coaId) ?? 0;
+    const reserved = cents(balance.reservedAmount);
+    return allocated < reserved
+      ? [{
+          coaId: balance.coaId,
+          allocatedAmount: dollars(allocated),
+          reservedAmount: dollars(reserved),
+          shortfall: dollars(reserved - allocated),
+        }]
+      : [];
+  });
 }

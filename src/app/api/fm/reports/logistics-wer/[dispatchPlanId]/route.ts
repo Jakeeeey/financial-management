@@ -44,7 +44,7 @@ export async function GET(
       werPayables: {
         budgetContextAvailable: false,
         budgetContextError: mergeError instanceof Error ? mergeError.message : "Unable to verify expense budget context.",
-        plannedAmount: typeof springPayload.amount === "number" ? springPayload.amount : null,
+        dispatchPlanValue: typeof springPayload.amount === "number" ? springPayload.amount : null,
         reservedAmount: null,
         remainingAmount: null,
         allocatedExpenseBudget: null,
@@ -71,7 +71,7 @@ export async function GET(
     ...springPayload,
     werPayables: {
       budgetContextAvailable: true,
-      plannedAmount: context.baseline,
+      dispatchPlanValue: context.baseline,
       reservedAmount: context.reserved,
       remainingAmount: context.remaining,
       allocatedExpenseBudget: context.allocatedBudget,

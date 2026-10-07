@@ -123,7 +123,7 @@ interface DispatchApprovalSubmissionSummary {
 interface DispatchApprovalWerPayables {
   budgetContextAvailable?: unknown;
   budgetContextError?: unknown;
-  plannedAmount?: unknown;
+  dispatchPlanValue?: unknown;
   reservedAmount?: unknown;
   remainingAmount?: unknown;
   allocatedExpenseBudget?: unknown;
@@ -279,7 +279,7 @@ function mapDetails(data: DispatchApprovalResponse, sourcePlan?: LogisticsWerDis
     stops: (data.stops ?? []).map(mapStop),
     budgetTotal: budgetLines.reduce((total, line) => total + line.amount, 0),
     supplierEligibility: mapEligibility(werPayables?.supplierEligibility),
-    plannedAmount: asNullableNumber(werPayables?.plannedAmount),
+    dispatchPlanValue: asNullableNumber(werPayables?.dispatchPlanValue),
     reservedAmount: asNullableNumber(werPayables?.reservedAmount),
     remainingAmount: asNullableNumber(werPayables?.remainingAmount),
     budgetContextAvailable: werPayables?.budgetContextAvailable === true,
@@ -399,6 +399,12 @@ export interface BudgetClassificationInput {
   remarks: string;
 }
 
+export interface BudgetAllocationInput {
+  coaId: number;
+  amount: number;
+  remarks: string;
+}
+
 export async function saveBudgetClassification(
   planId: number,
   budgetId: number,
@@ -411,6 +417,23 @@ export async function saveBudgetClassification(
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
+      cache: "no-store",
+    },
+  );
+  await readJson(response);
+}
+
+export async function saveBudgetAllocations(
+  planId: number,
+  budgets: BudgetAllocationInput[],
+): Promise<void> {
+  const response = await fetch(
+    `${ENDPOINT}/${encodeURIComponent(String(planId))}/budgets`,
+    {
+      method: "PUT",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ budgets }),
       cache: "no-store",
     },
   );
