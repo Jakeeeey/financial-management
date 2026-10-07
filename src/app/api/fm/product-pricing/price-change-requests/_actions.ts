@@ -17,6 +17,7 @@ import {
     mustBase,
     nowManila,
     pickId,
+    priceValuesMatch,
     PriceSnapshotConflictError,
     readAuditUserId,
 } from "../price-change-batches/_batch";
@@ -256,6 +257,8 @@ export async function applyProposedPrice(args: {
             throw new Error("Existing product price record has an invalid id.");
         }
 
+        if (priceValuesMatch(row.price, validProposedPrice)) return;
+
         const rows = await patchFiltered<{
             id?: number | string | null;
             created_by?: unknown;
@@ -273,26 +276,23 @@ export async function applyProposedPrice(args: {
         );
 
         if (!rows[0]) {
-            const conflicts = await findPriceSnapshotConflicts([
-                {
-                    request_id: args.requestId ?? undefined,
-                    product_id: productId,
-                    price_type_id: priceTypeId,
-                    current_price: currentPrice,
-                    proposed_price: validProposedPrice,
-                },
-            ]);
-            throw new PriceSnapshotConflictError(
-                conflicts[0] ?? {
-                    request_id: args.requestId ?? 0,
-                    product_id: productId,
-                    price_type_id: priceTypeId,
-                    snapshot_price: Number.isFinite(Number(currentPrice)) ? Number(currentPrice) : null,
-                    live_price: null,
-                    proposed_price: validProposedPrice,
-                    reason: "stale_snapshot",
-                },
-            );
+            const latestPrice = await findExistingPriceRecord(productId, priceTypeId);
+            if (latestPrice && priceValuesMatch(latestPrice.price, validProposedPrice)) return;
+
+            if (!args.bypassSnapshotCheck) {
+                const conflicts = await findPriceSnapshotConflicts([
+                    {
+                        request_id: args.requestId ?? undefined,
+                        product_id: productId,
+                        price_type_id: priceTypeId,
+                        current_price: currentPrice,
+                        proposed_price: validProposedPrice,
+                    },
+                ]);
+                if (conflicts[0]) throw new PriceSnapshotConflictError(conflicts[0]);
+            }
+
+            throw new Error("Price update was not confirmed; retry application.");
         }
 
         assertPriceAuditRecord(

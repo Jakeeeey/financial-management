@@ -24,6 +24,7 @@ type Props = {
     rejectReason?: string;
     hideEffectiveAt?: boolean;
     confirmLabel?: string;
+    progressContent?: React.ReactNode;
     onOpenChange: (open: boolean) => void;
     onConfirm: (effectiveAt?: string | null) => Promise<void> | void;
 };
@@ -37,6 +38,7 @@ export function DecisionConfirmationDialog({
     rejectReason,
     hideEffectiveAt = false,
     confirmLabel,
+    progressContent,
     onOpenChange,
     onConfirm,
 }: Props) {
@@ -103,10 +105,12 @@ export function DecisionConfirmationDialog({
                 ) : null}
 
                 {loading ? (
-                    <div className="flex items-center gap-2 rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground" role="status" aria-live="polite">
-                        <Loader2 className="size-4 animate-spin" />
-                        {isReject ? "Waiting for rejection to finish..." : "Waiting for approval to finish..."}
-                    </div>
+                    progressContent ?? (
+                        <div className="flex items-center gap-2 rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground" role="status" aria-live="polite">
+                            <Loader2 className="size-4 animate-spin" />
+                            {isReject ? "Waiting for rejection to finish..." : "Waiting for approval to finish..."}
+                        </div>
+                    )
                 ) : null}
 
                 <AlertDialogFooter>

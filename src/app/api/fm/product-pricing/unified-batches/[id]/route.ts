@@ -71,9 +71,10 @@ export async function POST(req: NextRequest, context: RouteContext) {
                 return NextResponse.json({ error: "Batch not found" }, { status: 404 });
             }
 
-            const isApprovedRetry =
-                isForceApply && String(batch?.status ?? "").toUpperCase() === "APPROVED";
-            const result = isApprovedRetry
+            const batchStatus = String(batch?.status ?? "").toUpperCase();
+            const isApplicationRetry =
+                isForceApply && ["APPROVED", "FAILED"].includes(batchStatus);
+            const result = isApplicationRetry
                 ? await retryUnifiedBatch(headerId, userId, { force: true })
                 : await approveUnifiedBatch(
                       headerId,

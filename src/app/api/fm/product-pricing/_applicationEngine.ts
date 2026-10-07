@@ -347,6 +347,8 @@ export async function executeClaimedApplication<T extends ApplicationRow>(args: 
 
     const lockId = randomUUID();
     const startedAt = nowManila();
+    const currentAttempts = Number(args.row.application_attempts ?? 0);
+    const nextAttempt = Number.isFinite(currentAttempts) ? Math.max(0, currentAttempts) + 1 : 1;
     const fields = [
         "request_id",
         "header_id",
@@ -372,6 +374,7 @@ export async function executeClaimedApplication<T extends ApplicationRow>(args: 
             application_status: "APPLYING",
             application_lock_id: lockId,
             application_started_at: startedAt,
+            application_attempts: nextAttempt,
             application_error: null,
             ...(args.effectiveAt ? { effective_at: args.effectiveAt } : {}),
         },
@@ -408,9 +411,8 @@ export async function executeClaimedApplication<T extends ApplicationRow>(args: 
         const errorMessage = sanitizedError(error);
         const conflict = isPriceSnapshotConflictError(error) ? error.conflict : undefined;
         const terminalFailure = Boolean(conflict);
-        const attempts = terminalFailure
-            ? APPLICATION_MAX_FAILURES
-            : Math.max(0, Number(claimed.application_attempts ?? 0)) + 1;
+        const claimedAttempts = Number(claimed.application_attempts ?? nextAttempt);
+        const attempts = Number.isFinite(claimedAttempts) ? Math.max(1, claimedAttempts) : nextAttempt;
         const nextStatus: ApplicationStatus =
             terminalFailure || attempts >= APPLICATION_MAX_FAILURES ? "FAILED" : "SCHEDULED";
         await patchFiltered<T>(
