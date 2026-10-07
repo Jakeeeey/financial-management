@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import type { ReactNode } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,7 @@ type Props = {
     recordLabel?: string;
     labels?: Record<string, ConflictLabel>;
     forceApplying?: boolean;
+    progressContent?: ReactNode;
     onForceApply?: () => Promise<void> | void;
 };
 
@@ -70,6 +72,7 @@ export function PriceSnapshotConflictPanel({
     recordLabel = "this price change batch",
     labels = {},
     forceApplying = false,
+    progressContent,
     onForceApply,
 }: Props) {
     const [confirming, setConfirming] = React.useState(false);
@@ -161,6 +164,7 @@ export function PriceSnapshotConflictPanel({
                         This action affects the entire price change batch, not only the displayed conflict line. Confirm only if
                         the proposed prices are still authorized.
                     </div>
+                    {forceApplying ? progressContent : null}
                     <DialogFooter>
                         <Button type="button" variant="outline" onClick={() => setConfirming(false)} disabled={forceApplying}>
                             Cancel
