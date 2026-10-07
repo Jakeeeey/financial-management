@@ -65,17 +65,27 @@ export async function POST(req: NextRequest, context: RouteContext) {
         const action = String(body.action ?? "").trim().toLowerCase();
 
         if (action === "approve" || action === "force_apply") {
-            const result = await approveUnifiedBatch(
-                headerId,
-                userId,
-                action === "force_apply" ? null : body.effective_at,
-                action === "force_apply" ? { force: true } : undefined,
-            );
+            const isForceApply = action === "force_apply";
+            const batch = isForceApply ? await getUnifiedBatch(headerId) : null;
+            if (isForceApply && !batch) {
+                return NextResponse.json({ error: "Batch not found" }, { status: 404 });
+            }
+
+            const isApprovedRetry =
+                isForceApply && String(batch?.status ?? "").toUpperCase() === "APPROVED";
+            const result = isApprovedRetry
+                ? await retryUnifiedBatch(headerId, userId, { force: true })
+                : await approveUnifiedBatch(
+                      headerId,
+                      userId,
+                      isForceApply ? null : body.effective_at,
+                      isForceApply ? { force: true } : undefined,
+                  );
             if ("status" in result) {
                 const { status, ...payload } = result;
                 return NextResponse.json(payload, { status });
             }
-                return NextResponse.json(result, { status: result.failed > 0 || result.retryable ? 202 : 200 });
+            return NextResponse.json(result, { status: result.failed > 0 || result.retryable ? 202 : 200 });
         }
 
         if (action === "retry_application") {
