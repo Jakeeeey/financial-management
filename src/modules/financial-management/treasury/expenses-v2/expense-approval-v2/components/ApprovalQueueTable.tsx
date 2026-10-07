@@ -83,6 +83,17 @@ export const ApprovalQueueTable: React.FC<ApprovalQueueTableProps> = ({
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
 
+  const formatDisplayDate = (dateStr?: string) => {
+    if (!dateStr) return "-";
+    const parts = dateStr.split("-");
+    if (parts.length === 3) {
+      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sept", "Oct", "Nov", "Dec"];
+      const month = parseInt(parts[1], 10) - 1;
+      return `${months[month] || ""} ${parseInt(parts[2], 10)}, ${parts[0]}`;
+    }
+    return dateStr;
+  };
+
   const getSupplierName = useCallback(
     (id: number) => {
       return suppliers.find((s) => s.id === id)?.supplier_name || `Supplier #${id}`;
@@ -565,7 +576,7 @@ export const ApprovalQueueTable: React.FC<ApprovalQueueTableProps> = ({
                               </Badge>
                             )}
                           </TableCell>
-                          <TableCell className="text-xs">{item.expense_date}</TableCell>
+                          <TableCell className="text-xs">{formatDisplayDate(item.expense_date)}</TableCell>
                           <TableCell className="font-medium text-xs">
                             {getSupplierName(item.payee)}
                             {item.is_employee ? (

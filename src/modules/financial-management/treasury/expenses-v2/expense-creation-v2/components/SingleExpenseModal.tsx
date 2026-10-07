@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -80,7 +80,8 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
     setPayee(userDefaults?.supplier_id ?? null);
     setIsEmployee(true);
     setDivisionId(userDefaults?.division_id ?? null);
-    setDepartmentId(null);
+    const salesDept = departments.find((d) => (d.department_name || "").trim().toLowerCase() === "sales");
+    setDepartmentId(salesDept ? salesDept.department_id : null);
     setCoaId(null);
     setAmount("");
     setRemarks("");
@@ -93,23 +94,15 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
-  }, [userDefaults]);
+  }, [userDefaults, departments]);
 
   // Reset form inputs whenever modal opens, closes, or userDefaults changes
   useEffect(() => {
     resetForm();
   }, [open, resetForm]);
 
-  // Reset department if division changes and selected department does not belong to new division
   const handleDivisionChange = (newDivId: number | null) => {
     setDivisionId(newDivId);
-    if (departmentId && newDivId) {
-      const deptObj = departments.find((d) => d.department_id === departmentId);
-      const deptDivId = deptObj?.division_id ?? deptObj?.parent_division ?? deptObj?.parentDivision;
-      if (deptDivId && deptDivId !== newDivId) {
-        setDepartmentId(null);
-      }
-    }
   };
 
   const MAX_FILE_SIZE_MB = 5;
@@ -230,16 +223,20 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
       (c.account_title || "").toLowerCase().includes((coaSearch || "").toLowerCase())
   );
 
-  const filteredDivisions = divisions.filter((d) =>
+  const availableDivisions = useMemo(() => {
+    if (userDefaults?.is_salesman && userDefaults?.allowed_division_ids && userDefaults.allowed_division_ids.length > 0) {
+      return divisions.filter((d) => userDefaults.allowed_division_ids!.includes(d.division_id));
+    }
+    return divisions;
+  }, [divisions, userDefaults]);
+
+  const filteredDivisions = availableDivisions.filter((d) =>
     (d.division_name || "").toLowerCase().includes((divisionSearch || "").toLowerCase())
   );
 
-  const availableDepartments = divisionId
-    ? departments.filter((d) => {
-        const div = d.division_id ?? d.parent_division ?? d.parentDivision;
-        return !div || div === divisionId;
-      })
-    : departments;
+  const availableDepartments = useMemo(() => {
+    return departments.filter((d) => (d.department_name || "").trim().toLowerCase() === "sales");
+  }, [departments]);
 
   const filteredDepartments = availableDepartments.filter((d) =>
     (d.department_name || "").toLowerCase().includes((departmentSearch || "").toLowerCase())
@@ -339,9 +336,8 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
               <Select
                 value={divisionId ? String(divisionId) : ""}
                 onValueChange={(v) => handleDivisionChange(v ? parseInt(v, 10) : null)}
-                disabled={true}
               >
-                <SelectTrigger className="w-full bg-muted/60 cursor-not-allowed opacity-90">
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select Division" />
                 </SelectTrigger>
                 <SelectContent
