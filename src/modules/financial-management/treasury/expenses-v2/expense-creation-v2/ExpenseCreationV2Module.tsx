@@ -43,6 +43,7 @@ export const ExpenseCreationV2Module: React.FC = () => {
   const [divisions, setDivisions] = useState<DivisionOption[]>([]);
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
   const [coas, setCoas] = useState<ChartOfAccountOption[]>([]);
+  const [creationCoas, setCreationCoas] = useState<ChartOfAccountOption[]>([]);
   const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
   const [approvers, setApprovers] = useState<ExpenseApproverOption[]>([]);
   const [userDefaults, setUserDefaults] = useState<UserDefaultsOption | null>(null);
@@ -62,11 +63,12 @@ export const ExpenseCreationV2Module: React.FC = () => {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [expenseData, divData, deptData, coaData, suppData, approverData, defaultsData] = await Promise.all([
+      const [expenseData, divData, deptData, coaData, creationCoaData, suppData, approverData, defaultsData] = await Promise.all([
         fetchExpenses(),
         fetchDivisions(),
         fetchDepartments(),
-        fetchChartOfAccounts(),
+        fetchChartOfAccounts(false),
+        fetchChartOfAccounts(true),
         fetchSuppliers(),
         fetchExpenseApprovers(),
         fetchUserDefaults(),
@@ -76,6 +78,7 @@ export const ExpenseCreationV2Module: React.FC = () => {
       setDivisions(divData);
       setDepartments(deptData);
       setCoas(coaData);
+      setCreationCoas(creationCoaData);
       setSuppliers(suppData);
       setApprovers(approverData);
       setUserDefaults(defaultsData);
@@ -242,7 +245,7 @@ export const ExpenseCreationV2Module: React.FC = () => {
         open={singleModalOpen}
         onOpenChange={setSingleModalOpen}
         suppliers={suppliers}
-        coas={coas}
+        coas={creationCoas}
         divisions={divisions}
         departments={departments}
         userDefaults={userDefaults}
@@ -254,7 +257,7 @@ export const ExpenseCreationV2Module: React.FC = () => {
         open={bulkModalOpen}
         onOpenChange={setBulkModalOpen}
         suppliers={suppliers}
-        coas={coas}
+        coas={creationCoas}
         divisions={divisions}
         departments={departments}
         userDefaults={userDefaults}
@@ -267,9 +270,10 @@ export const ExpenseCreationV2Module: React.FC = () => {
         onOpenChange={setRevisionDrawerOpen}
         item={selectedItemForRevision}
         suppliers={suppliers}
-        coas={coas}
+        coas={creationCoas}
         divisions={divisions}
         departments={departments}
+        userDefaults={userDefaults}
         onResubmit={handleResubmitRevision}
       />
 

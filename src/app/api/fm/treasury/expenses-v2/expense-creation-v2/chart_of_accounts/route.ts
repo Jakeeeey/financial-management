@@ -8,9 +8,25 @@ const AUTH_HEADERS = {
   Authorization: `Bearer ${process.env.DIRECTUS_STATIC_TOKEN}`,
 };
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const res = await fetch(`${API_BASE_URL}/items/chart_of_accounts?limit=-1`, {
+    const { searchParams } = new URL(req.url);
+    const filter = searchParams.get("filter");
+
+    let directusUrl = `${API_BASE_URL}/items/chart_of_accounts?limit=-1&fields=coa_id,gl_code,account_title,status,account_type.id,account_type.account_name`;
+
+    if (filter === "expense_only") {
+      const allowedTypes = [
+        "COST OF SALES",
+        "COST OF SERVICE",
+        "GENERAL AND ADMINISTRATIVE EXPENSES",
+        "FINANCE COST",
+      ].map((t) => encodeURIComponent(t)).join(",");
+
+      directusUrl += `&filter[account_type][account_name][_in]=${allowedTypes}`;
+    }
+
+    const res = await fetch(directusUrl, {
       headers: AUTH_HEADERS,
       cache: "no-store",
     });

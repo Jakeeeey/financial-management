@@ -174,6 +174,31 @@ export const BulkApprovalActionModal: React.FC<BulkApprovalActionModalProps> = (
     return dateStr;
   };
 
+  const formatDateLog = (dateStr?: string | null): string => {
+    if (!dateStr) return "";
+    const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2}):(\d{2})/);
+    if (!match) {
+      const d = new Date(dateStr);
+      return isNaN(d.getTime()) ? dateStr : d.toLocaleString();
+    }
+
+    const [, yearStr, monthStr, dayStr, hourStr, minStr] = match;
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10) - 1;
+    const day = parseInt(dayStr, 10);
+    const hour = parseInt(hourStr, 10);
+    const minute = parseInt(minStr, 10);
+
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sept", "Oct", "Nov", "Dec"];
+    const monthName = months[month] || "";
+
+    const period = hour >= 12 ? "PM" : "AM";
+    const displayHour = hour % 12 === 0 ? 12 : hour % 12;
+    const displayMin = String(minute).padStart(2, "0");
+
+    return `${monthName} ${day}, ${year}, ${displayHour}:${displayMin} ${period}`;
+  };
+
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat("en-PH", {
       style: "currency",
@@ -311,10 +336,174 @@ export const BulkApprovalActionModal: React.FC<BulkApprovalActionModalProps> = (
           </div>
         </DialogHeader>
 
-        {/* Workspace Body - 2 Columns Layout */}
+        {/* Workspace Body - 3 Panes: Left=Audit Logs, Center=Photo Viewer, Right=Selected Receipts & Batch Action Form */}
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden min-h-0">
-          {/* LEFT SIDEBAR: Selected Item List & Batch Action Form (3.5 cols - ~30%) */}
-          <div className="lg:col-span-4 xl:col-span-3 border-r border-border/80 p-3 flex flex-col h-full bg-muted/20 min-h-0 overflow-hidden">
+
+          {/* LEFT SIDEBAR: Audit History Logs (3 cols) */}
+          <div className="lg:col-span-4 xl:col-span-3 border-r border-border/80 p-3 flex flex-col h-full bg-card min-h-0 overflow-hidden">
+            <div className="p-2 border-b border-slate-300 dark:border-zinc-700 bg-muted/40 flex items-center justify-between text-xs font-semibold shrink-0 rounded-t-lg">
+              <span className="flex items-center gap-1.5">
+                <History className="w-4 h-4 text-primary" /> Audit History Logs
+              </span>
+              <Badge variant="outline" className="text-[10px] font-mono">
+                {logs.length} entries
+              </Badge>
+            </div>
+
+            <div className="flex-1 p-3 overflow-y-auto min-h-0 space-y-2.5 text-xs">
+              {loadingLogs ? (
+                <div className="py-16 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  <span className="text-xs">Loading audit logs...</span>
+                </div>
+              ) : logs.length === 0 ? (
+                <div className="py-16 text-center text-muted-foreground text-xs italic">
+                  No audit history logs recorded.
+                </div>
+              ) : (
+                logs.map((log) => {
+                  const actionColor =
+                    log.action === "Approved" || log.action === "Final Approved"
+                      ? "border-l-emerald-500 text-emerald-600 dark:text-emerald-400"
+                      : log.action === "With Concern"
+                      ? "border-l-amber-500 text-amber-600 dark:text-amber-400"
+                      : log.action === "Rejected"
+                      ? "border-l-red-500 text-red-600 dark:text-red-400"
+                      : "border-l-primary text-primary";
+
+                  return (
+                    <div
+                      key={log.id}
+                      className={`p-2.5 rounded-lg border border-slate-300 dark:border-zinc-700 border-l-4 bg-card dark:bg-zinc-900/80 shadow-2xs space-y-1 ${actionColor}`}
+                    >
+                      <div className="flex items-center justify-between font-medium text-[11px]">
+                        <span className="flex items-center gap-1 text-foreground font-semibold">
+                          <User className="w-3 h-3 text-muted-foreground" />
+                          {log.created_by
+                            ? `${log.created_by.user_fname} ${log.created_by.user_lname}`
+                            : "System Encoder"}
+                        </span>
+                        <span className="text-muted-foreground text-[10px] font-mono">
+                          {formatDateLog(log.created_at)}
+                        </span>
+                      </div>
+
+                      <div className="font-bold text-xs flex items-center justify-between">
+                        <span>{log.action}</span>
+                      </div>
+
+                      {log.remarks && (
+                        <p className="text-[11px] text-muted-foreground bg-background p-1.5 rounded border border-border/40 italic">
+                          &ldquo;{log.remarks}&rdquo;
+                        </p>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* CENTER DETAIL INSPECTOR: Active Item Photo (6 cols) */}
+          <div className="lg:col-span-4 xl:col-span-6 p-3 flex flex-col overflow-hidden bg-background h-full min-h-0">
+            {activeItem ? (
+              <div className="flex flex-col border border-slate-300 dark:border-zinc-700 rounded-xl overflow-hidden bg-muted/20 h-full min-h-0">
+                <div className="p-2 border-b border-slate-300 dark:border-zinc-700 bg-card flex items-center justify-between text-xs font-semibold shrink-0">
+                  <span className="flex items-center gap-1.5">
+                    <FileText className="w-4 h-4 text-primary" /> Receipt Attachment
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleZoomIn}
+                      className="h-7 w-7"
+                      title="Zoom In"
+                    >
+                      <ZoomIn className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleZoomOut}
+                      className="h-7 w-7"
+                      title="Zoom Out"
+                    >
+                      <ZoomOut className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleRotate}
+                      className="h-7 w-7"
+                      title="Rotate"
+                    >
+                      <RotateCw className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleResetImage}
+                      className="h-7 w-7"
+                      title="Reset"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setIsFullscreen(!isFullscreen)}
+                      className="h-7 w-7"
+                      title="Fullscreen"
+                    >
+                      <Maximize2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                <div
+                  className={`flex-1 h-full min-h-0 relative overflow-hidden flex items-center justify-center bg-zinc-950/80 p-2 select-none touch-none ${
+                    isDragging ? "cursor-grabbing" : "cursor-grab"
+                  }`}
+                  onPointerDown={handlePointerDown}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerUpOrCancel}
+                  onPointerCancel={handlePointerUpOrCancel}
+                >
+                  {activeItem.receipt_url ? (
+                    <div
+                      className={`origin-center flex items-center justify-center will-change-transform ${
+                        isDragging ? "transition-none" : "transition-transform duration-200 ease-out"
+                      }`}
+                      style={{
+                        transform: `translate3d(${panPosition.x}px, ${panPosition.y}px, 0px) scale(${zoomLevel}) rotate(${rotation}deg)`,
+                      }}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={getAssetUrl(activeItem.receipt_url)}
+                        alt={`Receipt for ${activeItem.doc_no}`}
+                        className="max-h-[75vh] w-auto object-contain rounded-sm shadow-md pointer-events-none select-none"
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center gap-2 text-zinc-500 text-xs">
+                      <ImageOff className="w-8 h-8" />
+                      <span>No receipt attachment uploaded.</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          {/* RIGHT SIDEBAR: Selected Item List & Batch Action Form (3 cols) */}
+          <div className="lg:col-span-4 xl:col-span-3 border-l border-border/80 p-3 flex flex-col h-full bg-muted/20 min-h-0 overflow-hidden">
             <div className="flex flex-col flex-1 min-h-0 space-y-2">
               <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground uppercase tracking-wider shrink-0">
                 <span>Selected Receipts ({selectedItems.length})</span>
@@ -456,7 +645,7 @@ export const BulkApprovalActionModal: React.FC<BulkApprovalActionModalProps> = (
                   disabled={isProcessing}
                   className="w-1/3 text-xs font-semibold h-8 border-slate-300 dark:border-zinc-700 bg-card dark:bg-zinc-900/80"
                 >
-                  Cancel
+                  Close
                 </Button>
                 <Button
                   type="button"
@@ -487,177 +676,6 @@ export const BulkApprovalActionModal: React.FC<BulkApprovalActionModalProps> = (
                 </Button>
               </div>
             </div>
-          </div>
-
-          {/* RIGHT DETAIL INSPECTOR: Active Item Photo + Audit Logs (8.5 cols - ~70%) */}
-          <div className="lg:col-span-8 xl:col-span-9 p-3 flex flex-col space-y-2 overflow-hidden bg-background h-full min-h-0">
-            {activeItem ? (
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-3 h-full min-h-0">
-                {/* Photo Viewer (7 cols) */}
-                <div className="md:col-span-7 flex flex-col border border-slate-300 dark:border-zinc-700 rounded-xl overflow-hidden bg-muted/20 h-full min-h-0">
-                  <div className="p-2 border-b border-slate-300 dark:border-zinc-700 bg-card flex items-center justify-between text-xs font-semibold shrink-0">
-                    <span className="flex items-center gap-1.5">
-                      <FileText className="w-4 h-4 text-primary" /> Receipt Attachment
-                    </span>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={handleZoomIn}
-                        className="h-7 w-7"
-                        title="Zoom In"
-                      >
-                        <ZoomIn className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={handleZoomOut}
-                        className="h-7 w-7"
-                        title="Zoom Out"
-                      >
-                        <ZoomOut className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={handleRotate}
-                        className="h-7 w-7"
-                        title="Rotate"
-                      >
-                        <RotateCw className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={handleResetImage}
-                        className="h-7 w-7"
-                        title="Reset"
-                      >
-                        <RefreshCw className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setIsFullscreen(!isFullscreen)}
-                        className="h-7 w-7"
-                        title="Fullscreen"
-                      >
-                        <Maximize2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div
-                    className={`flex-1 h-full min-h-0 relative overflow-hidden flex items-center justify-center bg-zinc-950/80 p-2 select-none touch-none ${
-                      isDragging ? "cursor-grabbing" : "cursor-grab"
-                    }`}
-                    onPointerDown={handlePointerDown}
-                    onPointerMove={handlePointerMove}
-                    onPointerUp={handlePointerUpOrCancel}
-                    onPointerCancel={handlePointerUpOrCancel}
-                  >
-                    {activeItem.receipt_url ? (
-                      <div
-                        className={`origin-center flex items-center justify-center will-change-transform ${
-                          isDragging ? "transition-none" : "transition-transform duration-200 ease-out"
-                        }`}
-                        style={{
-                          transform: `translate3d(${panPosition.x}px, ${panPosition.y}px, 0px) scale(${zoomLevel}) rotate(${rotation}deg)`,
-                        }}
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={getAssetUrl(activeItem.receipt_url)}
-                          alt={`Receipt for ${activeItem.doc_no}`}
-                          className="max-h-[75vh] w-auto object-contain rounded-sm shadow-md pointer-events-none select-none"
-                        />
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center justify-center gap-2 text-zinc-500 text-xs">
-                        <ImageOff className="w-8 h-8" />
-                        <span>No receipt attachment uploaded.</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Audit History Logs (5 cols) */}
-                <div className="md:col-span-5 flex flex-col border border-slate-300 dark:border-zinc-700 rounded-xl overflow-hidden bg-card h-full min-h-0">
-                  <div className="p-2 border-b border-slate-300 dark:border-zinc-700 bg-muted/40 flex items-center justify-between text-xs font-semibold shrink-0">
-                    <span className="flex items-center gap-1.5">
-                      <History className="w-4 h-4 text-primary" /> Audit History Logs
-                    </span>
-                    <Badge variant="outline" className="text-[10px] font-mono">
-                      {logs.length} entries
-                    </Badge>
-                  </div>
-
-                  <div className="flex-1 p-3 overflow-y-auto min-h-0 space-y-2.5 text-xs">
-                    {loadingLogs ? (
-                      <div className="py-16 flex flex-col items-center justify-center gap-2 text-muted-foreground">
-                        <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                        <span className="text-xs">Loading audit logs...</span>
-                      </div>
-                    ) : logs.length === 0 ? (
-                      <div className="py-16 text-center text-muted-foreground text-xs italic">
-                        No audit history logs recorded.
-                      </div>
-                    ) : (
-                      logs.map((log) => {
-                        const actionColor =
-                          log.action === "Approved" || log.action === "Final Approved"
-                            ? "border-l-emerald-500 text-emerald-600 dark:text-emerald-400"
-                            : log.action === "With Concern"
-                            ? "border-l-amber-500 text-amber-600 dark:text-amber-400"
-                            : log.action === "Rejected"
-                            ? "border-l-red-500 text-red-600 dark:text-red-400"
-                            : "border-l-primary text-primary";
-
-                        return (
-                          <div
-                            key={log.id}
-                            className={`p-2.5 rounded-lg border border-slate-300 dark:border-zinc-700 border-l-4 bg-card dark:bg-zinc-900/80 shadow-2xs space-y-1 ${actionColor}`}
-                          >
-                            <div className="flex items-center justify-between font-medium text-[11px]">
-                              <span className="flex items-center gap-1 text-foreground font-semibold">
-                                <User className="w-3 h-3 text-muted-foreground" />
-                                {log.created_by
-                                  ? `${log.created_by.user_fname} ${log.created_by.user_lname}`
-                                  : "System Encoder"}
-                              </span>
-                              <span className="text-muted-foreground text-[10px] font-mono">
-                                {new Date(log.created_at).toLocaleString("en-US", {
-                                  month: "short",
-                                  day: "numeric",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
-                              </span>
-                            </div>
-
-                            <div className="font-bold text-xs flex items-center justify-between">
-                              <span>{log.action}</span>
-                            </div>
-
-                            {log.remarks && (
-                              <p className="text-[11px] text-muted-foreground bg-background p-1.5 rounded border border-border/40 italic">
-                                &ldquo;{log.remarks}&rdquo;
-                              </p>
-                            )}
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : null}
           </div>
         </div>
 
