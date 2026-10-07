@@ -26,6 +26,7 @@ export interface SearchableSelectProps {
     placeholder?: string;
     disabled?: boolean;
     className?: string;
+    dropdownWithinDialog?: boolean;
 }
 
 export function SearchableSelect({
@@ -35,6 +36,7 @@ export function SearchableSelect({
     placeholder = "Select option...",
     disabled = false,
     className,
+    dropdownWithinDialog = false,
 }: SearchableSelectProps) {
     const [open, setOpen] = React.useState(false);
 
@@ -67,10 +69,34 @@ export function SearchableSelect({
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+            <PopoverContent
+                className={cn("w-[--radix-popover-trigger-width] p-0", dropdownWithinDialog && "z-[60]")}
+                align="start"
+            >
                 <Command>
                     <CommandInput placeholder={`Search ${placeholder.toLowerCase()}...`} />
-                    <CommandList>
+                    <CommandList
+                        style={dropdownWithinDialog ? {
+                            maxHeight: "min(300px, 45vh)",
+                            overflowY: "auto",
+                            overscrollBehavior: "contain",
+                            touchAction: "pan-y",
+                        } : undefined}
+                        onWheel={dropdownWithinDialog ? (event) => {
+                            const list = event.currentTarget;
+                            const maxScrollTop = list.scrollHeight - list.clientHeight;
+                            const nextScrollTop = Math.max(
+                                0,
+                                Math.min(maxScrollTop, list.scrollTop + event.deltaY),
+                            );
+
+                            if (nextScrollTop !== list.scrollTop) {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                list.scrollTop = nextScrollTop;
+                            }
+                        } : undefined}
+                    >
                         <CommandEmpty>No results found.</CommandEmpty>
                         <CommandGroup>
                             {options.map((opt) => (
