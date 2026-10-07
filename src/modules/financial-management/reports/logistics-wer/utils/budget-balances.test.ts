@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculateBudgetBalances, findBudgetRequestOverages, splitReservationSources } from "./budget-balances";
+import {
+  calculateBudgetBalances,
+  findBudgetAllocationOverages,
+  findBudgetRequestOverages,
+  splitReservationSources,
+} from "./budget-balances";
 
 test("available expense budget comes from classified COA allocations", () => {
   const balances = calculateBudgetBalances(
@@ -95,4 +100,17 @@ test("only submitted and approved payables reserve budget, approved records use 
 
   assert.deepEqual(sources.draftReservations.map(({ id }) => id), [2, 3]);
   assert.deepEqual(sources.approvedDisbursementIds, [91]);
+});
+
+test("budget allocations cannot be reduced below reserved amounts for their COA", () => {
+  const current = calculateBudgetBalances(
+    [{ coaId: 10, amount: 500 }],
+    [{ coaId: 10, amount: 380 }],
+  );
+
+  assert.deepEqual(
+    findBudgetAllocationOverages([{ coaId: 10, amount: 379.99 }], current.byCoa),
+    [{ coaId: 10, allocatedAmount: 379.99, reservedAmount: 380, shortfall: 0.01 }],
+  );
+  assert.deepEqual(findBudgetAllocationOverages([{ coaId: 10, amount: 380 }], current.byCoa), []);
 });

@@ -17,6 +17,7 @@ import {
 } from "../../_payables";
 import { findBudgetRequestOverages } from "@/modules/financial-management/reports/logistics-wer/utils/budget-balances";
 import { validatePayableLines } from "@/modules/financial-management/reports/logistics-wer/utils/payable-validation";
+import { formatManilaWallClock } from "../../_timestamps";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -133,7 +134,10 @@ export async function POST(
         if (submission.submittedBy !== userId) {
           return error("Only the submitter can withdraw this submission.", 403);
         }
-        await directusWrite("PATCH", `/items/${DRAFT_COLLECTION}/${submission.id}`, { status: "withdrawn" });
+        await directusWrite("PATCH", `/items/${DRAFT_COLLECTION}/${submission.id}`, {
+          status: "withdrawn",
+          date_updated: formatManilaWallClock(),
+        });
         await markWerPlanLiquidatedIfSettled(submission.id).catch((syncError) => {
           console.error("[Logistics WER] Liquidation sync after withdrawal failed:", syncError);
         });
@@ -199,6 +203,7 @@ export async function POST(
       );
       if (receiptCheck) return error(receiptCheck, 409);
 
+      const auditNow = formatManilaWallClock();
       const created = await directusWrite<{ data?: { id?: unknown } }>("POST", `/items/${DRAFT_COLLECTION}`, {
         dispatch_plan_id: planId,
         status: action === "submit" ? "submitted" : "draft",
@@ -206,8 +211,8 @@ export async function POST(
         submitted_by: userId,
         submitted_at: action === "submit" ? now : null,
         idempotency_key: idempotencyKey,
-        date_created: now,
-        date_updated: now,
+        date_created: auditNow,
+        date_updated: auditNow,
       });
       const draftId = Number(created.data?.id) || 0;
       if (!draftId) throw new Error("Draft creation did not return an id.");

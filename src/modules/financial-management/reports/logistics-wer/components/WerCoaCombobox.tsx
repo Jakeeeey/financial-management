@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import type { PayableCoaOption } from "../services/logisticsWerApi";
 
 interface WerCoaComboboxProps {
+  id?: string;
   value: string;
   options: PayableCoaOption[];
   onValueChange: (value: string) => void;
@@ -23,7 +24,7 @@ interface WerCoaComboboxProps {
 }
 
 /** Searchable account picker for the 60+ chart-of-accounts options. */
-export function WerCoaCombobox({ value, options, onValueChange, disabled = false }: WerCoaComboboxProps) {
+export function WerCoaCombobox({ id, value, options, onValueChange, disabled = false }: WerCoaComboboxProps) {
   const [open, setOpen] = useState(false);
   const selected = options.find((option) => String(option.coaId) === value);
 
@@ -41,6 +42,7 @@ export function WerCoaCombobox({ value, options, onValueChange, disabled = false
     <Popover open={open} onOpenChange={setOpen} modal={false}>
       <PopoverTrigger asChild>
         <Button
+          id={id}
           type="button"
           variant="outline"
           role="combobox"

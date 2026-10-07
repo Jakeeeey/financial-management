@@ -132,15 +132,15 @@ export function LogisticsWerApprovalReviewDialog({
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-xl border bg-card p-3">
-                <p className="text-xs text-muted-foreground">Planned amount</p>
+                <p className="text-xs text-muted-foreground">Dispatch plan value</p>
                 <p className="mt-1 text-lg font-semibold">{formatMoney(review.plannedAmount)}</p>
               </div>
               <div className="rounded-xl border bg-card p-3">
-                <p className="text-xs text-muted-foreground">Reserved amount</p>
+                <p className="text-xs text-muted-foreground">Reserved payables</p>
                 <p className="mt-1 text-lg font-semibold">{formatMoney(review.reservedAmount)}</p>
               </div>
               <div className="rounded-xl border bg-card p-3">
-                <p className="text-xs text-muted-foreground">Remaining amount</p>
+                <p className="text-xs text-muted-foreground">Available expense budget</p>
                 <p className="mt-1 text-lg font-semibold">{formatMoney(review.remainingAmount)}</p>
               </div>
               <div className="rounded-xl border bg-card p-3">

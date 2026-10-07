@@ -308,7 +308,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-xl border bg-card p-3">
           <p className="text-xs text-muted-foreground">Dispatch plan value</p>
-          <p className="mt-1 text-lg font-semibold">{formatMoney(detail.plannedAmount ?? detail.plan.amount)}</p>
+          <p className="mt-1 text-lg font-semibold">{formatMoney(detail.dispatchPlanValue ?? detail.plan.amount)}</p>
         </div>
         <div className="rounded-xl border bg-card p-3">
           <p className="text-xs text-muted-foreground">Allocated expense budget</p>

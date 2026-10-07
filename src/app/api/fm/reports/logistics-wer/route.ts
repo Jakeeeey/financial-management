@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { proxySpring } from "@/app/api/fm/financial-statements/adjusting-journal-entries/_spring";
 import { getDispatchPlans } from "./_directus";
 import type { LogisticsWerReportPage } from "@/modules/financial-management/reports/logistics-wer/types";
 
@@ -71,8 +72,38 @@ export async function GET(request: NextRequest) {
 
   try {
     const result = await getDispatchPlans({ startDate, endDate, status, search, page, size });
+    const budgetByPlanId = new Map<number, number>();
+    let budgetSummaryResponse: Response | null = null;
+    if (result.content.length > 0) {
+      try {
+        const budgetParams = new URLSearchParams();
+        result.content.forEach((plan) => budgetParams.append("planIds", String(plan.id)));
+        budgetSummaryResponse = await proxySpring(
+          `/api/v1/dispatch-approvals/budget-summaries?${budgetParams.toString()}`,
+        );
+        if (!budgetSummaryResponse.ok) {
+          throw new Error(`Expense budget summary lookup failed with HTTP ${budgetSummaryResponse.status}.`);
+        }
+
+        const payload = await budgetSummaryResponse.json().catch(() => null);
+        if (!Array.isArray(payload)) throw new Error("Expense budget summary response was invalid.");
+        for (const summary of payload as Array<Record<string, unknown>>) {
+          const planId = Number(summary.planId);
+          const amount = Number(summary.allocatedExpenseBudget);
+          if (Number.isSafeInteger(planId) && planId > 0 && Number.isFinite(amount) && amount >= 0) {
+            budgetByPlanId.set(planId, amount);
+          }
+        }
+      } catch (budgetError) {
+        console.error("[Logistics WER] Failed to load expense budget summaries:", budgetError);
+      }
+    }
+
     const response: LogisticsWerReportPage = {
-      content: result.content,
+      content: result.content.map((plan) => ({
+        ...plan,
+        allocatedExpenseBudget: budgetByPlanId.get(plan.id) ?? null,
+      })),
       number: page,
       size,
       totalElements: result.totalElements,
@@ -80,7 +111,11 @@ export async function GET(request: NextRequest) {
       range: { startDate, endDate },
     };
 
-    return NextResponse.json(response);
+    const nextResponse = NextResponse.json(response);
+    for (const cookie of budgetSummaryResponse?.headers.getSetCookie() ?? []) {
+      nextResponse.headers.append("set-cookie", cookie);
+    }
+    return nextResponse;
   } catch (error) {
     console.error("[Logistics WER] Failed to load report:", error);
     return NextResponse.json(

@@ -20,7 +20,7 @@ export default function LogisticsWerModule() {
   const rows = report.report?.content ?? [];
   const pageCount = report.report?.totalPages ?? 0;
   const currentPage = report.report ? report.report.number + 1 : report.page + 1;
-  const visiblePlannedAmount = rows.reduce((total, row) => total + row.amount, 0);
+  const visibleDispatchPlanValue = rows.reduce((total, row) => total + row.amount, 0);
 
   return (
     <div className="flex min-h-0 min-w-0 w-full max-w-full flex-1 flex-col gap-5">
@@ -73,7 +73,7 @@ export default function LogisticsWerModule() {
         />
         <SummaryCard
           title="Dispatch plan value"
-          value={formatMoney(visiblePlannedAmount)}
+          value={formatMoney(visibleDispatchPlanValue)}
           icon={<DollarSign className="size-4" />}
           note="Current page"
         />

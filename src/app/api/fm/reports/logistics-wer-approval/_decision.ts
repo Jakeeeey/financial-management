@@ -15,6 +15,7 @@ import {
   withPlanLock,
   type DraftSubmission,
 } from "../logistics-wer/_payables";
+import { formatManilaWallClock } from "../logistics-wer/_timestamps";
 
 const TRANSACTION_TYPE: DisbursementTransactionType = 1;
 
@@ -160,6 +161,7 @@ async function convertSubmission(
       disbursement_id: created.disbursementId,
       decided_by: approverId,
       decided_at: now,
+      date_updated: formatManilaWallClock(),
     });
     return { disbursementId: created.disbursementId, idempotent: false };
   } finally {
@@ -202,12 +204,14 @@ export async function decideOneSubmission(input: DecideOneInput): Promise<Decisi
     }
 
     const now = new Date().toISOString();
+    const auditNow = formatManilaWallClock();
     if (decision === "return" || decision === "reject") {
       await directusWrite("PATCH", `/items/${DRAFT_COLLECTION}/${submission.id}`, {
         status: decision === "return" ? "returned" : "rejected",
         decided_by: approverId,
         decided_at: now,
         decision_remarks: remarks,
+        date_updated: auditNow,
       });
       await markWerPlanLiquidatedIfSettled(submission.id).catch((syncError) => {
         console.error("[Logistics WER] Liquidation sync after decision failed:", syncError);
@@ -247,6 +251,7 @@ export async function decideOneSubmission(input: DecideOneInput): Promise<Decisi
     if (!idempotent && remarks) {
       await directusWrite("PATCH", `/items/${DRAFT_COLLECTION}/${submission.id}`, {
         decision_remarks: remarks,
+        date_updated: formatManilaWallClock(),
       }).catch(() => null);
     }
     const updated = (await loadSubmission(submissionId)).submission;
