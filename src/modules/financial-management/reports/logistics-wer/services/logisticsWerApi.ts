@@ -1,6 +1,7 @@
 import type {
   LogisticsWerDispatchPlan,
   LogisticsWerDispatchPlanDetail,
+  LogisticsWerCoaBudgetBalance,
   LogisticsWerPayableLine,
   LogisticsWerPayableReceipt,
   LogisticsWerPayableSubmission,
@@ -24,6 +25,10 @@ export interface LogisticsWerReportQuery {
 }
 
 interface DispatchApprovalBudget {
+  id?: unknown;
+  coaId?: unknown;
+  coaCode?: unknown;
+  coaTitle?: unknown;
   remarks?: unknown;
   amount?: unknown;
 }
@@ -116,9 +121,22 @@ interface DispatchApprovalSubmissionSummary {
 }
 
 interface DispatchApprovalWerPayables {
+  budgetContextAvailable?: unknown;
+  budgetContextError?: unknown;
   plannedAmount?: unknown;
   reservedAmount?: unknown;
   remainingAmount?: unknown;
+  allocatedExpenseBudget?: unknown;
+  unclassifiedBudgetAmount?: unknown;
+  unclassifiedReservedAmount?: unknown;
+  overBudgetAmount?: unknown;
+  budgetBalancesByCoa?: Array<{
+    coaId?: unknown;
+    allocatedAmount?: unknown;
+    reservedAmount?: unknown;
+    remainingAmount?: unknown;
+    overBudgetAmount?: unknown;
+  }> | null;
   isLiquidated?: unknown;
   supplierEligibility?: {
     eligible?: unknown;
@@ -168,9 +186,9 @@ function toDateOnly(value: unknown): string | null {
 }
 
 async function readJson<T>(response: Response): Promise<T> {
-  const payload = await response.json().catch(() => null) as { message?: string } | null;
+  const payload = await response.json().catch(() => null) as { message?: string; detail?: string; error?: string } | null;
   if (!response.ok) {
-    throw new Error(payload?.message || `Logistics WER request failed with status ${response.status}.`);
+    throw new Error(payload?.message || payload?.detail || payload?.error || `Logistics WER request failed with status ${response.status}.`);
   }
   return payload as T;
 }
@@ -244,8 +262,11 @@ function mapStop(data: DispatchApprovalStop): LogisticsWerStop {
 }
 
 function mapDetails(data: DispatchApprovalResponse, sourcePlan?: LogisticsWerDispatchPlan): LogisticsWerDispatchPlanDetail {
-  const disbursements = (data.budgets ?? []).map((budget, index) => ({
-    id: `budget-${index + 1}`,
+  const budgetLines = (data.budgets ?? []).map((budget) => ({
+    id: asNumber(budget.id),
+    coaId: asNullableNumber(budget.coaId),
+    coaCode: asNullableString(budget.coaCode),
+    coaTitle: asNullableString(budget.coaTitle),
     remarks: asNullableString(budget.remarks),
     amount: asNumber(budget.amount),
   }));
@@ -253,14 +274,27 @@ function mapDetails(data: DispatchApprovalResponse, sourcePlan?: LogisticsWerDis
 
   return {
     plan: mapPlan(data, sourcePlan),
-    disbursements,
+    budgetLines,
     staff: (data.staff ?? []).map(mapStaff),
     stops: (data.stops ?? []).map(mapStop),
-    disbursementTotal: disbursements.reduce((total, line) => total + line.amount, 0),
+    budgetTotal: budgetLines.reduce((total, line) => total + line.amount, 0),
     supplierEligibility: mapEligibility(werPayables?.supplierEligibility),
     plannedAmount: asNullableNumber(werPayables?.plannedAmount),
     reservedAmount: asNullableNumber(werPayables?.reservedAmount),
     remainingAmount: asNullableNumber(werPayables?.remainingAmount),
+    budgetContextAvailable: werPayables?.budgetContextAvailable === true,
+    budgetContextError: asNullableString(werPayables?.budgetContextError),
+    allocatedExpenseBudget: asNullableNumber(werPayables?.allocatedExpenseBudget),
+    unclassifiedBudgetAmount: asNullableNumber(werPayables?.unclassifiedBudgetAmount),
+    unclassifiedReservedAmount: asNullableNumber(werPayables?.unclassifiedReservedAmount),
+    overBudgetAmount: asNullableNumber(werPayables?.overBudgetAmount),
+    budgetBalancesByCoa: (werPayables?.budgetBalancesByCoa ?? []).map((balance): LogisticsWerCoaBudgetBalance => ({
+      coaId: asNumber(balance.coaId),
+      allocatedAmount: asNumber(balance.allocatedAmount),
+      reservedAmount: asNumber(balance.reservedAmount),
+      remainingAmount: asNumber(balance.remainingAmount),
+      overBudgetAmount: asNumber(balance.overBudgetAmount),
+    })),
     isLiquidated: werPayables?.isLiquidated === true,
     submissions: (werPayables?.submissions ?? []).map(mapSubmissionSummary),
   };
@@ -358,6 +392,29 @@ export interface StagedReceipt {
 export interface PayableCoaOption {
   coaId: number;
   label: string;
+}
+
+export interface BudgetClassificationInput {
+  coaId: number;
+  remarks: string;
+}
+
+export async function saveBudgetClassification(
+  planId: number,
+  budgetId: number,
+  input: BudgetClassificationInput,
+): Promise<void> {
+  const response = await fetch(
+    `${ENDPOINT}/${encodeURIComponent(String(planId))}/budgets/${encodeURIComponent(String(budgetId))}`,
+    {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+      cache: "no-store",
+    },
+  );
+  await readJson(response);
 }
 
 async function postPayables(

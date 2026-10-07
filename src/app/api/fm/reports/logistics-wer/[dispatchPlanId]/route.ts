@@ -29,33 +29,59 @@ export async function GET(
     return NextResponse.json({ message: "dispatchPlanId must be a positive integer." }, { status: 400 });
   }
 
-  const contextPromise = getPlanFinancialContext(id)
-    .then((context) => ({ context }))
-    .catch((error: unknown) => ({ error }));
   const springResponse = await springDetail(id);
   if (!springResponse.ok) return springResponse;
   const springPayload = await springResponse.json().catch(() => ({})) as Record<string, unknown>;
 
-  // Merge Logistics WER payables context (Directus-side) into the Spring detail.
-  // A merge failure must not break the existing details sheet.
+  // Merge Logistics WER reservations with the budget lines supplied by Spring.
+  let context: Awaited<ReturnType<typeof getPlanFinancialContext>>;
   try {
-    const contextResult = await contextPromise;
-    if ("error" in contextResult) throw contextResult.error;
-    const context = contextResult.context;
-    const eligibility = await resolveDriverSupplier(context.plan?.driverId ?? null);
+    context = await getPlanFinancialContext(id, true, springPayload.budgets);
+  } catch (mergeError) {
+    console.error("[Logistics WER] Failed to merge payables context:", mergeError);
     return NextResponse.json({
       ...springPayload,
       werPayables: {
-        plannedAmount: context.baseline,
-        reservedAmount: context.reserved,
-        remainingAmount: context.remaining,
-        isLiquidated: context.plan?.isLiquidated ?? false,
-        supplierEligibility: eligibility,
-        submissions: context.submissions,
+        budgetContextAvailable: false,
+        budgetContextError: mergeError instanceof Error ? mergeError.message : "Unable to verify expense budget context.",
+        plannedAmount: typeof springPayload.amount === "number" ? springPayload.amount : null,
+        reservedAmount: null,
+        remainingAmount: null,
+        allocatedExpenseBudget: null,
+        unclassifiedBudgetAmount: null,
+        unclassifiedReservedAmount: null,
+        overBudgetAmount: null,
+        budgetBalancesByCoa: [],
+        isLiquidated: false,
+        supplierEligibility: null,
+        submissions: [],
       },
     });
-  } catch (mergeError) {
-    console.error("[Logistics WER] Failed to merge payables context:", mergeError);
-    return NextResponse.json(springPayload);
   }
+
+  const eligibility = await resolveDriverSupplier(context.plan?.driverId ?? null)
+    .catch((eligibilityError: unknown) => ({
+      eligible: false,
+      driverId: context.plan?.driverId ?? null,
+      supplierId: null,
+      supplierName: null,
+      reason: eligibilityError instanceof Error ? eligibilityError.message : "Supplier eligibility could not be resolved.",
+    }));
+  return NextResponse.json({
+    ...springPayload,
+    werPayables: {
+      budgetContextAvailable: true,
+      plannedAmount: context.baseline,
+      reservedAmount: context.reserved,
+      remainingAmount: context.remaining,
+      allocatedExpenseBudget: context.allocatedBudget,
+      unclassifiedBudgetAmount: context.unclassifiedBudgetAmount,
+      unclassifiedReservedAmount: context.unclassifiedReservedAmount,
+      overBudgetAmount: context.overBudgetAmount,
+      budgetBalancesByCoa: context.budgetBalancesByCoa,
+      isLiquidated: context.plan?.isLiquidated ?? false,
+      supplierEligibility: eligibility,
+      submissions: context.submissions,
+    },
+  });
 }
