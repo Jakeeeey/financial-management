@@ -16,20 +16,10 @@ import {
   type DraftSubmission,
 } from "../../_payables";
 import { findBudgetRequestOverages } from "@/modules/financial-management/reports/logistics-wer/utils/budget-balances";
+import { validatePayableLines } from "@/modules/financial-management/reports/logistics-wer/utils/payable-validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-
-interface PayableLineInput {
-  amount?: unknown;
-  referenceNo?: unknown;
-  remarks?: unknown;
-  date?: unknown;
-  coaId?: unknown;
-  receiptFileIds?: unknown;
-}
 
 function error(message: string, status: number, extra?: Record<string, unknown>) {
   return NextResponse.json({ message, ...extra }, { status });
@@ -37,63 +27,6 @@ function error(message: string, status: number, extra?: Record<string, unknown>)
 
 function asTrimmedString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
-}
-
-function isValidDateOnly(value: string): boolean {
-  if (!DATE_ONLY_PATTERN.test(value)) return false;
-  const parsed = new Date(`${value}T00:00:00.000Z`);
-  return !Number.isNaN(parsed.getTime());
-}
-
-interface ValidatedLine {
-  amount: number;
-  referenceNo: string | null;
-  remarks: string | null;
-  date: string | null;
-  coaId: number | null;
-  receiptFileIds: string[];
-}
-
-function validateLines(rawLines: unknown, requireCoa: boolean): ValidatedLine[] | { error: string } {
-  if (!Array.isArray(rawLines) || rawLines.length === 0) {
-    return { error: "At least one payable line is required." };
-  }
-  const lines: ValidatedLine[] = [];
-  for (let index = 0; index < rawLines.length; index += 1) {
-    const raw = (rawLines[index] ?? {}) as PayableLineInput;
-    const amount = Number(raw.amount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      return { error: `Line ${index + 1} must have an amount greater than zero.` };
-    }
-    if (Math.abs(amount * 100 - Math.round(amount * 100)) > 1e-6) {
-      return { error: `Line ${index + 1} amount can have no more than two decimal places.` };
-    }
-    const date = asTrimmedString(raw.date);
-    if (date && !isValidDateOnly(date)) {
-      return { error: `Line ${index + 1} must use a valid YYYY-MM-DD date.` };
-    }
-    const coaRaw = raw.coaId;
-    const coaId = coaRaw === null || coaRaw === undefined || coaRaw === "" ? null : Number(coaRaw);
-    if (requireCoa && (coaId === null || !Number.isInteger(coaId) || coaId <= 0)) {
-      return { error: `Line ${index + 1} requires a valid chart-of-accounts entry before submission.` };
-    }
-    if (coaId !== null && (!Number.isInteger(coaId) || coaId <= 0)) {
-      return { error: `Line ${index + 1} has an invalid chart-of-accounts entry.` };
-    }
-    const receiptRaw = raw.receiptFileIds;
-    const receiptFileIds = receiptRaw === undefined || receiptRaw === null
-      ? []
-      : (Array.isArray(receiptRaw) ? receiptRaw : [receiptRaw]).map(asTrimmedString).filter(Boolean);
-    lines.push({
-      amount,
-      referenceNo: asTrimmedString(raw.referenceNo) || null,
-      remarks: asTrimmedString(raw.remarks) || null,
-      date: date || null,
-      coaId,
-      receiptFileIds: Array.from(new Set(receiptFileIds)),
-    });
-  }
-  return lines;
 }
 
 async function assertReceiptsAttachable(fileIds: string[], excludeDraftId: number | null): Promise<string | null> {
@@ -228,9 +161,9 @@ export async function POST(
         }
       }
 
-      const linesOrError = validateLines(body.lines, action === "submit");
-      if (!Array.isArray(linesOrError)) return error(linesOrError.error, 400);
-      const lines = linesOrError;
+      const validation = validatePayableLines(body.lines, action === "submit");
+      if (!validation.valid) return error(validation.error, 400);
+      const lines = validation.lines;
       const total = lines.reduce((sum, line) => sum + line.amount, 0);
 
       const eligibility = await resolveDriverSupplier(baseline.driverId);
