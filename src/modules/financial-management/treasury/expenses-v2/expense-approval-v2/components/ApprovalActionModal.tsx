@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
 import {
   ExpenseItem,
   SupplierOption,
@@ -165,15 +166,29 @@ export const ApprovalActionModal: React.FC<ApprovalActionModalProps> = ({
     return dateStr;
   };
 
-  const formatDateLog = (dateStr?: string | null) => {
+  const formatDateLog = (dateStr?: string | null): string => {
     if (!dateStr) return "";
-    return new Date(dateStr).toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2}):(\d{2})/);
+    if (!match) {
+      const d = new Date(dateStr);
+      return isNaN(d.getTime()) ? dateStr : d.toLocaleString();
+    }
+
+    const [, yearStr, monthStr, dayStr, hourStr, minStr] = match;
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10) - 1;
+    const day = parseInt(dayStr, 10);
+    const hour = parseInt(hourStr, 10);
+    const minute = parseInt(minStr, 10);
+
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sept", "Oct", "Nov", "Dec"];
+    const monthName = months[month] || "";
+
+    const period = hour >= 12 ? "PM" : "AM";
+    const displayHour = hour % 12 === 0 ? 12 : hour % 12;
+    const displayMin = String(minute).padStart(2, "0");
+
+    return `${monthName} ${day}, ${year}, ${displayHour}:${displayMin} ${period}`;
   };
 
   const handleZoomIn = () => setZoomLevel((prev) => Math.min(prev + 0.25, 3));
@@ -252,6 +267,15 @@ export const ApprovalActionModal: React.FC<ApprovalActionModalProps> = ({
         created_at: literalPhTimestamp,
       });
       setIsSubmitting(false);
+
+      if (activeConfirmAction === "Approve") {
+        toast.success(`Expense receipt ${item.doc_no} approved successfully!`);
+      } else if (activeConfirmAction === "With Concern") {
+        toast.warning(`Expense receipt ${item.doc_no} flagged with concern.`);
+      } else if (activeConfirmAction === "Reject") {
+        toast.error(`Expense receipt ${item.doc_no} rejected.`);
+      }
+
       setActiveConfirmAction(null);
       setFeedbackNote("");
       onClose();
@@ -259,6 +283,7 @@ export const ApprovalActionModal: React.FC<ApprovalActionModalProps> = ({
       setIsSubmitting(false);
       const message = err instanceof Error ? err.message : "Failed to process approval action.";
       setErrorMsg(message);
+      toast.error(message);
     }
   };
 

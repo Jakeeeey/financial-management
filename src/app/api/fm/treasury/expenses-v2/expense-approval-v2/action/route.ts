@@ -44,6 +44,75 @@ function getLiteralPhTimestamp(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
+async function getNextAvailableNTDocNo(): Promise<string> {
+  let highestNumber = 0;
+
+  // 1. Check disbursement_no table seed
+  try {
+    const seqRes = await fetch(`${API_BASE_URL}/items/disbursement_no?limit=1`, {
+      headers: AUTH_HEADERS,
+      cache: "no-store",
+    });
+    if (seqRes.ok) {
+      const seqJson = await seqRes.json();
+      const nonTradeVal = seqJson.data?.[0]?.["non-trade_no"];
+      const parsedSeq = Number(nonTradeVal);
+      if (Number.isSafeInteger(parsedSeq)) {
+        highestNumber = parsedSeq;
+      }
+    }
+  } catch {}
+
+  // 2. Scan existing NT- records in disbursement
+  try {
+    const dsbRes = await fetch(
+      `${API_BASE_URL}/items/disbursement?filter[doc_no][_starts_with]=NT-&fields=doc_no&limit=-1`,
+      { headers: AUTH_HEADERS, cache: "no-store" }
+    );
+    if (dsbRes.ok) {
+      const dsbJson = await dsbRes.json();
+      for (const row of dsbJson.data || []) {
+        const match = String(row.doc_no || "").trim().toUpperCase().match(/^NT-(\d+)$/);
+        if (match) {
+          const parsed = Number.parseInt(match[1], 10);
+          if (Number.isSafeInteger(parsed)) {
+            highestNumber = Math.max(highestNumber, parsed);
+          }
+        }
+      }
+    }
+  } catch {}
+
+  // 3. Find first collision-free candidate
+  for (let offset = 1; offset <= 30; offset++) {
+    const candidateNum = highestNumber + offset;
+    const candidate = `NT-${String(candidateNum).padStart(6, "0")}`;
+
+    const checkRes = await fetch(
+      `${API_BASE_URL}/items/disbursement?filter[doc_no][_eq]=${encodeURIComponent(candidate)}&fields=id&limit=1`,
+      { headers: AUTH_HEADERS, cache: "no-store" }
+    );
+    if (checkRes.ok) {
+      const checkJson = await checkRes.json();
+      if (!checkJson.data || checkJson.data.length === 0) {
+        // Increment the seed in disbursement_no if accessible
+        try {
+          await fetch(`${API_BASE_URL}/items/disbursement_no`, {
+            method: "PATCH",
+            headers: AUTH_HEADERS,
+            body: JSON.stringify({ "non-trade_no": candidateNum }),
+          });
+        } catch {}
+
+        return candidate;
+      }
+    }
+  }
+
+  // Fallback timestamp format if max attempts exceeded
+  return `NT-${Date.now().toString().slice(-6)}`;
+}
+
 interface ExpenseRecord {
   id: number;
   doc_no?: string;
@@ -181,9 +250,7 @@ export async function POST(req: Request) {
           payeeGroupsMap.get(groupKey)!.push(item);
         }
 
-        let groupIndex = 0;
         for (const [, groupItems] of payeeGroupsMap.entries()) {
-          groupIndex += 1;
           const firstItem = groupItems[0];
           const totalGroupAmount = groupItems.reduce(
             (sum, i) => sum + Number(i.amount || 0),
@@ -198,10 +265,8 @@ export async function POST(req: Request) {
             resolvedEncoderId = rawCreatedBy;
           }
 
-          // Generate unique and clear document number
-          const headerDocNo = groupItems.length === 1
-            ? `DSB-${firstItem.doc_no || firstItem.id}`
-            : `DSB-EXP-BATCH-${Date.now().toString(36).toUpperCase()}${groupIndex > 1 ? `-${groupIndex}` : ""}`;
+          // Generate sequential NT-###### document number avoiding conflicts
+          const headerDocNo = await getNextAvailableNTDocNo();
 
           const dsbPayload = {
             doc_no: headerDocNo,
@@ -218,11 +283,7 @@ export async function POST(req: Request) {
             approver_id: userId,
             division_id: firstItem.division_id || null,
             department_id: firstItem.department_id || null,
-            supporting_documents_url: firstItem.receipt_url
-              ? firstItem.receipt_url.startsWith("http")
-                ? firstItem.receipt_url
-                : `${API_BASE_URL}/assets/${firstItem.receipt_url}`
-              : null,
+            supporting_documents_url: null,
             status: "Submitted",
             source_type: "EXPENSE_V2",
             source_reference_id: Number(firstItem.id),

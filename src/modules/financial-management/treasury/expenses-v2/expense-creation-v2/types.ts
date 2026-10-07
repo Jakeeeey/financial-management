@@ -74,6 +74,7 @@ export interface ChartOfAccountOption {
   gl_code?: string | null;
   account_title?: string | null;
   status?: string | null;
+  account_type?: number | { id: number; account_name?: string } | null;
 }
 
 export interface SupplierOption {
