@@ -3,6 +3,7 @@ import {
   DRAFT_COLLECTION,
   DRAFT_LINE_COLLECTION,
   DRAFT_RECEIPT_COLLECTION,
+  BudgetContextError,
   directusFetch,
   directusWrite,
   getPlanBaseline,
@@ -14,6 +15,7 @@ import {
   withPlanLock,
   type DraftSubmission,
 } from "../../_payables";
+import { findBudgetRequestOverages } from "@/modules/financial-management/reports/logistics-wer/utils/budget-balances";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -62,6 +64,9 @@ function validateLines(rawLines: unknown, requireCoa: boolean): ValidatedLine[] 
     const amount = Number(raw.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
       return { error: `Line ${index + 1} must have an amount greater than zero.` };
+    }
+    if (Math.abs(amount * 100 - Math.round(amount * 100)) > 1e-6) {
+      return { error: `Line ${index + 1} amount can have no more than two decimal places.` };
     }
     const date = asTrimmedString(raw.date);
     if (date && !isValidDateOnly(date)) {
@@ -237,11 +242,19 @@ export async function POST(
 
       if (action === "submit") {
         const remaining = await getPlanRemaining(planId);
-        if (total - remaining.remaining > 1e-6) {
+        if (remaining.unclassifiedReservedAmount > 0) {
           return error(
-            `Submitted total ${total} exceeds the remaining payable amount ${remaining.remaining}.`,
+            "Existing active payable reservations include unclassified COA lines. Resolve those submissions before adding expense budget reservations.",
             409,
             { remaining: remaining.remaining },
+          );
+        }
+        const overages = findBudgetRequestOverages(lines, remaining.budgetBalancesByCoa);
+        if (overages.length > 0) {
+          return error(
+            "One or more payable lines exceed the remaining expense budget for their selected COA.",
+            409,
+            { remaining: remaining.remaining, overages },
           );
         }
       }
@@ -312,6 +325,9 @@ export async function POST(
     });
   } catch (requestError) {
     console.error("[Logistics WER] Payables request failed:", requestError);
+    if (requestError instanceof BudgetContextError) {
+      return error(`Submission blocked because the expense budget could not be verified: ${requestError.message}`, 503);
+    }
     return error(requestError instanceof Error ? requestError.message : "Unable to record the payable.", 502);
   }
 }

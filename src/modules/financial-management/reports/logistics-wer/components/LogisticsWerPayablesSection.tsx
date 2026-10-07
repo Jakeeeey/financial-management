@@ -23,6 +23,7 @@ import type {
   LogisticsWerDispatchPlanDetail,
   LogisticsWerPayableSubmissionSummary,
 } from "../types";
+import { findBudgetRequestOverages } from "../utils/budget-balances";
 import {
   deletePayableReceipt,
   fetchPayableCoas,
@@ -131,6 +132,18 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
     const amount = Number(line.amount);
     return sum + (Number.isFinite(amount) && amount > 0 ? amount : 0);
   }, 0);
+  const requestLines = lines.flatMap((line) => {
+    const amount = Number(line.amount);
+    if (!Number.isFinite(amount) || amount <= 0) return [];
+    const coaId = line.coaId ? Number(line.coaId) : null;
+    return [{ amount, coaId: Number.isInteger(coaId) && Number(coaId) > 0 ? Number(coaId) : null }];
+  });
+  const projectedOverages = detail.budgetContextAvailable
+    ? findBudgetRequestOverages(requestLines, detail.budgetBalancesByCoa)
+    : [];
+  const submissionBlocked = !detail.budgetContextAvailable
+    || (detail.unclassifiedReservedAmount ?? 0) > 0
+    || projectedOverages.length > 0;
 
   const buildPayload = (): PayableLineInput[] => lines.map((line) => ({
     amount: Number(line.amount),
@@ -223,7 +236,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
           )}
         </h3>
         <p className="text-xs text-muted-foreground">
-          Record payable drafts against this dispatch plan and submit them for QA approval.
+          Submitted payables and actual approved disbursement lines consume the budget for their selected COA.
         </p>
       </div>
 
@@ -251,20 +264,58 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
         </Alert>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-xl border bg-card p-3">
-          <p className="text-xs text-muted-foreground">Planned amount</p>
+          <p className="text-xs text-muted-foreground">Dispatch plan value</p>
           <p className="mt-1 text-lg font-semibold">{formatMoney(detail.plannedAmount ?? detail.plan.amount)}</p>
         </div>
         <div className="rounded-xl border bg-card p-3">
-          <p className="text-xs text-muted-foreground">Reserved amount</p>
-          <p className="mt-1 text-lg font-semibold">{formatMoney(detail.reservedAmount)}</p>
+          <p className="text-xs text-muted-foreground">Allocated expense budget</p>
+          <p className="mt-1 text-lg font-semibold">
+            {detail.budgetContextAvailable ? formatMoney(detail.allocatedExpenseBudget) : "Unavailable"}
+          </p>
         </div>
         <div className="rounded-xl border bg-card p-3">
-          <p className="text-xs text-muted-foreground">Remaining amount</p>
-          <p className="mt-1 text-lg font-semibold">{formatMoney(detail.remainingAmount)}</p>
+          <p className="text-xs text-muted-foreground">Reserved payables</p>
+          <p className="mt-1 text-lg font-semibold">
+            {detail.budgetContextAvailable ? formatMoney(detail.reservedAmount) : "Unavailable"}
+          </p>
+        </div>
+        <div className="rounded-xl border bg-card p-3">
+          <p className="text-xs text-muted-foreground">Available expense budget</p>
+          <p className="mt-1 text-lg font-semibold">
+            {detail.budgetContextAvailable ? formatMoney(detail.remainingAmount) : "Unavailable"}
+          </p>
         </div>
       </div>
+
+      {detail.budgetContextAvailable && (detail.unclassifiedBudgetAmount ?? 0) > 0 && (
+        <Alert>
+          <AlertCircle className="size-4" />
+          <AlertTitle>Budget classification required</AlertTitle>
+          <AlertDescription>
+            {formatMoney(detail.unclassifiedBudgetAmount)} is not available to submit until the related budget lines are classified to a COA.
+          </AlertDescription>
+        </Alert>
+      )}
+      {!detail.budgetContextAvailable && (
+        <Alert variant="destructive">
+          <AlertCircle className="size-4" />
+          <AlertTitle>Submission blocked</AlertTitle>
+          <AlertDescription>
+            {detail.budgetContextError || "The expense budget and current reservations could not be verified. You can save a draft, but submission is unavailable."}
+          </AlertDescription>
+        </Alert>
+      )}
+      {(detail.overBudgetAmount ?? 0) > 0 && (
+        <Alert variant="destructive">
+          <AlertCircle className="size-4" />
+          <AlertTitle>Existing expense budget overage</AlertTitle>
+          <AlertDescription>
+            Active or recorded payables exceed the allocated budget by {formatMoney(detail.overBudgetAmount)} across one or more COAs. New spending in those accounts is blocked.
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="overflow-x-auto rounded-lg border">
         <Table>
@@ -456,6 +507,13 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
                     options={coas}
                     onValueChange={(value) => updateLine(line.key, { coaId: value })}
                   />
+                  {line.coaId && detail.budgetContextAvailable && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Available for this COA: {formatMoney(
+                        detail.budgetBalancesByCoa.find((balance) => balance.coaId === Number(line.coaId))?.remainingAmount ?? 0,
+                      )}
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-1 sm:col-span-2">
                   <Label>Remarks</Label>
@@ -521,12 +579,26 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
               <AlertDescription>{formError}</AlertDescription>
             </Alert>
           )}
+          {projectedOverages.length > 0 && (
+            <Alert variant="destructive">
+              <AlertCircle className="size-4" />
+              <AlertTitle>Submission exceeds a COA budget</AlertTitle>
+              <AlertDescription>
+                {projectedOverages.map((overage) => {
+                  const label = coas.find((option) => option.coaId === overage.coaId)?.label || `COA ${overage.coaId}`;
+                  return `${label}: requested ${formatMoney(overage.requestedAmount)}, available ${formatMoney(overage.remainingAmount)}.`;
+                }).join(" ")}
+              </AlertDescription>
+            </Alert>
+          )}
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
             <span>
               Lines total: <strong className="text-foreground">{formatMoney(linesTotal)}</strong>
             </span>
             <span>
-              Remaining on plan: <strong className="text-foreground">{formatMoney(detail.remainingAmount ?? detail.plan.amount)}</strong>
+              Available expense budget: <strong className="text-foreground">
+                {detail.budgetContextAvailable ? formatMoney(detail.remainingAmount) : "Unavailable"}
+              </strong>
             </span>
           </div>
           {notice && (
@@ -551,7 +623,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
             <Button type="button" variant="outline" disabled={busy} onClick={() => void handleAction("save-draft")}>
               {busy ? "Saving…" : "Save Draft"}
             </Button>
-            <Button type="button" disabled={busy} onClick={() => void handleAction("submit")}>
+            <Button type="button" disabled={busy || submissionBlocked} onClick={() => void handleAction("submit")}>
               {busy ? "Submitting…" : "Submit for Approval"}
             </Button>
           </div>

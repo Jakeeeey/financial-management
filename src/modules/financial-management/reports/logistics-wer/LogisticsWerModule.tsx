@@ -72,7 +72,7 @@ export default function LogisticsWerModule() {
           note="Plans in selected range"
         />
         <SummaryCard
-          title="Planned amount"
+          title="Dispatch plan value"
           value={formatMoney(visiblePlannedAmount)}
           icon={<DollarSign className="size-4" />}
           note="Current page"

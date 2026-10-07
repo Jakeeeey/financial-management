@@ -13,10 +13,21 @@ export interface LogisticsWerDispatchPlan {
 
 export type LogisticsWerDispatchPlanSummary = LogisticsWerDispatchPlan;
 
-export interface LogisticsWerDisbursement {
-  id: string;
+export interface LogisticsWerBudgetLine {
+  id: number;
+  coaId: number | null;
+  coaCode: string | null;
+  coaTitle: string | null;
   remarks: string | null;
   amount: number;
+}
+
+export interface LogisticsWerCoaBudgetBalance {
+  coaId: number;
+  allocatedAmount: number;
+  reservedAmount: number;
+  remainingAmount: number;
+  overBudgetAmount: number;
 }
 
 export interface LogisticsWerStaff {
@@ -62,14 +73,21 @@ export interface LogisticsWerReportPage {
 
 export interface LogisticsWerDispatchPlanDetail {
   plan: LogisticsWerDispatchPlan;
-  disbursements: LogisticsWerDisbursement[];
+  budgetLines: LogisticsWerBudgetLine[];
   staff: LogisticsWerStaff[];
   stops: LogisticsWerStop[];
-  disbursementTotal: number;
+  budgetTotal: number;
   supplierEligibility?: LogisticsWerSupplierEligibility | null;
   plannedAmount?: number | null;
   reservedAmount?: number | null;
   remainingAmount?: number | null;
+  budgetContextAvailable: boolean;
+  budgetContextError?: string | null;
+  allocatedExpenseBudget?: number | null;
+  unclassifiedBudgetAmount?: number | null;
+  unclassifiedReservedAmount?: number | null;
+  overBudgetAmount?: number | null;
+  budgetBalancesByCoa: LogisticsWerCoaBudgetBalance[];
   isLiquidated?: boolean | null;
   submissions?: LogisticsWerPayableSubmissionSummary[];
 }

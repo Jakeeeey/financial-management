@@ -21,6 +21,7 @@ import {
 import type { LogisticsWerDispatchPlanDetail } from "../types";
 import { dispatchPlanStatusClassName, displayWerStatus } from "../utils/status";
 import { LogisticsWerPayablesSection } from "./LogisticsWerPayablesSection";
+import { BudgetClassificationEditor } from "./BudgetClassificationEditor";
 
 function formatMoney(value: number): string {
   return `₱${value.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -52,7 +53,7 @@ export function LogisticsWerDetailsSheet({ detail, loading, error, onOpenChange,
           <SheetTitle>Logistics WER details</SheetTitle>
           <SheetDescription>
             {detail
-              ? `Disbursement lines recorded for ${detail.plan.docNo}.`
+              ? `Expense allocations and WER payable submissions for ${detail.plan.docNo}.`
               : "Loading dispatch plan details…"}
           </SheetDescription>
         </SheetHeader>
@@ -90,9 +91,9 @@ export function LogisticsWerDetailsSheet({ detail, loading, error, onOpenChange,
               </div>
 
               <div className="grid gap-3 sm:grid-cols-4">
-                <Metric label="Planned amount" value={formatMoney(detail.plan.amount)} />
-                <Metric label="Disbursement lines" value={String(detail.disbursements.length)} />
-                <Metric label="Recorded disbursements" value={formatMoney(detail.disbursementTotal)} />
+                <Metric label="Dispatch plan value" value={formatMoney(detail.plan.amount)} />
+                <Metric label="Budget lines" value={String(detail.budgetLines.length)} />
+                <Metric label="Allocated expense budget" value={formatMoney(detail.allocatedExpenseBudget ?? detail.budgetTotal)} />
                 <Metric label="Route stops" value={String(detail.stops.length)} />
               </div>
 
@@ -104,15 +105,84 @@ export function LogisticsWerDetailsSheet({ detail, loading, error, onOpenChange,
 
               <section className="space-y-3">
                 <div>
-                  <h3 className="font-semibold">Dispatch disbursements</h3>
+                  <h3 className="font-semibold">Expense budget by COA</h3>
                   <p className="text-xs text-muted-foreground">
-                    These lines come from the dispatch-approval detail response for this plan.
+                    WER submissions are reserved against the remaining amount for their own expense account.
+                  </p>
+                </div>
+                {!detail.budgetContextAvailable ? (
+                  <Alert variant="destructive">
+                    <AlertCircle className="size-4" />
+                    <AlertTitle>Expense budget unavailable</AlertTitle>
+                    <AlertDescription>
+                      {detail.budgetContextError || "The budget and payable reservations could not be verified. New submissions are blocked."}
+                    </AlertDescription>
+                  </Alert>
+                ) : detail.budgetBalancesByCoa.length === 0 ? (
+                  <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+                    No classified expense budgets are available for payable submissions.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-lg border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Chart of Accounts</TableHead>
+                          <TableHead className="text-right">Allocated</TableHead>
+                          <TableHead className="text-right">Reserved</TableHead>
+                          <TableHead className="text-right">Available</TableHead>
+                          <TableHead className="text-right">Over budget</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {detail.budgetBalancesByCoa.map((balance) => {
+                          const lines = detail.budgetLines.filter((line) => line.coaId === balance.coaId);
+                          const label = lines[0]
+                            ? `${lines[0].coaCode ? `${lines[0].coaCode} · ` : ""}${lines[0].coaTitle || `COA ${balance.coaId}`}`
+                            : `COA ${balance.coaId}`;
+                          return (
+                            <TableRow key={balance.coaId}>
+                              <TableCell>{label}</TableCell>
+                              <TableCell className="text-right">{formatMoney(balance.allocatedAmount)}</TableCell>
+                              <TableCell className="text-right">{formatMoney(balance.reservedAmount)}</TableCell>
+                              <TableCell className="text-right font-semibold">{formatMoney(balance.remainingAmount)}</TableCell>
+                              <TableCell className="text-right text-destructive">
+                                {balance.overBudgetAmount > 0 ? formatMoney(balance.overBudgetAmount) : "—"}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+                {(detail.unclassifiedBudgetAmount ?? 0) > 0 && (
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    {formatMoney(detail.unclassifiedBudgetAmount ?? 0)} is not available until its budget line is classified to a COA.
+                  </p>
+                )}
+                {(detail.unclassifiedReservedAmount ?? 0) > 0 && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="size-4" />
+                    <AlertTitle>Unclassified active reservation</AlertTitle>
+                    <AlertDescription>
+                      {formatMoney(detail.unclassifiedReservedAmount ?? 0)} in submitted payables has no COA classification, so new submissions are blocked until it is resolved.
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </section>
+
+              <section className="space-y-3">
+                <div>
+                  <h3 className="font-semibold">Dispatch budget allocations</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Classify each allocation to its expense account before submitting WER lines against it.
                   </p>
                 </div>
 
-                {detail.disbursements.length === 0 ? (
+                {detail.budgetLines.length === 0 ? (
                   <div className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">
-                    No disbursement lines were recorded for this dispatch plan.
+                    No budget lines were recorded for this dispatch plan.
                   </div>
                 ) : (
                   <div className="overflow-x-auto rounded-lg border">
@@ -121,17 +191,41 @@ export function LogisticsWerDetailsSheet({ detail, loading, error, onOpenChange,
                         <TableRow>
                           <TableHead className="w-16">#</TableHead>
                           <TableHead>Remarks</TableHead>
+                          <TableHead>Chart of Accounts</TableHead>
                           <TableHead className="text-right">Amount</TableHead>
+                          <TableHead>Classification</TableHead>
+                          <TableHead className="w-24 text-right">Action</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {detail.disbursements.map((disbursement, index) => (
-                          <TableRow key={disbursement.id}>
-                            <TableCell>{index + 1}</TableCell>
-                            <TableCell>{disbursement.remarks || "—"}</TableCell>
-                            <TableCell className="text-right font-medium">{formatMoney(disbursement.amount)}</TableCell>
-                          </TableRow>
-                        ))}
+                        {detail.budgetLines.map((line, index) => {
+                          const isClassified = Boolean(line.coaId && line.remarks?.trim());
+                          return (
+                            <TableRow key={line.id}>
+                              <TableCell>{index + 1}</TableCell>
+                              <TableCell>{line.remarks || "—"}</TableCell>
+                              <TableCell>
+                                {line.coaId
+                                  ? `${line.coaCode ? `${line.coaCode} · ` : ""}${line.coaTitle || `COA ${line.coaId}`}`
+                                  : "—"}
+                              </TableCell>
+                              <TableCell className="text-right font-medium">{formatMoney(line.amount)}</TableCell>
+                              <TableCell>
+                                <Badge variant={isClassified ? "secondary" : "outline"}>
+                                  {isClassified ? "Classified" : "Needs classification"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <BudgetClassificationEditor
+                                  planId={detail.plan.id}
+                                  line={line}
+                                  disabled={(detail.plan.status || "").toLowerCase() !== "for clearance" || detail.isLiquidated === true}
+                                  onSaved={() => onChanged?.()}
+                                />
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </div>

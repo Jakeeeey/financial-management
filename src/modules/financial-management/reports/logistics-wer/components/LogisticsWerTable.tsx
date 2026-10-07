@@ -47,7 +47,7 @@ export function LogisticsWerTable({ rows, loading, onViewDetails }: LogisticsWer
                 <TableHead>Vehicle</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Liquidated</TableHead>
-                <TableHead className="text-right">Planned amount</TableHead>
+                <TableHead className="text-right">Dispatch plan value</TableHead>
                 <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
