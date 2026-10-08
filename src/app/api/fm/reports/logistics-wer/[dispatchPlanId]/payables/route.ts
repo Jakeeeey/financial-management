@@ -149,6 +149,7 @@ async function createSubmissionLines(
           remarks: line.remarks,
           date: line.date,
           coa_id: line.coaId,
+          division_id: line.divisionId,
           date_created: now,
         },
       );
@@ -195,19 +196,20 @@ async function removeUnattachedReceiptFiles(fileIds: string[]): Promise<void> {
   }
 }
 
-async function replaceReturnedSubmissionLines(
+async function replaceEditableSubmissionLines(
   submission: DraftSubmission,
   lines: ValidatedPayableLine[],
   userId: number,
   now: string,
   action: "save-draft" | "submit",
   total: number,
+  departmentId: number | null,
 ): Promise<void> {
   const existingById = new Map(submission.lines.map((line) => [line.id, line]));
   const existingIds = new Set(existingById.keys());
   const requestedIds = lines.flatMap((line) => line.id === undefined ? [] : [line.id]);
   if (new Set(requestedIds).size !== requestedIds.length || requestedIds.some((id) => !existingIds.has(id))) {
-    throw new Error("One or more payable lines do not belong to this returned submission.");
+    throw new Error("One or more payable lines do not belong to this submission.");
   }
 
   const existingReceiptLineIds = new Map<string, number>();
@@ -250,6 +252,7 @@ async function replaceReturnedSubmissionLines(
           remarks: line.remarks,
           date: line.date,
           coa_id: line.coaId,
+          division_id: line.divisionId,
         });
       } else {
         hasMutations = true;
@@ -261,6 +264,7 @@ async function replaceReturnedSubmissionLines(
           remarks: line.remarks,
           date: line.date,
           coa_id: line.coaId,
+          division_id: line.divisionId,
           date_created: now,
         });
         lineId = Number(created.data?.id) || 0;
@@ -301,7 +305,8 @@ async function replaceReturnedSubmissionLines(
 
     hasMutations = true;
     await directusWrite("PATCH", `/items/${DRAFT_COLLECTION}/${submission.id}`, {
-      status: action === "submit" ? "submitted" : "returned",
+      status: action === "submit" ? "submitted" : submission.status || "draft",
+      department_id: departmentId,
       total_amount: total,
       ...(action === "submit" ? { submitted_at: new Date().toISOString() } : {}),
       date_updated: formatManilaWallClock(),
@@ -317,17 +322,19 @@ async function replaceReturnedSubmissionLines(
           remarks: line.remarks,
           date: line.date,
           coaId: line.coaId,
+          divisionId: line.divisionId,
           receiptFileIds: line.receipts.map((receipt) => receipt.fileId).filter((id): id is string => Boolean(id)),
         }));
         await createSubmissionLines(submission.id, originalLines, userId, now);
         await directusWrite("PATCH", `/items/${DRAFT_COLLECTION}/${submission.id}`, {
-          status: "returned",
+          status: submission.status || "draft",
+          department_id: submission.departmentId,
           total_amount: submission.totalAmount,
           submitted_at: submission.submittedAt,
           date_updated: formatManilaWallClock(),
         });
       } catch (rollbackError) {
-        console.error("[Logistics WER] Returned payable line rollback failed:", rollbackError);
+        console.error("[Logistics WER] Payable submission line rollback failed:", rollbackError);
       }
     }
     for (const receiptId of createdReceiptIds) {
@@ -412,17 +419,26 @@ export async function POST(
         return error(`Payables can only be recorded for plans in For Clearance state (current: ${baseline.status || "unknown"}).`, 409);
       }
 
+      const hasDepartmentId = body.departmentId !== null && body.departmentId !== undefined && body.departmentId !== "";
+      const departmentId = hasDepartmentId ? Number(body.departmentId) : null;
+      if (hasDepartmentId && (!Number.isInteger(departmentId) || Number(departmentId) <= 0)) {
+        return error("departmentId must be a positive integer.", 400);
+      }
+      if (action === "submit" && departmentId === null) {
+        return error("A department is required before submitting payables.", 400);
+      }
+
       if (requestedSubmissionId) {
         if (action !== "save-draft" && action !== "submit") {
-          return error("Returned submissions can only be saved or resubmitted.", 400);
+          return error("Draft or returned submissions can only be saved or submitted.", 400);
         }
         const submission = await loadSubmission(planId, requestedSubmissionId);
         if (!submission) return error("Submission not found for this dispatch plan.", 404);
-        if ((submission.status || "").toLowerCase() !== "returned" || submission.disbursementId !== null) {
-          return error("Only returned, unconverted payables can be edited.", 409);
+        if (!["draft", "returned"].includes((submission.status || "").toLowerCase()) || submission.disbursementId !== null) {
+          return error("Only draft or returned, unconverted payables can be edited.", 409);
         }
         if (submission.submittedBy !== userId) {
-          return error("Only the original submitter can edit this returned payable.", 403);
+          return error("Only the original submitter can edit this payable.", 403);
         }
 
         const validation = validatePayableLines(body.lines, action === "submit");
@@ -431,7 +447,7 @@ export async function POST(
         const existingLineIds = new Set(submission.lines.map((line) => line.id));
         const requestedLineIds = lines.flatMap((line) => line.id === undefined ? [] : [line.id]);
         if (new Set(requestedLineIds).size !== requestedLineIds.length || requestedLineIds.some((id) => !existingLineIds.has(id))) {
-          return error("One or more payable lines do not belong to this returned submission.", 400);
+          return error("One or more payable lines do not belong to this submission.", 400);
         }
         const existingReceiptLineIds = new Map<string, number>();
         for (const line of submission.lines) {
@@ -482,7 +498,7 @@ export async function POST(
         }
 
         const now = new Date().toISOString();
-        await replaceReturnedSubmissionLines(submission, lines, userId, now, action, total);
+        await replaceEditableSubmissionLines(submission, lines, userId, now, action, total, departmentId);
         const updated = await loadSubmission(planId, submission.id);
         return NextResponse.json({ draft: updated });
       }
@@ -500,7 +516,7 @@ export async function POST(
       if (!validation.valid) return error(validation.error, 400);
       const lines = validation.lines;
       if (lines.some((line) => line.id !== undefined)) {
-        return error("Line identifiers can only be provided when editing a returned submission.", 400);
+        return error("Line identifiers can only be provided when editing an existing submission.", 400);
       }
       const total = lines.reduce((sum, line) => sum + line.amount, 0);
 
@@ -540,6 +556,7 @@ export async function POST(
       const auditNow = formatManilaWallClock();
       const created = await directusWrite<{ data?: { id?: unknown } }>("POST", `/items/${DRAFT_COLLECTION}`, {
         dispatch_plan_id: planId,
+        department_id: departmentId,
         status: action === "submit" ? "submitted" : "draft",
         total_amount: total,
         submitted_by: userId,
@@ -565,6 +582,7 @@ export async function POST(
               remarks: line.remarks,
               date: line.date,
               coa_id: line.coaId,
+              division_id: line.divisionId,
               date_created: now,
             },
           );

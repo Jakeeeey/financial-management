@@ -113,12 +113,14 @@ export interface LogisticsWerPayableSubmissionLineDetails {
   referenceNo: string | null;
   date: string | null;
   coaId: number | null;
+  divisionId: number | null;
   remarks: string | null;
   receipts: LogisticsWerPayableReceipt[];
 }
 
 export interface LogisticsWerPayableSubmissionDetails {
   submissionId: number;
+  departmentId: number | null;
   canEdit: boolean;
   lines: LogisticsWerPayableSubmissionLineDetails[];
 }
@@ -131,6 +133,7 @@ export interface LogisticsWerPayableLine {
   remarks: string | null;
   date: string | null;
   coaId: number | null;
+  divisionId: number | null;
   coaCode?: string | null;
   coaTitle?: string | null;
   receipts: LogisticsWerPayableReceipt[];
@@ -138,6 +141,7 @@ export interface LogisticsWerPayableLine {
 
 export interface LogisticsWerPayableSubmission {
   id: number;
+  departmentId: number | null;
   status: string | null;
   totalAmount: number;
   submittedBy: number | null;

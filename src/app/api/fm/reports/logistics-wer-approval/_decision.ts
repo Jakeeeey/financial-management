@@ -1,5 +1,6 @@
 import {
   acquireDocumentNumberLock,
+  documentPrefixForTransactionType,
   findNextAvailableDocumentNumber,
   type DisbursementTransactionType,
 } from "@/modules/financial-management/treasury/disbursement/document-number";
@@ -16,8 +17,13 @@ import {
   type DraftSubmission,
 } from "../logistics-wer/_payables";
 import { formatManilaWallClock } from "../logistics-wer/_timestamps";
+import { hasCompletePayableOrganization } from "@/modules/financial-management/reports/logistics-wer/utils/payable-validation";
+import {
+  isValidLogisticsWerDisbursementHeader,
+  LOGISTICS_WER_TRANSACTION_TYPE,
+} from "./_transaction-type";
 
-const TRANSACTION_TYPE: DisbursementTransactionType = 1;
+const TRANSACTION_TYPE: DisbursementTransactionType = LOGISTICS_WER_TRANSACTION_TYPE;
 
 export type WerApprovalDecision = "approve" | "return" | "reject";
 
@@ -98,7 +104,7 @@ async function convertSubmission(
   try {
     const now = new Date().toISOString();
     const docNo = await findNextAvailableDocumentNumber(TRANSACTION_TYPE, directusFetch);
-    const header = await directusWrite<{ data?: { id?: unknown } }>("POST", "/items/disbursement", {
+    const header = await directusWrite<{ data?: { id?: unknown; transaction_type?: unknown; doc_no?: unknown } }>("POST", "/items/disbursement", {
       doc_no: docNo,
       transaction_type: TRANSACTION_TYPE,
       payee: supplierId,
@@ -110,17 +116,24 @@ async function convertSubmission(
       status: "Draft",
       source_type: "LOGISTICS_WER",
       source_reference_id: submission.id,
+      department_id: submission.departmentId,
     });
     created.disbursementId = Number(header.data?.id) || 0;
     if (!created.disbursementId) throw new Error("Disbursement creation did not return an id.");
 
     try {
+      if (!isValidLogisticsWerDisbursementHeader(header.data)) {
+        const prefix = documentPrefixForTransactionType(TRANSACTION_TYPE);
+        throw new Error(`Disbursement was created but its Non-Trade type or ${prefix}- document number was not persisted.`);
+      }
+
       for (const line of submission.lines) {
         const payable = await directusWrite<{ data?: { id?: unknown } }>("POST", "/items/disbursement_payables", {
           disbursement_id: created.disbursementId,
           reference_no: line.referenceNo,
           date: line.date,
           coa_id: line.coaId,
+          division_id: line.divisionId,
           amount: line.amount,
           remarks: line.remarks,
         });
@@ -233,6 +246,13 @@ export async function decideOneSubmission(input: DecideOneInput): Promise<Decisi
       const updated = (await loadSubmission(submissionId)).submission;
       if (!updated) throw new DecisionFailure("Submission not found.", 404);
       return { submission: updated, disbursementId: null, disbursementDocNo: null, idempotent: false };
+    }
+
+    if (!hasCompletePayableOrganization(submission.departmentId, submission.lines)) {
+      throw new DecisionFailure(
+        "This submission is missing a department or line division. Return it to the submitter to complete the organizational fields before approval.",
+        422,
+      );
     }
 
     const baseline = await getPlanBaseline(initial.planId);

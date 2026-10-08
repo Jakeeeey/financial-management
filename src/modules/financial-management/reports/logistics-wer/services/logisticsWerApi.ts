@@ -93,11 +93,13 @@ interface DispatchApprovalLine {
   remarks?: unknown;
   date?: unknown;
   coaId?: unknown;
+  divisionId?: unknown;
   receipts?: DispatchApprovalWerReceipt[] | null;
 }
 
 interface DispatchApprovalSubmission {
   id?: unknown;
+  departmentId?: unknown;
   status?: unknown;
   totalAmount?: unknown;
   submittedBy?: unknown;
@@ -332,6 +334,7 @@ function mapSubmissionLine(data: DispatchApprovalLine): LogisticsWerPayableLine 
     remarks: asNullableString(data.remarks),
     date: asNullableString(data.date),
     coaId: asNullableNumber(data.coaId),
+    divisionId: asNullableNumber(data.divisionId),
     receipts: (data.receipts ?? []).map(mapReceipt),
   };
 }
@@ -339,6 +342,7 @@ function mapSubmissionLine(data: DispatchApprovalLine): LogisticsWerPayableLine 
 function mapSubmission(data: DispatchApprovalSubmission): LogisticsWerPayableSubmission {
   return {
     id: asNumber(data.id),
+    departmentId: asNullableNumber(data.departmentId),
     status: asNullableString(data.status),
     totalAmount: asNumber(data.totalAmount),
     submittedBy: asNullableNumber(data.submittedBy),
@@ -386,7 +390,18 @@ export interface PayableLineInput {
   remarks?: string | null;
   date?: string | null;
   coaId?: number | null;
+  divisionId?: number | null;
   receiptFileIds?: string[];
+}
+
+export interface PayableDepartmentOption {
+  departmentId: number;
+  departmentName: string;
+}
+
+export interface PayableDivisionOption {
+  divisionId: number;
+  divisionName: string;
 }
 
 export interface StagedReceipt {
@@ -463,27 +478,30 @@ async function postPayables(
 
 export function savePayableDraft(
   planId: number,
+  departmentId: number | null,
   lines: PayableLineInput[],
   idempotencyKey?: string,
 ): Promise<LogisticsWerPayableSubmission> {
-  return postPayables(planId, "save-draft", { lines, idempotencyKey });
+  return postPayables(planId, "save-draft", { departmentId, lines, idempotencyKey });
 }
 
 export function submitPayable(
   planId: number,
+  departmentId: number | null,
   lines: PayableLineInput[],
   idempotencyKey?: string,
 ): Promise<LogisticsWerPayableSubmission> {
-  return postPayables(planId, "submit", { lines, idempotencyKey });
+  return postPayables(planId, "submit", { departmentId, lines, idempotencyKey });
 }
 
-export function updateReturnedPayable(
+export function updatePayableSubmission(
   planId: number,
   submissionId: number,
   action: "save-draft" | "submit",
+  departmentId: number | null,
   lines: PayableLineInput[],
 ): Promise<LogisticsWerPayableSubmission> {
-  return postPayables(planId, action, { submissionId, lines });
+  return postPayables(planId, action, { submissionId, departmentId, lines });
 }
 
 export function withdrawPayableSubmission(
@@ -503,11 +521,13 @@ export async function fetchPayableSubmissionDetails(
   );
   const data = await readJson<{
     submissionId?: unknown;
+    departmentId?: unknown;
     canEdit?: unknown;
     lines?: DispatchApprovalLine[] | null;
   }>(response);
   return {
     submissionId: asNumber(data.submissionId),
+    departmentId: asNullableNumber(data.departmentId),
     canEdit: data.canEdit === true,
     lines: (data.lines ?? []).map((line): LogisticsWerPayableSubmissionLineDetails => ({
       id: asNumber(line.id),
@@ -516,10 +536,29 @@ export async function fetchPayableSubmissionDetails(
       referenceNo: asNullableString(line.referenceNo),
       date: asNullableString(line.date),
       coaId: asNullableNumber(line.coaId),
+      divisionId: asNullableNumber(line.divisionId),
       remarks: asNullableString(line.remarks),
       receipts: (line.receipts ?? []).map(mapReceipt),
     })),
   };
+}
+
+export async function fetchPayableDepartments(): Promise<PayableDepartmentOption[]> {
+  const response = await fetch("/api/fm/setup/departments", { credentials: "include", cache: "no-store" });
+  const rows = await readJson<Array<{ departmentId?: unknown; departmentName?: unknown }>>(response);
+  return (Array.isArray(rows) ? rows : []).map((row) => ({
+    departmentId: asNumber(row.departmentId),
+    departmentName: asString(row.departmentName),
+  })).filter((row) => row.departmentId > 0 && row.departmentName.length > 0);
+}
+
+export async function fetchPayableDivisions(): Promise<PayableDivisionOption[]> {
+  const response = await fetch("/api/fm/setup/divisions", { credentials: "include", cache: "no-store" });
+  const rows = await readJson<Array<{ divisionId?: unknown; divisionName?: unknown }>>(response);
+  return (Array.isArray(rows) ? rows : []).map((row) => ({
+    divisionId: asNumber(row.divisionId),
+    divisionName: asString(row.divisionName),
+  })).filter((row) => row.divisionId > 0 && row.divisionName.length > 0);
 }
 
 export async function uploadPayableReceipt(planId: number, file: File): Promise<StagedReceipt> {
