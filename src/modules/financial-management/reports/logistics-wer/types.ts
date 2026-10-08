@@ -131,6 +131,8 @@ export interface LogisticsWerPayableLine {
   remarks: string | null;
   date: string | null;
   coaId: number | null;
+  coaCode?: string | null;
+  coaTitle?: string | null;
   receipts: LogisticsWerPayableReceipt[];
 }
 

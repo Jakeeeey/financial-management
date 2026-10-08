@@ -24,6 +24,7 @@ export type WerApprovalDecision = "approve" | "return" | "reject";
 export interface DecisionOutcome {
   submission: DraftSubmission;
   disbursementId: number | null;
+  disbursementDocNo: string | null;
   idempotent: boolean;
 }
 
@@ -45,6 +46,13 @@ function manilaDateOnly(): string {
 
 async function loadSubmission(submissionId: number): Promise<{ planId: number; submission: DraftSubmission | null }> {
   return await getPlanSubmission(submissionId) ?? { planId: 0, submission: null };
+}
+
+async function getDisbursementDocNo(disbursementId: number): Promise<string | null> {
+  const result = await directusFetch<{ data?: { doc_no?: unknown } }>(
+    `/items/disbursement/${disbursementId}?fields=doc_no`,
+  ).catch(() => null);
+  return typeof result?.data?.doc_no === "string" ? result.data.doc_no.trim() || null : null;
 }
 
 interface CreatedIds {
@@ -74,12 +82,15 @@ async function convertSubmission(
   submission: DraftSubmission,
   supplierId: number,
   approverId: number,
-): Promise<{ disbursementId: number; idempotent: boolean }> {
+): Promise<{ disbursementId: number; disbursementDocNo: string | null; idempotent: boolean }> {
   if (submission.disbursementId) {
     const existing = await directusFetch<{ data?: Record<string, unknown> }>(
-      `/items/disbursement/${submission.disbursementId}?fields=id`,
+      `/items/disbursement/${submission.disbursementId}?fields=id,doc_no`,
     ).catch(() => null);
-    if (existing?.data) return { disbursementId: submission.disbursementId, idempotent: true };
+    if (existing?.data) {
+      const docNo = typeof existing.data.doc_no === "string" ? existing.data.doc_no.trim() || null : null;
+      return { disbursementId: submission.disbursementId, disbursementDocNo: docNo, idempotent: true };
+    }
   }
 
   const created: CreatedIds = { disbursementId: 0, payableIds: [], attachmentIds: [] };
@@ -163,7 +174,7 @@ async function convertSubmission(
       decided_at: now,
       date_updated: formatManilaWallClock(),
     });
-    return { disbursementId: created.disbursementId, idempotent: false };
+    return { disbursementId: created.disbursementId, disbursementDocNo: docNo, idempotent: false };
   } finally {
     releaseDocLock();
   }
@@ -194,7 +205,10 @@ export async function decideOneSubmission(input: DecideOneInput): Promise<Decisi
     const status = (submission.status || "").toLowerCase();
 
     if (status === "approved") {
-      return { submission, disbursementId: submission.disbursementId, idempotent: true };
+      const disbursementDocNo = submission.disbursementId
+        ? await getDisbursementDocNo(submission.disbursementId)
+        : null;
+      return { submission, disbursementId: submission.disbursementId, disbursementDocNo, idempotent: true };
     }
     if (status !== "submitted") {
       throw new DecisionFailure(
@@ -218,7 +232,7 @@ export async function decideOneSubmission(input: DecideOneInput): Promise<Decisi
       });
       const updated = (await loadSubmission(submissionId)).submission;
       if (!updated) throw new DecisionFailure("Submission not found.", 404);
-      return { submission: updated, disbursementId: null, idempotent: false };
+      return { submission: updated, disbursementId: null, disbursementDocNo: null, idempotent: false };
     }
 
     const baseline = await getPlanBaseline(initial.planId);
@@ -242,7 +256,7 @@ export async function decideOneSubmission(input: DecideOneInput): Promise<Decisi
       });
     }
 
-    const { disbursementId, idempotent } = await convertSubmission(
+    const { disbursementId, disbursementDocNo, idempotent } = await convertSubmission(
       baseline.docNo,
       submission,
       eligibility.supplierId,
@@ -256,6 +270,6 @@ export async function decideOneSubmission(input: DecideOneInput): Promise<Decisi
     }
     const updated = (await loadSubmission(submissionId)).submission;
     if (!updated) throw new DecisionFailure("Submission not found.", 404);
-    return { submission: updated, disbursementId, idempotent };
+    return { submission: updated, disbursementId, disbursementDocNo, idempotent };
   });
 }

@@ -22,6 +22,7 @@ export interface BulkDecisionItemResult {
   ok: boolean;
   message: string | null;
   disbursementId: number | null;
+  disbursementDocNo: string | null;
   idempotent: boolean;
 }
 
@@ -71,6 +72,7 @@ export async function POST(request: NextRequest) {
         ok: true,
         message: null,
         disbursementId: outcome.disbursementId,
+        disbursementDocNo: outcome.disbursementDocNo,
         idempotent: outcome.idempotent,
       });
     } catch (itemError) {
@@ -81,6 +83,7 @@ export async function POST(request: NextRequest) {
           ? itemError.message
           : itemError instanceof Error ? itemError.message : "Unable to record the decision.",
         disbursementId: null,
+        disbursementDocNo: null,
         idempotent: false,
       });
     }
