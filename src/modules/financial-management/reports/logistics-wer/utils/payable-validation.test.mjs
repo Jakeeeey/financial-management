@@ -84,6 +84,15 @@ test("valid changed lines are normalized without changing optional fields", () =
   });
 });
 
+test("returned line edits preserve valid existing IDs and reject invalid IDs", () => {
+  const result = validatePayableLines([{ id: "41", amount: 12, coaId: 3 }], false);
+  assert.deepEqual(result, {
+    valid: true,
+    lines: [{ id: 41, amount: 12, referenceNo: null, remarks: null, date: null, coaId: 3, receiptFileIds: [] }],
+  });
+  assert.equal(validatePayableLines([{ id: "not-a-line", amount: 12 }], false).valid, false);
+});
+
 test("draft and submission actions require changes, valid fields, and an idle form", () => {
   const ready = { dirty: true, valid: true, busy: false, uploading: false, submissionBlocked: false };
   assert.equal(canRunPayableAction("save-draft", ready), true);

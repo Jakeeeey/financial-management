@@ -4,6 +4,8 @@ import type {
   LogisticsWerCoaBudgetBalance,
   LogisticsWerPayableLine,
   LogisticsWerPayableReceipt,
+  LogisticsWerPayableSubmissionDetails,
+  LogisticsWerPayableSubmissionLineDetails,
   LogisticsWerPayableSubmission,
   LogisticsWerPayableSubmissionSummary,
   LogisticsWerReportPage,
@@ -115,6 +117,7 @@ interface DispatchApprovalSubmissionSummary {
   totalAmount?: unknown;
   decisionRemarks?: unknown;
   disbursementId?: unknown;
+  disbursementDocNo?: unknown;
   treasuryStatus?: unknown;
   lineCount?: unknown;
   receiptCount?: unknown;
@@ -357,6 +360,7 @@ function mapSubmissionSummary(data: DispatchApprovalSubmissionSummary): Logistic
     totalAmount: asNumber(data.totalAmount),
     decisionRemarks: asNullableString(data.decisionRemarks),
     disbursementId: asNullableNumber(data.disbursementId),
+    disbursementDocNo: asNullableString(data.disbursementDocNo),
     treasuryStatus: asNullableString(data.treasuryStatus),
     lineCount: asNumber(data.lineCount),
     receiptCount: asNumber(data.receiptCount),
@@ -376,6 +380,7 @@ export async function fetchLogisticsWerDetails(
 }
 
 export interface PayableLineInput {
+  id?: number;
   amount: number;
   referenceNo?: string | null;
   remarks?: string | null;
@@ -472,11 +477,49 @@ export function submitPayable(
   return postPayables(planId, "submit", { lines, idempotencyKey });
 }
 
+export function updateReturnedPayable(
+  planId: number,
+  submissionId: number,
+  action: "save-draft" | "submit",
+  lines: PayableLineInput[],
+): Promise<LogisticsWerPayableSubmission> {
+  return postPayables(planId, action, { submissionId, lines });
+}
+
 export function withdrawPayableSubmission(
   planId: number,
   submissionId: number,
 ): Promise<LogisticsWerPayableSubmission> {
   return postPayables(planId, "withdraw", { submissionId });
+}
+
+export async function fetchPayableSubmissionDetails(
+  planId: number,
+  submissionId: number,
+): Promise<LogisticsWerPayableSubmissionDetails> {
+  const response = await fetch(
+    `${ENDPOINT}/${encodeURIComponent(String(planId))}/payables/${encodeURIComponent(String(submissionId))}`,
+    { credentials: "include", cache: "no-store" },
+  );
+  const data = await readJson<{
+    submissionId?: unknown;
+    canEdit?: unknown;
+    lines?: DispatchApprovalLine[] | null;
+  }>(response);
+  return {
+    submissionId: asNumber(data.submissionId),
+    canEdit: data.canEdit === true,
+    lines: (data.lines ?? []).map((line): LogisticsWerPayableSubmissionLineDetails => ({
+      id: asNumber(line.id),
+      lineNo: asNullableNumber(line.lineNo),
+      amount: asNumber(line.amount),
+      referenceNo: asNullableString(line.referenceNo),
+      date: asNullableString(line.date),
+      coaId: asNullableNumber(line.coaId),
+      remarks: asNullableString(line.remarks),
+      receipts: (line.receipts ?? []).map(mapReceipt),
+    })),
+  };
 }
 
 export async function uploadPayableReceipt(planId: number, file: File): Promise<StagedReceipt> {

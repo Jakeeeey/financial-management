@@ -92,6 +92,7 @@ export interface DraftSubmissionSummary {
   decidedAt: string | null;
   decisionRemarks: string | null;
   disbursementId: number | null;
+  disbursementDocNo: string | null;
   idempotencyKey: string | null;
   treasuryStatus: string | null;
   lineCount: number;
@@ -341,6 +342,7 @@ export async function getPlanDraftSummaries(planId: number): Promise<DraftSubmis
       decidedAt: asString(row.decided_at) || null,
       decisionRemarks: asString(row.decision_remarks) || null,
       disbursementId: asNullableNumber(row.disbursement_id),
+      disbursementDocNo: null,
       idempotencyKey: asString(row.idempotency_key) || null,
       treasuryStatus: null,
       lineCount: lineCountByDraft.get(draftId) ?? 0,
@@ -419,23 +421,32 @@ export async function getPlanSubmission(submissionId: number): Promise<{ planId:
   };
 }
 
-async function getDisbursementStatuses(disbursementIds: number[]): Promise<Map<number, string>> {
+interface DisbursementReference {
+  docNo: string | null;
+  status: string | null;
+}
+
+async function getDisbursementReferences(disbursementIds: number[]): Promise<Map<number, DisbursementReference>> {
   if (disbursementIds.length === 0) return new Map();
   const params = new URLSearchParams({
     "filter[id][_in]": disbursementIds.join(","),
-    fields: "id,status",
+    fields: "id,doc_no,status",
     limit: "-1",
   });
-  const result = await directusFetch<DirectusList<{ id?: unknown; status?: unknown }>>(
+  const result = await directusFetch<DirectusList<{ id?: unknown; doc_no?: unknown; status?: unknown }>>(
     `/items/disbursement?${params.toString()}`,
   );
-  const statuses = new Map<number, string>();
+  const references = new Map<number, DisbursementReference>();
   for (const row of result.data ?? []) {
     const id = asNumber(row.id);
-    const status = asString(row.status);
-    if (id > 0 && status) statuses.set(id, status);
+    if (id > 0) {
+      references.set(id, {
+        docNo: asString(row.doc_no) || null,
+        status: asString(row.status) || null,
+      });
+    }
   }
-  return statuses;
+  return references;
 }
 
 interface DraftAccountingSummary {
@@ -606,11 +617,11 @@ export async function getPlanFinancialContext(
   const disbursementIds = Array.from(new Set(
     accountingRows.map((submission) => submission.disbursementId).filter((id): id is number => Boolean(id)),
   ));
-  const [statusResult, reservationLines] = await Promise.all([
-    getDisbursementStatuses(disbursementIds)
+  const [disbursementReferences, reservationLines] = await Promise.all([
+    getDisbursementReferences(disbursementIds)
       .catch((error) => {
-        console.error("[Logistics WER] Failed to load Treasury disbursement statuses:", error);
-        return new Map<number, string>();
+        console.error("[Logistics WER] Failed to load Treasury disbursement references:", error);
+        return new Map<number, DisbursementReference>();
       }),
     getReservationLines(accountingRows),
   ]);
@@ -629,8 +640,11 @@ export async function getPlanFinancialContext(
     submissions: includeSubmissionSummaries
       ? (submissions as DraftSubmissionSummary[]).map((submission) => ({
           ...submission,
+          disbursementDocNo: submission.disbursementId
+            ? disbursementReferences.get(submission.disbursementId)?.docNo ?? null
+            : null,
           treasuryStatus: submission.disbursementId
-            ? statusResult.get(submission.disbursementId) ?? null
+            ? disbursementReferences.get(submission.disbursementId)?.status ?? null
             : null,
         }))
       : [],
@@ -676,9 +690,11 @@ export async function markWerPlanLiquidatedIfSettled(draftId: number): Promise<v
   if (approved.some((row) => !row.disbursementId)) return;
 
   const approvedIds = Array.from(new Set(approved.map((row) => row.disbursementId as number)));
-  const statuses = await getDisbursementStatuses(approvedIds);
-  if (approvedIds.some((id) => !statuses.has(id))) return;
-  if (!approved.every((row) => ["Released", "Posted"].includes(statuses.get(row.disbursementId as number) || ""))) return;
+  const disbursementReferences = await getDisbursementReferences(approvedIds);
+  if (approvedIds.some((id) => !disbursementReferences.has(id))) return;
+  if (!approved.every((row) => ["Released", "Posted"].includes(
+    disbursementReferences.get(row.disbursementId as number)?.status || "",
+  ))) return;
 
   await directusWrite("PATCH", `/items/post_dispatch_plan/${planId}`, { is_liquidated: 1 });
 }

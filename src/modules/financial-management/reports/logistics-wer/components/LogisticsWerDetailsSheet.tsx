@@ -39,6 +39,7 @@ function formatDate(value: string | null): string {
 }
 
 interface LogisticsWerDetailsSheetProps {
+  open: boolean;
   detail: LogisticsWerDispatchPlanDetail | null;
   loading: boolean;
   error: string | null;
@@ -46,13 +47,13 @@ interface LogisticsWerDetailsSheetProps {
   onChanged?: () => Promise<void> | void;
 }
 
-export function LogisticsWerDetailsSheet({ detail, loading, error, onOpenChange, onChanged }: LogisticsWerDetailsSheetProps) {
+export function LogisticsWerDetailsSheet({ open, detail, loading, error, onOpenChange, onChanged }: LogisticsWerDetailsSheetProps) {
   const payableSubmissions = detail?.submissions ?? [];
   const disbursementLineCount = payableSubmissions.reduce((total, submission) => total + submission.lineCount, 0);
   const totalDisbursements = payableSubmissions.reduce((total, submission) => total + submission.totalAmount, 0);
 
   return (
-    <Sheet open={loading || Boolean(detail)} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-[min(96vw,1120px)] overflow-y-auto sm:max-w-[1120px]">
         <SheetHeader className="border-b px-6 pb-4">
           <SheetTitle>Logistics WER details</SheetTitle>
