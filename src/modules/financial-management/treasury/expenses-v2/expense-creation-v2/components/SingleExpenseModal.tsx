@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -28,7 +28,7 @@ import {
   UserDefaultsOption,
 } from "../types";
 import { uploadReceiptFile } from "../services/uploadService";
-import { Loader2, Save, Send, Search, AlertCircle } from "lucide-react";
+import { Loader2, Save, Send, Search, AlertCircle, X, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 
 interface SingleExpenseModalProps {
@@ -80,7 +80,8 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
     setPayee(userDefaults?.supplier_id ?? null);
     setIsEmployee(true);
     setDivisionId(userDefaults?.division_id ?? null);
-    setDepartmentId(null);
+    const salesDept = departments.find((d) => (d.department_name || "").trim().toLowerCase() === "sales");
+    setDepartmentId(salesDept ? salesDept.department_id : null);
     setCoaId(null);
     setAmount("");
     setRemarks("");
@@ -93,23 +94,15 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
-  }, [userDefaults]);
+  }, [userDefaults, departments]);
 
   // Reset form inputs whenever modal opens, closes, or userDefaults changes
   useEffect(() => {
     resetForm();
   }, [open, resetForm]);
 
-  // Reset department if division changes and selected department does not belong to new division
   const handleDivisionChange = (newDivId: number | null) => {
     setDivisionId(newDivId);
-    if (departmentId && newDivId) {
-      const deptObj = departments.find((d) => d.department_id === departmentId);
-      const deptDivId = deptObj?.division_id ?? deptObj?.parent_division ?? deptObj?.parentDivision;
-      if (deptDivId && deptDivId !== newDivId) {
-        setDepartmentId(null);
-      }
-    }
   };
 
   const MAX_FILE_SIZE_MB = 5;
@@ -134,6 +127,15 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
     }
 
     setSelectedFile(file);
+  };
+
+  const handleRemoveFile = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedFile(null);
+    setReceiptUrl("");
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
   const handleSave = async (asSubmit: boolean) => {
@@ -221,16 +223,20 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
       (c.account_title || "").toLowerCase().includes((coaSearch || "").toLowerCase())
   );
 
-  const filteredDivisions = divisions.filter((d) =>
+  const availableDivisions = useMemo(() => {
+    if (userDefaults?.is_salesman && userDefaults?.allowed_division_ids && userDefaults.allowed_division_ids.length > 0) {
+      return divisions.filter((d) => userDefaults.allowed_division_ids!.includes(d.division_id));
+    }
+    return divisions;
+  }, [divisions, userDefaults]);
+
+  const filteredDivisions = availableDivisions.filter((d) =>
     (d.division_name || "").toLowerCase().includes((divisionSearch || "").toLowerCase())
   );
 
-  const availableDepartments = divisionId
-    ? departments.filter((d) => {
-        const div = d.division_id ?? d.parent_division ?? d.parentDivision;
-        return !div || div === divisionId;
-      })
-    : departments;
+  const availableDepartments = useMemo(() => {
+    return departments.filter((d) => (d.department_name || "").trim().toLowerCase() === "sales");
+  }, [departments]);
 
   const filteredDepartments = availableDepartments.filter((d) =>
     (d.department_name || "").toLowerCase().includes((departmentSearch || "").toLowerCase())
@@ -330,9 +336,8 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
               <Select
                 value={divisionId ? String(divisionId) : ""}
                 onValueChange={(v) => handleDivisionChange(v ? parseInt(v, 10) : null)}
-                disabled={true}
               >
-                <SelectTrigger className="w-full bg-muted/60 cursor-not-allowed opacity-90">
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select Division" />
                 </SelectTrigger>
                 <SelectContent
@@ -493,16 +498,77 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
             <Label>
               Receipt Attachment / Image <span className="text-rose-500 font-bold">*</span>
             </Label>
-            <div className="flex items-center gap-3">
-              <Input
-                ref={fileInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/gif"
-                onChange={handleFileChange}
-                disabled={isUploading || isSubmitting}
-              />
-              {isUploading || isSubmitting ? <Loader2 className="w-5 h-5 animate-spin text-primary" /> : null}
-            </div>
+
+            {selectedFile ? (
+              /* Selected File Preview Card */
+              <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-md bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                    <ImageIcon className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-foreground truncate" title={selectedFile.name}>
+                      {selectedFile.name}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {selectedFile.size < 1024 * 1024
+                        ? `${(selectedFile.size / 1024).toFixed(1)} KB`
+                        : `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB`}{" "}
+                      • <span className="text-blue-500 font-medium">Ready to upload on save</span>
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleRemoveFile}
+                  disabled={isUploading || isSubmitting}
+                  className="h-7 text-xs text-rose-500 hover:text-rose-600 hover:bg-rose-500/10 gap-1 shrink-0"
+                >
+                  <X className="w-3.5 h-3.5" /> Remove
+                </Button>
+              </div>
+            ) : receiptUrl ? (
+              /* Existing Attached URL Card */
+              <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-md bg-emerald-500/10 text-emerald-500 flex items-center justify-center shrink-0">
+                    <ImageIcon className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-foreground truncate" title={receiptUrl}>
+                      Attached Image
+                    </p>
+                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-mono truncate">
+                      {receiptUrl}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleRemoveFile}
+                  disabled={isUploading || isSubmitting}
+                  className="h-7 text-xs text-rose-500 hover:text-rose-600 hover:bg-rose-500/10 gap-1 shrink-0"
+                >
+                  <X className="w-3.5 h-3.5" /> Remove
+                </Button>
+              </div>
+            ) : (
+              /* Clean File Input */
+              <div className="flex items-center gap-3">
+                <Input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  onChange={handleFileChange}
+                  disabled={isUploading || isSubmitting}
+                />
+                {isUploading || isSubmitting ? <Loader2 className="w-5 h-5 animate-spin text-primary" /> : null}
+              </div>
+            )}
             
             {/* Encoder Helper Note Box */}
             <div className="rounded-md bg-blue-500/10 border border-blue-500/20 p-2.5 text-[11px] text-blue-600 dark:text-blue-400 space-y-0.5">
@@ -515,12 +581,6 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
                 <li>Image file will only upload to server once saved or submitted.</li>
               </ul>
             </div>
-
-            {selectedFile ? (
-              <p className="text-xs text-blue-500 font-medium">Selected file: {selectedFile.name} (Will upload on save)</p>
-            ) : receiptUrl ? (
-              <p className="text-xs text-emerald-500 font-mono truncate">Attached: {receiptUrl}</p>
-            ) : null}
           </div>
 
           {/* Remarks */}

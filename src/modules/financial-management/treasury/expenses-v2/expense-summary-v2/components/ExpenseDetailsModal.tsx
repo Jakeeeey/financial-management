@@ -17,6 +17,7 @@ import {
   DivisionInfo,
   DepartmentOption,
 } from "../types";
+import { getAssetUrl } from "../../utils/assetUrl";
 import {
   FileText,
   User,
@@ -144,15 +145,29 @@ export const ExpenseDetailsModal: React.FC<ExpenseDetailsModalProps> = ({
     return dateStr;
   };
 
-  const formatDateLog = (dateStr?: string | null) => {
+  const formatDateLog = (dateStr?: string | null): string => {
     if (!dateStr) return "";
-    return new Date(dateStr).toLocaleString("en-PH", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2}):(\d{2})/);
+    if (!match) {
+      const d = new Date(dateStr);
+      return isNaN(d.getTime()) ? dateStr : d.toLocaleString();
+    }
+
+    const [, yearStr, monthStr, dayStr, hourStr, minStr] = match;
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10) - 1;
+    const day = parseInt(dayStr, 10);
+    const hour = parseInt(hourStr, 10);
+    const minute = parseInt(minStr, 10);
+
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sept", "Oct", "Nov", "Dec"];
+    const monthName = months[month] || "";
+
+    const period = hour >= 12 ? "PM" : "AM";
+    const displayHour = hour % 12 === 0 ? 12 : hour % 12;
+    const displayMin = String(minute).padStart(2, "0");
+
+    return `${monthName} ${day}, ${year}, ${displayHour}:${displayMin} ${period}`;
   };
 
   const handleZoomIn = () => setZoomLevel((prev) => Math.min(prev + 0.25, 3));
@@ -436,7 +451,7 @@ export const ExpenseDetailsModal: React.FC<ExpenseDetailsModalProps> = ({
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={item.receipt_url}
+                          src={getAssetUrl(item.receipt_url)}
                           alt={`Receipt for ${item.doc_no}`}
                           className="max-h-[75vh] w-auto object-contain rounded-sm shadow-md pointer-events-none select-none"
                         />
@@ -537,7 +552,7 @@ export const ExpenseDetailsModal: React.FC<ExpenseDetailsModalProps> = ({
           </Button>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={item.receipt_url}
+            src={getAssetUrl(item.receipt_url)}
             alt={`Fullscreen receipt ${item.doc_no}`}
             className="max-h-[92vh] max-w-[92vw] object-contain"
           />

@@ -18,8 +18,7 @@ export async function uploadReceiptFile(file: File): Promise<string> {
   const fileId = json.data?.id;
 
   if (fileId) {
-    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "";
-    return `${apiBase}/assets/${fileId}`;
+    return String(fileId);
   }
 
   throw new Error("File uploaded but no ID returned");

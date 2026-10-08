@@ -74,6 +74,7 @@ export interface ChartOfAccountOption {
   gl_code?: string | null;
   account_title?: string | null;
   status?: string | null;
+  account_type?: number | { id: number; account_name?: string } | null;
 }
 
 export interface SupplierOption {
@@ -123,5 +124,10 @@ export interface UserDefaultsOption {
   division_id: number | null;
   division_name: string | null;
   is_employee: boolean;
+  is_salesman?: boolean;
+  salesman_id?: number | null;
+  salesman_name?: string | null;
+  salesman_code?: string | null;
+  allowed_division_ids?: number[];
 }
 

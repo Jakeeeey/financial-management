@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -28,7 +28,7 @@ import {
   UserDefaultsOption,
 } from "../types";
 import { uploadReceiptFile } from "../services/uploadService";
-import { Plus, Trash2, Loader2, Save, Send, Search, FileText, CheckCircle2, AlertCircle } from "lucide-react";
+import { Plus, Trash2, Loader2, Save, Send, Search, FileText, CheckCircle2, AlertCircle, X, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 
 interface BulkExpenseModalProps {
@@ -66,19 +66,22 @@ export const BulkExpenseModal: React.FC<BulkExpenseModalProps> = ({
   userDefaults,
   onSubmitBulk,
 }) => {
-  const createEmptyRow = useCallback((): BulkRowItem => ({
-    id: Math.random().toString(36).substring(2, 9),
-    expense_date: new Date().toISOString().split("T")[0],
-    payee: userDefaults?.supplier_id ?? null,
-    is_employee: true,
-    division_id: userDefaults?.division_id ?? null,
-    department_id: null,
-    coa_id: null,
-    amount: "",
-    remarks: "",
-    selectedFile: null,
-    receipt_url: "",
-  }), [userDefaults]);
+  const createEmptyRow = useCallback((): BulkRowItem => {
+    const salesDept = departments.find((d) => (d.department_name || "").trim().toLowerCase() === "sales");
+    return {
+      id: Math.random().toString(36).substring(2, 9),
+      expense_date: new Date().toISOString().split("T")[0],
+      payee: userDefaults?.supplier_id ?? null,
+      is_employee: true,
+      division_id: userDefaults?.division_id ?? null,
+      department_id: salesDept ? salesDept.department_id : null,
+      coa_id: null,
+      amount: "",
+      remarks: "",
+      selectedFile: null,
+      receipt_url: "",
+    };
+  }, [userDefaults, departments]);
 
   const [rows, setRows] = useState<BulkRowItem[]>([]);
   const [activeRowId, setActiveRowId] = useState<string>("");
@@ -180,6 +183,12 @@ export const BulkExpenseModal: React.FC<BulkExpenseModalProps> = ({
     updateActiveRow("selectedFile", file);
   };
 
+  const handleRemoveFile = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    updateActiveRow("selectedFile", null);
+    updateActiveRow("receipt_url", "");
+  };
+
   const isRowComplete = (r: BulkRowItem) => {
     const parsedAmount = parseFloat(r.amount);
     return (
@@ -216,7 +225,7 @@ export const BulkExpenseModal: React.FC<BulkExpenseModalProps> = ({
     // Validation pass across rows
     for (let idx = 0; idx < activeRows.length; idx++) {
       const r = activeRows[idx];
-      const rowNum = idx + 1;
+      const rowNum = rows.findIndex((item) => item.id === r.id) + 1;
 
       if (!r.expense_date) {
         setActiveRowId(r.id);
@@ -313,18 +322,20 @@ export const BulkExpenseModal: React.FC<BulkExpenseModalProps> = ({
       (c.account_title || "").toLowerCase().includes(coaSearch.toLowerCase())
   );
 
-  const filteredDivisions = divisions.filter((d) =>
+  const availableDivisions = useMemo(() => {
+    if (userDefaults?.is_salesman && userDefaults?.allowed_division_ids && userDefaults.allowed_division_ids.length > 0) {
+      return divisions.filter((d) => userDefaults.allowed_division_ids!.includes(d.division_id));
+    }
+    return divisions;
+  }, [divisions, userDefaults]);
+
+  const filteredDivisions = availableDivisions.filter((d) =>
     (d.division_name || "").toLowerCase().includes(divisionSearch.toLowerCase())
   );
 
-  const availableDepartments = activeRow?.department_id
-    ? departments
-    : activeRow?.division_id
-    ? departments.filter((d) => {
-        const div = d.division_id ?? d.parent_division ?? d.parentDivision;
-        return !div || div === activeRow.division_id;
-      })
-    : departments;
+  const availableDepartments = useMemo(() => {
+    return departments.filter((d) => (d.department_name || "").trim().toLowerCase() === "sales");
+  }, [departments]);
 
   const filteredDepartments = availableDepartments.filter((d) =>
     (d.department_name || "").toLowerCase().includes(departmentSearch.toLowerCase())
@@ -527,9 +538,8 @@ export const BulkExpenseModal: React.FC<BulkExpenseModalProps> = ({
                   <Select
                     value={activeRow.division_id ? String(activeRow.division_id) : ""}
                     onValueChange={(v) => updateActiveRow("division_id", v ? parseInt(v, 10) : null)}
-                    disabled={true}
                   >
-                    <SelectTrigger className="w-full bg-muted/60 cursor-not-allowed opacity-90">
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select Division" />
                     </SelectTrigger>
                     <SelectContent
@@ -690,14 +700,76 @@ export const BulkExpenseModal: React.FC<BulkExpenseModalProps> = ({
                 <Label>
                   Receipt Attachment / Image <span className="text-rose-500 font-bold">*</span>
                 </Label>
-                <div className="flex items-center gap-3">
-                  <Input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif"
-                    onChange={handleFileChange}
-                    disabled={isSubmitting}
-                  />
-                </div>
+
+                {activeRow.selectedFile ? (
+                  /* Active Selected File Preview Card */
+                  <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-md bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                        <ImageIcon className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-foreground truncate" title={activeRow.selectedFile.name}>
+                          {activeRow.selectedFile.name}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {activeRow.selectedFile.size < 1024 * 1024
+                            ? `${(activeRow.selectedFile.size / 1024).toFixed(1)} KB`
+                            : `${(activeRow.selectedFile.size / (1024 * 1024)).toFixed(2)} MB`}{" "}
+                          • <span className="text-blue-500 font-medium">Ready to upload on save</span>
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleRemoveFile}
+                      disabled={isSubmitting}
+                      className="h-7 text-xs text-rose-500 hover:text-rose-600 hover:bg-rose-500/10 gap-1 shrink-0"
+                    >
+                      <X className="w-3.5 h-3.5" /> Remove
+                    </Button>
+                  </div>
+                ) : activeRow.receipt_url ? (
+                  /* Existing Attached URL Card */
+                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-md bg-emerald-500/10 text-emerald-500 flex items-center justify-center shrink-0">
+                        <ImageIcon className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-foreground truncate" title={activeRow.receipt_url}>
+                          Attached Image
+                        </p>
+                        <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-mono truncate">
+                          {activeRow.receipt_url}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleRemoveFile}
+                      disabled={isSubmitting}
+                      className="h-7 text-xs text-rose-500 hover:text-rose-600 hover:bg-rose-500/10 gap-1 shrink-0"
+                    >
+                      <X className="w-3.5 h-3.5" /> Remove
+                    </Button>
+                  </div>
+                ) : (
+                  /* Fresh Keyed File Input */
+                  <div className="flex items-center gap-3">
+                    <Input
+                      key={`file-input-${activeRow.id}`}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      onChange={handleFileChange}
+                      disabled={isSubmitting}
+                    />
+                  </div>
+                )}
 
                 {/* Helper note */}
                 <div className="rounded-md bg-blue-500/10 border border-blue-500/20 p-2.5 text-[11px] text-blue-600 dark:text-blue-400 space-y-0.5">
@@ -707,16 +779,6 @@ export const BulkExpenseModal: React.FC<BulkExpenseModalProps> = ({
                     <li>File will upload automatically once you save or submit all entries.</li>
                   </ul>
                 </div>
-
-                {activeRow.selectedFile ? (
-                  <p className="text-xs text-blue-500 font-medium">
-                    Selected file: {activeRow.selectedFile.name} (Ready to upload on save)
-                  </p>
-                ) : activeRow.receipt_url ? (
-                  <p className="text-xs text-emerald-500 font-mono truncate">
-                    Attached: {activeRow.receipt_url}
-                  </p>
-                ) : null}
               </div>
 
               {/* Remarks */}

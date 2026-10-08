@@ -42,9 +42,12 @@ export async function fetchDepartments(): Promise<DepartmentOption[]> {
   }
 }
 
-export async function fetchChartOfAccounts(): Promise<ChartOfAccountOption[]> {
+export async function fetchChartOfAccounts(expenseOnly: boolean = false): Promise<ChartOfAccountOption[]> {
   try {
-    const res = await fetch(`${BASE_URL}/chart_of_accounts`, { cache: "no-store" });
+    const url = expenseOnly
+      ? `${BASE_URL}/chart_of_accounts?filter=expense_only`
+      : `${BASE_URL}/chart_of_accounts`;
+    const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) return [];
     const json = await res.json();
     return json.data || [];

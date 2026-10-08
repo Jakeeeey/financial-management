@@ -37,7 +37,7 @@ export async function GET() {
     let divisionId: number | null = null;
     let divisionName: string | null = null;
 
-    // 1. Check suppliers where user_id = userId
+    // 1. Check suppliers where user_id = userId (for payee & supplier info only)
     try {
       const suppRes = await fetch(
         `${API_BASE_URL}/items/suppliers?filter[user_id][_eq]=${userId}&limit=1`,
@@ -49,32 +49,68 @@ export async function GET() {
           const supp = suppJson.data[0];
           supplierId = Number(supp.id);
           supplierName = supp.supplier_name || null;
-          if (supp.division_id) {
-            divisionId = Number(supp.division_id);
-          }
         }
       }
     } catch (e) {
       console.error("Error fetching supplier by user_id:", e);
     }
 
-    // 2. Check salesman where encoder_id = userId OR employee_id = userId for division_id
+    let isSalesman = false;
+    let salesmanId: number | null = null;
+    let salesmanName: string | null = null;
+    let salesmanCode: string | null = null;
+    const allowedDivisionIds: number[] = [];
+
+    // 2. Check salesman where employee_id = userId (active salesman records)
     try {
       const salesRes = await fetch(
-        `${API_BASE_URL}/items/salesman?filter[_or][0][encoder_id][_eq]=${userId}&filter[_or][1][employee_id][_eq]=${userId}&limit=1`,
+        `${API_BASE_URL}/items/salesman?filter[employee_id][_eq]=${userId}&filter[isActive][_eq]=1&sort=-id&limit=50`,
         { headers: AUTH_HEADERS, cache: "no-store" }
       );
       if (salesRes.ok) {
         const salesJson = await salesRes.json();
-        if (salesJson.data && salesJson.data.length > 0) {
-          const salesman = salesJson.data[0];
-          if (salesman.division_id) {
-            divisionId = Number(salesman.division_id);
+        const salesList: Array<{
+          id: number | string;
+          salesman_name?: string | null;
+          salesman_code?: string | null;
+          division_id?: number | string | null;
+        }> = salesJson.data || [];
+
+        if (salesList.length > 0) {
+          isSalesman = true;
+
+          // Collect unique division IDs from all active salesman records
+          salesList.forEach((s) => {
+            if (s.division_id) {
+              const divNum = Number(s.division_id);
+              if (!isNaN(divNum) && !allowedDivisionIds.includes(divNum)) {
+                allowedDivisionIds.push(divNum);
+              }
+            }
+          });
+
+          // Prioritize matching record by supplierName or pick the first active
+          const matchedSalesman =
+            salesList.find(
+              (s) =>
+                supplierName &&
+                s.salesman_name &&
+                s.salesman_name.toLowerCase().trim() ===
+                  supplierName.toLowerCase().trim()
+            ) || salesList[0];
+
+          salesmanId = Number(matchedSalesman.id);
+          salesmanName = matchedSalesman.salesman_name || null;
+          salesmanCode = matchedSalesman.salesman_code || null;
+          if (matchedSalesman.division_id) {
+            divisionId = Number(matchedSalesman.division_id);
+          } else if (allowedDivisionIds.length > 0) {
+            divisionId = allowedDivisionIds[0];
           }
         }
       }
     } catch (e) {
-      console.error("Error fetching salesman by user_id:", e);
+      console.error("Error fetching salesman by employee_id:", e);
     }
 
     // 3. Resolve division_name from division table if divisionId is found
@@ -101,6 +137,11 @@ export async function GET() {
         division_id: divisionId,
         division_name: divisionName,
         is_employee: true,
+        is_salesman: isSalesman,
+        salesman_id: salesmanId,
+        salesman_name: salesmanName,
+        salesman_code: salesmanCode,
+        allowed_division_ids: allowedDivisionIds,
       },
     });
   } catch (err: unknown) {

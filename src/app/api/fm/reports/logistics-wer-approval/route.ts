@@ -10,11 +10,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const QUEUE_STATUSES = ["submitted", "approved", "returned", "rejected", "withdrawn", "draft"] as const;
-const QUEUE_FIELDS = "id,dispatch_plan_id,status,total_amount,submitted_by,submitted_at,decided_by,decided_at,decision_remarks,disbursement_id,idempotency_key";
+const QUEUE_FIELDS = "id,dispatch_plan_id,department_id,status,total_amount,submitted_by,submitted_at,decided_by,decided_at,decision_remarks,disbursement_id,idempotency_key";
 
 interface QueueDraftRow extends Record<string, unknown> {
   id?: unknown;
   dispatch_plan_id?: unknown;
+  department_id?: unknown;
   status?: unknown;
   total_amount?: unknown;
   submitted_by?: unknown;
@@ -64,6 +65,7 @@ function asNullableNumber(value: unknown): number | null {
 function mapSubmission(row: QueueDraftRow): DraftSubmission {
   return {
     id: asNumber(row.id),
+    departmentId: asNullableNumber(row.department_id),
     status: asString(row.status) || null,
     totalAmount: asNumber(row.total_amount),
     submittedBy: asNullableNumber(row.submitted_by),
