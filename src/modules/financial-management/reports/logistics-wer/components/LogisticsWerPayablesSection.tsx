@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { WerCoaCombobox } from "./WerCoaCombobox";
+import { WerOrganizationCombobox } from "./WerOrganizationCombobox";
 import { getStatusColor } from "@/modules/financial-management/treasury/disbursement/utils/disbursement-utils";
 import {
   Table,
@@ -25,17 +26,21 @@ import type {
   LogisticsWerPayableSubmissionSummary,
 } from "../types";
 import { findBudgetRequestOverages } from "../utils/budget-balances";
-import { canRunPayableAction, isPayableFormDirty, validatePayableLines } from "../utils/payable-validation";
+import { canRunPayableAction, hasCompletePayableOrganization, isPayableFormDirty, validatePayableLines } from "../utils/payable-validation";
 import {
   deletePayableReceipt,
+  fetchPayableDepartments,
+  fetchPayableDivisions,
   fetchPayableSubmissionDetails,
   fetchPayableCoas,
   savePayableDraft,
   submitPayable,
-  updateReturnedPayable,
+  updatePayableSubmission,
   uploadPayableReceipt,
   withdrawPayableSubmission,
   type PayableCoaOption,
+  type PayableDepartmentOption,
+  type PayableDivisionOption,
   type PayableLineInput,
   type StagedReceipt,
 } from "../services/logisticsWerApi";
@@ -73,6 +78,7 @@ interface EditableLine {
   remarks: string;
   date: string;
   coaId: string;
+  divisionId: string;
   receipts: StagedReceipt[];
 }
 
@@ -85,7 +91,7 @@ function todayDateOnly(): string {
 }
 
 function emptyLine(key: number): EditableLine {
-  return { key, id: null, amount: "", referenceNo: "", remarks: "", date: todayDateOnly(), coaId: "", receipts: [] };
+  return { key, id: null, amount: "", referenceNo: "", remarks: "", date: todayDateOnly(), coaId: "", divisionId: "", receipts: [] };
 }
 
 function editableLinesFromDetails(lines: LogisticsWerPayableSubmissionLineDetails[]): EditableLine[] {
@@ -97,6 +103,7 @@ function editableLinesFromDetails(lines: LogisticsWerPayableSubmissionLineDetail
     remarks: line.remarks || "",
     date: line.date || "",
     coaId: line.coaId ? String(line.coaId) : "",
+    divisionId: line.divisionId ? String(line.divisionId) : "",
     receipts: line.receipts.flatMap((receipt) => receipt.fileId ? [{ fileId: receipt.fileId, fileName: null }] : []),
   }));
 }
@@ -116,6 +123,12 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
   const [initialLines, setInitialLines] = useState<EditableLine[]>(() => [emptyLine(1)]);
   const [lines, setLines] = useState<EditableLine[]>(initialLines);
   const [coas, setCoas] = useState<PayableCoaOption[]>([]);
+  const [departments, setDepartments] = useState<PayableDepartmentOption[]>([]);
+  const [divisions, setDivisions] = useState<PayableDivisionOption[]>([]);
+  const [organizationOptionsLoaded, setOrganizationOptionsLoaded] = useState(false);
+  const [organizationOptionsError, setOrganizationOptionsError] = useState<string | null>(null);
+  const [initialDepartmentId, setInitialDepartmentId] = useState("");
+  const [departmentId, setDepartmentId] = useState("");
   const [coasError, setCoasError] = useState<string | null>(null);
   const [coasLoaded, setCoasLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -124,6 +137,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
   const [notice, setNotice] = useState<string | null>(null);
   const [withdrawingId, setWithdrawingId] = useState<number | null>(null);
   const [editingSubmissionId, setEditingSubmissionId] = useState<number | null>(null);
+  const [editingSubmissionStatus, setEditingSubmissionStatus] = useState<string | null>(null);
   const [loadingEditId, setLoadingEditId] = useState<number | null>(null);
   const [expandedSubmissionIds, setExpandedSubmissionIds] = useState<Set<number>>(() => new Set());
   const [submissionDetails, setSubmissionDetails] = useState<Record<number, LogisticsWerPayableSubmissionLineDetails[]>>({});
@@ -154,6 +168,26 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
       active = false;
     };
   }, [coasLoaded, isForClearance, submissions.length]);
+
+  useEffect(() => {
+    if ((!isForClearance && submissions.length === 0) || organizationOptionsLoaded) return;
+    let active = true;
+    Promise.all([fetchPayableDepartments(), fetchPayableDivisions()])
+      .then(([departmentOptions, divisionOptions]) => {
+        if (!active) return;
+        setDepartments(departmentOptions);
+        setDivisions(divisionOptions);
+      })
+      .catch((loadError) => {
+        if (active) setOrganizationOptionsError(loadError instanceof Error ? loadError.message : "Unable to load departments and divisions.");
+      })
+      .finally(() => {
+        if (active) setOrganizationOptionsLoaded(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isForClearance, organizationOptionsLoaded, submissions.length]);
 
   const loadSubmissionDetails = async (submissionId: number) => {
     if (
@@ -190,8 +224,9 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
     if (opening) void loadSubmissionDetails(submissionId);
   };
 
-  const handleEditReturned = async (submissionId: number) => {
-    if (isPayableFormDirty(lines, initialLines) && !window.confirm("Discard the unsaved new payable and edit the returned submission?")) {
+  const handleEditSubmission = async (submissionId: number, status: string) => {
+    if ((isPayableFormDirty(lines, initialLines) || departmentId !== initialDepartmentId)
+      && !window.confirm("Discard the unsaved new payable and edit this submission?")) {
       return;
     }
     setFormError(null);
@@ -200,21 +235,25 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
     try {
       const details = await fetchPayableSubmissionDetails(planId, submissionId);
       if (!details.canEdit) {
-        throw new Error("Only the original submitter can edit this returned payable.");
+        throw new Error("Only the original submitter can edit this draft or returned payable.");
       }
-      if (details.lines.length === 0) throw new Error("This returned submission has no payable lines to edit.");
+      if (details.lines.length === 0) throw new Error("This submission has no payable lines to edit.");
       const editableLines = editableLinesFromDetails(details.lines);
+      const editableDepartmentId = details.departmentId ? String(details.departmentId) : "";
       setInitialLines(editableLines);
       setLines(editableLines);
+      setInitialDepartmentId(editableDepartmentId);
+      setDepartmentId(editableDepartmentId);
       setEditingSubmissionId(submissionId);
+      setEditingSubmissionStatus(status);
     } catch (editError) {
-      setFormError(editError instanceof Error ? editError.message : "Unable to load the returned payable.");
+      setFormError(editError instanceof Error ? editError.message : "Unable to load the payable submission.");
     } finally {
       setLoadingEditId(null);
     }
   };
 
-  const cancelReturnedEdit = async () => {
+  const cancelSubmissionEdit = async () => {
     const initialFileIds = new Set(initialLines.flatMap((line) => line.receipts.map((receipt) => receipt.fileId)));
     const newlyStagedFileIds = Array.from(new Set(
       lines.flatMap((line) => line.receipts.map((receipt) => receipt.fileId).filter((fileId) => !initialFileIds.has(fileId))),
@@ -228,7 +267,10 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
     const pristineLines = [emptyLine(1)];
     setInitialLines(pristineLines);
     setLines(pristineLines);
+    setInitialDepartmentId("");
+    setDepartmentId("");
     setEditingSubmissionId(null);
+    setEditingSubmissionStatus(null);
     setFormError(null);
     setNotice(null);
   };
@@ -266,13 +308,17 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
     remarks: line.remarks.trim() || null,
     date: line.date || null,
     coaId: line.coaId ? Number(line.coaId) : null,
+    divisionId: line.divisionId ? Number(line.divisionId) : null,
     receiptFileIds: line.receipts.map((receipt) => receipt.fileId),
   }));
 
-  const isDirty = isPayableFormDirty(lines, initialLines);
+  const isDirty = isPayableFormDirty(lines, initialLines) || departmentId !== initialDepartmentId;
   const payload = buildPayload();
   const draftValidation = validatePayableLines(payload, false);
-  const submitValidation = validatePayableLines(payload, true);
+  const submitValidation = validatePayableLines(payload, true, true);
+  const selectedDepartmentId = departmentId ? Number(departmentId) : null;
+  const organizationValid = hasCompletePayableOrganization(selectedDepartmentId, payload);
+  const departmentValid = selectedDepartmentId !== null && Number.isInteger(selectedDepartmentId) && selectedDepartmentId > 0;
   const draftActionEnabled = canRunPayableAction("save-draft", {
     dirty: isDirty,
     valid: draftValidation.valid,
@@ -282,16 +328,23 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
   });
   const submitActionEnabled = canRunPayableAction("submit", {
     dirty: isDirty || editingSubmissionId !== null,
-    valid: submitValidation.valid,
+    valid: submitValidation.valid && organizationValid,
     busy,
     uploading: uploadingKey !== null,
     submissionBlocked,
   });
 
   const handleAction = async (kind: "save-draft" | "submit") => {
-    const dirty = isPayableFormDirty(lines, initialLines);
+    const dirty = isPayableFormDirty(lines, initialLines) || departmentId !== initialDepartmentId;
     const actionDirty = dirty || (kind === "submit" && editingSubmissionId !== null);
-    const validation = validatePayableLines(buildPayload(), kind === "submit");
+    if (kind === "submit" && !departmentValid) {
+      if (actionDirty && !busy && uploadingKey === null) {
+        setNotice(null);
+        setFormError("Select a department before submitting payables.");
+      }
+      return;
+    }
+    const validation = validatePayableLines(buildPayload(), kind === "submit", kind === "submit");
     if (!validation.valid) {
       if (actionDirty && !busy && uploadingKey === null) {
         setNotice(null);
@@ -315,19 +368,22 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
         ? crypto.randomUUID()
         : `wer-${planId}-${Date.now()}`;
       const submission = editingSubmissionId !== null
-        ? await updateReturnedPayable(planId, editingSubmissionId, kind, validation.lines)
+        ? await updatePayableSubmission(planId, editingSubmissionId, kind, selectedDepartmentId, validation.lines)
         : kind === "submit"
-          ? await submitPayable(planId, validation.lines, idempotencyKey)
-          : await savePayableDraft(planId, validation.lines, idempotencyKey);
+          ? await submitPayable(planId, selectedDepartmentId, validation.lines, idempotencyKey)
+          : await savePayableDraft(planId, selectedDepartmentId, validation.lines, idempotencyKey);
       if (editingSubmissionId !== null && kind === "save-draft") {
         const updatedLines = editableLinesFromDetails(submission.lines);
+        const updatedDepartmentId = submission.departmentId ? String(submission.departmentId) : "";
         setInitialLines(updatedLines);
         setLines(updatedLines);
+        setInitialDepartmentId(updatedDepartmentId);
+        setDepartmentId(updatedDepartmentId);
         setSubmissionDetails((current) => ({
           ...current,
           [submission.id]: submission.lines,
         }));
-        setNotice(`Changes saved to returned submission #${submission.id}.`);
+        setNotice(`Changes saved to ${editingSubmissionStatus === "draft" ? "draft" : "returned submission"} #${submission.id}.`);
         await onChanged();
         return;
       }
@@ -335,14 +391,19 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
         setSubmissionDetails((current) => ({ ...current, [submission.id]: submission.lines }));
       }
       setNotice(editingSubmissionId !== null
-        ? `Submission #${submission.id} resubmitted for QA approval.`
+        ? editingSubmissionStatus === "draft"
+          ? `Submission #${submission.id} recorded for QA approval.`
+          : `Submission #${submission.id} resubmitted for QA approval.`
         : kind === "submit"
           ? `Submission #${submission.id} recorded for QA approval.`
           : `Draft #${submission.id} saved.`);
       const pristineLines = [emptyLine(1)];
       setInitialLines(pristineLines);
       setLines(pristineLines);
+      setInitialDepartmentId("");
+      setDepartmentId("");
       setEditingSubmissionId(null);
+      setEditingSubmissionStatus(null);
       await onChanged();
     } catch (actionError) {
       setFormError(actionError instanceof Error ? actionError.message : "Unable to record the payable.");
@@ -566,13 +627,13 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    {status === "returned" && isForClearance && !detail.isLiquidated && (
+                    {(status === "draft" || status === "returned") && isForClearance && !detail.isLiquidated && (
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
                         disabled={editingSubmissionId !== null || loadingEditId !== null || busy || uploadingKey !== null}
-                        onClick={() => void handleEditReturned(submission.id)}
+                        onClick={() => void handleEditSubmission(submission.id, status)}
                       >
                         {loadingEditId === submission.id ? "Loading…" : "Edit"}
                       </Button>
@@ -711,17 +772,19 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
           <div className="flex items-start justify-between gap-3">
             <div>
               <h4 className="text-sm font-semibold">
-                {editingSubmissionId !== null ? `Edit Returned Submission #${editingSubmissionId}` : "New Payable Line Entries"}
+                {editingSubmissionId !== null
+                  ? `${editingSubmissionStatus === "draft" ? "Edit Draft" : "Edit Returned"} Submission #${editingSubmissionId}`
+                  : "New Payable Line Entries"}
               </h4>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {editingSubmissionId !== null
-                  ? "Correct the returned line items, save your changes, or resubmit the same submission for approval."
+                  ? "Correct the line items, save your changes, or submit the same record for approval."
                   : "Configure financial account allocation, date references, amounts, and attachment proofs."}
               </p>
             </div>
             <div className="flex items-center gap-2">
               {editingSubmissionId !== null && (
-                <Button type="button" variant="outline" size="sm" disabled={busy || uploadingKey !== null} onClick={() => void cancelReturnedEdit()}>
+                <Button type="button" variant="outline" size="sm" disabled={busy || uploadingKey !== null} onClick={() => void cancelSubmissionEdit()}>
                   Cancel
                 </Button>
               )}
@@ -749,6 +812,26 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
           {coasError && (
             <p className="text-xs text-muted-foreground">Chart of accounts unavailable: {coasError}. A COA is still required per line before submitting.</p>
           )}
+
+          <div className="max-w-xl space-y-1">
+            <Label htmlFor="wer-payable-department">Department *</Label>
+            <WerOrganizationCombobox
+              id="wer-payable-department"
+              value={departmentId}
+              onValueChange={setDepartmentId}
+              options={departments.map((department) => ({
+                value: String(department.departmentId),
+                label: department.departmentName,
+              }))}
+              placeholder="Select department"
+              searchLabel="departments"
+              disabled={!organizationOptionsLoaded || busy}
+            />
+            <p className="text-[11px] text-muted-foreground">Required for submission. You can save a draft before choosing one.</p>
+            {organizationOptionsError && (
+              <p className="text-[11px] text-destructive">Department and division options unavailable: {organizationOptionsError}</p>
+            )}
+          </div>
 
           {lines.map((line, index) => (
             <div key={line.key} className="space-y-3 rounded-lg border bg-muted/20 p-3">
@@ -779,6 +862,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
                           remarks: line.remarks,
                           date: line.date,
                           coaId: line.coaId,
+                          divisionId: line.divisionId,
                           receipts: [],
                         };
                         const nextLines = [...current];
@@ -802,7 +886,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
                   </Button>
                 </div>
               </div>
-              <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-4">
+              <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
                 <div className="space-y-1">
                   <Label>Reference No. (Optional)</Label>
                   <Input
@@ -829,6 +913,22 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
                   )}
                 </div>
                 <div className="space-y-1">
+                  <Label htmlFor={`wer-payable-division-${line.key}`}>Division *</Label>
+                  <WerOrganizationCombobox
+                    id={`wer-payable-division-${line.key}`}
+                    value={line.divisionId}
+                    onValueChange={(value) => updateLine(line.key, { divisionId: value })}
+                    options={divisions.map((division) => ({
+                      value: String(division.divisionId),
+                      label: division.divisionName,
+                    }))}
+                    placeholder="Select division"
+                    searchLabel="divisions"
+                    disabled={!organizationOptionsLoaded || busy}
+                  />
+                  <p className="text-[11px] text-muted-foreground">Required for submission; optional while saving a draft.</p>
+                </div>
+                <div className="space-y-1">
                   <Label>Date</Label>
                   <Input
                     type="date"
@@ -851,7 +951,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
                     />
                   </div>
                 </div>
-                <div className="space-y-1 sm:col-span-2 md:col-span-2">
+                <div className="space-y-1 sm:col-span-2 lg:col-span-3">
                   <Label>Remarks (Optional)</Label>
                   <Textarea
                     value={line.remarks}
@@ -860,7 +960,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
                     className="min-h-9"
                   />
                 </div>
-                <div className="space-y-1 sm:col-span-2 md:col-span-2">
+                <div className="space-y-1 sm:col-span-2 lg:col-span-2">
                   <Label>File Upload / Attachments</Label>
                   <div className="flex min-h-9 flex-wrap items-center gap-2 rounded-md border border-dashed bg-background px-2 py-1.5 focus-within:ring-2 focus-within:ring-ring/50">
                     {line.receipts.length === 0 && (

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canRunPayableAction, isPayableFormDirty, validatePayableLines } from "./payable-validation.ts";
+import { canRunPayableAction, hasCompletePayableOrganization, isPayableFormDirty, validatePayableLines } from "./payable-validation.ts";
 
 const baselineLine = {
   amount: "",
@@ -8,6 +8,7 @@ const baselineLine = {
   remarks: "",
   date: "2026-10-07",
   coaId: "",
+  divisionId: "",
   receipts: [],
 };
 
@@ -18,6 +19,7 @@ test("the default date is part of the pristine baseline", () => {
 test("adding a line, changing a field, or attaching a receipt makes the form dirty", () => {
   assert.equal(isPayableFormDirty([baselineLine, { ...baselineLine }], [baselineLine]), true);
   assert.equal(isPayableFormDirty([{ ...baselineLine, amount: "12.00" }], [baselineLine]), true);
+  assert.equal(isPayableFormDirty([{ ...baselineLine, divisionId: "4" }], [baselineLine]), true);
   assert.equal(
     isPayableFormDirty([{ ...baselineLine, receipts: [{ fileId: "file-1" }] }], [baselineLine]),
     true,
@@ -45,7 +47,7 @@ test("payable amounts must be positive and have at most two decimal places", () 
 });
 
 test("drafts allow an omitted COA while submissions require one", () => {
-  const lines = [{ amount: 12.5, coaId: null }];
+  const lines = [{ amount: 12.5, coaId: null, divisionId: 3 }];
   const draftValidation = validatePayableLines(lines, false);
   const submitValidation = validatePayableLines(lines, true);
   assert.equal(draftValidation.valid, true);
@@ -53,7 +55,21 @@ test("drafts allow an omitted COA while submissions require one", () => {
   const actionState = { dirty: true, busy: false, uploading: false, submissionBlocked: false };
   assert.equal(canRunPayableAction("save-draft", { ...actionState, valid: draftValidation.valid }), true);
   assert.equal(canRunPayableAction("submit", { ...actionState, valid: submitValidation.valid }), false);
-  assert.equal(validatePayableLines([{ amount: 12.5, coaId: 4 }], true).valid, true);
+  assert.equal(validatePayableLines([{ amount: 12.5, coaId: 4, divisionId: 3 }], true).valid, true);
+});
+
+test("drafts may omit a division while submissions require a valid division per line", () => {
+  assert.equal(validatePayableLines([{ amount: 12.5 }], false).valid, true);
+  assert.equal(validatePayableLines([{ amount: 12.5, divisionId: 0 }], false).valid, false);
+  assert.equal(validatePayableLines([{ amount: 12.5 }], true, true).valid, false);
+  assert.equal(validatePayableLines([{ amount: 12.5, coaId: 4, divisionId: 3 }], true, true).valid, true);
+});
+
+test("approval requires a department and a division on every payable line", () => {
+  assert.equal(hasCompletePayableOrganization(null, [{ divisionId: 3 }]), false);
+  assert.equal(hasCompletePayableOrganization(2, [{ divisionId: null }]), false);
+  assert.equal(hasCompletePayableOrganization(2, [{ divisionId: 3 }, { divisionId: 0 }]), false);
+  assert.equal(hasCompletePayableOrganization(2, [{ divisionId: 3 }, { divisionId: "4" }]), true);
 });
 
 test("invalid entered dates are rejected", () => {
@@ -68,6 +84,7 @@ test("valid changed lines are normalized without changing optional fields", () =
     remarks: "  Fuel  ",
     date: "2026-10-07",
     coaId: "4",
+    divisionId: "9",
     receiptFileIds: ["file-1", "file-1", " "],
   }], true);
 
@@ -79,6 +96,7 @@ test("valid changed lines are normalized without changing optional fields", () =
       remarks: "Fuel",
       date: "2026-10-07",
       coaId: 4,
+      divisionId: 9,
       receiptFileIds: ["file-1"],
     }],
   });
@@ -88,7 +106,7 @@ test("returned line edits preserve valid existing IDs and reject invalid IDs", (
   const result = validatePayableLines([{ id: "41", amount: 12, coaId: 3 }], false);
   assert.deepEqual(result, {
     valid: true,
-    lines: [{ id: 41, amount: 12, referenceNo: null, remarks: null, date: null, coaId: 3, receiptFileIds: [] }],
+    lines: [{ id: 41, amount: 12, referenceNo: null, remarks: null, date: null, coaId: 3, divisionId: null, receiptFileIds: [] }],
   });
   assert.equal(validatePayableLines([{ id: "not-a-line", amount: 12 }], false).valid, false);
 });

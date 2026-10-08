@@ -5,12 +5,26 @@ export interface ValidatedPayableLine {
   remarks: string | null;
   date: string | null;
   coaId: number | null;
+  divisionId: number | null;
   receiptFileIds: string[];
 }
 
 export type PayableLineValidation =
   | { valid: true; lines: ValidatedPayableLine[] }
   | { valid: false; error: string };
+
+export function hasCompletePayableOrganization(
+  departmentId: unknown,
+  lines: Array<{ divisionId?: unknown }>,
+): boolean {
+  const department = Number(departmentId);
+  return Number.isInteger(department) && department > 0
+    && lines.length > 0
+    && lines.every((line) => {
+      const division = Number(line.divisionId);
+      return Number.isInteger(division) && division > 0;
+    });
+}
 
 export type PayableAction = "save-draft" | "submit";
 
@@ -29,6 +43,7 @@ interface PayableLineInput {
   remarks?: unknown;
   date?: unknown;
   coaId?: unknown;
+  divisionId?: unknown;
   receiptFileIds?: unknown;
 }
 
@@ -38,6 +53,7 @@ interface PayableFormLineState {
   remarks: string;
   date: string;
   coaId: string;
+  divisionId: string;
   receipts: Array<{ fileId: string }>;
 }
 
@@ -51,7 +67,11 @@ function isValidDateOnly(value: string): boolean {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
-export function validatePayableLines(rawLines: unknown, requireCoa: boolean): PayableLineValidation {
+export function validatePayableLines(
+  rawLines: unknown,
+  requireCoa: boolean,
+  requireDivision = requireCoa,
+): PayableLineValidation {
   if (!Array.isArray(rawLines) || rawLines.length === 0) {
     return { valid: false, error: "At least one payable line is required." };
   }
@@ -85,6 +105,15 @@ export function validatePayableLines(rawLines: unknown, requireCoa: boolean): Pa
       return { valid: false, error: `Line ${index + 1} has an invalid chart-of-accounts entry.` };
     }
 
+    const divisionRaw = raw.divisionId;
+    const divisionId = divisionRaw === null || divisionRaw === undefined || divisionRaw === "" ? null : Number(divisionRaw);
+    if (requireDivision && (divisionId === null || !Number.isInteger(divisionId) || divisionId <= 0)) {
+      return { valid: false, error: `Line ${index + 1} requires a valid division before submission.` };
+    }
+    if (divisionId !== null && (!Number.isInteger(divisionId) || divisionId <= 0)) {
+      return { valid: false, error: `Line ${index + 1} has an invalid division.` };
+    }
+
     const receiptRaw = raw.receiptFileIds;
     const receiptFileIds = receiptRaw === undefined || receiptRaw === null
       ? []
@@ -96,6 +125,7 @@ export function validatePayableLines(rawLines: unknown, requireCoa: boolean): Pa
       remarks: asTrimmedString(raw.remarks) || null,
       date: date || null,
       coaId,
+      divisionId,
       receiptFileIds: Array.from(new Set(receiptFileIds)),
     });
   }
@@ -115,6 +145,7 @@ export function isPayableFormDirty(
       || line.remarks !== initial.remarks
       || line.date !== initial.date
       || line.coaId !== initial.coaId
+      || line.divisionId !== initial.divisionId
       || line.receipts.length !== initial.receipts.length
       || line.receipts.some((receipt, receiptIndex) => receipt.fileId !== initial.receipts[receiptIndex]?.fileId);
   });

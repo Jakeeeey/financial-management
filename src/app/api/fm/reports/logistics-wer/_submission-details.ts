@@ -7,21 +7,23 @@ export interface PayableSubmissionLineDetails {
   referenceNo: string | null;
   date: string | null;
   coaId: number | null;
+  divisionId: number | null;
   remarks: string | null;
   receipts: Array<{ id: number; fileId: string | null }>;
 }
 
 export interface PayableSubmissionDetails {
   submissionId: number;
+  departmentId: number | null;
   canEdit: boolean;
   lines: PayableSubmissionLineDetails[];
 }
 
-export function canEditReturnedSubmission(
+export function canEditPayableSubmission(
   submission: DraftSubmission,
   userId: number,
 ): boolean {
-  return (submission.status || "").toLowerCase() === "returned"
+  return ["draft", "returned"].includes((submission.status || "").toLowerCase())
     && submission.submittedBy === userId
     && submission.disbursementId === null;
 }
@@ -35,7 +37,8 @@ export function toPayableSubmissionDetails(
 
   return {
     submissionId: record.submission.id,
-    canEdit: canEditReturnedSubmission(record.submission, userId),
+    departmentId: record.submission.departmentId,
+    canEdit: canEditPayableSubmission(record.submission, userId),
     lines: record.submission.lines.map((line) => ({
       id: line.id,
       lineNo: line.lineNo,
@@ -43,6 +46,7 @@ export function toPayableSubmissionDetails(
       referenceNo: line.referenceNo,
       date: line.date,
       coaId: line.coaId,
+      divisionId: line.divisionId,
       remarks: line.remarks,
       receipts: line.receipts.map((receipt) => ({ id: receipt.id, fileId: receipt.fileId })),
     })),

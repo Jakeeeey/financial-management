@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canEditReturnedSubmission, toPayableSubmissionDetails } from "./_submission-details.ts";
+import { canEditPayableSubmission, toPayableSubmissionDetails } from "./_submission-details.ts";
 
-test("returns editable line fields and receipt IDs without unrelated header data", () => {
+test("returns Department and editable line fields with receipt IDs", () => {
   const result = toPayableSubmissionDetails({
     planId: 42,
     submission: {
       id: 35,
+      departmentId: 7,
       status: "submitted",
       totalAmount: 1250,
       submittedBy: 8,
@@ -20,6 +21,7 @@ test("returns editable line fields and receipt IDs without unrelated header data
           remarks: "Fuel",
           date: "2026-10-07",
           coaId: 17,
+          divisionId: 9,
           receipts: [{ id: 501, fileId: "receipt-a" }],
         },
         {
@@ -30,6 +32,7 @@ test("returns editable line fields and receipt IDs without unrelated header data
           remarks: null,
           date: null,
           coaId: 18,
+          divisionId: 10,
           receipts: [],
         },
       ],
@@ -38,6 +41,7 @@ test("returns editable line fields and receipt IDs without unrelated header data
 
   assert.deepEqual(result, {
     submissionId: 35,
+    departmentId: 7,
     canEdit: false,
     lines: [
       {
@@ -47,6 +51,7 @@ test("returns editable line fields and receipt IDs without unrelated header data
         referenceNo: "REF-1",
         date: "2026-10-07",
         coaId: 17,
+        divisionId: 9,
         remarks: "Fuel",
         receipts: [{ id: 501, fileId: "receipt-a" }],
       },
@@ -57,6 +62,7 @@ test("returns editable line fields and receipt IDs without unrelated header data
         referenceNo: null,
         date: null,
         coaId: 18,
+        divisionId: 10,
         remarks: null,
         receipts: [],
       },
@@ -68,10 +74,11 @@ test("does not return submission details when the submission belongs to another 
   assert.equal(toPayableSubmissionDetails({ planId: 7, submission: { id: 35, lines: [] } }, 42, 8), null);
 });
 
-test("only the original submitter can edit an unconverted returned submission", () => {
+test("only the original submitter can edit an unconverted draft or returned submission", () => {
   const returned = { id: 35, status: "returned", submittedBy: 8, disbursementId: null, lines: [] };
-  assert.equal(canEditReturnedSubmission(returned, 8), true);
-  assert.equal(canEditReturnedSubmission(returned, 9), false);
-  assert.equal(canEditReturnedSubmission({ ...returned, status: "submitted" }, 8), false);
-  assert.equal(canEditReturnedSubmission({ ...returned, disbursementId: 3 }, 8), false);
+  assert.equal(canEditPayableSubmission(returned, 8), true);
+  assert.equal(canEditPayableSubmission({ ...returned, status: "draft" }, 8), true);
+  assert.equal(canEditPayableSubmission(returned, 9), false);
+  assert.equal(canEditPayableSubmission({ ...returned, status: "submitted" }, 8), false);
+  assert.equal(canEditPayableSubmission({ ...returned, disbursementId: 3 }, 8), false);
 });

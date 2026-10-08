@@ -30,6 +30,7 @@ export const ACTIVE_RESERVATION_STATUSES: LogisticsDraftStatus[] = ["submitted",
 export interface DraftRow {
   id: number;
   dispatch_plan_id: number | null;
+  department_id: number | null;
   status: string | null;
   total_amount: number | null;
   submitted_by: number | null;
@@ -52,6 +53,7 @@ export interface DraftLineRow {
   remarks: string | null;
   date: string | null;
   coa_id: number | null;
+  division_id: number | null;
   date_created: string | null;
 }
 
@@ -261,6 +263,7 @@ export async function getPlanBaseline(planId: number): Promise<PlanBaseline | nu
 
 export interface DraftSubmission {
   id: number;
+  departmentId: number | null;
   status: string | null;
   totalAmount: number;
   submittedBy: number | null;
@@ -278,6 +281,7 @@ export interface DraftSubmission {
     remarks: string | null;
     date: string | null;
     coaId: number | null;
+    divisionId: number | null;
     receipts: Array<{ id: number; fileId: string | null }>;
   }>;
 }
@@ -354,7 +358,7 @@ export async function getPlanDraftSummaries(planId: number): Promise<DraftSubmis
 /** Load one complete submission, verifying its owning plan from the same header read. */
 export async function getPlanSubmission(submissionId: number): Promise<{ planId: number; submission: DraftSubmission } | null> {
   const header = await directusFetch<{ data?: Record<string, unknown> }>(
-    `/items/${DRAFT_COLLECTION}/${submissionId}?fields=id,dispatch_plan_id,status,total_amount,submitted_by,submitted_at,decided_by,decided_at,decision_remarks,disbursement_id,idempotency_key`,
+    `/items/${DRAFT_COLLECTION}/${submissionId}?fields=id,dispatch_plan_id,department_id,status,total_amount,submitted_by,submitted_at,decided_by,decided_at,decision_remarks,disbursement_id,idempotency_key`,
   ).catch(() => null);
   const row = header?.data;
   const planId = asNumber(row?.dispatch_plan_id);
@@ -364,7 +368,7 @@ export async function getPlanSubmission(submissionId: number): Promise<{ planId:
     "filter[draft_id][_eq]": String(submissionId),
     sort: "line_no,id",
     limit: "-1",
-    fields: "id,draft_id,line_no,amount,reference_no,remarks,date,coa_id",
+    fields: "id,draft_id,line_no,amount,reference_no,remarks,date,coa_id,division_id",
   });
   const lines = await directusFetch<DirectusList<DraftLineRow>>(
     `items/${DRAFT_LINE_COLLECTION}?${lineParams.toString()}`,
@@ -395,6 +399,7 @@ export async function getPlanSubmission(submissionId: number): Promise<{ planId:
     planId,
     submission: {
       id: asNumber(row.id),
+      departmentId: asNullableNumber(row.department_id),
       status: asString(row.status) || null,
       totalAmount: asNumber(row.total_amount),
       submittedBy: asNullableNumber(row.submitted_by),
@@ -414,6 +419,7 @@ export async function getPlanSubmission(submissionId: number): Promise<{ planId:
           remarks: asString(line.remarks) || null,
           date: asString(line.date) || null,
           coaId: asNullableNumber(line.coa_id),
+          divisionId: asNullableNumber(line.division_id),
           receipts: receiptsByLine.get(lineId) ?? [],
         };
       }),
