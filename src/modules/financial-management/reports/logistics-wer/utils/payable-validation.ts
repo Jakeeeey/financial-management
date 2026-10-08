@@ -1,4 +1,5 @@
 export interface ValidatedPayableLine {
+  id?: number;
   amount: number;
   referenceNo: string | null;
   remarks: string | null;
@@ -22,6 +23,7 @@ export interface PayableActionState {
 }
 
 interface PayableLineInput {
+  id?: unknown;
   amount?: unknown;
   referenceNo?: unknown;
   remarks?: unknown;
@@ -57,6 +59,10 @@ export function validatePayableLines(rawLines: unknown, requireCoa: boolean): Pa
   const lines: ValidatedPayableLine[] = [];
   for (let index = 0; index < rawLines.length; index += 1) {
     const raw = (rawLines[index] ?? {}) as PayableLineInput;
+    const id = raw.id === null || raw.id === undefined || raw.id === "" ? undefined : Number(raw.id);
+    if (id !== undefined && (!Number.isInteger(id) || id <= 0)) {
+      return { valid: false, error: `Line ${index + 1} has an invalid line identifier.` };
+    }
     const amount = Number(raw.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
       return { valid: false, error: `Line ${index + 1} must have an amount greater than zero.` };
@@ -84,6 +90,7 @@ export function validatePayableLines(rawLines: unknown, requireCoa: boolean): Pa
       ? []
       : (Array.isArray(receiptRaw) ? receiptRaw : [receiptRaw]).map(asTrimmedString).filter(Boolean);
     lines.push({
+      ...(id === undefined ? {} : { id }),
       amount,
       referenceNo: asTrimmedString(raw.referenceNo) || null,
       remarks: asTrimmedString(raw.remarks) || null,

@@ -20,7 +20,7 @@ function error(message: string, status: number) {
 
 /**
  * Remove a staged receipt. Rejected once the file is attached to a
- * submitted or approved payable.
+ * submitted or approved payable; returned payables are owner-editable.
  */
 export async function DELETE(
   request: NextRequest,
@@ -46,6 +46,7 @@ export async function DELETE(
       `/items/${DRAFT_RECEIPT_COLLECTION}?${params.toString()}`,
     );
 
+    const removableLinks: number[] = [];
     for (const link of links.data ?? []) {
       const lineParams = new URLSearchParams({
         "filter[id][_eq]": String(Number(link.line_id) || 0),
@@ -59,10 +60,10 @@ export async function DELETE(
       if (!ownerDraftId) continue;
       const draftParams = new URLSearchParams({
         "filter[id][_eq]": String(ownerDraftId),
-        fields: "id,status,dispatch_plan_id",
+        fields: "id,status,dispatch_plan_id,submitted_by",
         limit: "1",
       });
-      const draft = await directusFetch<{ data?: Array<{ status?: unknown; dispatch_plan_id?: unknown }> }>(
+      const draft = await directusFetch<{ data?: Array<{ status?: unknown; dispatch_plan_id?: unknown; submitted_by?: unknown }> }>(
         `/items/${DRAFT_COLLECTION}?${draftParams.toString()}`,
       );
       const owner = draft.data?.[0];
@@ -74,7 +75,14 @@ export async function DELETE(
       if (status === "submitted" || status === "approved") {
         return error("Receipts attached to a submitted or approved payable cannot be removed.", 403);
       }
-      await directusWrite("DELETE", `/items/${DRAFT_RECEIPT_COLLECTION}/${Number(link.id)}`);
+      if (status === "returned" && Number(owner.submitted_by) !== userId) {
+        return error("Only the original submitter can remove a receipt from a returned payable.", 403);
+      }
+      removableLinks.push(Number(link.id) || 0);
+    }
+
+    for (const linkId of removableLinks) {
+      if (linkId) await directusWrite("DELETE", `/items/${DRAFT_RECEIPT_COLLECTION}/${linkId}`);
     }
 
     const response = await fetch(`${DIRECTUS_URL}/files/${encodeURIComponent(fileId)}`, {

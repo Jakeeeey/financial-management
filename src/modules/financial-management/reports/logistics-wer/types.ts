@@ -106,6 +106,23 @@ export interface LogisticsWerPayableReceipt {
   fileId: string | null;
 }
 
+export interface LogisticsWerPayableSubmissionLineDetails {
+  id: number;
+  lineNo: number | null;
+  amount: number;
+  referenceNo: string | null;
+  date: string | null;
+  coaId: number | null;
+  remarks: string | null;
+  receipts: LogisticsWerPayableReceipt[];
+}
+
+export interface LogisticsWerPayableSubmissionDetails {
+  submissionId: number;
+  canEdit: boolean;
+  lines: LogisticsWerPayableSubmissionLineDetails[];
+}
+
 export interface LogisticsWerPayableLine {
   id: number;
   lineNo: number | null;
@@ -138,6 +155,7 @@ export interface LogisticsWerPayableSubmissionSummary {
   totalAmount: number;
   decisionRemarks: string | null;
   disbursementId: number | null;
+  disbursementDocNo: string | null;
   treasuryStatus: string | null;
   lineCount: number;
   receiptCount: number;

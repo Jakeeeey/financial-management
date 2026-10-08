@@ -94,6 +94,7 @@ export default function LogisticsWerModule() {
       </div>
 
       <LogisticsWerDetailsSheet
+        open={report.detailOpen}
         detail={report.detail}
         loading={report.detailLoading}
         error={report.detailError}
