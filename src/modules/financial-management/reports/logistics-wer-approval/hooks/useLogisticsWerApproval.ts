@@ -102,7 +102,11 @@ export function useLogisticsWerApproval() {
     setDeciding(true);
     try {
       const result = await decideSubmission(reviewId, decision, remarks);
-      setReview((current) => (current ? { ...current, submission: result.submission } : current));
+      setReview((current) => (current ? {
+        ...current,
+        submission: result.submission,
+        disbursementDocNo: result.disbursementDocNo,
+      } : current));
       await load();
       return result;
     } finally {

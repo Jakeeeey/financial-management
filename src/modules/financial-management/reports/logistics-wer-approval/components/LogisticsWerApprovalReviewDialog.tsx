@@ -105,14 +105,6 @@ export function LogisticsWerApprovalReviewDialog({
               ? `Dispatch plan ${review.dispatchPlanDocNo} · ${formatMoney(submission?.totalAmount)}`
               : "Loading submission details…"}
           </DialogDescription>
-          {review && (
-            <a
-              className="text-xs font-semibold text-primary underline"
-              href={`/fm/reports/logistics-wer?planId=${encodeURIComponent(String(review.dispatchPlanId))}`}
-            >
-              Open dispatch plan
-            </a>
-          )}
         </DialogHeader>
 
         {loading && !review && (
@@ -131,18 +123,26 @@ export function LogisticsWerApprovalReviewDialog({
         {review && submission && (
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-xl border bg-card p-3">
-                <p className="text-xs text-muted-foreground">Dispatch plan value</p>
-                <p className="mt-1 text-lg font-semibold">{formatMoney(review.plannedAmount)}</p>
-              </div>
-              <div className="rounded-xl border bg-card p-3">
-                <p className="text-xs text-muted-foreground">Reserved payables</p>
-                <p className="mt-1 text-lg font-semibold">{formatMoney(review.reservedAmount)}</p>
-              </div>
-              <div className="rounded-xl border bg-card p-3">
-                <p className="text-xs text-muted-foreground">Available expense budget</p>
-                <p className="mt-1 text-lg font-semibold">{formatMoney(review.remainingAmount)}</p>
-              </div>
+              {review.budgetByCoa.length > 0 ? review.budgetByCoa.map((budget) => {
+                const categoryLabel = [budget.coaCode, budget.coaTitle]
+                  .map((value) => value?.trim())
+                  .filter((value): value is string => Boolean(value))
+                  .join(" · ") || (budget.coaId !== null ? `COA #${budget.coaId}` : "Unassigned");
+                return (
+                  <div key={budget.coaId ?? "unassigned"} className="rounded-xl border bg-card p-3">
+                    <p className="text-xs text-muted-foreground">Budgeted Amount</p>
+                    <p className="mt-1 truncate text-xs font-medium" title={categoryLabel}>{categoryLabel}</p>
+                    <p className="mt-1 text-lg font-semibold">
+                      {budget.allocatedAmount === null ? "No COA allocation" : formatMoney(budget.allocatedAmount)}
+                    </p>
+                  </div>
+                );
+              }) : (
+                <div className="rounded-xl border bg-card p-3">
+                  <p className="text-xs text-muted-foreground">Budgeted Amount</p>
+                  <p className="mt-1 text-lg font-semibold">No COA allocation</p>
+                </div>
+              )}
               <div className="rounded-xl border bg-card p-3">
                 <p className="text-xs text-muted-foreground">Supplier</p>
                 <p className="mt-1 text-sm font-semibold">
@@ -153,44 +153,77 @@ export function LogisticsWerApprovalReviewDialog({
               </div>
             </div>
 
-            <div className="overflow-x-auto rounded-lg border">
-              <Table>
+            <div className="rounded-lg border">
+              <Table style={{ width: "100%", tableLayout: "fixed" }}>
+                <colgroup>
+                  <col style={{ width: "6%" }} />
+                  <col style={{ width: "12%" }} />
+                  <col style={{ width: "21%" }} />
+                  <col style={{ width: "13%" }} />
+                  <col style={{ width: "36%" }} />
+                  <col style={{ width: "12%" }} />
+                </colgroup>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-14">Line</TableHead>
+                    <TableHead>Line</TableHead>
                     <TableHead className="text-right">Amount</TableHead>
+                    <TableHead>COA</TableHead>
                     <TableHead>Reference</TableHead>
                     <TableHead>Remarks</TableHead>
                     <TableHead>Receipts</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {submission.lines.map((line, index) => (
-                    <TableRow key={line.id}>
-                      <TableCell>{line.lineNo ?? index + 1}</TableCell>
-                      <TableCell className="text-right font-medium">{formatMoney(line.amount)}</TableCell>
-                      <TableCell>{line.referenceNo || "—"}</TableCell>
-                      <TableCell>{line.remarks || "—"}</TableCell>
-                      <TableCell>
-                        {line.receipts.length === 0 ? (
-                          <span className="text-muted-foreground">—</span>
-                        ) : (
-                          <div className="flex flex-wrap gap-1.5">
-                            {line.receipts.map((receipt) => receipt.fileId ? (
-                              <ReceiptThumbnail
-                                key={receipt.id}
-                                fileId={receipt.fileId}
-                                receiptId={receipt.id}
-                                onPreview={setPreviewFileId}
-                              />
-                            ) : (
-                              <span key={receipt.id} className="text-xs text-muted-foreground">#{receipt.id}</span>
-                            ))}
-                          </div>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {submission.lines.map((line, index) => {
+                    const coaLabel = [line.coaCode, line.coaTitle]
+                      .map((value) => value?.trim())
+                      .filter((value): value is string => Boolean(value))
+                      .join(" · ");
+                    return (
+                      <TableRow key={line.id}>
+                        <TableCell>{line.lineNo ?? index + 1}</TableCell>
+                        <TableCell className="text-right font-medium">{formatMoney(line.amount)}</TableCell>
+                        <TableCell
+                          className="whitespace-normal text-xs"
+                          style={{ overflowWrap: "anywhere", wordBreak: "break-all" }}
+                        >
+                          {coaLabel || (line.coaId !== null
+                            ? `COA #${line.coaId} · Account details unavailable`
+                            : "Unassigned")}
+                        </TableCell>
+                        <TableCell
+                          className="whitespace-normal"
+                          style={{ overflowWrap: "anywhere", wordBreak: "break-all" }}
+                        >
+                          {line.referenceNo || "—"}
+                        </TableCell>
+                        <TableCell
+                          className="align-top"
+                          style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-all" }}
+                        >
+                          {line.remarks || "—"}
+                        </TableCell>
+                        <TableCell>
+                          {line.receipts.length === 0 ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : (
+                            <div className="flex flex-wrap gap-1.5">
+                              {line.receipts.map((receipt) => receipt.fileId ? (
+                                <ReceiptThumbnail
+                                  key={receipt.id}
+                                  fileId={receipt.fileId}
+                                  receiptId={receipt.id}
+                                  onPreview={setPreviewFileId}
+                                />
+                              ) : (
+                                <span key={receipt.id} className="text-xs text-muted-foreground">#{receipt.id}</span>
+                              ))}
+                            </div>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -200,7 +233,9 @@ export function LogisticsWerApprovalReviewDialog({
                 <CheckCircle2 className="size-4 text-emerald-600" />
                 <AlertTitle>Approved</AlertTitle>
                 <AlertDescription>
-                  Standard Draft disbursement #{submission.disbursementId} was created from this submission.
+                  {review.disbursementDocNo
+                    ? `Standard Draft disbursement ${review.disbursementDocNo} was created from this submission.`
+                    : "Standard Draft disbursement was created from this submission."}
                 </AlertDescription>
               </Alert>
             )}

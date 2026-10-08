@@ -56,11 +56,15 @@ export default function LogisticsWerApprovalModule() {
       const result = await queue.decide(decision, remarks.trim() || undefined);
       if (!result) return;
       if (decision === "approve") {
-        setDecisionNotice(
-          result.idempotent
-            ? `Already approved as disbursement #${result.disbursementId}. No duplicate was created.`
-            : `Approved. Standard Draft disbursement #${result.disbursementId} created.`,
-        );
+        if (result.idempotent) {
+          setDecisionNotice(result.disbursementDocNo
+            ? `Already approved as disbursement ${result.disbursementDocNo}. No duplicate was created.`
+            : "This submission was already approved. No duplicate disbursement was created.");
+        } else {
+          setDecisionNotice(result.disbursementDocNo
+            ? `Approved. Standard Draft disbursement ${result.disbursementDocNo} created.`
+            : "Approved. Standard Draft disbursement created.");
+        }
       } else {
         setDecisionNotice(`Submission ${decision === "return" ? "returned" : "rejected"}. Its reservation was released.`);
       }
@@ -134,29 +138,6 @@ export default function LogisticsWerApprovalModule() {
           </Select>
         </div>
         <p className="text-xs text-muted-foreground">{queue.totalElements} submission(s)</p>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2" aria-label="Queue status totals">
-        {APPROVAL_STATUS_OPTIONS.filter((option) => option.value !== "all").map((option) => {
-          const count = queue.statusCounts[option.value] ?? 0;
-          const active = queue.status === option.value;
-          return (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => queue.changeStatus(option.value)}
-              aria-pressed={active}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
-                active
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-border bg-card text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {option.label}
-              <span className="rounded-full bg-muted px-1.5 font-mono">{count}</span>
-            </button>
-          );
-        })}
       </div>
 
       {queue.error && (
@@ -258,7 +239,7 @@ export default function LogisticsWerApprovalModule() {
                     </Badge>
                 </TableCell>
                 <TableCell className="text-xs">
-                  {item.disbursementDocNo || (item.submission.disbursementId ? `#${item.submission.disbursementId}` : "—")}
+                  {item.disbursementDocNo || "—"}
                 </TableCell>
                 <TableCell className="text-right">
                   <Button type="button" variant="outline" size="sm" onClick={() => void queue.openReview(item.submission.id)}>

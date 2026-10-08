@@ -55,6 +55,7 @@ export async function POST(
     return NextResponse.json({
       draft: outcome.submission,
       disbursementId: outcome.disbursementId,
+      disbursementDocNo: outcome.disbursementDocNo,
       idempotent: outcome.idempotent,
     });
   } catch (decisionError) {
