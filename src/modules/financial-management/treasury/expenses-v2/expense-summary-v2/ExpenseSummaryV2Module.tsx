@@ -60,8 +60,8 @@ export const ExpenseSummaryV2Module: React.FC = () => {
       const supJson = await supRes.json();
       setSuppliers(supJson.data || []);
 
-      // Fetch COA
-      const coaRes = await fetch("/api/fm/treasury/expenses-v2/expense-creation-v2/chart_of_accounts");
+      // Fetch COA (Enforced to Expense Only: COST OF SALES, COST OF SERVICE, GENERAL AND ADMINISTRATIVE EXPENSES, FINANCE COST)
+      const coaRes = await fetch("/api/fm/treasury/expenses-v2/expense-creation-v2/chart_of_accounts?filter=expense_only");
       const coaJson = await coaRes.json();
       setCoas(coaJson.data || []);
 
