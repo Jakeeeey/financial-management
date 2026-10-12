@@ -268,6 +268,9 @@ export async function POST(req: Request) {
           // Generate sequential NT-###### document number avoiding conflicts
           const headerDocNo = await getNextAvailableNTDocNo();
 
+          // Literal Philippine date (YYYY-MM-DD) and timestamp (YYYY-MM-DD HH:mm:ss)
+          const transactionDate = currentTimestamp.split(" ")[0] || currentTimestamp.split("T")[0];
+
           const dsbPayload = {
             doc_no: headerDocNo,
             transaction_type: nonTradeTypeId,
@@ -287,7 +290,8 @@ export async function POST(req: Request) {
             status: "Submitted",
             source_type: "EXPENSE_V2",
             source_reference_id: Number(firstItem.id),
-            date_submitted: null,
+            transaction_date: transactionDate,
+            date_submitted: currentTimestamp,
             date_approved: null,
           };
 

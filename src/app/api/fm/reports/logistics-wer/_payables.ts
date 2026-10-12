@@ -30,6 +30,7 @@ export const ACTIVE_RESERVATION_STATUSES: LogisticsDraftStatus[] = ["submitted",
 export interface DraftRow {
   id: number;
   dispatch_plan_id: number | null;
+  department_id: number | null;
   status: string | null;
   total_amount: number | null;
   submitted_by: number | null;
@@ -52,6 +53,7 @@ export interface DraftLineRow {
   remarks: string | null;
   date: string | null;
   coa_id: number | null;
+  division_id: number | null;
   date_created: string | null;
 }
 
@@ -92,6 +94,7 @@ export interface DraftSubmissionSummary {
   decidedAt: string | null;
   decisionRemarks: string | null;
   disbursementId: number | null;
+  disbursementDocNo: string | null;
   idempotencyKey: string | null;
   treasuryStatus: string | null;
   lineCount: number;
@@ -260,6 +263,7 @@ export async function getPlanBaseline(planId: number): Promise<PlanBaseline | nu
 
 export interface DraftSubmission {
   id: number;
+  departmentId: number | null;
   status: string | null;
   totalAmount: number;
   submittedBy: number | null;
@@ -277,6 +281,7 @@ export interface DraftSubmission {
     remarks: string | null;
     date: string | null;
     coaId: number | null;
+    divisionId: number | null;
     receipts: Array<{ id: number; fileId: string | null }>;
   }>;
 }
@@ -341,6 +346,7 @@ export async function getPlanDraftSummaries(planId: number): Promise<DraftSubmis
       decidedAt: asString(row.decided_at) || null,
       decisionRemarks: asString(row.decision_remarks) || null,
       disbursementId: asNullableNumber(row.disbursement_id),
+      disbursementDocNo: null,
       idempotencyKey: asString(row.idempotency_key) || null,
       treasuryStatus: null,
       lineCount: lineCountByDraft.get(draftId) ?? 0,
@@ -352,7 +358,7 @@ export async function getPlanDraftSummaries(planId: number): Promise<DraftSubmis
 /** Load one complete submission, verifying its owning plan from the same header read. */
 export async function getPlanSubmission(submissionId: number): Promise<{ planId: number; submission: DraftSubmission } | null> {
   const header = await directusFetch<{ data?: Record<string, unknown> }>(
-    `/items/${DRAFT_COLLECTION}/${submissionId}?fields=id,dispatch_plan_id,status,total_amount,submitted_by,submitted_at,decided_by,decided_at,decision_remarks,disbursement_id,idempotency_key`,
+    `/items/${DRAFT_COLLECTION}/${submissionId}?fields=id,dispatch_plan_id,department_id,status,total_amount,submitted_by,submitted_at,decided_by,decided_at,decision_remarks,disbursement_id,idempotency_key`,
   ).catch(() => null);
   const row = header?.data;
   const planId = asNumber(row?.dispatch_plan_id);
@@ -362,7 +368,7 @@ export async function getPlanSubmission(submissionId: number): Promise<{ planId:
     "filter[draft_id][_eq]": String(submissionId),
     sort: "line_no,id",
     limit: "-1",
-    fields: "id,draft_id,line_no,amount,reference_no,remarks,date,coa_id",
+    fields: "id,draft_id,line_no,amount,reference_no,remarks,date,coa_id,division_id",
   });
   const lines = await directusFetch<DirectusList<DraftLineRow>>(
     `items/${DRAFT_LINE_COLLECTION}?${lineParams.toString()}`,
@@ -393,6 +399,7 @@ export async function getPlanSubmission(submissionId: number): Promise<{ planId:
     planId,
     submission: {
       id: asNumber(row.id),
+      departmentId: asNullableNumber(row.department_id),
       status: asString(row.status) || null,
       totalAmount: asNumber(row.total_amount),
       submittedBy: asNullableNumber(row.submitted_by),
@@ -412,6 +419,7 @@ export async function getPlanSubmission(submissionId: number): Promise<{ planId:
           remarks: asString(line.remarks) || null,
           date: asString(line.date) || null,
           coaId: asNullableNumber(line.coa_id),
+          divisionId: asNullableNumber(line.division_id),
           receipts: receiptsByLine.get(lineId) ?? [],
         };
       }),
@@ -419,23 +427,32 @@ export async function getPlanSubmission(submissionId: number): Promise<{ planId:
   };
 }
 
-async function getDisbursementStatuses(disbursementIds: number[]): Promise<Map<number, string>> {
+interface DisbursementReference {
+  docNo: string | null;
+  status: string | null;
+}
+
+async function getDisbursementReferences(disbursementIds: number[]): Promise<Map<number, DisbursementReference>> {
   if (disbursementIds.length === 0) return new Map();
   const params = new URLSearchParams({
     "filter[id][_in]": disbursementIds.join(","),
-    fields: "id,status",
+    fields: "id,doc_no,status",
     limit: "-1",
   });
-  const result = await directusFetch<DirectusList<{ id?: unknown; status?: unknown }>>(
+  const result = await directusFetch<DirectusList<{ id?: unknown; doc_no?: unknown; status?: unknown }>>(
     `/items/disbursement?${params.toString()}`,
   );
-  const statuses = new Map<number, string>();
+  const references = new Map<number, DisbursementReference>();
   for (const row of result.data ?? []) {
     const id = asNumber(row.id);
-    const status = asString(row.status);
-    if (id > 0 && status) statuses.set(id, status);
+    if (id > 0) {
+      references.set(id, {
+        docNo: asString(row.doc_no) || null,
+        status: asString(row.status) || null,
+      });
+    }
   }
-  return statuses;
+  return references;
 }
 
 interface DraftAccountingSummary {
@@ -469,6 +486,10 @@ interface AccountingLine {
   amount?: unknown;
 }
 
+export interface DispatchBudgetLine extends CoaAmount {
+  id: number | null;
+}
+
 function asRelatedId(value: unknown): number | null {
   if (value && typeof value === "object") {
     const relation = value as Record<string, unknown>;
@@ -485,7 +506,7 @@ function strictAmount(value: unknown, label: string): number {
   return amount;
 }
 
-async function getSpringBudgetLines(planId: number): Promise<CoaAmount[]> {
+async function getSpringBudgetLines(planId: number): Promise<DispatchBudgetLine[]> {
   const encodedId = encodeURIComponent(String(planId));
   let response = await proxySpring(`/api/v1/dispatch-approval/${encodedId}`);
   if (response.status === 404) {
@@ -500,6 +521,10 @@ async function getSpringBudgetLines(planId: number): Promise<CoaAmount[]> {
   }
 
   return normalizeSpringBudgetLines(payload.budgets);
+}
+
+export async function getPlanBudgetLines(planId: number): Promise<DispatchBudgetLine[]> {
+  return getSpringBudgetLines(planId);
 }
 
 async function getDraftAccountingLines(draftIds: number[]): Promise<Map<number, CoaAmount[]>> {
@@ -598,11 +623,11 @@ export async function getPlanFinancialContext(
   const disbursementIds = Array.from(new Set(
     accountingRows.map((submission) => submission.disbursementId).filter((id): id is number => Boolean(id)),
   ));
-  const [statusResult, reservationLines] = await Promise.all([
-    getDisbursementStatuses(disbursementIds)
+  const [disbursementReferences, reservationLines] = await Promise.all([
+    getDisbursementReferences(disbursementIds)
       .catch((error) => {
-        console.error("[Logistics WER] Failed to load Treasury disbursement statuses:", error);
-        return new Map<number, string>();
+        console.error("[Logistics WER] Failed to load Treasury disbursement references:", error);
+        return new Map<number, DisbursementReference>();
       }),
     getReservationLines(accountingRows),
   ]);
@@ -621,15 +646,18 @@ export async function getPlanFinancialContext(
     submissions: includeSubmissionSummaries
       ? (submissions as DraftSubmissionSummary[]).map((submission) => ({
           ...submission,
+          disbursementDocNo: submission.disbursementId
+            ? disbursementReferences.get(submission.disbursementId)?.docNo ?? null
+            : null,
           treasuryStatus: submission.disbursementId
-            ? statusResult.get(submission.disbursementId) ?? null
+            ? disbursementReferences.get(submission.disbursementId)?.status ?? null
             : null,
         }))
       : [],
   };
 }
 
-function normalizeSpringBudgetLines(value: unknown): CoaAmount[] {
+function normalizeSpringBudgetLines(value: unknown): DispatchBudgetLine[] {
   if (!Array.isArray(value)) {
     throw new Error("Dispatch approval response did not include budget lines.");
   }
@@ -637,6 +665,7 @@ function normalizeSpringBudgetLines(value: unknown): CoaAmount[] {
     const line = entry && typeof entry === "object" ? entry as Record<string, unknown> : {};
     const coaId = asRelatedId(line.coaId ?? line.coa_id);
     return {
+      id: asNullableNumber(line.id),
       coaId: coaId && coaId > 0 ? coaId : null,
       amount: strictAmount(line.amount, `Dispatch budget line ${index + 1}`),
       classified: Boolean(coaId && coaId > 0 && asString(line.remarks)),
@@ -667,9 +696,11 @@ export async function markWerPlanLiquidatedIfSettled(draftId: number): Promise<v
   if (approved.some((row) => !row.disbursementId)) return;
 
   const approvedIds = Array.from(new Set(approved.map((row) => row.disbursementId as number)));
-  const statuses = await getDisbursementStatuses(approvedIds);
-  if (approvedIds.some((id) => !statuses.has(id))) return;
-  if (!approved.every((row) => ["Released", "Posted"].includes(statuses.get(row.disbursementId as number) || ""))) return;
+  const disbursementReferences = await getDisbursementReferences(approvedIds);
+  if (approvedIds.some((id) => !disbursementReferences.has(id))) return;
+  if (!approved.every((row) => ["Released", "Posted"].includes(
+    disbursementReferences.get(row.disbursementId as number)?.status || "",
+  ))) return;
 
   await directusWrite("PATCH", `/items/post_dispatch_plan/${planId}`, { is_liquidated: 1 });
 }
