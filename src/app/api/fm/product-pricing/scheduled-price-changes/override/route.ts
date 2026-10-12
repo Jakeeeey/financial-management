@@ -144,7 +144,6 @@ async function failLegacyPendingRows(collection: string, headerId: number, ids: 
         application_status: "FAILED",
         application_lock_id: null,
         application_started_at: null,
-        application_attempts: 3,
         application_error: message,
         applied_at: null,
         applied_by: null,

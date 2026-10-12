@@ -1,8 +1,11 @@
 import type {
   LogisticsWerDispatchPlan,
   LogisticsWerDispatchPlanDetail,
+  LogisticsWerCoaBudgetBalance,
   LogisticsWerPayableLine,
   LogisticsWerPayableReceipt,
+  LogisticsWerPayableSubmissionDetails,
+  LogisticsWerPayableSubmissionLineDetails,
   LogisticsWerPayableSubmission,
   LogisticsWerPayableSubmissionSummary,
   LogisticsWerReportPage,
@@ -24,6 +27,10 @@ export interface LogisticsWerReportQuery {
 }
 
 interface DispatchApprovalBudget {
+  id?: unknown;
+  coaId?: unknown;
+  coaCode?: unknown;
+  coaTitle?: unknown;
   remarks?: unknown;
   amount?: unknown;
 }
@@ -86,11 +93,13 @@ interface DispatchApprovalLine {
   remarks?: unknown;
   date?: unknown;
   coaId?: unknown;
+  divisionId?: unknown;
   receipts?: DispatchApprovalWerReceipt[] | null;
 }
 
 interface DispatchApprovalSubmission {
   id?: unknown;
+  departmentId?: unknown;
   status?: unknown;
   totalAmount?: unknown;
   submittedBy?: unknown;
@@ -110,15 +119,29 @@ interface DispatchApprovalSubmissionSummary {
   totalAmount?: unknown;
   decisionRemarks?: unknown;
   disbursementId?: unknown;
+  disbursementDocNo?: unknown;
   treasuryStatus?: unknown;
   lineCount?: unknown;
   receiptCount?: unknown;
 }
 
 interface DispatchApprovalWerPayables {
-  plannedAmount?: unknown;
+  budgetContextAvailable?: unknown;
+  budgetContextError?: unknown;
+  dispatchPlanValue?: unknown;
   reservedAmount?: unknown;
   remainingAmount?: unknown;
+  allocatedExpenseBudget?: unknown;
+  unclassifiedBudgetAmount?: unknown;
+  unclassifiedReservedAmount?: unknown;
+  overBudgetAmount?: unknown;
+  budgetBalancesByCoa?: Array<{
+    coaId?: unknown;
+    allocatedAmount?: unknown;
+    reservedAmount?: unknown;
+    remainingAmount?: unknown;
+    overBudgetAmount?: unknown;
+  }> | null;
   isLiquidated?: unknown;
   supplierEligibility?: {
     eligible?: unknown;
@@ -168,9 +191,9 @@ function toDateOnly(value: unknown): string | null {
 }
 
 async function readJson<T>(response: Response): Promise<T> {
-  const payload = await response.json().catch(() => null) as { message?: string } | null;
+  const payload = await response.json().catch(() => null) as { message?: string; detail?: string; error?: string } | null;
   if (!response.ok) {
-    throw new Error(payload?.message || `Logistics WER request failed with status ${response.status}.`);
+    throw new Error(payload?.message || payload?.detail || payload?.error || `Logistics WER request failed with status ${response.status}.`);
   }
   return payload as T;
 }
@@ -244,8 +267,11 @@ function mapStop(data: DispatchApprovalStop): LogisticsWerStop {
 }
 
 function mapDetails(data: DispatchApprovalResponse, sourcePlan?: LogisticsWerDispatchPlan): LogisticsWerDispatchPlanDetail {
-  const disbursements = (data.budgets ?? []).map((budget, index) => ({
-    id: `budget-${index + 1}`,
+  const budgetLines = (data.budgets ?? []).map((budget) => ({
+    id: asNumber(budget.id),
+    coaId: asNullableNumber(budget.coaId),
+    coaCode: asNullableString(budget.coaCode),
+    coaTitle: asNullableString(budget.coaTitle),
     remarks: asNullableString(budget.remarks),
     amount: asNumber(budget.amount),
   }));
@@ -253,14 +279,27 @@ function mapDetails(data: DispatchApprovalResponse, sourcePlan?: LogisticsWerDis
 
   return {
     plan: mapPlan(data, sourcePlan),
-    disbursements,
+    budgetLines,
     staff: (data.staff ?? []).map(mapStaff),
     stops: (data.stops ?? []).map(mapStop),
-    disbursementTotal: disbursements.reduce((total, line) => total + line.amount, 0),
+    budgetTotal: budgetLines.reduce((total, line) => total + line.amount, 0),
     supplierEligibility: mapEligibility(werPayables?.supplierEligibility),
-    plannedAmount: asNullableNumber(werPayables?.plannedAmount),
+    dispatchPlanValue: asNullableNumber(werPayables?.dispatchPlanValue),
     reservedAmount: asNullableNumber(werPayables?.reservedAmount),
     remainingAmount: asNullableNumber(werPayables?.remainingAmount),
+    budgetContextAvailable: werPayables?.budgetContextAvailable === true,
+    budgetContextError: asNullableString(werPayables?.budgetContextError),
+    allocatedExpenseBudget: asNullableNumber(werPayables?.allocatedExpenseBudget),
+    unclassifiedBudgetAmount: asNullableNumber(werPayables?.unclassifiedBudgetAmount),
+    unclassifiedReservedAmount: asNullableNumber(werPayables?.unclassifiedReservedAmount),
+    overBudgetAmount: asNullableNumber(werPayables?.overBudgetAmount),
+    budgetBalancesByCoa: (werPayables?.budgetBalancesByCoa ?? []).map((balance): LogisticsWerCoaBudgetBalance => ({
+      coaId: asNumber(balance.coaId),
+      allocatedAmount: asNumber(balance.allocatedAmount),
+      reservedAmount: asNumber(balance.reservedAmount),
+      remainingAmount: asNumber(balance.remainingAmount),
+      overBudgetAmount: asNumber(balance.overBudgetAmount),
+    })),
     isLiquidated: werPayables?.isLiquidated === true,
     submissions: (werPayables?.submissions ?? []).map(mapSubmissionSummary),
   };
@@ -295,6 +334,7 @@ function mapSubmissionLine(data: DispatchApprovalLine): LogisticsWerPayableLine 
     remarks: asNullableString(data.remarks),
     date: asNullableString(data.date),
     coaId: asNullableNumber(data.coaId),
+    divisionId: asNullableNumber(data.divisionId),
     receipts: (data.receipts ?? []).map(mapReceipt),
   };
 }
@@ -302,6 +342,7 @@ function mapSubmissionLine(data: DispatchApprovalLine): LogisticsWerPayableLine 
 function mapSubmission(data: DispatchApprovalSubmission): LogisticsWerPayableSubmission {
   return {
     id: asNumber(data.id),
+    departmentId: asNullableNumber(data.departmentId),
     status: asNullableString(data.status),
     totalAmount: asNumber(data.totalAmount),
     submittedBy: asNullableNumber(data.submittedBy),
@@ -323,6 +364,7 @@ function mapSubmissionSummary(data: DispatchApprovalSubmissionSummary): Logistic
     totalAmount: asNumber(data.totalAmount),
     decisionRemarks: asNullableString(data.decisionRemarks),
     disbursementId: asNullableNumber(data.disbursementId),
+    disbursementDocNo: asNullableString(data.disbursementDocNo),
     treasuryStatus: asNullableString(data.treasuryStatus),
     lineCount: asNumber(data.lineCount),
     receiptCount: asNumber(data.receiptCount),
@@ -342,12 +384,24 @@ export async function fetchLogisticsWerDetails(
 }
 
 export interface PayableLineInput {
+  id?: number;
   amount: number;
   referenceNo?: string | null;
   remarks?: string | null;
   date?: string | null;
   coaId?: number | null;
+  divisionId?: number | null;
   receiptFileIds?: string[];
+}
+
+export interface PayableDepartmentOption {
+  departmentId: number;
+  departmentName: string;
+}
+
+export interface PayableDivisionOption {
+  divisionId: number;
+  divisionName: string;
 }
 
 export interface StagedReceipt {
@@ -358,6 +412,52 @@ export interface StagedReceipt {
 export interface PayableCoaOption {
   coaId: number;
   label: string;
+}
+
+export interface BudgetClassificationInput {
+  coaId: number;
+  remarks: string;
+}
+
+export interface BudgetAllocationInput {
+  coaId: number;
+  amount: number;
+  remarks: string;
+}
+
+export async function saveBudgetClassification(
+  planId: number,
+  budgetId: number,
+  input: BudgetClassificationInput,
+): Promise<void> {
+  const response = await fetch(
+    `${ENDPOINT}/${encodeURIComponent(String(planId))}/budgets/${encodeURIComponent(String(budgetId))}`,
+    {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+      cache: "no-store",
+    },
+  );
+  await readJson(response);
+}
+
+export async function saveBudgetAllocations(
+  planId: number,
+  budgets: BudgetAllocationInput[],
+): Promise<void> {
+  const response = await fetch(
+    `${ENDPOINT}/${encodeURIComponent(String(planId))}/budgets`,
+    {
+      method: "PUT",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ budgets }),
+      cache: "no-store",
+    },
+  );
+  await readJson(response);
 }
 
 async function postPayables(
@@ -378,18 +478,30 @@ async function postPayables(
 
 export function savePayableDraft(
   planId: number,
+  departmentId: number | null,
   lines: PayableLineInput[],
   idempotencyKey?: string,
 ): Promise<LogisticsWerPayableSubmission> {
-  return postPayables(planId, "save-draft", { lines, idempotencyKey });
+  return postPayables(planId, "save-draft", { departmentId, lines, idempotencyKey });
 }
 
 export function submitPayable(
   planId: number,
+  departmentId: number | null,
   lines: PayableLineInput[],
   idempotencyKey?: string,
 ): Promise<LogisticsWerPayableSubmission> {
-  return postPayables(planId, "submit", { lines, idempotencyKey });
+  return postPayables(planId, "submit", { departmentId, lines, idempotencyKey });
+}
+
+export function updatePayableSubmission(
+  planId: number,
+  submissionId: number,
+  action: "save-draft" | "submit",
+  departmentId: number | null,
+  lines: PayableLineInput[],
+): Promise<LogisticsWerPayableSubmission> {
+  return postPayables(planId, action, { submissionId, departmentId, lines });
 }
 
 export function withdrawPayableSubmission(
@@ -397,6 +509,56 @@ export function withdrawPayableSubmission(
   submissionId: number,
 ): Promise<LogisticsWerPayableSubmission> {
   return postPayables(planId, "withdraw", { submissionId });
+}
+
+export async function fetchPayableSubmissionDetails(
+  planId: number,
+  submissionId: number,
+): Promise<LogisticsWerPayableSubmissionDetails> {
+  const response = await fetch(
+    `${ENDPOINT}/${encodeURIComponent(String(planId))}/payables/${encodeURIComponent(String(submissionId))}`,
+    { credentials: "include", cache: "no-store" },
+  );
+  const data = await readJson<{
+    submissionId?: unknown;
+    departmentId?: unknown;
+    canEdit?: unknown;
+    lines?: DispatchApprovalLine[] | null;
+  }>(response);
+  return {
+    submissionId: asNumber(data.submissionId),
+    departmentId: asNullableNumber(data.departmentId),
+    canEdit: data.canEdit === true,
+    lines: (data.lines ?? []).map((line): LogisticsWerPayableSubmissionLineDetails => ({
+      id: asNumber(line.id),
+      lineNo: asNullableNumber(line.lineNo),
+      amount: asNumber(line.amount),
+      referenceNo: asNullableString(line.referenceNo),
+      date: asNullableString(line.date),
+      coaId: asNullableNumber(line.coaId),
+      divisionId: asNullableNumber(line.divisionId),
+      remarks: asNullableString(line.remarks),
+      receipts: (line.receipts ?? []).map(mapReceipt),
+    })),
+  };
+}
+
+export async function fetchPayableDepartments(): Promise<PayableDepartmentOption[]> {
+  const response = await fetch("/api/fm/setup/departments", { credentials: "include", cache: "no-store" });
+  const rows = await readJson<Array<{ departmentId?: unknown; departmentName?: unknown }>>(response);
+  return (Array.isArray(rows) ? rows : []).map((row) => ({
+    departmentId: asNumber(row.departmentId),
+    departmentName: asString(row.departmentName),
+  })).filter((row) => row.departmentId > 0 && row.departmentName.length > 0);
+}
+
+export async function fetchPayableDivisions(): Promise<PayableDivisionOption[]> {
+  const response = await fetch("/api/fm/setup/divisions", { credentials: "include", cache: "no-store" });
+  const rows = await readJson<Array<{ divisionId?: unknown; divisionName?: unknown }>>(response);
+  return (Array.isArray(rows) ? rows : []).map((row) => ({
+    divisionId: asNumber(row.divisionId),
+    divisionName: asString(row.divisionName),
+  })).filter((row) => row.divisionId > 0 && row.divisionName.length > 0);
 }
 
 export async function uploadPayableReceipt(planId: number, file: File): Promise<StagedReceipt> {
