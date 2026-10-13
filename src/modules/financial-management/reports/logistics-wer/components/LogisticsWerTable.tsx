@@ -41,13 +41,13 @@ export function LogisticsWerTable({ rows, loading, onViewDetails }: LogisticsWer
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Dispatch plan</TableHead>
-                <TableHead>Dispatch date</TableHead>
-                <TableHead>Driver</TableHead>
-                <TableHead>Vehicle</TableHead>
+                <TableHead>Dispatch Plan No.</TableHead>
+                <TableHead>Dispatch Date</TableHead>
+                <TableHead>Driver / Vehicle</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Liquidated</TableHead>
-                <TableHead className="text-right">Dispatch plan value</TableHead>
+                <TableHead className="text-right">Dispatch Plan Value</TableHead>
+                <TableHead className="text-right">Allocated Expense Budget</TableHead>
                 <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
@@ -70,8 +70,7 @@ export function LogisticsWerTable({ rows, loading, onViewDetails }: LogisticsWer
                   <TableRow key={row.id}>
                     <TableCell className="font-semibold">{row.docNo}</TableCell>
                     <TableCell>{formatDate(row.dispatchDate)}</TableCell>
-                    <TableCell>{row.driverName || "Unassigned"}</TableCell>
-                    <TableCell>{row.vehicleName || "Unassigned"}</TableCell>
+                    <TableCell>{row.driverName || "Unassigned"} / {row.vehicleName || "Unassigned"}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className={dispatchPlanStatusClassName(row.status)}>
                         {displayWerStatus(row.status)}
@@ -88,6 +87,11 @@ export function LogisticsWerTable({ rows, loading, onViewDetails }: LogisticsWer
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right font-medium">{formatMoney(row.amount)}</TableCell>
+                    <TableCell className="text-right font-medium">
+                      {row.allocatedExpenseBudget == null
+                        ? "Unavailable"
+                        : formatMoney(row.allocatedExpenseBudget)}
+                    </TableCell>
                     <TableCell className="text-right">
                       <Button type="button" variant="outline" size="sm" onClick={() => onViewDetails(row)}>
                         <Eye className="size-3.5" />

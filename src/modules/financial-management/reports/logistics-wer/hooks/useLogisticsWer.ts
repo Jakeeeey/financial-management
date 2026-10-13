@@ -32,11 +32,13 @@ export function useLogisticsWer() {
   const [page, setPage] = useState(0);
   const [report, setReport] = useState<LogisticsWerReportPage | null>(null);
   const [detail, setDetail] = useState<LogisticsWerDispatchPlanDetail | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const requestId = useRef(0);
+  const detailRequestId = useRef(0);
   const lastPlan = useRef<LogisticsWerDispatchPlan | null>(null);
   const deepLinkedPlanId = useRef<number | null>(null);
 
@@ -46,15 +48,24 @@ export function useLogisticsWer() {
     const planId = rawPlanId !== null ? Number(rawPlanId) : 0;
     if (!Number.isSafeInteger(planId) || planId <= 0 || deepLinkedPlanId.current === planId) return;
     deepLinkedPlanId.current = planId;
+    const currentRequest = ++detailRequestId.current;
+    lastPlan.current = null;
+    setDetailOpen(true);
     setDetail(null);
     setDetailError(null);
     setDetailLoading(true);
     fetchLogisticsWerDetails(planId)
-      .then((loaded) => setDetail(loaded))
-      .catch((requestError) => {
-        setDetailError(requestError instanceof Error ? requestError.message : "Unable to load dispatch plan details.");
+      .then((loaded) => {
+        if (currentRequest === detailRequestId.current) setDetail(loaded);
       })
-      .finally(() => setDetailLoading(false));
+      .catch((requestError) => {
+        if (currentRequest === detailRequestId.current) {
+          setDetailError(requestError instanceof Error ? requestError.message : "Unable to load dispatch plan details.");
+        }
+      })
+      .finally(() => {
+        if (currentRequest === detailRequestId.current) setDetailLoading(false);
+      });
   }, [searchParams]);
 
   const load = useCallback(async () => {
@@ -114,34 +125,41 @@ export function useLogisticsWer() {
   }, []);
 
   const openDetails = useCallback(async (plan: LogisticsWerDispatchPlan) => {
+    const currentRequest = ++detailRequestId.current;
+    setDetailOpen(true);
     setDetail(null);
     setDetailError(null);
     setDetailLoading(true);
     lastPlan.current = plan;
     try {
-      setDetail(await fetchLogisticsWerDetails(plan.id, plan));
+      const loaded = await fetchLogisticsWerDetails(plan.id, plan);
+      if (currentRequest === detailRequestId.current) setDetail(loaded);
     } catch (requestError) {
-      if (lastPlan.current?.id === plan.id) {
+      if (currentRequest === detailRequestId.current) {
         setDetailError(requestError instanceof Error ? requestError.message : "Unable to load dispatch plan details.");
       }
     } finally {
-      if ((lastPlan.current?.id ?? detail?.plan.id) === plan.id) setDetailLoading(false);
+      if (currentRequest === detailRequestId.current) setDetailLoading(false);
     }
-  }, [detail]);
+  }, []);
 
   const refreshDetails = useCallback(async () => {
     // Deep-linked sheets (?planId=) never went through openDetails, so
     // lastPlan is unset there — fall back to the currently open detail.
     const plan = lastPlan.current ?? detail?.plan ?? null;
     if (!plan) return;
+    const currentRequest = ++detailRequestId.current;
     setDetailError(null);
     setDetailLoading(true);
     try {
-      setDetail(await fetchLogisticsWerDetails(plan.id, plan));
+      const loaded = await fetchLogisticsWerDetails(plan.id, plan);
+      if (currentRequest === detailRequestId.current) setDetail(loaded);
     } catch (requestError) {
-      setDetailError(requestError instanceof Error ? requestError.message : "Unable to load dispatch plan details.");
+      if (currentRequest === detailRequestId.current) {
+        setDetailError(requestError instanceof Error ? requestError.message : "Unable to load dispatch plan details.");
+      }
     } finally {
-      setDetailLoading(false);
+      if (currentRequest === detailRequestId.current) setDetailLoading(false);
     }
   }, [detail?.plan]);
 
@@ -155,6 +173,7 @@ export function useLogisticsWer() {
     status,
     loading,
     detail,
+    detailOpen,
     detailLoading,
     error,
     detailError,
@@ -165,8 +184,12 @@ export function useLogisticsWer() {
     changeStatus,
     openDetails,
     closeDetails: () => {
+      detailRequestId.current += 1;
       lastPlan.current = null;
+      setDetailOpen(false);
       setDetail(null);
+      setDetailLoading(false);
+      setDetailError(null);
     },
     refreshDetails,
     retry: load,
