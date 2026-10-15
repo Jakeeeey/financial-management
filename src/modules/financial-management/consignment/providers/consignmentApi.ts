@@ -126,8 +126,25 @@ export type ConsignmentConsignee = {
   consigneeCode: string;
   displayName: string;
   legalName: string | null;
+  tradeName?: string | null;
   tin: string | null;
+  contactPerson?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  addressLine?: string | null;
+  city?: string | null;
+  province?: string | null;
+  postalCode?: string | null;
   vatTreatment: string | null;
+  defaultCommissionRate?: number | null;
+  defaultPaymentTermsDays?: number | null;
+  defaultSettlementFrequency?: string | null;
+  defaultSalesReportFrequency?: string | null;
+  defaultExposureLimit?: number | null;
+  defaultShrinkageResponsibility?: string | null;
+  defaultEwtRate?: number | null;
+  defaultPriceTolerance?: number | null;
+  defaultListingFeeSettlement?: string | null;
   status: "PENDING" | "ACTIVE" | "REJECTED";
   createdByUserId: number;
   reviewedByUserId: number | null;
@@ -175,6 +192,11 @@ export type ConsignmentDocumentLine = {
   lineAmount: number | null;
   returnCondition: string | null;
   reasonCode: string | null;
+  reasonDetail?: string | null;
+  feeStartMonth?: string | null;
+  feePeriodMonths?: number | null;
+  feeTreatment?: string | null;
+  settlementMethod?: string | null;
 };
 
 export type ConsignmentDocument = {
@@ -185,6 +207,8 @@ export type ConsignmentDocument = {
   agreementId: number;
   externalReference: string | null;
   sourceDocumentId: number | null;
+  salesPeriodStart?: string | null;
+  salesPeriodEnd?: string | null;
   status: "DRAFT" | "PENDING" | "POSTED" | "REJECTED" | "VOIDED";
   grossAmount: number | null;
   commissionAmount: number | null;
@@ -215,6 +239,17 @@ export type ConsignmentDocumentDetail = {
   lines: ConsignmentDocumentLine[];
   warnings?: string[];
   calculationPreview?: ConsignmentCalculationPreview | null;
+};
+
+export type ConsignmentDocumentPreview = {
+  warnings: string[];
+  calculationPreview: ConsignmentCalculationPreview;
+};
+
+export type ConsignmentProductOption = {
+  productId: number;
+  productCode: string;
+  productName: string;
 };
 
 export type ConsignmentDocumentLineInput = Partial<Omit<ConsignmentDocumentLine, "documentLineId" | "documentId" | "lineNumber">>;
@@ -266,8 +301,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...(init?.headers || {}),
     },
   });
-  const payload = await response.json().catch(() => null) as { message?: string; detail?: string } | null;
-  if (!response.ok) throw new Error(payload?.message || payload?.detail || "Consignment request failed.");
+  const payload = await response.json().catch(() => null) as { message?: string; detail?: string; error?: string; title?: string } | null;
+  if (!response.ok) {
+    const serverMessage = payload?.message || payload?.detail || payload?.title || payload?.error;
+    const statusMessage = `Consignment request failed (${response.status}${response.statusText ? ` ${response.statusText}` : ""}).`;
+    throw new Error(serverMessage || statusMessage);
+  }
   return payload as T;
 }
 
@@ -289,19 +328,22 @@ export const consignmentApi = {
   closeAgreement: (id: number, reason: string) => request<ConsignmentAgreement>(`agreements/${id}/close`, { method: "POST", body: JSON.stringify({ reason }) }),
   listDocuments: (filters: { search?: string; status?: string; documentType?: string; consigneeId?: number; page?: number; size?: number } = {}) => request<ConsignmentPage<ConsignmentDocument>>(`documents${queryString(filters)}`),
   getDocument: (id: number) => request<ConsignmentDocumentDetail>(`documents/${id}`),
+  previewDocument: (input: ConsignmentDocumentInput) => request<ConsignmentDocumentPreview>("documents/preview", { method: "POST", body: JSON.stringify(input) }),
   saveDocument: (input: ConsignmentDocumentInput, id?: number) => request<ConsignmentDocumentDetail>(id ? `documents/${id}` : "documents", { method: id ? "PUT" : "POST", body: JSON.stringify(input) }),
   submitDocument: (id: number) => request<ConsignmentDocumentDetail>(`documents/${id}/submit`, { method: "POST" }),
   approveDocument: (id: number) => request<ConsignmentDocumentDetail>(`documents/${id}/approve`, { method: "POST" }),
   rejectDocument: (id: number, reason: string) => request<ConsignmentDocumentDetail>(`documents/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
   voidDocument: (id: number, reason: string) => request<ConsignmentDocumentDetail>(`documents/${id}/void`, { method: "POST", body: JSON.stringify({ reason }) }),
   getDashboard: () => request<ConsignmentDashboardSummary>("reports/dashboard"),
-  getStockPosition: () => request<Array<{ productId: number; productCode: string | null; productName: string | null; quantity: number; valueAtCost: number }>>("reports/stock-position"),
+  getStockPosition: (agreementId?: number) => request<Array<{ productId: number; productCode: string | null; productName: string | null; quantity: number; valueAtCost: number }>>(`reports/stock-position${queryString({ agreementId })}`),
+  listTransactions: (filters: { search?: string; status?: string; documentType?: string; consigneeId?: number; page?: number; size?: number } = {}) => request<ConsignmentPage<ConsignmentDocument>>(`reports/transaction-register${queryString(filters)}`),
   getTrialBalance: (asOfDate: string) => request<{ asOfDate: string; lines: Array<{ accountId: number; accountCode: string; accountName: string; debit: number; credit: number; netBalance: number; sourceEntries: Array<{ documentId: number; documentType: string; externalReference: string | null; journalEntryId: number; journalEntryNumber: string; journalDate: string; journalDescription: string; debit: number; credit: number; reversal: boolean }> }>; totalDebits: number; totalCredits: number }>(`reports/trial-balance${queryString({ asOfDate })}`),
   getReconciliation: (asOfDate: string) => request<{ asOfDate: string; balanced: boolean; checks: Array<{ key: string; label: string; ledgerBalance: number; operationalBalance: number; variance: number; passed: boolean }> }>(`reports/reconciliation${queryString({ asOfDate })}`),
   listMySubmissions: (page = 0, size = 50) => request<ConsignmentPage<ConsignmentDocument>>(`reports/submissions${queryString({ page, size })}`),
   listApprovals: (page = 0, size = 50) => request<ConsignmentPage<ConsignmentDocument>>(`reports/approvals${queryString({ page, size })}`),
   listAuditTrail: (page = 0, size = 50) => request<ConsignmentPage<ConsignmentAuditEvent>>(`controls/audit-trail${queryString({ page, size })}`),
   listListingFeeSchedules: (page = 0, size = 50) => request<ConsignmentPage<ConsignmentListingFeeSchedule>>(`reports/listing-fee-schedules${queryString({ page, size })}`),
+  getListingFeeSchedule: (feeLineId: number) => request<ConsignmentListingFeeSchedule>(`reports/listing-fee-schedules/line/${feeLineId}`),
   closePeriod: (closedThroughDate: string, reason: string) => request<ConsignmentPolicy>("controls/period/close", { method: "POST", body: JSON.stringify({ closedThroughDate, reason }) }),
   getPeriodReadiness: (through: string) => request<ConsignmentPeriodReadiness>(`controls/period/readiness${queryString({ through })}`),
   reopenLatestPeriod: (closedThroughDate: string, reason: string) => request<ConsignmentPolicy>("controls/period/reopen", { method: "POST", body: JSON.stringify({ closedThroughDate, reason }) }),
@@ -310,3 +352,22 @@ export const consignmentApi = {
   getAccountMappings: () => request<ConsignmentAccountMappings>("controls/account-mappings"),
   saveAccountMappings: (mappings: Array<{ key: string; accountId: number | null }>) => request<ConsignmentAccountMappings>("controls/account-mappings", { method: "PUT", body: JSON.stringify({ mappings }) }),
 };
+
+export async function searchConsignmentProducts(search: string): Promise<ConsignmentProductOption[]> {
+  const params = new URLSearchParams({ q: search, active_only: "1", page: "1", page_size: "25" });
+  const response = await fetch(`/api/fm/product-pricing/products?${params.toString()}`, { cache: "no-store" });
+  const payload = await response.json().catch(() => null) as {
+    data?: Array<{ product_id?: unknown; product_code?: unknown; product_name?: unknown }>;
+    message?: string;
+    error?: string;
+  } | null;
+  if (!response.ok) throw new Error(payload?.message || payload?.error || "Could not search active products.");
+  return (payload?.data ?? []).flatMap((product) => {
+    const productId = Number(product.product_id);
+    const productCode = typeof product.product_code === "string" ? product.product_code : "";
+    const productName = typeof product.product_name === "string" ? product.product_name : "";
+    return Number.isFinite(productId) && productId > 0 && productName
+      ? [{ productId, productCode, productName }]
+      : [];
+  });
+}
