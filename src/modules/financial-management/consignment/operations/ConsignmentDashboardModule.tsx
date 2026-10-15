@@ -34,7 +34,6 @@ export default function ConsignmentDashboardModule() {
   useEffect(() => {
     if (accessLoading) return;
     if (!access?.capabilities.includes("VIEW_OPERATIONAL_AREAS")) {
-      setLoading(false);
       return;
     }
 
