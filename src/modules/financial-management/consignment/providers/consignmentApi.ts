@@ -43,6 +43,35 @@ export type ConsignmentPeriodReadiness = {
   blockers: string[];
 };
 
+export type ConsignmentAccountMapping = {
+  key: string;
+  label: string;
+  accountId: number | null;
+  accountCode: string | null;
+  accountName: string | null;
+  updatedByUserId: number | null;
+  updatedAt: string | null;
+};
+
+export type ConsignmentAccountMappings = {
+  mappings: ConsignmentAccountMapping[];
+  accounts: Array<{ accountId: number; accountCode: string | null; accountName: string | null }>;
+  complete: boolean;
+  postingEnabled: boolean;
+};
+
+export type ConsignmentAuditEvent = {
+  auditEventId: number;
+  occurredAt: string;
+  actorUserId: number | null;
+  actorName: string | null;
+  action: string;
+  referenceType: string;
+  referenceId: string | null;
+  referenceName: string | null;
+  detailsJson: string | null;
+};
+
 export type ConsignmentPage<T> = {
   items: T[];
   page: number;
@@ -136,6 +165,7 @@ export type ConsignmentDocumentLine = {
   documentId: number;
   lineNumber: number;
   productId: number | null;
+  sourceDocumentLineId: number | null;
   productCodeSnapshot: string | null;
   productNameSnapshot: string | null;
   quantity: number | null;
@@ -169,13 +199,22 @@ export type ConsignmentDocument = {
   voidReason: string | null;
   voidedByUserId: number | null;
   voidedAt: string | null;
+  submittedAt: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type ConsignmentCalculationPreview = {
+  status: "OPERATIONAL_PREVIEW" | "UNAPPROVED_ACCOUNTING_PREVIEW" | "UNAPPROVED_TAX_PREVIEW";
+  quantities: Record<string, number>;
+  amounts: Record<string, number>;
 };
 
 export type ConsignmentDocumentDetail = {
   document: ConsignmentDocument;
   lines: ConsignmentDocumentLine[];
+  warnings?: string[];
+  calculationPreview?: ConsignmentCalculationPreview | null;
 };
 
 export type ConsignmentDocumentLineInput = Partial<Omit<ConsignmentDocumentLine, "documentLineId" | "documentId" | "lineNumber">>;
@@ -257,15 +296,17 @@ export const consignmentApi = {
   voidDocument: (id: number, reason: string) => request<ConsignmentDocumentDetail>(`documents/${id}/void`, { method: "POST", body: JSON.stringify({ reason }) }),
   getDashboard: () => request<ConsignmentDashboardSummary>("reports/dashboard"),
   getStockPosition: () => request<Array<{ productId: number; productCode: string | null; productName: string | null; quantity: number; valueAtCost: number }>>("reports/stock-position"),
-  getTrialBalance: (asOfDate: string) => request<{ asOfDate: string; lines: Array<{ accountId: number; accountCode: string; accountName: string; debit: number; credit: number }>; totalDebits: number; totalCredits: number }>(`reports/trial-balance${queryString({ asOfDate })}`),
+  getTrialBalance: (asOfDate: string) => request<{ asOfDate: string; lines: Array<{ accountId: number; accountCode: string; accountName: string; debit: number; credit: number; netBalance: number; sourceEntries: Array<{ documentId: number; documentType: string; externalReference: string | null; journalEntryId: number; journalEntryNumber: string; journalDate: string; journalDescription: string; debit: number; credit: number; reversal: boolean }> }>; totalDebits: number; totalCredits: number }>(`reports/trial-balance${queryString({ asOfDate })}`),
   getReconciliation: (asOfDate: string) => request<{ asOfDate: string; balanced: boolean; checks: Array<{ key: string; label: string; ledgerBalance: number; operationalBalance: number; variance: number; passed: boolean }> }>(`reports/reconciliation${queryString({ asOfDate })}`),
   listMySubmissions: (page = 0, size = 50) => request<ConsignmentPage<ConsignmentDocument>>(`reports/submissions${queryString({ page, size })}`),
   listApprovals: (page = 0, size = 50) => request<ConsignmentPage<ConsignmentDocument>>(`reports/approvals${queryString({ page, size })}`),
-  listAuditTrail: (page = 0, size = 50) => request<ConsignmentPage<Record<string, unknown>>>(`controls/audit-trail${queryString({ page, size })}`),
+  listAuditTrail: (page = 0, size = 50) => request<ConsignmentPage<ConsignmentAuditEvent>>(`controls/audit-trail${queryString({ page, size })}`),
   listListingFeeSchedules: (page = 0, size = 50) => request<ConsignmentPage<ConsignmentListingFeeSchedule>>(`reports/listing-fee-schedules${queryString({ page, size })}`),
   closePeriod: (closedThroughDate: string, reason: string) => request<ConsignmentPolicy>("controls/period/close", { method: "POST", body: JSON.stringify({ closedThroughDate, reason }) }),
   getPeriodReadiness: (through: string) => request<ConsignmentPeriodReadiness>(`controls/period/readiness${queryString({ through })}`),
   reopenLatestPeriod: (closedThroughDate: string, reason: string) => request<ConsignmentPolicy>("controls/period/reopen", { method: "POST", body: JSON.stringify({ closedThroughDate, reason }) }),
   getPolicy: () => request<ConsignmentPolicy | null>("controls/policies"),
   savePolicy: (policy: Partial<ConsignmentPolicy>) => request<ConsignmentPolicy>("controls/policies", { method: "PUT", body: JSON.stringify(policy) }),
+  getAccountMappings: () => request<ConsignmentAccountMappings>("controls/account-mappings"),
+  saveAccountMappings: (mappings: Array<{ key: string; accountId: number | null }>) => request<ConsignmentAccountMappings>("controls/account-mappings", { method: "PUT", body: JSON.stringify({ mappings }) }),
 };
