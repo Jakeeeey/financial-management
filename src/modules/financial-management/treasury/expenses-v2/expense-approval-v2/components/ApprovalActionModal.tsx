@@ -293,7 +293,7 @@ export const ApprovalActionModal: React.FC<ApprovalActionModalProps> = ({
       <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
         <DialogContent
           showCloseButton={false}
-          className="max-w-[98vw] sm:max-w-[96vw] max-h-[96vh] h-[96vh] border-border bg-card p-0 flex flex-col overflow-hidden text-foreground"
+          className="max-w-[98vw] sm:max-w-[96vw] max-h-[96vh] h-[96vh] border-border bg-card p-0 flex flex-col overflow-hidden text-foreground [&_button]:cursor-pointer"
         >
           {/* Compact Header matching Bulk Approval Inspection Workspace */}
           <DialogHeader className="px-4 py-2.5 border-b border-border/80 flex flex-row items-center justify-between shrink-0 bg-muted/40 space-y-0">

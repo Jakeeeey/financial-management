@@ -35,11 +35,13 @@ import {
   CalendarDays,
   CalendarRange,
   Eye,
+  History,
   AlertTriangle,
   CheckCircle2,
   Clock,
   Check,
 } from "lucide-react";
+import { SummaryHistoryModal } from "./SummaryHistoryModal";
 
 interface ExpenseSummaryTableProps {
   expenses: ExpenseSummaryItem[];
@@ -66,6 +68,7 @@ export const ExpenseSummaryTable: React.FC<ExpenseSummaryTableProps> = ({
 }) => {
   const [groupBy, setGroupBy] = useState<"receipt" | "day" | "week">("week");
   const [selectedGroupKey, setSelectedGroupKey] = useState<string>("");
+  const [selectedHistoryItem, setSelectedHistoryItem] = useState<ExpenseSummaryItem | null>(null);
 
   const getSupplierName = useCallback(
     (id: number) => {
@@ -622,14 +625,26 @@ export const ExpenseSummaryTable: React.FC<ExpenseSummaryTableProps> = ({
                             {formatCurrency(Number(item.amount))}
                           </TableCell>
                           <TableCell className="text-center">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => onViewDetails(item)}
-                              className="h-7 text-xs gap-1 font-semibold bg-background hover:bg-muted"
-                            >
-                              <Eye className="w-3.5 h-3.5 text-primary" /> View
-                            </Button>
+                            <div className="flex items-center justify-center gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => onViewDetails(item)}
+                                className="h-7 text-xs gap-1 font-semibold bg-background hover:bg-muted"
+                                title="View Details"
+                              >
+                                <Eye className="w-3.5 h-3.5 text-primary" /> View
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setSelectedHistoryItem(item)}
+                                className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                                title="View Audit History"
+                              >
+                                <History className="w-3.5 h-3.5" />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
@@ -641,6 +656,13 @@ export const ExpenseSummaryTable: React.FC<ExpenseSummaryTableProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Audit History Lifecycle Modal */}
+      <SummaryHistoryModal
+        open={!!selectedHistoryItem}
+        onOpenChange={(open) => !open && setSelectedHistoryItem(null)}
+        item={selectedHistoryItem}
+      />
     </div>
   );
 };
