@@ -128,6 +128,7 @@ export const ExpenseApprovalV2Module: React.FC = () => {
     expense_ids?: number[];
     action: "Approve" | "With Concern" | "Reject";
     remarks?: string;
+    items_remarks?: Record<number, string>;
     created_at: string;
   }) => {
     const res = await fetch("/api/fm/treasury/expenses-v2/expense-approval-v2/action", {
@@ -146,7 +147,7 @@ export const ExpenseApprovalV2Module: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 [&_button]:cursor-pointer">
       {/* Module Title */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/60 pb-4">
         <div>
@@ -162,7 +163,7 @@ export const ExpenseApprovalV2Module: React.FC = () => {
           <button
             onClick={fetchData}
             disabled={loading}
-            className="p-2 text-muted-foreground hover:text-foreground rounded-lg border border-border/60 bg-card/60 transition-colors"
+            className="p-2 text-muted-foreground hover:text-foreground rounded-lg border border-border/60 bg-card/60 transition-colors cursor-pointer"
             title="Refresh Data"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
