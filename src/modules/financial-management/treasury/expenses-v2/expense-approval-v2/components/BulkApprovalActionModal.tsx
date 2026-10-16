@@ -8,8 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   ExpenseItem,
@@ -35,6 +34,7 @@ import {
   User,
   X,
   FileText,
+  HelpCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -64,6 +64,7 @@ interface BulkApprovalActionModalProps {
     expense_ids?: number[];
     action: "Approve" | "With Concern" | "Reject";
     remarks?: string;
+    items_remarks?: Record<number, string>;
     created_at: string;
   }) => Promise<void>;
   onSuccess: (succeededIds?: number[]) => void;
@@ -81,8 +82,12 @@ export const BulkApprovalActionModal: React.FC<BulkApprovalActionModalProps> = (
   onSuccess,
 }) => {
   const [activeItemId, setActiveItemId] = useState<number | null>(null);
-  const [actionType, setActionType] = useState<"Approve" | "With Concern" | "Reject" | null>(null);
-  const [remarks, setRemarks] = useState("");
+  // Map of item ID -> decision ("Approve" | "With Concern" | "Reject")
+  const [itemDecisions, setItemDecisions] = useState<Record<number, "Approve" | "With Concern" | "Reject">>({});
+  // Map of item ID -> optional feedback note
+  const [itemRemarks, setItemRemarks] = useState<Record<number, string>>({});
+  const feedbackInputRefs = React.useRef<Record<number, HTMLInputElement | null>>({});
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
   // Active item image viewer state
@@ -126,18 +131,18 @@ export const BulkApprovalActionModal: React.FC<BulkApprovalActionModalProps> = (
     }
   }, [activeItem, isOpen]);
 
-  // Reset state when modal opens or active item changes
+  // Reset state when modal opens
   useEffect(() => {
     if (isOpen) {
       setZoomLevel(1);
       setRotation(0);
       setPanPosition({ x: 0, y: 0 });
-    } else {
-      setActionType(null);
-      setRemarks("");
+      setItemDecisions({});
+      setItemRemarks({});
+      setShowConfirmDialog(false);
       setIsProcessing(false);
     }
-  }, [isOpen, activeItem]);
+  }, [isOpen]);
 
   if (!isOpen || selectedItems.length === 0) return null;
 
@@ -266,45 +271,117 @@ export const BulkApprovalActionModal: React.FC<BulkApprovalActionModalProps> = (
     }
   };
 
-  // Single batch execution call (Shared Disbursement Header)
-  const handleExecuteBatch = async () => {
-    if (!actionType || isProcessing) return;
+  // Helper to vote on a single item
+  const handleVoteItem = (itemId: number, decision: "Approve" | "With Concern" | "Reject") => {
+    const isUntoggle = itemDecisions[itemId] === decision;
 
-    if ((actionType === "With Concern" || actionType === "Reject") && !remarks.trim()) {
-      toast.error(
-        actionType === "With Concern"
-          ? "Feedback note is required when returning expenses with concern."
-          : "Reason is required when rejecting expenses."
-      );
-      return;
+    // Immediately sync the active item preview & audit logs to this card
+    setActiveItemId(itemId);
+
+    setItemDecisions((prev) => {
+      // If clicking the currently selected decision, unselect it (toggle back to unvoted)
+      if (prev[itemId] === decision) {
+        const next = { ...prev };
+        delete next[itemId];
+        return next;
+      }
+      return { ...prev, [itemId]: decision };
+    });
+
+    // If voting, automatically focus and select the text in the Feedback input
+    if (!isUntoggle) {
+      setTimeout(() => {
+        const inputEl = feedbackInputRefs.current[itemId];
+        if (inputEl) {
+          inputEl.focus();
+          inputEl.select();
+        }
+      }, 50);
     }
+  };
+
+  // Helper to update per-item optional feedback remarks
+  const handleRemarkChange = (itemId: number, text: string) => {
+    setItemRemarks((prev) => ({
+      ...prev,
+      [itemId]: text,
+    }));
+  };
+
+  // Summary counts
+  const approvedCount = selectedItems.filter((i) => itemDecisions[i.id] === "Approve").length;
+  const concernCount = selectedItems.filter((i) => itemDecisions[i.id] === "With Concern").length;
+  const rejectedCount = selectedItems.filter((i) => itemDecisions[i.id] === "Reject").length;
+  const totalVotedCount = approvedCount + concernCount + rejectedCount;
+  const unvotedCount = selectedItems.length - totalVotedCount;
+
+  // Execute confirmed decisions grouped by action type to preserve atomic batching and voucher consolidation
+  const handleConfirmExecution = async () => {
+    if (totalVotedCount === 0 || isProcessing) return;
 
     try {
       setIsProcessing(true);
       const timestamp = new Date().toISOString();
-      const allItemIds = selectedItems.map((item) => item.id);
+      const votedItems = selectedItems.filter((i) => !!itemDecisions[i.id]);
 
-      await onConfirmAction({
-        expense_ids: allItemIds,
-        action: actionType,
-        remarks: remarks.trim() || undefined,
-        created_at: timestamp,
-      });
+      const approvedIds = votedItems.filter((i) => itemDecisions[i.id] === "Approve").map((i) => i.id);
+      const concernIds = votedItems.filter((i) => itemDecisions[i.id] === "With Concern").map((i) => i.id);
+      const rejectedIds = votedItems.filter((i) => itemDecisions[i.id] === "Reject").map((i) => i.id);
+
+      // Cleaned dictionary of individual remarks
+      const formattedItemRemarks: Record<number, string> = {};
+      for (const item of votedItems) {
+        const note = (itemRemarks[item.id] || "").trim();
+        if (note) {
+          formattedItemRemarks[item.id] = note;
+        }
+      }
+
+      // 1. Submit batch Approved items (consolidates into single disbursement voucher if final approved)
+      if (approvedIds.length > 0) {
+        await onConfirmAction({
+          expense_ids: approvedIds,
+          action: "Approve",
+          items_remarks: formattedItemRemarks,
+          created_at: timestamp,
+        });
+      }
+
+      // 2. Submit batch With Concern items
+      if (concernIds.length > 0) {
+        await onConfirmAction({
+          expense_ids: concernIds,
+          action: "With Concern",
+          items_remarks: formattedItemRemarks,
+          created_at: timestamp,
+        });
+      }
+
+      // 3. Submit batch Rejected items
+      if (rejectedIds.length > 0) {
+        await onConfirmAction({
+          expense_ids: rejectedIds,
+          action: "Reject",
+          items_remarks: formattedItemRemarks,
+          created_at: timestamp,
+        });
+      }
+
+      const executedIds = votedItems.map((i) => i.id);
 
       toast.success(
-        actionType === "Approve"
-          ? `Successfully approved ${allItemIds.length} expense receipt(s)!`
-          : actionType === "With Concern"
-          ? `Successfully returned ${allItemIds.length} expense receipt(s) with concern!`
-          : `Successfully rejected ${allItemIds.length} expense receipt(s)!`
+        `Successfully submitted decisions for ${executedIds.length} receipt${
+          executedIds.length === 1 ? "" : "s"
+        }.`
       );
 
-      onSuccess(allItemIds);
-      setActionType(null);
-      setRemarks("");
+      onSuccess(executedIds);
+      setItemDecisions({});
+      setItemRemarks({});
+      setShowConfirmDialog(false);
       onClose();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to execute batch approval action.");
+      toast.error(err instanceof Error ? err.message : "Failed to submit decisions.");
     } finally {
       setIsProcessing(false);
     }
@@ -312,7 +389,7 @@ export const BulkApprovalActionModal: React.FC<BulkApprovalActionModalProps> = (
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && !isProcessing && onClose()}>
-      <DialogContent className="max-w-[98vw] sm:max-w-[96vw] max-h-[96vh] h-[96vh] border-border bg-card p-0 flex flex-col overflow-hidden">
+      <DialogContent className="max-w-[98vw] sm:max-w-[96vw] max-h-[96vh] h-[96vh] border-border bg-card p-0 flex flex-col overflow-hidden [&_button]:cursor-pointer">
         {/* Compact Header */}
         <DialogHeader className="px-4 py-2.5 border-b border-border/80 flex items-center justify-between shrink-0 bg-muted/40">
           <div className="flex items-center gap-2">
@@ -514,11 +591,13 @@ export const BulkApprovalActionModal: React.FC<BulkApprovalActionModalProps> = (
               <div className="flex-1 overflow-y-auto pr-1 space-y-2 min-h-0">
                 {selectedItems.map((item) => {
                   const isSelected = activeItem?.id === item.id;
+                  const currentDecision = itemDecisions[item.id];
+
                   return (
                     <div
                       key={item.id}
                       onClick={() => setActiveItemId(item.id)}
-                      className={`p-2.5 rounded-xl border text-xs cursor-pointer transition-all flex flex-col gap-1 ${
+                      className={`p-2.5 rounded-xl border text-xs cursor-pointer transition-all flex flex-col gap-1.5 ${
                         isSelected
                           ? "bg-primary/15 border-2 border-primary shadow-xs"
                           : "bg-card dark:bg-zinc-900/80 border-slate-300 dark:border-zinc-700 shadow-2xs hover:border-primary/60 hover:shadow-xs hover:bg-muted/50"
@@ -543,141 +622,204 @@ export const BulkApprovalActionModal: React.FC<BulkApprovalActionModalProps> = (
                       </div>
 
                       {item.remarks && (
-                        <div className="text-[10px] text-muted-foreground italic pt-1 border-t border-border/40 truncate">
+                        <div className="text-[10px] text-muted-foreground italic pt-0.5 border-t border-border/40 truncate">
                           &ldquo;{item.remarks}&rdquo;
                         </div>
                       )}
 
-                      <div className="text-[10px] text-muted-foreground pt-1 border-t border-border/40">
+                      <div className="text-[10px] text-muted-foreground pt-0.5 border-t border-border/40">
                         <span className="font-medium text-foreground">Div / Dept: </span>
                         {getDivisionName(item.division_id)} / {getDepartmentName(item.department_id)}
                       </div>
+
+                      {/* Per-Item Decision Pills / Toggle Buttons */}
+                      {/* Per-Item Decision Pills / Toggle Buttons */}
+                      <div
+                        className="pt-1.5 border-t border-border/60 flex items-center justify-between gap-1 mt-0.5"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleVoteItem(item.id, "Approve")}
+                          className={`h-6 flex-1 px-1 text-[10px] font-bold rounded-md transition-all ${
+                            currentDecision === "Approve"
+                              ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs"
+                              : "text-muted-foreground hover:bg-emerald-500/15 hover:text-emerald-600"
+                          }`}
+                        >
+                          <CheckCircle2 className="w-3 h-3 mr-0.5" /> Approve
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleVoteItem(item.id, "With Concern")}
+                          className={`h-6 flex-1 px-1 text-[10px] font-bold rounded-md transition-all ${
+                            currentDecision === "With Concern"
+                              ? "bg-amber-600 text-white hover:bg-amber-700 shadow-xs"
+                              : "text-muted-foreground hover:bg-amber-500/15 hover:text-amber-600"
+                          }`}
+                        >
+                          <AlertTriangle className="w-3 h-3 mr-0.5" /> Concern
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleVoteItem(item.id, "Reject")}
+                          className={`h-6 flex-1 px-1 text-[10px] font-bold rounded-md transition-all ${
+                            currentDecision === "Reject"
+                              ? "bg-rose-600 text-white hover:bg-rose-700 shadow-xs"
+                              : "text-muted-foreground hover:bg-rose-500/15 hover:text-rose-600"
+                          }`}
+                        >
+                          <XCircle className="w-3 h-3 mr-0.5" /> Reject
+                        </Button>
+                      </div>
+
+                      {/* Optional Note / Feedback Input (Shown once a vote is selected) */}
+                      {currentDecision && (
+                        <div
+                          className="pt-1.5 border-t border-border/40 animate-in fade-in duration-150"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex items-center justify-between pb-1">
+                            <span className="text-[10px] font-semibold text-muted-foreground">
+                              Feedback (Optional)
+                            </span>
+                            <span className="text-[9px] text-muted-foreground/70 italic">
+                              {currentDecision}
+                            </span>
+                          </div>
+                          <Input
+                            ref={(el) => {
+                              feedbackInputRefs.current[item.id] = el;
+                            }}
+                            placeholder="Type optional note here..."
+                            value={itemRemarks[item.id] || ""}
+                            onChange={(e) => handleRemarkChange(item.id, e.target.value)}
+                            className="h-6 text-[11px] px-2 bg-background border-slate-300 dark:border-zinc-700"
+                          />
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
             </div>
 
-            {/* Batch Action Decision Panel */}
-            <div className="border-t border-border/80 pt-3 space-y-2.5 shrink-0 mt-2">
-              <Label className="text-xs font-bold text-foreground">Select Batch Action</Label>
-              <div className="grid grid-cols-3 gap-1.5">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setActionType("Approve")}
-                  className={`h-10 text-xs font-bold flex-col gap-0 border shadow-2xs transition-all px-1 ${
-                    actionType === "Approve"
-                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500 ring-2 ring-emerald-500/30"
-                      : "bg-card dark:bg-zinc-900/80 border-slate-300 dark:border-zinc-700 hover:bg-emerald-500/10 hover:text-emerald-600 hover:border-emerald-500/50"
-                  }`}
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                  <span className="text-[10px]">Approve All</span>
-                </Button>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setActionType("With Concern")}
-                  className={`h-10 text-xs font-bold flex-col gap-0 border shadow-2xs transition-all px-1 ${
-                    actionType === "With Concern"
-                      ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500 ring-2 ring-amber-500/30"
-                      : "bg-card dark:bg-zinc-900/80 border-slate-300 dark:border-zinc-700 hover:bg-amber-500/10 hover:text-amber-600 hover:border-amber-500/50"
-                  }`}
-                >
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
-                  <span className="text-[10px]">With Concern</span>
-                </Button>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setActionType("Reject")}
-                  className={`h-10 text-xs font-bold flex-col gap-0 border shadow-2xs transition-all px-1 ${
-                    actionType === "Reject"
-                      ? "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500 ring-2 ring-red-500/30"
-                      : "bg-card dark:bg-zinc-900/80 border-slate-300 dark:border-zinc-700 hover:bg-red-500/10 hover:text-red-600 hover:border-red-500/50"
-                  }`}
-                >
-                  <XCircle className="w-3.5 h-3.5 text-red-500" />
-                  <span className="text-[10px]">Reject All</span>
-                </Button>
+            {/* Clean Footer Panel */}
+            <div className="border-t border-border/80 pt-3 space-y-2 shrink-0 mt-1">
+              <div className="flex items-center justify-between text-xs font-semibold px-0.5">
+                <span className="text-muted-foreground">Progress</span>
+                <span className="font-mono text-primary font-bold">
+                  {totalVotedCount} of {selectedItems.length} receipts voted
+                </span>
               </div>
 
-              {actionType && (
-                <div className="space-y-1 pt-1 animate-in fade-in duration-200">
-                  <Label className="text-xs font-semibold text-foreground flex items-center justify-between">
-                    <span>
-                      {actionType === "Approve"
-                        ? "Optional Approval Remarks"
-                        : actionType === "With Concern"
-                        ? "Feedback / Concern Note"
-                        : "Rejection Reason"}
-                    </span>
-                    {(actionType === "With Concern" || actionType === "Reject") && (
-                      <Badge variant="destructive" className="text-[9px] py-0 px-1.5">
-                        Required
-                      </Badge>
-                    )}
-                  </Label>
-                  <Textarea
-                    placeholder={
-                      actionType === "Approve"
-                        ? "Add optional batch approval notes for audit trail..."
-                        : actionType === "With Concern"
-                        ? "Specify feedback or reason for returning these receipts..."
-                        : "Specify clear reason for rejecting these expense receipts..."
-                    }
-                    value={remarks}
-                    onChange={(e) => setRemarks(e.target.value)}
-                    className="text-xs min-h-[65px] max-h-[85px] bg-background"
-                  />
-                </div>
-              )}
-
-              <div className="flex items-center gap-2 pt-1">
+              <div className="flex items-center gap-2 pt-0.5">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   onClick={onClose}
                   disabled={isProcessing}
-                  className="w-1/3 text-xs font-semibold h-8 border-slate-300 dark:border-zinc-700 bg-card dark:bg-zinc-900/80"
+                  className="w-1/3 text-xs font-semibold h-9 border-slate-300 dark:border-zinc-700 bg-card dark:bg-zinc-900/80"
                 >
                   Close
                 </Button>
                 <Button
                   type="button"
                   size="sm"
-                  disabled={!actionType || isProcessing}
-                  onClick={handleExecuteBatch}
-                  className={`w-2/3 text-xs font-semibold text-white h-8 ${
-                    actionType === "Approve"
-                      ? "bg-emerald-600 hover:bg-emerald-700"
-                      : actionType === "With Concern"
-                      ? "bg-amber-600 hover:bg-amber-700"
-                      : "bg-red-600 hover:bg-red-700"
-                  }`}
+                  disabled={totalVotedCount === 0 || isProcessing}
+                  onClick={() => setShowConfirmDialog(true)}
+                  className="w-2/3 text-xs font-semibold text-white h-9 bg-primary hover:bg-primary/90 shadow-sm"
                 >
-                  {isProcessing ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Executing Batch...
-                    </>
-                  ) : actionType === "Approve" ? (
-                    `Confirm Approve (${selectedItems.length})`
-                  ) : actionType === "With Concern" ? (
-                    `Confirm Return (${selectedItems.length})`
-                  ) : actionType === "Reject" ? (
-                    `Confirm Reject (${selectedItems.length})`
-                  ) : (
-                    "Select Action"
-                  )}
+                  {totalVotedCount === 0
+                    ? "Select Decisions"
+                    : `Submit Decision (${totalVotedCount}/${selectedItems.length})`}
                 </Button>
               </div>
             </div>
           </div>
         </div>
+
+        {/* Confirmation Dialog Before Submitting */}
+        <Dialog open={showConfirmDialog} onOpenChange={(open) => !open && !isProcessing && setShowConfirmDialog(false)}>
+          <DialogContent className="max-w-md border-border bg-card p-5 [&_button]:cursor-pointer">
+            <DialogHeader className="space-y-1">
+              <DialogTitle className="text-base font-bold text-foreground flex items-center gap-2">
+                <HelpCircle className="w-5 h-5 text-primary" />
+                Submit Decisions?
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="py-2 text-xs text-muted-foreground space-y-3">
+              <p className="text-foreground text-xs leading-relaxed">
+                You have voted on <strong className="text-primary font-bold">{totalVotedCount} of {selectedItems.length}</strong> receipts.
+                {unvotedCount > 0 ? (
+                  <> The remaining <strong className="text-foreground font-semibold">{unvotedCount} unvoted</strong> receipt{unvotedCount === 1 ? "" : "s"} will stay pending.</>
+                ) : null}
+              </p>
+
+              {/* Breakdown Summary */}
+              <div className="bg-muted/40 border border-border/80 rounded-lg p-3 space-y-1.5 font-medium">
+                <div className="flex items-center justify-between text-emerald-600 dark:text-emerald-400">
+                  <span className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Approved
+                  </span>
+                  <span className="font-mono font-bold">{approvedCount}</span>
+                </div>
+                <div className="flex items-center justify-between text-amber-600 dark:text-amber-400">
+                  <span className="flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5" /> With Concern
+                  </span>
+                  <span className="font-mono font-bold">{concernCount}</span>
+                </div>
+                <div className="flex items-center justify-between text-rose-600 dark:text-rose-400">
+                  <span className="flex items-center gap-1.5">
+                    <XCircle className="w-3.5 h-3.5" /> Rejected
+                  </span>
+                  <span className="font-mono font-bold">{rejectedCount}</span>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-muted-foreground italic">
+                Do you want to confirm and apply these decisions now?
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/80">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowConfirmDialog(false)}
+                disabled={isProcessing}
+                className="text-xs font-semibold h-8"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleConfirmExecution}
+                disabled={isProcessing}
+                className="text-xs font-semibold h-8 bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                {isProcessing ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Submitting...
+                  </>
+                ) : (
+                  "Yes, Submit Decisions"
+                )}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Fullscreen Image Overlay */}
         {isFullscreen && activeItem?.receipt_url && (

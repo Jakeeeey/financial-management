@@ -544,17 +544,6 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
 
   const renderActionButtons = (item: ExpenseItem) => (
     <div className="flex items-center justify-center gap-1">
-      {/* View History Log */}
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8 text-muted-foreground hover:text-foreground"
-        title="View Audit History"
-        onClick={() => onOpenHistory(item)}
-      >
-        <History className="w-4 h-4" />
-      </Button>
-
       {/* View Receipt Image Modal Trigger */}
       {item.receipt_url ? (
         <Button
@@ -580,6 +569,17 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
           <Send className="w-4 h-4" />
         </Button>
       ) : null}
+
+      {/* Audit & Revision Lifecycle History */}
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10"
+        title="View Audit & Revision History"
+        onClick={() => onOpenHistory(item)}
+      >
+        <History className="w-4 h-4" />
+      </Button>
 
       {/* Edit / Resubmit Revision */}
       {item.status === "With Concern" ? (
