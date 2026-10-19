@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ChevronsLeft, ChevronsRight } from "lucide-react";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -171,10 +172,12 @@ export function AjeAuditTrail({ entryId, revision }: { entryId?: number | null; 
     </div>
 
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-    {loading && <p role="status" className="text-sm text-muted-foreground">Loading audit history…</p>}
+    {loading && !data?.content.length && <div className="space-y-3" aria-hidden="true">{Array.from({ length: 3 }).map((_, index) => <div key={index} className="space-y-3 rounded-md border bg-background p-3 sm:p-4"><div className="flex items-center gap-2"><div className="h-5 w-20 animate-pulse rounded bg-muted" /><div className="h-5 w-16 animate-pulse rounded bg-muted" /></div><div className="h-4 w-64 animate-pulse rounded bg-muted" /><div className="h-4 w-40 animate-pulse rounded bg-muted" /></div>)}</div>}
+    {loading && data?.content.length ? <p role="status" aria-live="polite" className="text-xs font-medium text-muted-foreground">Updating…</p> : null}
     {!loading && !error && !data?.content.length && <div className="rounded-md border p-6 text-center text-muted-foreground"><p>No audit events match these filters.</p>{activeFilters.length > 0 && <Button type="button" variant="link" size="sm" onClick={() => { setFilters(emptyFilters); setPage(0); }}>Clear filters and show all events</Button>}</div>}
 
-    {!loading && groups.map(([date, events]) => <section key={date} aria-label={`Audit events ${date}`} className="space-y-3">
+    {groups.length > 0 && <div aria-busy={loading} className={loading ? "pointer-events-none space-y-3 opacity-60 transition-opacity" : "space-y-3"}>
+    {groups.map(([date, events]) => <section key={date} aria-label={`Audit events ${date}`} className="space-y-3">
       <h2 className="sticky top-0 z-[1] rounded-md bg-background/95 py-1 text-sm font-semibold text-muted-foreground backdrop-blur">{date === "unknown" ? "Date unavailable" : auditDay(date)}</h2>
       <ol className="ml-2 space-y-3 border-l pl-4">
         {events.map(event => <li key={event.id} className="relative">
@@ -203,8 +206,9 @@ export function AjeAuditTrail({ entryId, revision }: { entryId?: number | null; 
         </li>)}
       </ol>
     </section>)}
+    </div>}
 
-    <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Showing {firstResult}–{lastResult} of {data?.totalElements ?? 0} events · Page {page + 1} of {totalPages}</span><div className="flex gap-2"><Button variant="outline" size="sm" disabled={page === 0 || loading} onClick={() => setPage(page - 1)}>Previous</Button><Button variant="outline" size="sm" disabled={loading || !data || page + 1 >= data.totalPages} onClick={() => setPage(page + 1)}>Next</Button></div></div>
+    <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Showing {firstResult}–{lastResult} of {data?.totalElements ?? 0} events · Page {page + 1} of {totalPages}</span><div className="flex gap-2"><Button variant="outline" size="icon-sm" aria-label="Go to first page" disabled={page === 0 || loading} onClick={() => setPage(0)}><ChevronsLeft className="h-4 w-4" /></Button><Button variant="outline" size="sm" disabled={page === 0 || loading} onClick={() => setPage(page - 1)}>Previous</Button><Button variant="outline" size="sm" disabled={loading || !data || page + 1 >= data.totalPages} onClick={() => setPage(page + 1)}>Next</Button><Button variant="outline" size="icon-sm" aria-label="Go to last page" disabled={loading || !data || page + 1 >= data.totalPages} onClick={() => setPage(totalPages - 1)}><ChevronsRight className="h-4 w-4" /></Button></div></div>
 
     <Dialog open={selectedEvent !== null} onOpenChange={closeEntry}>
       <DialogContent className="grid-cols-1 min-w-0 max-h-[90vh] overflow-x-hidden overflow-y-auto sm:max-w-5xl">

@@ -2,6 +2,7 @@
 import * as React from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { ChevronsLeft, ChevronsRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -188,6 +189,8 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
     setEditorEntry(null); setEditorReturnTab(null); setReadOnly(false); setEditorKey(k => k + 1); setReversal(null); setTab("new");
   }
   function clearFilters() { setSearch("");setStatus("All");setPostingQueue("all");setStartDate("");setEndDate("");setDivision("all");setDepartment("all");setAccountType("");setPage(0); }
+  const focusPosted = () => { setStatus("Posted"); setPostingQueue("all"); setPage(0); };
+  const focusDrafts = () => { setStatus("Draft"); setPostingQueue("all"); setPage(0); };
   const hasFilters = Boolean(search || status !== "All" || startDate || endDate || division !== "all" || department !== "all" || accountType || (initialView === "posting" && postingQueue !== "all"));
   const summaryDateScope = startDate && endDate ? `${formatDate(startDate)} – ${formatDate(endDate)}` : startDate ? `From ${formatDate(startDate)}` : endDate ? `Through ${formatDate(endDate)}` : "All dates";
   const accountTypes = React.useMemo(() => [...new Map((lookups?.accounts || []).filter(a => a.accountTypeId).map(a => [a.accountTypeId,{ id:a.accountTypeId!,name:a.accountTypeName || "Other" }])).values()], [lookups]);
@@ -212,7 +215,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
     </>}
     {tab === "audit" && <AjeAuditTrail revision={revision} />}
     {(tab === "posting" || tab === "summary") && <>
-      <AdjustingEntriesSummaryCards summary={summary} selectedStatus={status} onStatusSelect={tab === "summary" ? value => { setStatus(value); setPostingQueue("all"); setPage(0); } : undefined} showPostedAmounts={tab === "summary"} />
+      <AdjustingEntriesSummaryCards summary={summary} loading={loading} selectedStatus={status} onStatusSelect={tab === "summary" ? value => { setStatus(value); setPostingQueue("all"); setPage(0); } : undefined} showPostedAmounts={tab === "summary"} onShowPosted={focusPosted} onInvestigatePosted={focusPosted} onShowUnbalancedDrafts={focusDrafts} />
       {tab === "summary" && <p className="text-xs text-muted-foreground">Accounting dates: {summaryDateScope}. Counts and posted amounts also reflect the search, division, department, and account-type filters. Status filters narrow the journal list only.</p>}
       {tab === "posting" && <div className="flex flex-wrap items-center gap-2" aria-label="Posting queue view">
         {([
@@ -232,7 +235,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
         <div className="space-y-1.5"><Label htmlFor="aje-sort" className="text-xs font-medium text-muted-foreground">Sort</Label><select id="aje-sort" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={sort} onChange={e => {setSort(e.target.value);setPage(0);}}><option value="transactionDate,desc">Accounting date: newest</option><option value="transactionDate,asc">Accounting date: oldest</option><option value="id,desc">Newest created</option><option value="jeNo,asc">Journal number</option><option value="status,asc">Status</option></select></div>
       </AdjustingEntriesFilters>
       <AdjustingEntriesTable entries={entries} loading={loading} userId={lookups.access.userId} readOnly={tab === "summary"} onView={(entry,edit) => { if (initialView === "posting" && !edit) void openReview(entry); else void view(entry,edit); }} onAction={requestAction} onReverse={entry => void previewReversal(entry)} />
-      <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>{totalElements} entries · Page {totalPages ? page + 1 : 0} of {totalPages}</span><div className="flex gap-2"><Button variant="outline" size="sm" disabled={page === 0 || loading} onClick={() => setPage(page - 1)}>Previous</Button><Button variant="outline" size="sm" disabled={loading || page + 1 >= totalPages} onClick={() => setPage(page + 1)}>Next</Button></div></div>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>{totalElements > 0 ? `Showing ${page * pageSize + 1}–${Math.min((page + 1) * pageSize, totalElements)} of ${totalElements} entries · Page ${page + 1} of ${Math.max(totalPages, 1)}` : "0 entries"}</span><div className="flex gap-2"><Button variant="outline" size="icon-sm" aria-label="Go to first page" disabled={page === 0 || loading} onClick={() => setPage(0)}><ChevronsLeft className="h-4 w-4" /></Button><Button variant="outline" size="sm" disabled={page === 0 || loading} onClick={() => setPage(page - 1)}>Previous</Button><Button variant="outline" size="sm" disabled={loading || page + 1 >= totalPages} onClick={() => setPage(page + 1)}>Next</Button><Button variant="outline" size="icon-sm" aria-label="Go to last page" disabled={loading || page + 1 >= totalPages} onClick={() => setPage(Math.max(0, totalPages - 1))}><ChevronsRight className="h-4 w-4" /></Button></div></div>
     </>}
     {periodOpen && period && <AjePeriodDialog period={period} onClose={() => setPeriodOpen(false)} onSaved={value => {setPeriod(value);setRevision(v => v + 1);}} />}
     <AlertDialog open={action !== null} onOpenChange={open => { if (!open && !busy) setAction(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{action ? `${actionLabels[action.action]} ${action.entry.jeNo}?` : "Confirm action"}</AlertDialogTitle><AlertDialogDescription>{action?.action === "post" || action?.action === "retry" ? "This commits the approved entry to the General Ledger. Posted entries are read-only." : "This action updates the journal workflow and records an audit event."}</AlertDialogDescription></AlertDialogHeader>
