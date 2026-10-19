@@ -20,7 +20,8 @@ export function InteractiveStatementTable() {
         setIsDrillDownOpen(true);
     };
     const formatCurrency = (value: number) => {
-        return `\u20B1${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        const magnitude = Math.abs(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return value < 0 ? `-\u20B1${magnitude}` : `\u20B1${magnitude}`;
     };
 
     const formatVariance = (variance: number, percentage: number) => {
@@ -34,7 +35,7 @@ export function InteractiveStatementTable() {
                     {prefix}{formatCurrency(variance)}
                 </span>
                 <span className={cn("text-xs", colorClass)}>
-                    {Math.abs(percentage)}%
+                    {isPositive ? "+" : ""}{percentage}%
                 </span>
             </div>
         );

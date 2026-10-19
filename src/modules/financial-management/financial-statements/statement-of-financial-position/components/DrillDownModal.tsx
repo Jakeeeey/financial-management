@@ -59,9 +59,8 @@ export function DrillDownModal({ account, isOpen, onOpenChange }: Props) {
 
     const formatCurrency = (val: number | undefined) => {
         if (val === undefined) return "₱0.00";
-        // Show absolute magnitude as requested (remove '-' signs)
-        const absoluteValue = Math.abs(val);
-        return `₱${absoluteValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        const magnitude = Math.abs(val).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return val < 0 ? `-₱${magnitude}` : `₱${magnitude}`;
     };
 
     const columns: ColumnDef<DrillDownEntry>[] = [
