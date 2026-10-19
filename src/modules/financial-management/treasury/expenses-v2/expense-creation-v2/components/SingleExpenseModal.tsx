@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  ExpenseItem,
   ExpenseFormValues,
   SupplierOption,
   ChartOfAccountOption,
@@ -28,8 +29,19 @@ import {
   UserDefaultsOption,
 } from "../types";
 import { uploadReceiptFile } from "../services/uploadService";
-import { Loader2, Save, Send, Search, AlertCircle, X, Image as ImageIcon } from "lucide-react";
+import { getAssetUrl } from "../../utils/assetUrl";
+import {
+  Loader2,
+  Save,
+  Send,
+  Search,
+  AlertCircle,
+  Image as ImageIcon,
+  Eye,
+  RefreshCw,
+} from "lucide-react";
 import { toast } from "sonner";
+import { UnifiedReceiptZoomModal } from "./UnifiedReceiptZoomModal";
 
 interface SingleExpenseModalProps {
   open: boolean;
@@ -39,6 +51,7 @@ interface SingleExpenseModalProps {
   divisions: DivisionOption[];
   departments: DepartmentOption[];
   userDefaults?: UserDefaultsOption | null;
+  initialData?: ExpenseItem | null;
   onSubmit: (values: ExpenseFormValues, asSubmit: boolean) => Promise<void>;
 }
 
@@ -50,6 +63,7 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
   divisions,
   departments,
   userDefaults,
+  initialData = null,
   onSubmit,
 }) => {
   const [expenseDate, setExpenseDate] = useState<string>(
@@ -63,9 +77,13 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
   const [amount, setAmount] = useState<string>("");
   const [remarks, setRemarks] = useState<string>("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFilePreview, setSelectedFilePreview] = useState<string>("");
   const [receiptUrl, setReceiptUrl] = useState<string>("");
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  // Attachment Fullscreen Zoom/Preview Lightbox state
+  const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
 
   // Search states inside dropdowns
   const [payeeSearch, setPayeeSearch] = useState("");
@@ -76,17 +94,32 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const resetForm = useCallback(() => {
-    setExpenseDate(new Date().toISOString().split("T")[0]);
-    setPayee(userDefaults?.supplier_id ?? null);
-    setIsEmployee(true);
-    setDivisionId(userDefaults?.division_id ?? null);
-    const salesDept = departments.find((d) => (d.department_name || "").trim().toLowerCase() === "sales");
-    setDepartmentId(salesDept ? salesDept.department_id : null);
-    setCoaId(null);
-    setAmount("");
-    setRemarks("");
-    setSelectedFile(null);
-    setReceiptUrl("");
+    if (initialData) {
+      setExpenseDate(initialData.expense_date || new Date().toISOString().split("T")[0]);
+      setPayee(initialData.payee);
+      setIsEmployee(Boolean(initialData.is_employee));
+      setDivisionId(initialData.division_id ?? null);
+      setDepartmentId(initialData.department_id ?? null);
+      setCoaId(initialData.coa_id);
+      setAmount(initialData.amount ? String(initialData.amount) : "");
+      setRemarks(initialData.remarks || "");
+      setSelectedFile(null);
+      setSelectedFilePreview("");
+      setReceiptUrl(initialData.receipt_url || "");
+    } else {
+      setExpenseDate(new Date().toISOString().split("T")[0]);
+      setPayee(userDefaults?.supplier_id ?? null);
+      setIsEmployee(true);
+      setDivisionId(userDefaults?.division_id ?? null);
+      const salesDept = departments.find((d) => (d.department_name || "").trim().toLowerCase() === "sales");
+      setDepartmentId(salesDept ? salesDept.department_id : null);
+      setCoaId(null);
+      setAmount("");
+      setRemarks("");
+      setSelectedFile(null);
+      setSelectedFilePreview("");
+      setReceiptUrl("");
+    }
     setPayeeSearch("");
     setCoaSearch("");
     setDivisionSearch("");
@@ -94,12 +127,27 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
-  }, [userDefaults, departments]);
+  }, [userDefaults, departments, initialData]);
 
-  // Reset form inputs whenever modal opens, closes, or userDefaults changes
+  // Reset form inputs whenever modal opens, closes, or initialData/userDefaults changes
   useEffect(() => {
     resetForm();
   }, [open, resetForm]);
+
+  // Manage local file blob URL for preview
+  useEffect(() => {
+    if (selectedFile) {
+      const url = URL.createObjectURL(selectedFile);
+      setSelectedFilePreview(url);
+      return () => {
+        URL.revokeObjectURL(url);
+      };
+    } else {
+      setSelectedFilePreview("");
+    }
+  }, [selectedFile]);
+
+
 
   const handleDivisionChange = (newDivId: number | null) => {
     setDivisionId(newDivId);
@@ -129,14 +177,18 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
     setSelectedFile(file);
   };
 
-  const handleRemoveFile = (e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    setSelectedFile(null);
-    setReceiptUrl("");
+  const handleTriggerReplace = (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
+      fileInputRef.current.click();
     }
   };
+
+
 
   const handleSave = async (asSubmit: boolean) => {
     if (isSubmitting || isUploading) return;
@@ -243,10 +295,13 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
   );
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
         <DialogHeader className="p-4 sm:p-5 pb-3 border-b border-border/80 shrink-0 bg-background">
-          <DialogTitle>Create New Expense Receipt</DialogTitle>
+          <DialogTitle>
+            {initialData ? `Edit Draft Expense (${initialData.doc_no})` : "Create New Expense Receipt"}
+          </DialogTitle>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-5 py-3 space-y-4">
@@ -500,67 +555,120 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
             </Label>
 
             {selectedFile ? (
-              /* Selected File Preview Card */
-              <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-8 h-8 rounded-md bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                    <ImageIcon className="w-4 h-4" />
+              /* Selected Local File Card with Thumbnail Preview */
+              <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 flex items-center justify-between gap-3 shadow-xs">
+                <div
+                  role="button"
+                  onClick={() => setIsPreviewOpen(true)}
+                  className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer group"
+                  title="Click to preview full image"
+                >
+                  <div className="w-12 h-12 rounded-lg border border-primary/40 overflow-hidden bg-background shrink-0 relative flex items-center justify-center group-hover:ring-2 group-hover:ring-primary transition-all">
+                    {selectedFilePreview ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={selectedFilePreview}
+                        alt="Selected Preview"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                      />
+                    ) : (
+                      <ImageIcon className="w-5 h-5 text-primary" />
+                    )}
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                      <Eye className="w-4 h-4 text-white" />
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-foreground truncate" title={selectedFile.name}>
-                      {selectedFile.name}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-xs font-bold text-foreground truncate group-hover:text-primary transition-colors" title={selectedFile.name}>
+                        {selectedFile.name}
+                      </p>
+                      <span className="text-[10px] bg-primary/10 text-primary font-semibold px-1.5 py-0.2 rounded shrink-0">
+                        New
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
                       {selectedFile.size < 1024 * 1024
                         ? `${(selectedFile.size / 1024).toFixed(1)} KB`
                         : `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB`}{" "}
                       • <span className="text-blue-500 font-medium">Ready to upload on save</span>
                     </p>
+                    <p className="text-[10px] text-primary/80 font-medium flex items-center gap-1 mt-0.5 group-hover:underline">
+                      <Eye className="w-3 h-3" /> Click to zoom & preview
+                    </p>
                   </div>
                 </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleRemoveFile}
-                  disabled={isUploading || isSubmitting}
-                  className="h-7 text-xs text-rose-500 hover:text-rose-600 hover:bg-rose-500/10 gap-1 shrink-0"
-                >
-                  <X className="w-3.5 h-3.5" /> Remove
-                </Button>
+
+                <div className="flex items-center shrink-0">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleTriggerReplace}
+                    disabled={isUploading || isSubmitting}
+                    className="h-7 text-xs px-2.5 gap-1.5 border-border/80 hover:bg-muted/80 font-medium"
+                    title="Choose a different image file"
+                  >
+                    <RefreshCw className="w-3 h-3" /> Replace
+                  </Button>
+                </div>
               </div>
             ) : receiptUrl ? (
-              /* Existing Attached URL Card */
-              <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-8 h-8 rounded-md bg-emerald-500/10 text-emerald-500 flex items-center justify-center shrink-0">
-                    <ImageIcon className="w-4 h-4" />
+              /* Existing Attached Server Image Card with Thumbnail Preview */
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 flex items-center justify-between gap-3 shadow-xs">
+                <div
+                  role="button"
+                  onClick={() => setIsPreviewOpen(true)}
+                  className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer group"
+                  title="Click to preview full receipt image"
+                >
+                  <div className="w-12 h-12 rounded-lg border border-emerald-500/40 overflow-hidden bg-background shrink-0 relative flex items-center justify-center group-hover:ring-2 group-hover:ring-emerald-500 transition-all">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={getAssetUrl(receiptUrl)}
+                      alt="Receipt Attachment"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                    />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                      <Eye className="w-4 h-4 text-white" />
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-foreground truncate" title={receiptUrl}>
-                      Attached Image
-                    </p>
-                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-mono truncate">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-xs font-bold text-foreground group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                        Attached Image
+                      </p>
+                      <span className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold px-1.5 py-0.2 rounded shrink-0">
+                        Uploaded
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground font-mono truncate mt-0.5" title={receiptUrl}>
                       {receiptUrl}
+                    </p>
+                    <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1 mt-0.5 group-hover:underline">
+                      <Eye className="w-3 h-3" /> Click to inspect & zoom
                     </p>
                   </div>
                 </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleRemoveFile}
-                  disabled={isUploading || isSubmitting}
-                  className="h-7 text-xs text-rose-500 hover:text-rose-600 hover:bg-rose-500/10 gap-1 shrink-0"
-                >
-                  <X className="w-3.5 h-3.5" /> Remove
-                </Button>
+
+                <div className="flex items-center shrink-0">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleTriggerReplace}
+                    disabled={isUploading || isSubmitting}
+                    className="h-7 text-xs px-2.5 gap-1.5 border-border/80 hover:bg-muted/80 font-medium"
+                    title="Upload replacement receipt"
+                  >
+                    <RefreshCw className="w-3 h-3" /> Replace
+                  </Button>
+                </div>
               </div>
             ) : (
-              /* Clean File Input */
+              /* Clean File Input for New Expense Entry */
               <div className="flex items-center gap-3">
                 <Input
-                  ref={fileInputRef}
                   type="file"
                   accept="image/jpeg,image/png,image/webp,image/gif"
                   onChange={handleFileChange}
@@ -569,6 +677,16 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
                 {isUploading || isSubmitting ? <Loader2 className="w-5 h-5 animate-spin text-primary" /> : null}
               </div>
             )}
+
+            {/* Permanent hidden file input for Replace action across all states */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              onChange={handleFileChange}
+              disabled={isUploading || isSubmitting}
+              className="hidden"
+            />
             
             {/* Encoder Helper Note Box */}
             <div className="rounded-md bg-blue-500/10 border border-blue-500/20 p-2.5 text-[11px] text-blue-600 dark:text-blue-400 space-y-0.5">
@@ -617,5 +735,16 @@ export const SingleExpenseModal: React.FC<SingleExpenseModalProps> = ({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    {/* Standardized Receipt Zoom / Lightbox Inspector Dialog */}
+    <UnifiedReceiptZoomModal
+      isOpen={isPreviewOpen}
+      onClose={() => setIsPreviewOpen(false)}
+      imageUrl={selectedFilePreview || receiptUrl}
+      docNo={initialData?.doc_no}
+      title={initialData?.doc_no ? `Receipt Preview - ${initialData.doc_no}` : "Receipt Attachment Preview"}
+      subtitle={selectedFile ? selectedFile.name : (receiptUrl || undefined)}
+    />
+    </>
   );
 };

@@ -40,6 +40,13 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   ExpenseItem,
   ExpenseStatus,
   SupplierOption,
@@ -48,7 +55,7 @@ import {
   DepartmentOption,
   ExpenseApproverOption,
 } from "../types";
-import { getAssetUrl } from "../../utils/assetUrl";
+import { UnifiedReceiptZoomModal } from "./UnifiedReceiptZoomModal";
 import {
   Search,
   History,
@@ -63,13 +70,9 @@ import {
   Calendar,
   CalendarDays,
   CalendarRange,
-  ZoomIn,
-  ZoomOut,
-  RotateCcw,
-  Move,
-  ExternalLink,
-  Image as ImageIcon,
   Check,
+  MoreVertical,
+  Edit,
 } from "lucide-react";
 
 interface ExpenseTableProps {
@@ -81,6 +84,7 @@ interface ExpenseTableProps {
   approvers?: ExpenseApproverOption[];
   onOpenHistory: (item: ExpenseItem) => void;
   onOpenRevision: (item: ExpenseItem) => void;
+  onOpenEditDraft: (item: ExpenseItem) => void;
   onSubmitDraft: (id: number) => void;
   onDeleteExpense: (id: number) => void;
   activeTab: string;
@@ -112,6 +116,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
   approvers = [],
   onOpenHistory,
   onOpenRevision,
+  onOpenEditDraft,
   onSubmitDraft,
   onDeleteExpense,
   activeTab,
@@ -413,14 +418,32 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
     );
   };
 
-  // Helper to format ISO week number
+  // Helper to format ISO-8601 week number (Monday to Sunday)
   const getWeekLabel = (dateStr: string) => {
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return "Unknown Week";
-    const startOfYear = new Date(d.getFullYear(), 0, 1);
-    const pastDaysOfYear = (d.getTime() - startOfYear.getTime()) / 86400000;
-    const weekNum = Math.ceil((pastDaysOfYear + startOfYear.getDay() + 1) / 7);
-    return `Week ${weekNum} (${d.getFullYear()})`;
+    if (!dateStr) return "Unknown Week";
+    const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    let year: number;
+    let month: number;
+    let day: number;
+
+    if (match) {
+      year = parseInt(match[1], 10);
+      month = parseInt(match[2], 10) - 1;
+      day = parseInt(match[3], 10);
+    } else {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return "Unknown Week";
+      year = d.getFullYear();
+      month = d.getMonth();
+      day = d.getDate();
+    }
+
+    const target = new Date(Date.UTC(year, month, day));
+    const dayNum = target.getUTCDay() || 7;
+    target.setUTCDate(target.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1));
+    const weekNo = Math.ceil(((target.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+    return `Week ${weekNo} (${target.getUTCFullYear()})`;
   };
 
   const getDayLabel = (dateStr: string) => {
@@ -542,72 +565,112 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
     });
   }, [filteredExpenses, groupBy]);
 
-  const renderActionButtons = (item: ExpenseItem) => (
-    <div className="flex items-center justify-center gap-1">
-      {/* View Receipt Image Modal Trigger */}
-      {item.receipt_url ? (
+  const renderActionButtons = (item: ExpenseItem) => {
+    // If status is Draft: use 3-dots vertical dropdown menu
+    if (item.status === "Draft") {
+      return (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/80 cursor-pointer"
+              title="Actions"
+            >
+              <MoreVertical className="w-4 h-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            {item.receipt_url ? (
+              <DropdownMenuItem
+                onClick={() => setSelectedReceiptModal({ url: item.receipt_url!, docNo: item.doc_no })}
+                className="cursor-pointer text-xs flex items-center gap-2"
+              >
+                <FileText className="w-4 h-4 text-primary" />
+                <span>View Receipt</span>
+              </DropdownMenuItem>
+            ) : null}
+
+            <DropdownMenuItem
+              onClick={() => onOpenEditDraft(item)}
+              className="cursor-pointer text-xs flex items-center gap-2"
+            >
+              <Edit className="w-4 h-4 text-blue-500" />
+              <span>Edit Draft</span>
+            </DropdownMenuItem>
+
+            <DropdownMenuItem
+              onClick={() => setActionConfirmModal({ type: "submit", item })}
+              className="cursor-pointer text-xs flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-semibold"
+            >
+              <Send className="w-4 h-4 text-emerald-500" />
+              <span>Submit to Approval</span>
+            </DropdownMenuItem>
+
+            <DropdownMenuItem
+              onClick={() => onOpenHistory(item)}
+              className="cursor-pointer text-xs flex items-center gap-2"
+            >
+              <History className="w-4 h-4 text-muted-foreground" />
+              <span>Audit & History</span>
+            </DropdownMenuItem>
+
+            <DropdownMenuSeparator />
+
+            <DropdownMenuItem
+              onClick={() => setActionConfirmModal({ type: "delete", item })}
+              className="cursor-pointer text-xs flex items-center gap-2 text-rose-600 focus:text-rose-600 focus:bg-rose-500/10"
+            >
+              <Trash2 className="w-4 h-4 text-rose-500" />
+              <span>Delete Draft</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      );
+    }
+
+    // Default inline actions for non-Draft receipts (Pending Approval, With Concern, Approved, Rejected)
+    return (
+      <div className="flex items-center justify-center gap-1">
+        {/* View Receipt Image Modal Trigger */}
+        {item.receipt_url ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10"
+            title="View Receipt Image"
+            onClick={() => setSelectedReceiptModal({ url: item.receipt_url!, docNo: item.doc_no })}
+          >
+            <FileText className="w-4 h-4" />
+          </Button>
+        ) : null}
+
+        {/* Audit & Revision Lifecycle History */}
         <Button
           variant="ghost"
           size="icon"
           className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10"
-          title="View Receipt Image"
-          onClick={() => setSelectedReceiptModal({ url: item.receipt_url!, docNo: item.doc_no })}
+          title="View Audit & Revision History"
+          onClick={() => onOpenHistory(item)}
         >
-          <FileText className="w-4 h-4" />
+          <History className="w-4 h-4" />
         </Button>
-      ) : null}
 
-      {/* Submit Draft */}
-      {item.status === "Draft" ? (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10"
-          title="Submit to Approval"
-          onClick={() => setActionConfirmModal({ type: "submit", item })}
-        >
-          <Send className="w-4 h-4" />
-        </Button>
-      ) : null}
-
-      {/* Audit & Revision Lifecycle History */}
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10"
-        title="View Audit & Revision History"
-        onClick={() => onOpenHistory(item)}
-      >
-        <History className="w-4 h-4" />
-      </Button>
-
-      {/* Edit / Resubmit Revision */}
-      {item.status === "With Concern" ? (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-orange-500 hover:text-orange-400 hover:bg-orange-500/10 animate-pulse"
-          title="Edit & Resubmit Revision"
-          onClick={() => onOpenRevision(item)}
-        >
-          <RefreshCw className="w-4 h-4" />
-        </Button>
-      ) : null}
-
-      {/* Delete (Draft only) */}
-      {item.status === "Draft" ? (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-rose-500 hover:text-rose-400 hover:bg-rose-500/10"
-          title="Delete Draft"
-          onClick={() => setActionConfirmModal({ type: "delete", item })}
-        >
-          <Trash2 className="w-4 h-4" />
-        </Button>
-      ) : null}
-    </div>
-  );
+        {/* Edit / Resubmit Revision */}
+        {item.status === "With Concern" ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-orange-500 hover:text-orange-400 hover:bg-orange-500/10 animate-pulse"
+            title="Edit & Resubmit Revision"
+            onClick={() => onOpenRevision(item)}
+          >
+            <RefreshCw className="w-4 h-4" />
+          </Button>
+        ) : null}
+      </div>
+    );
+  };
 
 
   // Global Expand / Collapse state
@@ -1036,10 +1099,10 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
       )}
 
       {/* Interactive Receipt Zoom Modal */}
-      <ReceiptZoomModal
+      <UnifiedReceiptZoomModal
         isOpen={!!selectedReceiptModal}
         onClose={() => setSelectedReceiptModal(null)}
-        receiptUrl={selectedReceiptModal?.url}
+        imageUrl={selectedReceiptModal?.url}
         docNo={selectedReceiptModal?.docNo}
       />
 
@@ -1139,232 +1202,3 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
 };
 
 export default ExpenseTable;
-
-// Standalone High-Performance Receipt Zoom Modal Component
-interface ReceiptZoomModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  receiptUrl?: string;
-  docNo?: string;
-}
-
-const ReceiptZoomModal: React.FC<ReceiptZoomModalProps> = ({
-  isOpen,
-  onClose,
-  receiptUrl,
-  docNo,
-}) => {
-  const [zoomScale, setZoomScale] = useState(1);
-  const [isDragging, setIsDragging] = useState(false);
-
-  const imgRef = React.useRef<HTMLImageElement | null>(null);
-  const posRef = React.useRef({ x: 0, y: 0 });
-  const dragStartRef = React.useRef({ x: 0, y: 0 });
-  const rAFRef = React.useRef<number | null>(null);
-
-  const updateDOMTransform = (scale: number, x: number, y: number) => {
-    if (imgRef.current) {
-      imgRef.current.style.transform = `translate3d(${x}px, ${y}px, 0px) scale(${scale})`;
-    }
-  };
-
-  const resetPanZoom = React.useCallback(() => {
-    setZoomScale(1);
-    posRef.current = { x: 0, y: 0 };
-    setIsDragging(false);
-    updateDOMTransform(1, 0, 0);
-  }, []);
-
-  React.useEffect(() => {
-    if (!isOpen) {
-      resetPanZoom();
-    }
-  }, [isOpen, resetPanZoom]);
-
-  const handleZoomIn = () => {
-    setZoomScale((prev) => {
-      const next = Math.min(Number((prev + 0.25).toFixed(2)), 4);
-      updateDOMTransform(next, posRef.current.x, posRef.current.y);
-      return next;
-    });
-  };
-
-  const handleZoomOut = () => {
-    setZoomScale((prev) => {
-      const next = Math.max(Number((prev - 0.25).toFixed(2)), 0.5);
-      if (next <= 1) {
-        posRef.current = { x: 0, y: 0 };
-      }
-      updateDOMTransform(next, posRef.current.x, posRef.current.y);
-      return next;
-    });
-  };
-
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    if (e.deltaY < 0) {
-      handleZoomIn();
-    } else if (e.deltaY > 0) {
-      handleZoomOut();
-    }
-  };
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setIsDragging(true);
-    dragStartRef.current = {
-      x: e.clientX - posRef.current.x,
-      y: e.clientY - posRef.current.y,
-    };
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging) return;
-
-    const newX = e.clientX - dragStartRef.current.x;
-    const newY = e.clientY - dragStartRef.current.y;
-    posRef.current = { x: newX, y: newY };
-
-    if (rAFRef.current) {
-      cancelAnimationFrame(rAFRef.current);
-    }
-    rAFRef.current = requestAnimationFrame(() => {
-      updateDOMTransform(zoomScale, newX, newY);
-    });
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-    if (rAFRef.current) {
-      cancelAnimationFrame(rAFRef.current);
-      rAFRef.current = null;
-    }
-  };
-
-  return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-5xl md:max-w-6xl w-[94vw] max-h-[92vh] p-0 overflow-hidden bg-card border-border flex flex-col">
-        {/* Compact Header with Pan & Zoom Controls */}
-        <DialogHeader className="p-2.5 px-4 border-b border-border bg-muted/40 shrink-0">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-2">
-              <ImageIcon className="w-4 h-4 text-primary shrink-0" />
-              <DialogTitle className="text-xs font-bold text-foreground flex items-center gap-2">
-                <span>Receipt Attachment Preview</span>
-                {docNo && (
-                  <Badge variant="outline" className="font-mono text-[10px] py-0 px-1.5 bg-background">
-                    {docNo}
-                  </Badge>
-                )}
-              </DialogTitle>
-            </div>
-
-            {/* Interactive Zoom Toolbar */}
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1 bg-background/90 dark:bg-zinc-900 border border-border p-0.5 rounded-lg shadow-xs">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleZoomOut}
-                  disabled={zoomScale <= 0.5}
-                  className="h-6 w-6 rounded-md"
-                  title="Zoom Out (-)"
-                >
-                  <ZoomOut className="w-3.5 h-3.5" />
-                </Button>
-
-                <span className="font-mono text-[11px] font-bold text-foreground px-1.5 min-w-[44px] text-center select-none">
-                  {Math.round(zoomScale * 100)}%
-                </span>
-
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleZoomIn}
-                  disabled={zoomScale >= 4}
-                  className="h-6 w-6 rounded-md"
-                  title="Zoom In (+)"
-                >
-                  <ZoomIn className="w-3.5 h-3.5" />
-                </Button>
-
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={resetPanZoom}
-                  className="h-6 text-[10px] font-semibold gap-1 px-2 text-muted-foreground hover:text-foreground border-l border-border/80 rounded-none rounded-r-md"
-                  title="Reset Zoom & Drag Position"
-                >
-                  <RotateCcw className="w-3 h-3" /> Reset
-                </Button>
-              </div>
-
-              {receiptUrl && (
-                <a
-                  href={getAssetUrl(receiptUrl)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-primary hover:underline font-semibold flex items-center gap-1 mr-6"
-                >
-                  Open Original <ExternalLink className="w-3 h-3" />
-                </a>
-              )}
-            </div>
-          </div>
-        </DialogHeader>
-
-        {/* Draggable & Zoomable Viewport Container */}
-        <div
-          onWheel={handleWheel}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-          className={`p-3 bg-zinc-950/95 flex items-center justify-center flex-1 min-h-[480px] max-h-[82vh] overflow-hidden select-none relative ${
-            isDragging ? "cursor-grabbing" : "cursor-grab"
-          }`}
-        >
-          {zoomScale > 1 && (
-            <div className="absolute top-2 left-2 z-10 bg-black/60 text-zinc-300 text-[10px] font-mono px-2 py-0.5 rounded-md backdrop-blur-xs flex items-center gap-1 pointer-events-none">
-              <Move className="w-3 h-3 text-amber-400" /> Click & Drag to explore all corners
-            </div>
-          )}
-
-          {receiptUrl ? (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img
-              ref={imgRef}
-              src={getAssetUrl(receiptUrl)}
-              alt="Receipt Attachment"
-              draggable={false}
-              style={{
-                willChange: "transform",
-              }}
-              className="max-h-[80vh] max-w-full object-contain rounded-lg shadow-2xl border border-zinc-800/80 pointer-events-auto origin-center transition-none"
-            />
-          ) : (
-            <p className="text-xs text-zinc-400 italic">No receipt image URL found.</p>
-          )}
-        </div>
-
-        {/* Compact Footer */}
-        <DialogFooter className="p-2 px-4 border-t border-border bg-muted/30 shrink-0 flex items-center justify-between">
-          <span className="text-[10px] text-muted-foreground font-mono">
-            Use mouse wheel to zoom • Drag image to view all corners
-          </span>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onClose}
-            className="h-7 text-xs font-semibold px-4"
-          >
-            Close
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-};
