@@ -21,6 +21,7 @@ import {
   fetchExpenses,
   createSingleExpense,
   createBulkExpenses,
+  updateExpense,
   resubmitExpense,
   submitDraftExpense,
   deleteExpense,
@@ -59,6 +60,7 @@ export const ExpenseCreationV2Module: React.FC = () => {
 
   const [selectedItemForRevision, setSelectedItemForRevision] = useState<ExpenseItem | null>(null);
   const [selectedItemForHistory, setSelectedItemForHistory] = useState<ExpenseItem | null>(null);
+  const [editingDraft, setEditingDraft] = useState<ExpenseItem | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -95,10 +97,33 @@ export const ExpenseCreationV2Module: React.FC = () => {
   }, [loadData]);
 
   // Handlers
-  const handleCreateSingle = async (values: ExpenseFormValues, asSubmit: boolean) => {
-    await createSingleExpense(values, asSubmit);
-    toast.success(asSubmit ? "Expense created & submitted for approval!" : "Expense saved as draft!");
+  const handleSaveSingle = async (values: ExpenseFormValues, asSubmit: boolean) => {
+    if (editingDraft) {
+      if (asSubmit) {
+        await updateExpense(editingDraft.id, {
+          ...values,
+          status: "Pending Approval",
+          current_approval_level: 1,
+        });
+        toast.success("Draft updated & submitted for approval!");
+      } else {
+        await updateExpense(editingDraft.id, {
+          ...values,
+          status: "Draft",
+        });
+        toast.success("Draft updated successfully!");
+      }
+    } else {
+      await createSingleExpense(values, asSubmit);
+      toast.success(asSubmit ? "Expense created & submitted for approval!" : "Expense saved as draft!");
+    }
+    setEditingDraft(null);
     loadData();
+  };
+
+  const handleOpenEditDraft = (item: ExpenseItem) => {
+    setEditingDraft(item);
+    setSingleModalOpen(true);
   };
 
   const handleCreateBulk = async (items: ExpenseFormValues[], asSubmit: boolean) => {
@@ -178,7 +203,13 @@ export const ExpenseCreationV2Module: React.FC = () => {
             Bulk Entry
           </Button>
 
-          <Button size="sm" onClick={() => setSingleModalOpen(true)}>
+          <Button
+            size="sm"
+            onClick={() => {
+              setEditingDraft(null);
+              setSingleModalOpen(true);
+            }}
+          >
             <Plus className="w-4 h-4 mr-2" />
             Add Single Expense
           </Button>
@@ -233,6 +264,7 @@ export const ExpenseCreationV2Module: React.FC = () => {
             approvers={approvers}
             onOpenHistory={handleOpenHistory}
             onOpenRevision={handleOpenRevision}
+            onOpenEditDraft={handleOpenEditDraft}
             onSubmitDraft={handleSubmitDraft}
             onDeleteExpense={handleDeleteExpense}
             activeTab={activeTab}
@@ -240,16 +272,20 @@ export const ExpenseCreationV2Module: React.FC = () => {
         )}
       </div>
 
-      {/* Single Expense Modal */}
+      {/* Single Expense Modal (Create or Edit Draft) */}
       <SingleExpenseModal
         open={singleModalOpen}
-        onOpenChange={setSingleModalOpen}
+        onOpenChange={(open) => {
+          setSingleModalOpen(open);
+          if (!open) setEditingDraft(null);
+        }}
         suppliers={suppliers}
         coas={creationCoas}
         divisions={divisions}
         departments={departments}
         userDefaults={userDefaults}
-        onSubmit={handleCreateSingle}
+        initialData={editingDraft}
+        onSubmit={handleSaveSingle}
       />
 
       {/* Bulk Expense Modal */}
