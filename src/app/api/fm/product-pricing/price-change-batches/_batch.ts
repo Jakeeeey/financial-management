@@ -393,6 +393,7 @@ export type BatchCreatePlan = {
     linesToCreate: NormalizedBatchCreateLine[];
     skippedDuplicates: number;
     skippedExistingPending: number;
+    inactivePriceTypeIds: number[];
 };
 
 function batchLineKey(productId: number, priceTypeId: number) {
@@ -631,6 +632,23 @@ export async function getExistingPendingBatchKeys(lines: NormalizedBatchCreateLi
     return keys;
 }
 
+async function findInactivePriceTypeIds(priceTypeIds: number[]): Promise<number[]> {
+    if (priceTypeIds.length === 0) return [];
+
+    const params = new URLSearchParams();
+    params.set("limit", "-1");
+    params.set("fields", "price_type_id");
+    params.set("filter[price_type_id][_in]", priceTypeIds.join(","));
+    params.set("filter[is_active][_eq]", "1");
+
+    const rows = await fetchDirectus<DirectusList<{ price_type_id?: number | string | null }>>(
+        `${mustBase()}/items/${PRICE_TYPES}?${params.toString()}`,
+        { headers: directusHeaders() },
+    );
+    const activeIds = new Set((rows.data ?? []).map((row) => Number(row.price_type_id)));
+    return priceTypeIds.filter((id) => !activeIds.has(id));
+}
+
 export async function normalizeBatchCreateLines(rawLines: BatchCreateLineInput[]): Promise<BatchCreatePlan> {
     const seen = new Set<string>();
     const normalizedLines: NormalizedBatchCreateLine[] = [];
@@ -660,6 +678,12 @@ export async function normalizeBatchCreateLines(rawLines: BatchCreateLineInput[]
         });
     }
 
+    const requestedPriceTypeIds = Array.from(new Set(normalizedLines.map((line) => line.price_type_id)));
+    const inactivePriceTypeIds = await findInactivePriceTypeIds(requestedPriceTypeIds);
+    if (inactivePriceTypeIds.length > 0) {
+        return { linesToCreate: [], skippedDuplicates, skippedExistingPending: 0, inactivePriceTypeIds };
+    }
+
     const existingPendingKeys = await getExistingPendingBatchKeys(normalizedLines);
     const linesToCreate = normalizedLines.filter(
         (line) => !existingPendingKeys.has(batchLineKey(line.product_id, line.price_type_id)),
@@ -670,6 +694,7 @@ export async function normalizeBatchCreateLines(rawLines: BatchCreateLineInput[]
         linesToCreate,
         skippedDuplicates,
         skippedExistingPending,
+        inactivePriceTypeIds,
     };
 }
 
