@@ -135,7 +135,7 @@ export async function POST(req: Request) {
   try {
     const userId = await getUserId();
     const body = await req.json();
-    const { expense_id, expense_ids, action, remarks, created_at } = body;
+    const { expense_id, expense_ids, action, remarks, items_remarks, created_at } = body;
 
     // Normalize IDs input into an array
     const targetIds: number[] = Array.isArray(expense_ids) && expense_ids.length > 0
@@ -143,6 +143,14 @@ export async function POST(req: Request) {
       : expense_id
       ? [Number(expense_id)]
       : [];
+
+    // Helper to resolve specific note for each expense item
+    const getNoteForItem = (itemId: number): string | null => {
+      if (items_remarks && typeof items_remarks === "object" && items_remarks[itemId]) {
+        return String(items_remarks[itemId]).trim() || null;
+      }
+      return remarks ? String(remarks).trim() || null : null;
+    };
 
     if (targetIds.length === 0 || !action) {
       return NextResponse.json(
@@ -359,7 +367,7 @@ export async function POST(req: Request) {
               body: JSON.stringify({
                 expense_id: Number(item.id),
                 action: "Approved To Disbursement",
-                remarks: remarks || null,
+                remarks: getNoteForItem(item.id),
                 receipt_url: item.receipt_url || null,
                 created_by: userId,
                 created_at: currentTimestamp,
@@ -388,7 +396,7 @@ export async function POST(req: Request) {
           body: JSON.stringify({
             expense_id: Number(item.id),
             action: "Approved",
-            remarks: remarks || null,
+            remarks: getNoteForItem(item.id),
             receipt_url: item.receipt_url || null,
             created_by: userId,
             created_at: currentTimestamp,
@@ -423,7 +431,7 @@ export async function POST(req: Request) {
         body: JSON.stringify({
           expense_id: Number(item.id),
           action: logAction,
-          remarks: remarks || null,
+          remarks: getNoteForItem(item.id),
           receipt_url: item.receipt_url || null,
           created_by: userId,
           created_at: currentTimestamp,
