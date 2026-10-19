@@ -24,8 +24,11 @@ type ProductsMeta = {
     [key: string]: string | number | boolean | null | undefined;
 };
 
-export async function getPriceTypes() {
-    return http<{ data: PriceType[] }>("/api/fm/product-pricing/price-types");
+export async function getPriceTypes(options?: { includeInactive?: boolean }) {
+    const params = new URLSearchParams();
+    if (options?.includeInactive) params.set("include_inactive", "true");
+    const query = params.size ? `?${params.toString()}` : "";
+    return http<{ data: PriceType[] }>(`/api/fm/product-pricing/price-types${query}`);
 }
 
 export async function createPriceType(data: Partial<PriceType>) {
