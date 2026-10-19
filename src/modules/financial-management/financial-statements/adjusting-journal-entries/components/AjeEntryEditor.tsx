@@ -56,6 +56,7 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
   const [submitAttempted, setSubmitAttempted] = React.useState(false);
+  const [checklistOpen, setChecklistOpen] = React.useState(false);
   const [sourceSearch, setSourceSearch] = React.useState("");
   const [sources, setSources] = React.useState<AdjustingEntrySourceJournalSummary[]>([]);
   const [sourceSearched, setSourceSearched] = React.useState(false);
@@ -74,6 +75,7 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
   const hasUnsavedChanges = !frozen && (serializeForm(form) !== savedSnapshot || selectedFiles.length > 0);
   const totals = form.details.reduce((sum, row) => ({ debit: sum.debit + (cents(row.debit) || 0), credit: sum.credit + (cents(row.credit) || 0) }), { debit: 0, credit: 0 });
   const balanced = totals.debit > 0 && totals.debit === totals.credit;
+  const hasAmounts = totals.debit > 0 || totals.credit > 0;
   const accountById = React.useMemo(() => new Map(accounts.map(a => [String(a.id), a])), [accounts]);
   const accountOptions = React.useMemo(() => {
     const all = accounts.map(a => ({ value: String(a.id), label: a.label }));
@@ -277,10 +279,10 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
   return <div className="space-y-5 rounded-lg border bg-background p-4 sm:p-6">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div>{(!hideTitle || entry?.jeNo || reversal) && <h2 className="text-lg font-semibold">{entry?.jeNo || (reversal ? "New Reversal" : "New Adjusting Entry")}</h2>}<div className="flex flex-wrap items-center gap-2"><p className="text-sm text-muted-foreground">{entry?.status || "Draft"}{entry?.entryOrigin === "SYSTEM" ? " · Managed by its originating module" : ""}</p>{hasUnsavedChanges && <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-800">Unsaved changes</Badge>}</div></div>
-      <div id="aje-balance-indicator" tabIndex={-1} className={balanced ? "text-sm font-medium text-emerald-700" : "text-sm font-medium text-destructive"} aria-live="polite">{balanced ? "Balanced" : "Unbalanced"} · Difference {money((totals.debit - totals.credit) / 100)}</div>
+      <div id="aje-balance-indicator" tabIndex={-1} className={`text-sm font-medium ${balanced ? "text-emerald-700" : hasAmounts ? "text-destructive" : "text-muted-foreground"}`} aria-live="polite">{balanced ? "Balanced" : hasAmounts ? <>Unbalanced · Difference {money((totals.debit - totals.credit) / 100)}</> : "No amounts entered yet · Add a debit and a credit line."}</div>
     </div>
     {error && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
-    {submitAttempted && submitBlockers.length > 0 && <div id="aje-submit-checklist" role="alert" className="space-y-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
+    {(submitAttempted || checklistOpen) && submitBlockers.length > 0 && <div id="aje-submit-checklist" role="alert" className="space-y-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
       <p className="font-medium">Resolve these items before submitting:</p>
       <ul className="list-inside list-disc space-y-1">{submitBlockers.map((blocker, index) => <li key={`${blocker.message}-${index}`}><button type="button" className="text-left text-destructive underline-offset-2 hover:underline" onClick={() => focusBlocker(blocker.selector)}>{blocker.message}</button></li>)}</ul>
     </div>}
@@ -366,8 +368,8 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
 
     {!frozen && <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex flex-col gap-3 border-t bg-background/95 p-4 shadow-[0_-8px_20px_-16px_rgba(0,0,0,0.45)] backdrop-blur sm:-mx-6 sm:-mb-6 sm:flex-row sm:items-center sm:justify-between sm:p-4">
       <div className="min-w-0 text-sm" aria-live="polite">
-        <p className={balanced ? "font-medium text-emerald-700" : "font-medium text-destructive"}>{balanced ? "Balanced" : "Out of balance"} · Debit {money(totals.debit / 100)} · Credit {money(totals.credit / 100)}</p>
-        {submitBlockers.length > 0 ? <p className="mt-1 text-xs text-muted-foreground">{submitBlockers.length} {submitBlockers.length === 1 ? "item needs" : "items need"} attention before submission. Use the checklist above to jump to each item.</p> : <p className="mt-1 text-xs text-muted-foreground">Ready for review after saving.</p>}
+        <p className={`font-medium ${balanced ? "text-emerald-700" : hasAmounts ? "text-destructive" : "text-muted-foreground"}`}>{balanced ? <>Balanced · Debit {money(totals.debit / 100)} · Credit {money(totals.credit / 100)}</> : hasAmounts ? <>Out of balance · Debit {money(totals.debit / 100)} · Credit {money(totals.credit / 100)}</> : "Enter debit and credit lines to balance this entry."}</p>
+        {submitBlockers.length > 0 ? <p className="mt-1 text-xs text-muted-foreground">{submitBlockers.length} {submitBlockers.length === 1 ? "item needs" : "items need"} attention before submission.{" "}{(submitAttempted || checklistOpen) ? "Use the checklist above to jump to each item." : <button type="button" className="underline underline-offset-2 hover:text-foreground" onClick={() => { setChecklistOpen(true); focusBlocker(submitBlockers[0].selector); }}>Show checklist</button>}</p> : <p className="mt-1 text-xs text-muted-foreground">Ready for review after saving.</p>}
       </div>
       <div className="flex shrink-0 justify-end gap-2"><Button type="button" variant="outline" disabled={busy || sourceBusy} onClick={() => void save(false)}>{busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Save className="mr-2 size-4" />}Save Draft</Button><Button type="button" disabled={busy || sourceBusy} onClick={() => void save(true)}><Send className="mr-2 size-4" />Save & Submit</Button></div>
     </div>}

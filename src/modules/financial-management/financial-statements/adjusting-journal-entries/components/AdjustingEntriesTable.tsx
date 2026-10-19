@@ -93,14 +93,38 @@ function EntryDescription({ entry }: { entry: AdjustingEntry }) {
   </>;
 }
 
+function EntriesSkeleton() {
+  const row = (key: number) => <div key={key} className="flex items-center gap-4 border-t p-4">
+    <div className="h-4 w-24 animate-pulse rounded bg-muted" />
+    <div className="h-4 w-28 animate-pulse rounded bg-muted" />
+    <div className="h-4 flex-1 animate-pulse rounded bg-muted" />
+    <div className="h-4 w-20 animate-pulse rounded bg-muted" />
+  </div>;
+  return <div className="overflow-hidden rounded-md border bg-background" aria-hidden="true">
+    <div className="hidden xl:block">
+      <div className="bg-muted/30 p-3"><div className="h-4 w-40 animate-pulse rounded bg-muted" /></div>
+      {[1, 2, 3, 4, 5].map(row)}
+    </div>
+    <div className="space-y-3 p-3 xl:hidden">
+      {[1, 2, 3].map(index => <div key={index} className="space-y-3 rounded-md border p-3">
+        <div className="flex items-center justify-between"><div className="h-4 w-28 animate-pulse rounded bg-muted" /><div className="h-5 w-16 animate-pulse rounded bg-muted" /></div>
+        <div className="h-3 w-40 animate-pulse rounded bg-muted" />
+        <div className="h-9 w-full animate-pulse rounded bg-muted" />
+      </div>)}
+    </div>
+  </div>;
+}
+
 export function AdjustingEntriesTable({ entries, loading, userId, readOnly, onView, onAction, onReverse }: {
   entries: AdjustingEntry[]; loading: boolean; userId: number; readOnly: boolean;
   onView: (entry: AdjustingEntry, edit: boolean) => void; onAction: (entry: AdjustingEntry, action: AjeAction) => void; onReverse: (entry: AdjustingEntry) => void;
 }) {
-  if (loading) return <div className="rounded-md border bg-background p-8 text-center text-sm text-muted-foreground" role="status">Loading adjusting entries…</div>;
+  if (loading && entries.length === 0) return <EntriesSkeleton />;
   if (entries.length === 0) return <div className="rounded-md border bg-background p-8 text-center text-sm text-muted-foreground">No entries match these filters.</div>;
 
-  return <>
+  return <div>
+    {loading && <p role="status" aria-live="polite" className="mb-2 text-xs font-medium text-muted-foreground">Updating…</p>}
+    <div aria-busy={loading} className={loading ? "pointer-events-none opacity-60 transition-opacity" : "transition-opacity"}>
     <div className="hidden overflow-x-auto rounded-md border bg-background xl:block">
       <table className="w-full min-w-[1100px] text-sm"><thead className="bg-muted/30"><tr><th className="p-3 text-left">Journal / Reference</th><th className="p-3 text-left">Accounting date</th><th className="p-3 text-left">Description / Original</th><th className="p-3 text-left">Status</th><th className="p-3 text-right">Debit</th><th className="p-3 text-right">Credit</th><th className="p-3 text-left">Prepared / Reviewed / Posted</th><th className="p-3 text-right">Actions</th></tr></thead><tbody>
         {entries.map(entry => <tr key={entry.id} className="border-t align-top"><td className="max-w-48 p-3"><p className="font-medium">{entry.jeNo}</p><p className="break-words text-xs text-muted-foreground">{entry.reference}</p><p className="mt-1 text-xs text-muted-foreground">{entry.entryOrigin === "SYSTEM" ? "System journal" : entry.entryKind === "REVERSAL" ? "Reversal" : "Adjustment"}</p></td>
@@ -125,5 +149,6 @@ export function AdjustingEntriesTable({ entries, loading, userId, readOnly, onVi
         <div className="border-t pt-3"><EntryActions entry={entry} userId={userId} readOnly={readOnly} onView={onView} onAction={onAction} onReverse={onReverse} /></div>
       </article>)}
     </div>
-  </>;
+    </div>
+  </div>;
 }
