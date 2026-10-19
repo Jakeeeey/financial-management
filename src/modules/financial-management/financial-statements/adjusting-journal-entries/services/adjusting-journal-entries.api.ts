@@ -287,6 +287,7 @@ async function request<T>(path: string, method = "GET", payload?: unknown): Prom
 }
 
 export function ajeAttachmentUrl(id: number, attachmentId: number) { return `${BASE}/${id}/attachments/${attachmentId}`; }
+export function ajeAttachmentPreviewUrl(id: number, attachmentId: number) { return `${ajeAttachmentUrl(id, attachmentId)}?preview=1`; }
 export function ajeEntryPrintUrl(id: number) { return `${BASE}/${id}/print`; }
 export function ajeReportUrl(query: AdjustingEntryQuery, format: "csv" | "html") {
   const params = new URLSearchParams({ format });

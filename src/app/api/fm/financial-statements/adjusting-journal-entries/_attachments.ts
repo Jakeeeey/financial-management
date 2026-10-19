@@ -7,6 +7,7 @@ const MIME_BY_EXTENSION: Record<string,string> = {
   docx:"application/vnd.openxmlformats-officedocument.wordprocessingml.document", xls:"application/vnd.ms-excel",
   xlsx:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", csv:"text/csv", txt:"text/plain",
 };
+const INLINE_PREVIEW_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif", "image/bmp"]);
 export type ReservedFile = { id: number; fileId: string; filename: string; mimeType: string; fileSize: number };
 
 function directus() {
@@ -51,7 +52,7 @@ export async function uploadSupportingFile(id: string, file: File) {
       { message: error instanceof Error ? error.message : "Supporting document upload failed." }, { status: 502 }));
   }
 }
-export async function downloadSupportingFile(id: string, attachmentId: string) {
+export async function downloadSupportingFile(id: string, attachmentId: string, inlineImagePreview = false) {
   const metadata = await proxySpring(buildSpringItemPath(id, `attachments/${encodeURIComponent(attachmentId)}`));
   if (!metadata.ok) return metadata;
   const file = await metadata.json() as ReservedFile;
@@ -59,10 +60,11 @@ export async function downloadSupportingFile(id: string, attachmentId: string) {
   const response = await fetch(`${service.base}/assets/${encodeURIComponent(file.fileId)}`,
     { headers: service.headers, cache: "no-store" });
   if (!response.ok) return copySessionCookies(metadata, NextResponse.json({ message: "Supporting file is unavailable." }, { status: 502 }));
+  const canPreviewInline = inlineImagePreview && INLINE_PREVIEW_MIME_TYPES.has(file.mimeType.trim().toLowerCase().split(";")[0]);
   return copySessionCookies(metadata, new NextResponse(response.body, {
     headers: {
       "Content-Type": file.mimeType,
-      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
+      "Content-Disposition": `${canPreviewInline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
       "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox",
     },
   }));

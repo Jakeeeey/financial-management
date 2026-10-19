@@ -107,6 +107,8 @@ export type AdjustingEntrySummary = {
   rejected: number;
   cancelled: number;
   failed: number;
+  postedDebit: number;
+  postedCredit: number;
 };
 
 export type AdjustingEntrySourceTotals = {
