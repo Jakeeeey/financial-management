@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { MoreHorizontal } from "lucide-react";
 import type { AdjustingEntry, AjeAction } from "../types";
@@ -33,7 +34,10 @@ function queueAge(entry: AdjustingEntry) {
   if (!Number.isFinite(elapsed)) return null;
   const minutes = Math.max(0, Math.floor(elapsed / 60_000));
   const age = minutes >= 1_440 ? `${Math.floor(minutes / 1_440)}d ${Math.floor((minutes % 1_440) / 60)}h` : minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${minutes}m`;
-  return entry.status === "Submitted" ? `Waiting ${age} for review` : entry.status === "Approved" ? `Ready ${age} to post` : `Failed ${age} ago`;
+  const tone = elapsed > 72 * 60 * 60 * 1_000 ? "text-red-700" : elapsed > 24 * 60 * 60 * 1_000 ? "text-amber-700" : "text-muted-foreground";
+  const containerTone = elapsed > 72 * 60 * 60 * 1_000 ? "border-red-500/30 bg-red-500/5 text-red-700" : elapsed > 24 * 60 * 60 * 1_000 ? "border-amber-500/30 bg-amber-500/5 text-amber-800" : "border-transparent bg-muted/20 text-foreground";
+  const label = entry.status === "Submitted" ? `Waiting ${age} for review` : entry.status === "Approved" ? `Ready ${age} to post` : `Failed ${age} ago`;
+  return { label, tone, containerTone };
 }
 
 function queueTimestamp(entry: AdjustingEntry) {
@@ -115,21 +119,31 @@ function EntriesSkeleton() {
   </div>;
 }
 
-export function AdjustingEntriesTable({ entries, loading, userId, readOnly, onView, onAction, onReverse }: {
+export function AdjustingEntriesTable({ entries, loading, userId, readOnly, onView, onAction, onReverse, bulkActionsEnabled = false, selectedEntryIds, onToggleEntrySelection, onTogglePageSelection, onBulkApprove, bulkBusy = false }: {
   entries: AdjustingEntry[]; loading: boolean; userId: number; readOnly: boolean;
   onView: (entry: AdjustingEntry, edit: boolean) => void; onAction: (entry: AdjustingEntry, action: AjeAction) => void; onReverse: (entry: AdjustingEntry) => void;
+  bulkActionsEnabled?: boolean; selectedEntryIds: ReadonlySet<number>; onToggleEntrySelection: (entryId: number, selected: boolean) => void;
+  onTogglePageSelection: (entryIds: number[], selected: boolean) => void; onBulkApprove: (entries: AdjustingEntry[]) => void; bulkBusy?: boolean;
 }) {
   if (loading && entries.length === 0) return <EntriesSkeleton />;
   if (entries.length === 0) return <div className="rounded-md border bg-background p-8 text-center text-sm text-muted-foreground">No entries match these filters.</div>;
 
+  const eligibleForBulkApproval = bulkActionsEnabled ? entries.filter(entry => entry.entryOrigin === "MANUAL" && availableActions(entry).includes("approve") && !isSelfApproval(entry, userId)) : [];
+  const selectedForBulkApproval = eligibleForBulkApproval.filter(entry => selectedEntryIds.has(entry.id));
+  const allEligibleSelected = eligibleForBulkApproval.length > 0 && selectedForBulkApproval.length === eligibleForBulkApproval.length;
+
   return <div>
+    {bulkActionsEnabled && <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/20 p-3">
+      <label className="flex items-center gap-2 text-sm"><Checkbox checked={allEligibleSelected ? true : selectedForBulkApproval.length ? "indeterminate" : false} disabled={!eligibleForBulkApproval.length || bulkBusy || loading} onCheckedChange={checked => onTogglePageSelection(eligibleForBulkApproval.map(entry => entry.id), checked === true)} aria-label="Select eligible entries on this page" />Select eligible on this page <span className="text-muted-foreground">({eligibleForBulkApproval.length})</span></label>
+      <div className="flex flex-wrap items-center gap-2"><span className="text-sm text-muted-foreground">{selectedForBulkApproval.length} selected</span><Button type="button" size="sm" disabled={!selectedForBulkApproval.length || bulkBusy || loading} onClick={() => onBulkApprove(selectedForBulkApproval)}>{bulkBusy ? "Approving…" : `Approve selected${selectedForBulkApproval.length ? ` (${selectedForBulkApproval.length})` : ""}`}</Button></div>
+    </div>}
     {loading && <p role="status" aria-live="polite" className="mb-2 text-xs font-medium text-muted-foreground">Updating…</p>}
     <div aria-busy={loading} className={loading ? "pointer-events-none opacity-60 transition-opacity" : "transition-opacity"}>
     <div className="hidden overflow-x-auto rounded-md border bg-background xl:block">
-      <table className="w-full min-w-[1100px] text-sm"><thead className="bg-muted/30"><tr><th className="p-3 text-left">Journal / Reference</th><th className="p-3 text-left">Accounting date</th><th className="p-3 text-left">Description / Original</th><th className="p-3 text-left">Status</th><th className="p-3 text-right">Debit</th><th className="p-3 text-right">Credit</th><th className="p-3 text-left">Prepared / Reviewed / Posted</th><th className="p-3 text-right">Actions</th></tr></thead><tbody>
-        {entries.map(entry => <tr key={entry.id} className="border-t align-top"><td className="max-w-48 p-3"><p className="font-medium">{entry.jeNo}</p><p className="break-words text-xs text-muted-foreground">{entry.reference}</p><p className="mt-1 text-xs text-muted-foreground">{entry.entryOrigin === "SYSTEM" ? "System journal" : entry.entryKind === "REVERSAL" ? "Reversal" : "Adjustment"}</p></td>
+      <table className="w-full min-w-[1100px] text-sm"><thead className="bg-muted/30"><tr>{bulkActionsEnabled && <th className="w-10 p-3"><span className="sr-only">Select</span></th>}<th className="p-3 text-left">Journal / Reference</th><th className="p-3 text-left">Accounting date</th><th className="p-3 text-left">Description / Original</th><th className="p-3 text-left">Status</th><th className="p-3 text-right">Debit</th><th className="p-3 text-right">Credit</th><th className="p-3 text-left">Prepared / Reviewed / Posted</th><th className="p-3 text-right">Actions</th></tr></thead><tbody>
+        {entries.map(entry => <tr key={entry.id} className="border-t align-top">{bulkActionsEnabled && <td className="p-3">{eligibleForBulkApproval.some(candidate => candidate.id === entry.id) && <Checkbox checked={selectedEntryIds.has(entry.id)} disabled={bulkBusy || loading} onCheckedChange={checked => onToggleEntrySelection(entry.id, checked === true)} aria-label={`Select ${entry.jeNo} for approval`} />}</td>}<td className="max-w-48 p-3"><p className="font-medium">{entry.jeNo}</p><p className="break-words text-xs text-muted-foreground">{entry.reference}</p><p className="mt-1 text-xs text-muted-foreground">{entry.entryOrigin === "SYSTEM" ? "System journal" : entry.entryKind === "REVERSAL" ? "Reversal" : "Adjustment"}</p></td>
           <td className="whitespace-nowrap p-3">{formatDate(entry.transactionDate)}</td><td className="max-w-64 p-3"><EntryDescription entry={entry} /></td>
-          <td className="p-3"><Badge variant="outline" className={statusBadgeClass(entry.status)}>{entry.status}</Badge>{queueAge(entry) && <p className="mt-1 whitespace-nowrap text-xs text-muted-foreground">{queueAge(entry)}</p>}{queueTimestamp(entry) && <p className="mt-0.5 whitespace-nowrap text-xs text-muted-foreground">{entry.status === "Submitted" ? "Submitted" : entry.status === "Approved" ? "Approved" : "Last failed"}: {formatDateTime(queueTimestamp(entry))}</p>}</td><td className="p-3 text-right font-mono">{money(entry.totalDebit)}</td><td className="p-3 text-right font-mono">{money(entry.totalCredit)}</td>
+          <td className="p-3"><Badge variant="outline" className={statusBadgeClass(entry.status)}>{entry.status}</Badge>{queueAge(entry) && <p className={`mt-1 whitespace-nowrap text-xs ${queueAge(entry)?.tone}`}>{queueAge(entry)?.label}</p>}{queueTimestamp(entry) && <p className="mt-0.5 whitespace-nowrap text-xs text-muted-foreground">{entry.status === "Submitted" ? "Submitted" : entry.status === "Approved" ? "Approved" : "Last failed"}: {formatDateTime(queueTimestamp(entry))}</p>}</td><td className="p-3 text-right font-mono">{money(entry.totalDebit)}</td><td className="p-3 text-right font-mono">{money(entry.totalCredit)}</td>
           <td className="min-w-36 p-3 text-xs"><p>Created: {entry.creatorName || "—"}</p><p>Submitted: {entry.submittedByName || "—"}</p><p>Approved: {entry.approvedByName || "—"}</p><p>Posted: {entry.postedByName || "—"}</p>{entry.datePosted && <p>{formatDateTime(entry.datePosted)}</p>}</td>
           <td className="max-w-64 p-3"><EntryActions entry={entry} userId={userId} readOnly={readOnly} onView={onView} onAction={onAction} onReverse={onReverse} /></td></tr>)}
       </tbody></table>
@@ -138,13 +152,13 @@ export function AdjustingEntriesTable({ entries, loading, userId, readOnly, onVi
     <div className="space-y-3 xl:hidden">
       {entries.map(entry => <article key={entry.id} className="space-y-3 rounded-md border bg-background p-3 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="min-w-0"><h3 className="font-semibold">{entry.jeNo}</h3><p className="break-words text-xs text-muted-foreground">{entry.reference || "No reference"}</p></div>
+          <div className="flex min-w-0 items-start gap-2">{bulkActionsEnabled && eligibleForBulkApproval.some(candidate => candidate.id === entry.id) && <Checkbox checked={selectedEntryIds.has(entry.id)} disabled={bulkBusy || loading} onCheckedChange={checked => onToggleEntrySelection(entry.id, checked === true)} aria-label={`Select ${entry.jeNo} for approval`} className="mt-1" />}<div className="min-w-0"><h3 className="font-semibold">{entry.jeNo}</h3><p className="break-words text-xs text-muted-foreground">{entry.reference || "No reference"}</p></div></div>
           <Badge variant="outline" className={statusBadgeClass(entry.status)}>{entry.status}</Badge>
         </div>
         <div className="grid grid-cols-2 gap-2 text-sm"><div><p className="text-xs text-muted-foreground">Accounting date</p><p>{formatDate(entry.transactionDate)}</p></div><div><p className="text-xs text-muted-foreground">Entry type</p><p>{entry.entryOrigin === "SYSTEM" ? "System journal" : entry.entryKind === "REVERSAL" ? "Reversal" : "Adjustment"}</p></div></div>
         <div className="text-sm"><EntryDescription entry={entry} /></div>
         <div className="grid grid-cols-2 gap-2 rounded-md bg-muted/30 p-2 text-sm"><div><p className="text-xs text-muted-foreground">Debit</p><p className="font-mono">{money(entry.totalDebit)}</p></div><div><p className="text-xs text-muted-foreground">Credit</p><p className="font-mono">{money(entry.totalCredit)}</p></div></div>
-        {queueAge(entry) && <div className="rounded-md bg-muted/20 p-2 text-xs"><p className="font-medium">{queueAge(entry)}</p>{queueTimestamp(entry) && <p className="mt-0.5 text-muted-foreground">{entry.status === "Submitted" ? "Submitted" : entry.status === "Approved" ? "Approved" : "Last failed"}: {formatDateTime(queueTimestamp(entry))}</p>}</div>}
+        {queueAge(entry) && <div className={`rounded-md border p-2 text-xs ${queueAge(entry)?.containerTone}`}><p className="font-medium">{queueAge(entry)?.label}</p>{queueTimestamp(entry) && <p className="mt-0.5 text-muted-foreground">{entry.status === "Submitted" ? "Submitted" : entry.status === "Approved" ? "Approved" : "Last failed"}: {formatDateTime(queueTimestamp(entry))}</p>}</div>}
         <details className="text-xs text-muted-foreground"><summary className="cursor-pointer py-1 font-medium">Workflow history</summary><div className="grid grid-cols-2 gap-1 pt-2"><span>Created by</span><span>{entry.creatorName || "—"}</span><span>Submitted by</span><span>{entry.submittedByName || "—"}</span><span>Approved by</span><span>{entry.approvedByName || "—"}</span><span>Posted by</span><span>{entry.postedByName || "—"}</span>{entry.datePosted && <><span>Posted at</span><span>{formatDateTime(entry.datePosted)}</span></>}</div></details>
         <div className="border-t pt-3"><EntryActions entry={entry} userId={userId} readOnly={readOnly} onView={onView} onAction={onAction} onReverse={onReverse} /></div>
       </article>)}

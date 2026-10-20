@@ -48,3 +48,16 @@ export function formatDateTime(value: string | null | undefined) {
     timeZone: "Asia/Manila", dateStyle: "medium", timeStyle: "short",
   }).format(date) + " PHT";
 }
+
+export function formatRelativeDateTime(value: string | null | undefined) {
+  if (!value) return "â€”";
+  const date = new Date(/[zZ]|[+-]\d{2}:?\d{2}$/.test(value) ? value : value + "+08:00");
+  if (Number.isNaN(date.getTime())) return value;
+  const elapsedSeconds = Math.round((date.getTime() - Date.now()) / 1000);
+  const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
+    ["year", 60 * 60 * 24 * 365], ["month", 60 * 60 * 24 * 30], ["week", 60 * 60 * 24 * 7],
+    ["day", 60 * 60 * 24], ["hour", 60 * 60], ["minute", 60], ["second", 1],
+  ];
+  const [unit, secondsPerUnit] = units.find(([, seconds]) => Math.abs(elapsedSeconds) >= seconds) || units[units.length - 1];
+  return new Intl.RelativeTimeFormat("en", { numeric: "auto" }).format(Math.round(elapsedSeconds / secondsPerUnit), unit);
+}

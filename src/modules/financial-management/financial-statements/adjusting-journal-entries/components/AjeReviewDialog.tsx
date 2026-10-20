@@ -3,10 +3,11 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import type { AjeAttachment, AdjustingEntry } from "../types";
+import type { AjeAction, AjeAttachment, AdjustingEntry } from "../types";
 import { ajeAttachmentPreviewUrl, ajeAttachmentUrl } from "../services/adjusting-journal-entries.api";
 import { AjeAttachmentPreview, isPreviewableAjeImage } from "./AjeAttachmentPreview";
 import { formatDate, formatDateTime, money, statusBadgeClass } from "./formatters";
+import { availableActions, isSelfApproval } from "./AdjustingEntriesTable";
 
 type Props = {
   open: boolean;
@@ -16,15 +17,20 @@ type Props = {
   loading: boolean;
   error: string;
   attachmentsError: string;
+  canReview: boolean;
+  userId: number;
+  onAction: (entry: AdjustingEntry, action: AjeAction) => void;
   onClose: () => void;
 };
 
-export function AjeReviewDialog({ open, journalNumber, entry, attachments, loading, error, attachmentsError, onClose }: Props) {
+export function AjeReviewDialog({ open, journalNumber, entry, attachments, loading, error, attachmentsError, canReview, userId, onAction, onClose }: Props) {
+  const reviewActions = entry ? availableActions(entry).filter(action => action === "approve" || action === "reject") : [];
+  const selfReviewBlocked = Boolean(entry && reviewActions.length && isSelfApproval(entry, userId));
   return <Dialog open={open} onOpenChange={value => { if (!value) onClose(); }}>
     <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
       <DialogHeader>
         <DialogTitle>{entry?.jeNo || journalNumber || "Review adjusting entry"}</DialogTitle>
-        <DialogDescription>Read-only journal review. Use the queue row to approve, reject, post, or retry this entry.</DialogDescription>
+        <DialogDescription>{canReview ? "Review journal details, workflow history, and supporting documents before deciding." : "Read-only view of the journal details, workflow history, and supporting documents."}</DialogDescription>
       </DialogHeader>
       {loading && <p role="status" className="py-8 text-center text-sm text-muted-foreground">Loading journal details…</p>}
       {error && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</p>}
@@ -68,7 +74,8 @@ export function AjeReviewDialog({ open, journalNumber, entry, attachments, loadi
           })}
         </section>
       </div>}
-      <DialogFooter><DialogClose asChild><Button type="button" variant="outline">Close</Button></DialogClose></DialogFooter>
+      {canReview && selfReviewBlocked && <p className="text-sm text-amber-700">Another user must review this entry because you created, prepared, or submitted it.</p>}
+      <DialogFooter>{canReview && entry && !selfReviewBlocked && reviewActions.includes("reject") && <Button type="button" variant="outline" onClick={() => onAction(entry, "reject")}>Reject</Button>}{canReview && entry && !selfReviewBlocked && reviewActions.includes("approve") && <Button type="button" onClick={() => onAction(entry, "approve")}>Approve</Button>}<DialogClose asChild><Button type="button" variant="outline">Close</Button></DialogClose></DialogFooter>
     </DialogContent>
   </Dialog>;
 }
