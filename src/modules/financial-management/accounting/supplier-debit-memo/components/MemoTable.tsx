@@ -13,6 +13,7 @@ import {
   PaginationPrevious, PaginationNext, PaginationEllipsis,
 } from "@/components/ui/pagination";
 import { Search } from "lucide-react";
+import { MemoRowActions } from "../../supplier-memos/components/MemoActions";
 import type { SupplierDebitMemo, Supplier, ChartOfAccount } from "../types";
 import { formatPeso, formatDate } from "../utils";
 
@@ -21,6 +22,8 @@ const PAGE_SIZE = 10;
 // Status badge uses inline styles to avoid Tailwind JIT purging dynamic classes
 const STATUS_STYLES: Record<string, { bg: string; color: string; border: string }> = {
   Available: { bg: "rgba(16,185,129,0.15)", color: "#047857",  border: "rgba(16,185,129,0.3)"  },
+  CANCELLED: { bg: "rgba(239,68,68,0.12)", color: "#b91c1c", border: "rgba(239,68,68,0.3)" },
+  USED: { bg: "rgba(59,130,246,0.15)", color: "#1d4ed8", border: "rgba(59,130,246,0.3)" },
   Applied:   { bg: "rgba(59,130,246,0.15)", color: "#1d4ed8",  border: "rgba(59,130,246,0.3)"  },
 };
 
@@ -60,10 +63,12 @@ interface MemoTableProps {
   error?:    string | null;
   suppliers: Supplier[];
   accounts:  ChartOfAccount[];
+  search: string;
+  onSearch: (value: string) => void;
+  onChanged: () => void;
 }
 
-export function MemoTable({ memos, loading, error, suppliers, accounts }: MemoTableProps) {
-  const [search, setSearch] = useState("");
+export function MemoTable({ memos, loading, error, suppliers, accounts, search, onSearch, onChanged }: MemoTableProps) {
   const [page,   setPage]   = useState(1);
 
   // Lookup maps — use string keys to handle both number and string IDs from Directus
@@ -81,16 +86,7 @@ export function MemoTable({ memos, loading, error, suppliers, accounts }: MemoTa
   });
 
   const q = search.trim().toLowerCase();
-  const filtered = q
-    ? memos.filter(m =>
-        m.memo_number.toLowerCase().includes(q) ||
-        (m.reason ?? "").toLowerCase().includes(q) ||
-        (supplierMap[String(m.supplier_id)] ?? "").toLowerCase().includes(q) ||
-        (accountMap[String(m.chart_of_account)] ?? "").toLowerCase().includes(q) ||
-        m.status.toLowerCase().includes(q) ||
-        m.amount.toString().includes(q)
-      )
-    : memos;
+  const filtered = memos;
 
   const totalPages  = Math.ceil(filtered.length / PAGE_SIZE);
   const safePage    = Math.min(page, totalPages || 1);
@@ -105,7 +101,7 @@ export function MemoTable({ memos, loading, error, suppliers, accounts }: MemoTa
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
           <Input
             value={search}
-            onChange={e => { setSearch(e.target.value); setPage(1); }}
+            onChange={e => { onSearch(e.target.value); setPage(1); }}
             placeholder="Search memo #, reason, supplier..."
             className="h-8 pl-8 text-xs focus-visible:ring-1"
           />
@@ -126,13 +122,14 @@ export function MemoTable({ memos, loading, error, suppliers, accounts }: MemoTa
               <TableHead className="text-xs font-bold py-3 whitespace-nowrap">Reason</TableHead>
               <TableHead className="text-xs font-bold py-3 text-right whitespace-nowrap">Amount</TableHead>
               <TableHead className="text-xs font-bold py-3 pr-6 whitespace-nowrap">Status</TableHead>
+              <TableHead className="text-xs font-bold py-3 whitespace-nowrap">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               Array.from({ length: 8 }).map((_, i) => (
                 <TableRow key={i} className="border-border/40">
-                  {Array.from({ length: 7 }).map((_, j) => (
+                  {Array.from({ length: 8 }).map((_, j) => (
                     <TableCell key={j} className="py-3">
                       <div className="h-4 bg-muted rounded animate-pulse" style={{ width: j === 2 ? "140px" : "80px" }} />
                     </TableCell>
@@ -141,13 +138,13 @@ export function MemoTable({ memos, loading, error, suppliers, accounts }: MemoTa
               ))
             ) : error ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-10 text-muted-foreground text-sm">
+                <TableCell colSpan={8} className="text-center py-10 text-muted-foreground text-sm">
                   Failed to load memos: {error}
                 </TableCell>
               </TableRow>
             ) : paged.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-10 text-muted-foreground text-sm">
+                <TableCell colSpan={8} className="text-center py-10 text-muted-foreground text-sm">
                   {q ? `No results for "${search}".` : "No debit memos found."}
                 </TableCell>
               </TableRow>
@@ -161,10 +158,10 @@ export function MemoTable({ memos, loading, error, suppliers, accounts }: MemoTa
                     {formatDate(m.date)}
                   </TableCell>
                   <TableCell className="text-xs font-medium py-3 max-w-[180px] truncate" title={supplierMap[String(m.supplier_id)]}>
-                    {supplierMap[String(m.supplier_id)] ?? `#${m.supplier_id}`}
+                    {m.supplierName || supplierMap[String(m.supplier_id)] || `#${m.supplier_id}`}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground py-3 whitespace-nowrap">
-                    {accountMap[String(m.chart_of_account)] ?? `#${m.chart_of_account}`}
+                    {m.accountName || accountMap[String(m.chart_of_account)] || `#${m.chart_of_account}`}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground py-3 max-w-[200px] truncate" title={m.reason ?? ""}>
                     {m.reason || <span className="text-muted-foreground/40">—</span>}
@@ -174,7 +171,9 @@ export function MemoTable({ memos, loading, error, suppliers, accounts }: MemoTa
                   </TableCell>
                   <TableCell className="py-3 pr-6 whitespace-nowrap">
                     <StatusPill status={m.status} />
+                    {m.eligibility?.blockedReason && <p className="mt-1 max-w-[180px] line-clamp-2 whitespace-normal text-xs text-muted-foreground" title={m.eligibility.blockedReason}>{m.eligibility.blockedReason}</p>}
                   </TableCell>
+                  <TableCell><MemoRowActions memo={m} api="/api/fm/accounting/supplier-debit-memo" suppliers={suppliers} accounts={accounts} onChanged={onChanged} /></TableCell>
                 </TableRow>
               ))
             )}
