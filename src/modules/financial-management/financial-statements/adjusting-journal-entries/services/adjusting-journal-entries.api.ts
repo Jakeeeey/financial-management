@@ -270,6 +270,12 @@ export const adjustingJournalEntriesApi = {
   },
   async auditUsers(): Promise<Array<{ id: number; name: string }>> { return request("/audit/users"); },
   async attachments(id: number): Promise<AjeAttachment[]> { return request<AjeAttachment[]>(`/${id}/attachments`); },
+  async attachmentsForEntries(entryIds: number[]): Promise<AjeAttachment[]> {
+    if (entryIds.length === 0) return [];
+    const params = new URLSearchParams();
+    [...new Set(entryIds)].forEach(id => params.append("entryIds", String(id)));
+    return request<AjeAttachment[]>(`/attachments?${params.toString()}`);
+  },
   async uploadAttachment(id: number, file: File): Promise<AjeAttachment> {
     const body = new FormData(); body.append("file", file);
     const response = await fetchWithAuthRetry(`${BASE}/${id}/attachments`, { method: "POST", body });

@@ -98,23 +98,22 @@ export function AjeAuditTrail({ entryId, revision }: { entryId?: number | null; 
   const attachmentRequestKey = `${revision}:${(data?.content || []).map(event => event.id).join(",")}`;
 
   React.useEffect(() => {
-    if (attachmentEntryIds.length === 0) return;
     let active = true;
-    void Promise.all(attachmentEntryIds.map(async entryId => {
-      try {
-        return { entryId, attachments: await api.attachments(entryId) };
-      } catch {
-        return { entryId, attachments: null };
-      }
-    })).then(results => {
+    if (attachmentEntryIds.length === 0) {
+      setAttachmentLookup({ requestKey:attachmentRequestKey, attachmentsByEntry:{}, failedEntryIds:new Set() });
+      return () => { active = false; };
+    }
+    void api.attachmentsForEntries(attachmentEntryIds).then(attachments => {
       if (!active) return;
       const attachmentsByEntry: Record<number, AjeAttachment[]> = {};
-      const failedEntryIds = new Set<number>();
-      for (const result of results) {
-        if (result.attachments) attachmentsByEntry[result.entryId] = result.attachments;
-        else failedEntryIds.add(result.entryId);
+      for (const entryId of attachmentEntryIds) attachmentsByEntry[entryId] = [];
+      for (const attachment of attachments) {
+        (attachmentsByEntry[attachment.entryId] ||= []).push(attachment);
       }
-      setAttachmentLookup({ requestKey:attachmentRequestKey, attachmentsByEntry, failedEntryIds });
+      setAttachmentLookup({ requestKey:attachmentRequestKey, attachmentsByEntry, failedEntryIds:new Set() });
+    }).catch(() => {
+      if (!active) return;
+      setAttachmentLookup({ requestKey:attachmentRequestKey, attachmentsByEntry:{}, failedEntryIds:new Set(attachmentEntryIds) });
     });
     return () => { active = false; };
   }, [attachmentEntryIds, attachmentRequestKey]);
@@ -263,13 +262,19 @@ export function AjeAuditTrail({ entryId, revision }: { entryId?: number | null; 
               <span className="whitespace-pre-wrap break-words">{otherChanges[0].after || "—"}</span>
             </div>}
             {event.action === "Supporting Document Added" && event.entryId != null && (() => {
-              const fileName = event.changes.find(change => change.field === "Supporting document")?.after;
+              const attachmentChange = event.changes.find(change => change.field === "Supporting document");
+              const fileName = attachmentChange?.after;
               if (!fileName) return null;
               const lookupReady = attachmentLookup.requestKey === attachmentRequestKey;
-              const file = lookupReady ? attachmentLookup.attachmentsByEntry[event.entryId]?.find(attachment => attachment.filename === fileName) : undefined;
+              const candidates = lookupReady ? attachmentLookup.attachmentsByEntry[event.entryId] || [] : [];
+              const matches = attachmentChange?.attachmentId != null
+                ? candidates.filter(attachment => attachment.id === attachmentChange.attachmentId)
+                : candidates.filter(attachment => attachment.filename === fileName);
+              const file = matches.length === 1 ? matches[0] : undefined;
+              const ambiguousLegacyMatch = attachmentChange?.attachmentId == null && matches.length > 1;
               const lookupFailed = lookupReady && attachmentLookup.failedEntryIds.has(event.entryId);
               if (!file) {
-                const statusText = !lookupReady ? "Loading attachment…" : lookupFailed ? "Preview unavailable" : "Attachment no longer available";
+                const statusText = !lookupReady ? "Loading attachment…" : lookupFailed ? "Preview unavailable" : ambiguousLegacyMatch ? "Attachment identity is ambiguous" : "Attachment no longer available";
                 return <div className="flex flex-wrap items-center gap-3 rounded-md border p-2 text-sm" aria-label={`Attachment ${fileName}`}>
                   <span className="break-all">{fileName}</span>
                   <span className="text-xs text-muted-foreground">{statusText}</span>
