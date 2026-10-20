@@ -7,11 +7,15 @@ export const API_BASE = "/api/fm/accounting/supplier-credit-memo";
 export const MEMO_STATUSES: string[] = [
   "Available",
   "Applied",
+  "USED",
+  "CANCELLED",
 ];
 
 export const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   Available: { label: "Available", className: "bg-emerald-500/15 text-emerald-700 border-emerald-500/30 dark:text-emerald-400 dark:border-emerald-500/30" },
   Applied:   { label: "Applied",   className: "bg-blue-500/15 text-blue-700 border-blue-500/30 dark:text-blue-400 dark:border-blue-500/30" },
+  USED: { label: "Used", className: "bg-blue-500/15 text-blue-700 border-blue-500/30" },
+  CANCELLED: { label: "Cancelled", className: "bg-red-500/15 text-red-700 border-red-500/30" },
 };
 
 // ─── Formatters ───────────────────────────────────────────────────────────────

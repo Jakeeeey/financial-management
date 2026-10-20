@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
+import { memoMatchesFilters, memoStats } from "../../supplier-memos/types";
 import type { SupplierCreditMemo, Supplier, ChartOfAccount, CreateMemoPayload, MemoFilters } from "../types";
 
 const API_PATH = "/api/fm/accounting/supplier-credit-memo";
@@ -63,39 +64,7 @@ export function useSupplierCreditMemo() {
   useEffect(() => { load(); }, [load]);
 
   // Filter locally using useMemo - all filtering client-side, no API calls
-  const memos = useMemo(() => {
-    return allMemos.filter(m => {
-      // Search filter
-      if (filters.search) {
-        const search = filters.search.toLowerCase();
-        const matches = (m.memo_number?.toLowerCase().includes(search)) ||
-                       (m.reason?.toLowerCase().includes(search)) ||
-                       (m.status?.toLowerCase().includes(search));
-        if (!matches) return false;
-      }
-
-      // Supplier ID filter
-      if (filters.supplier_id && String(m.supplier_id) !== filters.supplier_id) return false;
-
-      // Chart of Account filter
-      if (filters.chart_of_account && String(m.chart_of_account) !== filters.chart_of_account) return false;
-
-      // Status filter
-      if (filters.status && m.status !== filters.status) return false;
-
-      // Date range filters - use string comparison
-      if (filters.date_from) {
-        const memoDate = (m.date || '').split(' ')[0];  // Extract YYYY-MM-DD
-        if (memoDate && memoDate < filters.date_from) return false;
-      }
-      if (filters.date_to) {
-        const memoDate = (m.date || '').split(' ')[0];  // Extract YYYY-MM-DD
-        if (memoDate && memoDate > filters.date_to) return false;
-      }
-
-      return true;
-    });
-  }, [allMemos, filters]);
+  const memos = useMemo(() => allMemos.filter(memo => memoMatchesFilters(memo, filters)), [allMemos, filters]);
 
   const total = memos.length;
 
@@ -110,13 +79,7 @@ export function useSupplierCreditMemo() {
   const clearFilters = () => setFilters(DEFAULT_FILTERS);
   const hasFilters   = Object.values(filters).some(Boolean);
 
-  const stats = {
-    total,
-    available:      memos.filter(m => m.status === "Available").length,
-    pendingSOA:     memos.filter(m => m.status === "Pending SOA").length,
-    totalAvailable: memos.filter(m => m.status === "Available").reduce((s, m) => s + parseFloat(m.amount), 0),
-    totalAmount:    memos.reduce((s, m) => s + parseFloat(m.amount), 0),
-  };
+  const stats = memoStats(memos);
 
   return {
     memos, total, loading, error,
