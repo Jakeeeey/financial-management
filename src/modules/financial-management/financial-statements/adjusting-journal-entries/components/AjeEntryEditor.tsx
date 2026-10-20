@@ -18,7 +18,14 @@ import type { AdjustingEntry, AdjustingEntryPayload, AdjustingEntrySourceJournal
 type Line = { key: string; coaId: string; departmentId: string; description: string; debit: string; credit: string; originalDetailId: number | null };
 type Form = { reference: string; transactionDate: string; description: string; divisionId: string; sourceJeNo: string; entryKind: "ADJUSTMENT" | "REVERSAL"; originalEntryId: number | null; reversalMode: "FULL" | "PARTIAL" | null; details: Line[] };
 type SubmitBlocker = { message: string; selector: string };
-type Props = { initialEntry: AdjustingEntry | null; seed?: AdjustingEntryPayload | null; readOnly: boolean; hideTitle?: boolean; dirtyRef: React.MutableRefObject<boolean>; access: AjeAccess; accounts: AjeAccount[]; departments: DepartmentLookup[]; divisions: DivisionLookup[]; onSaved: () => void; onAction: (entry: AdjustingEntry, action: AjeAction) => void };
+type Props = { initialEntry: AdjustingEntry | null; seed?: AdjustingEntryPayload | null; readOnly: boolean; hideTitle?: boolean; dirtyRef: React.MutableRefObject<boolean>; access: AjeAccess; accounts: AjeAccount[]; departments: DepartmentLookup[]; divisions: DivisionLookup[]; onSaved: (saveCompleted: boolean) => void; onAction: (entry: AdjustingEntry, action: AjeAction) => void };
+
+function CurrencyInput({ className, ...props }: React.ComponentPropsWithoutRef<typeof Input>) {
+  return <div className="relative">
+    <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted-foreground">₱</span>
+    <Input {...props} className={`pl-7 ${className ?? ""}`} />
+  </div>;
+}
 
 function line(data?: { coaId?: number | null; departmentId?: number | null; description?: string | null; debit?: number; credit?: number; originalDetailId?: number | null }): Line {
   return { key: crypto.randomUUID(), coaId: data?.coaId ? String(data.coaId) : "", departmentId: data?.departmentId ? String(data.departmentId) : "", description: data?.description || "", debit: data?.debit ? String(data.debit) : "", credit: data?.credit ? String(data.credit) : "", originalDetailId: data?.originalDetailId ?? null };
@@ -69,7 +76,8 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
   const selectedFilePreviewUrls = React.useRef(new Map<File, string>());
   const [preview, setPreview] = React.useState<AjeReversalPreview | null>(null);
   const inFlight = React.useRef(false);
-  const frozen = readOnly || Boolean(entry && (entry.status !== "Draft" || entry.entryOrigin !== "MANUAL"));
+  const creatorEditBlocked = Boolean(entry && entry.status === "Draft" && entry.entryOrigin === "MANUAL" && entry.creatorId !== access.userId);
+  const frozen = readOnly || Boolean(entry && (entry.status !== "Draft" || entry.entryOrigin !== "MANUAL" || entry.creatorId !== access.userId));
   const reversal = form.entryKind === "REVERSAL";
   const isFull = reversal && form.reversalMode === "FULL";
   const hasUnsavedChanges = !frozen && (serializeForm(form) !== savedSnapshot || selectedFiles.length > 0);
@@ -306,15 +314,20 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
       const saved = entry ? await api.update(entry.id, payload) : await api.create(payload);
       setEntry(saved);
       let pending = [...selectedFiles];
+      let saveCompleted = false;
       try {
         for (const file of selectedFiles) {
           await api.uploadAttachment(saved.id, file);
           revokeSelectedFilePreview(file);
           pending = pending.filter(selectedFile => selectedFile !== file); setSelectedFiles(pending);
         }
-      } finally { setAttachments(await api.attachments(saved.id)); onSaved(); }
+        saveCompleted = true;
+      } finally {
+        setAttachments(await api.attachments(saved.id));
+        onSaved(saveCompleted);
+      }
       setSavedSnapshot(serializeForm(form));
-      toast.success("Draft saved");
+      toast.success(`${saved.jeNo || `Entry #${saved.id}`} saved as draft`);
       if (submit) onAction(saved, "submit");
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to save this draft"); }
     finally { inFlight.current = false; setBusy(false); }
@@ -360,6 +373,7 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
       <div id="aje-balance-indicator" tabIndex={-1} className={`text-sm font-medium ${balanced ? "text-emerald-700" : hasAmounts ? "text-destructive" : "text-muted-foreground"}`} aria-live="polite">{balanced ? "Balanced" : hasAmounts ? <>Unbalanced · Difference {money((totals.debit - totals.credit) / 100)}</> : "No amounts entered yet · Add a debit and a credit line."}</div>
     </div>
     {error && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
+    {creatorEditBlocked && <div role="status" className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-800">Only the AJE creator can edit or submit this draft.</div>}
     {(submitAttempted || checklistOpen) && submitBlockers.length > 0 && <div id="aje-submit-checklist" role="alert" className="space-y-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
       <p className="font-medium">Resolve these items before submitting:</p>
       <ul className="list-inside list-disc space-y-1">{submitBlockers.map((blocker, index) => <li key={`${blocker.message}-${index}`}><button type="button" className="text-left text-destructive underline-offset-2 hover:underline" onClick={() => focusBlocker(blocker.selector)}>{blocker.message}</button></li>)}</ul>
@@ -406,7 +420,7 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
             <div className="space-y-1"><Label>Account *</Label><AjeSearchableSelect options={accountOptions} value={row.coaId} onValueChange={v => updateLine(row.key, "coaId", v)} disabled={frozen || busy || reversal} placeholder="Select account" ariaLabel={`Line ${index + 1} account`} ariaInvalid={accountIssue} className={accountIssue ? "border-destructive" : ""} /></div>
             <div className="space-y-1"><Label>Department{accountById.get(row.coaId)?.departmentRequired ? " *" : ""}</Label><AjeSearchableSelect options={departmentOptions} value={row.departmentId || "none"} onValueChange={v => updateLine(row.key, "departmentId", v === "none" ? "" : v)} disabled={frozen || busy || reversal} placeholder="None" ariaLabel={`Line ${index + 1} department`} ariaInvalid={departmentIssue} className={departmentIssue ? "border-destructive" : ""} /></div>
             <div className="space-y-1"><Label htmlFor={`aje-line-desc-mobile-${index}`}>Line description</Label><Input id={`aje-line-desc-mobile-${index}`} aria-label={`Line ${index + 1} description`} value={row.description} maxLength={1000} disabled={frozen || busy} onChange={e => updateLine(row.key, "description", e.target.value)} /></div>
-            <div className="grid grid-cols-2 gap-2"><div className="space-y-1"><Label htmlFor={`aje-line-debit-mobile-${index}`}>Debit</Label><Input id={`aje-line-debit-mobile-${index}`} aria-label={`Line ${index + 1} debit`} aria-invalid={amountIssue} className={`text-right font-mono ${amountIssue ? "border-destructive" : ""}`} type="number" min="0" step="0.01" value={row.debit} disabled={frozen || busy || isFull} onChange={e => updateLine(row.key, "debit", e.target.value)} onKeyDown={e => { if (e.key !== "Enter" || index !== form.details.length - 1) return; e.preventDefault(); if (row.coaId || row.departmentId || row.description.trim() || row.debit.trim() || row.credit.trim()) addLineAndFocus(); }} /></div><div className="space-y-1"><Label htmlFor={`aje-line-credit-mobile-${index}`}>Credit</Label><Input id={`aje-line-credit-mobile-${index}`} aria-label={`Line ${index + 1} credit`} aria-invalid={amountIssue} className={`text-right font-mono ${amountIssue ? "border-destructive" : ""}`} type="number" min="0" step="0.01" value={row.credit} disabled={frozen || busy || isFull} onChange={e => updateLine(row.key, "credit", e.target.value)} onKeyDown={e => { if (e.key !== "Enter" || index !== form.details.length - 1) return; e.preventDefault(); if (row.coaId || row.departmentId || row.description.trim() || row.debit.trim() || row.credit.trim()) addLineAndFocus(); }} /></div></div>
+            <div className="grid grid-cols-2 gap-2"><div className="space-y-1"><Label htmlFor={`aje-line-debit-mobile-${index}`}>Debit</Label><CurrencyInput id={`aje-line-debit-mobile-${index}`} aria-label={`Line ${index + 1} debit`} aria-invalid={amountIssue} className={`text-right font-mono ${amountIssue ? "border-destructive" : ""}`} type="number" min="0" step="0.01" value={row.debit} disabled={frozen || busy || isFull} onChange={e => updateLine(row.key, "debit", e.target.value)} onKeyDown={e => { if (e.key !== "Enter" || index !== form.details.length - 1) return; e.preventDefault(); if (row.coaId || row.departmentId || row.description.trim() || row.debit.trim() || row.credit.trim()) addLineAndFocus(); }} /></div><div className="space-y-1"><Label htmlFor={`aje-line-credit-mobile-${index}`}>Credit</Label><CurrencyInput id={`aje-line-credit-mobile-${index}`} aria-label={`Line ${index + 1} credit`} aria-invalid={amountIssue} className={`text-right font-mono ${amountIssue ? "border-destructive" : ""}`} type="number" min="0" step="0.01" value={row.credit} disabled={frozen || busy || isFull} onChange={e => updateLine(row.key, "credit", e.target.value)} onKeyDown={e => { if (e.key !== "Enter" || index !== form.details.length - 1) return; e.preventDefault(); if (row.coaId || row.departmentId || row.description.trim() || row.debit.trim() || row.credit.trim()) addLineAndFocus(); }} /></div></div>
             {issue && <p className="text-xs text-destructive">{issue}</p>}{remaining !== undefined && <p className="text-xs text-muted-foreground">Remaining reversal amount: {money(remaining)}</p>}
           </article>;
         })}
@@ -419,8 +433,8 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
             return <tr key={row.key} className="border-t"><td className="min-w-64 p-2 align-top"><AjeSearchableSelect options={accountOptions} value={row.coaId} onValueChange={v => updateLine(row.key, "coaId", v)} disabled={frozen || busy || reversal} placeholder="Select account" ariaLabel={`Line ${index + 1} account`} ariaInvalid={accountIssue} className={accountIssue ? "border-destructive" : ""} />{issue && <p className="mt-1 text-xs text-destructive">Line {index + 1}: {issue}</p>}{remaining !== undefined && <p className="mt-1 text-xs text-muted-foreground">Remaining: {money(remaining)}</p>}</td>
               <td className="min-w-48 p-2 align-top"><AjeSearchableSelect options={departmentOptions} value={row.departmentId || "none"} onValueChange={v => updateLine(row.key, "departmentId", v === "none" ? "" : v)} disabled={frozen || busy || reversal} placeholder="None" ariaLabel={`Line ${index + 1} department`} ariaInvalid={departmentIssue} className={departmentIssue ? "border-destructive" : ""} />{accountById.get(row.coaId)?.departmentRequired && <span className="text-xs text-muted-foreground">Required</span>}</td>
               <td className="min-w-44 p-2 align-top"><Input aria-label={`Line ${index + 1} description`} value={row.description} maxLength={1000} disabled={frozen || busy} onChange={e => updateLine(row.key, "description", e.target.value)} /></td>
-              <td className="w-36 p-2 align-top"><Input aria-label={`Line ${index + 1} debit`} aria-invalid={amountIssue} className={`text-right font-mono ${amountIssue ? "border-destructive" : ""}`} type="number" min="0" step="0.01" value={row.debit} disabled={frozen || busy || isFull} onChange={e => updateLine(row.key, "debit", e.target.value)} onKeyDown={e => { if (e.key !== "Enter" || index !== form.details.length - 1) return; e.preventDefault(); if (row.coaId || row.departmentId || row.description.trim() || row.debit.trim() || row.credit.trim()) addLineAndFocus(); }} /></td>
-              <td className="w-36 p-2 align-top"><Input aria-label={`Line ${index + 1} credit`} aria-invalid={amountIssue} className={`text-right font-mono ${amountIssue ? "border-destructive" : ""}`} type="number" min="0" step="0.01" value={row.credit} disabled={frozen || busy || isFull} onChange={e => updateLine(row.key, "credit", e.target.value)} onKeyDown={e => { if (e.key !== "Enter" || index !== form.details.length - 1) return; e.preventDefault(); if (row.coaId || row.departmentId || row.description.trim() || row.debit.trim() || row.credit.trim()) addLineAndFocus(); }} /></td>
+              <td className="w-36 p-2 align-top"><CurrencyInput aria-label={`Line ${index + 1} debit`} aria-invalid={amountIssue} className={`text-right font-mono ${amountIssue ? "border-destructive" : ""}`} type="number" min="0" step="0.01" value={row.debit} disabled={frozen || busy || isFull} onChange={e => updateLine(row.key, "debit", e.target.value)} onKeyDown={e => { if (e.key !== "Enter" || index !== form.details.length - 1) return; e.preventDefault(); if (row.coaId || row.departmentId || row.description.trim() || row.debit.trim() || row.credit.trim()) addLineAndFocus(); }} /></td>
+              <td className="w-36 p-2 align-top"><CurrencyInput aria-label={`Line ${index + 1} credit`} aria-invalid={amountIssue} className={`text-right font-mono ${amountIssue ? "border-destructive" : ""}`} type="number" min="0" step="0.01" value={row.credit} disabled={frozen || busy || isFull} onChange={e => updateLine(row.key, "credit", e.target.value)} onKeyDown={e => { if (e.key !== "Enter" || index !== form.details.length - 1) return; e.preventDefault(); if (row.coaId || row.departmentId || row.description.trim() || row.debit.trim() || row.credit.trim()) addLineAndFocus(); }} /></td>
               <td className="p-2 align-top"><div className="flex">{!frozen && !reversal && <Button type="button" size="icon" variant="ghost" aria-label={`Duplicate line ${index + 1}`} disabled={busy} onClick={() => duplicateLine(row.key)}><Copy className="size-4" /></Button>}{!frozen && !isFull && <Button type="button" size="icon" variant="ghost" aria-label={`Remove line ${index + 1}`} disabled={busy} onClick={() => setForm({ ...form, details: form.details.filter(d => d.key !== row.key) })}><Trash2 className="size-4" /></Button>}</div></td></tr>;
           })}
         </tbody><tfoot className="border-t bg-muted/20"><tr><td className="p-3 font-semibold" colSpan={3}>Totals</td><td className="p-3 text-right font-mono">{money(totals.debit / 100)}</td><td className="p-3 text-right font-mono">{money(totals.credit / 100)}</td><td /></tr></tfoot></table>

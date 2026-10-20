@@ -1,7 +1,9 @@
 export const balancedTolerance = 0.005;
 
 export function money(value: number | null | undefined) {
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value ?? 0);

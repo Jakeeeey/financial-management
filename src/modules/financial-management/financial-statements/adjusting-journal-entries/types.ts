@@ -39,6 +39,7 @@ export type AdjustingEntry = {
   cancelledByName: string | null;
   cancelledAt: string | null;
   lastPostingError: string | null;
+  canCancelAfterReversalConflict: boolean;
   lastPostingAttemptAt: string | null;
   divisionId: number | null;
   divisionName: string | null;
