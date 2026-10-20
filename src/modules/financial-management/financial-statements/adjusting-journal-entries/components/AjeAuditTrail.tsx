@@ -7,7 +7,7 @@ import { ChevronsLeft, ChevronsRight } from "lucide-react";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { adjustingJournalEntriesApi as api, ajeAttachmentPreviewUrl, ajeAttachmentUrl, ajeAuditReportUrl } from "../services/adjusting-journal-entries.api";
+import { adjustingJournalEntriesApi as api, ajeAttachmentPreviewUrl, ajeAttachmentThumbnailUrl, ajeAttachmentUrl, ajeAuditReportUrl } from "../services/adjusting-journal-entries.api";
 import type { AjeAttachment, AjeAuditEvent, AjeAuditPage, AdjustingEntry } from "../types";
 import { AjeAttachmentPreview, isPreviewableAjeImage } from "./AjeAttachmentPreview";
 import { formatDate, formatDateTime, formatRelativeDateTime, money, statusBadgeClass, todayManila } from "./formatters";
@@ -280,6 +280,7 @@ export function AjeAuditTrail({ entryId, revision }: { entryId?: number | null; 
               return <AjeAttachmentPreview key={`${event.id}-${file.id}`} fileName={file.filename}
                 downloadUrl={ready ? ajeAttachmentUrl(file.entryId, file.id) : undefined}
                 openDownloadInNewTab
+                thumbnailUrl={previewable ? ajeAttachmentThumbnailUrl(file.entryId, file.id) : undefined}
                 previewUrl={previewable ? ajeAttachmentPreviewUrl(file.entryId, file.id) : undefined}
                 statusText={ready ? undefined : "Upload incomplete"}
                 metadata={`${file.uploadedByName} · ${formatDateTime(file.uploadedAt)}`} />;

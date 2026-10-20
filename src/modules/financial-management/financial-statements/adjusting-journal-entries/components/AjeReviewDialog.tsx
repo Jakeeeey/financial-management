@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { AjeAction, AjeAttachment, AdjustingEntry } from "../types";
-import { ajeAttachmentPreviewUrl, ajeAttachmentUrl } from "../services/adjusting-journal-entries.api";
+import { ajeAttachmentPreviewUrl, ajeAttachmentThumbnailUrl, ajeAttachmentUrl } from "../services/adjusting-journal-entries.api";
 import { AjeAttachmentPreview, isPreviewableAjeImage } from "./AjeAttachmentPreview";
 import { formatDate, formatDateTime, money, statusBadgeClass } from "./formatters";
 import { availableActions, isSelfApproval } from "./AdjustingEntriesTable";
@@ -18,14 +18,14 @@ type Props = {
   error: string;
   attachmentsError: string;
   canReview: boolean;
-  userId: number;
+  userId?: number;
   onAction: (entry: AdjustingEntry, action: AjeAction) => void;
   onClose: () => void;
 };
 
 export function AjeReviewDialog({ open, journalNumber, entry, attachments, loading, error, attachmentsError, canReview, userId, onAction, onClose }: Props) {
   const reviewActions = entry ? availableActions(entry).filter(action => action === "approve" || action === "reject") : [];
-  const selfReviewBlocked = Boolean(entry && reviewActions.length && isSelfApproval(entry, userId));
+  const selfReviewBlocked = Boolean(canReview && userId != null && entry && reviewActions.length && isSelfApproval(entry, userId));
   return <Dialog open={open} onOpenChange={value => { if (!value) onClose(); }}>
     <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
       <DialogHeader>
@@ -68,6 +68,7 @@ export function AjeReviewDialog({ open, journalNumber, entry, attachments, loadi
             return <AjeAttachmentPreview key={file.id} fileName={file.filename}
               downloadUrl={file.state === "READY" ? ajeAttachmentUrl(file.entryId, file.id) : undefined}
               openDownloadInNewTab
+              thumbnailUrl={previewable ? ajeAttachmentThumbnailUrl(file.entryId, file.id) : undefined}
               previewUrl={previewable ? ajeAttachmentPreviewUrl(file.entryId, file.id) : undefined}
               statusText={file.state === "READY" ? undefined : "Upload incomplete"}
               metadata={`${file.uploadedByName} · ${formatDateTime(file.uploadedAt)}`} />;

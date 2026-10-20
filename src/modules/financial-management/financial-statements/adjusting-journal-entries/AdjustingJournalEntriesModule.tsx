@@ -17,12 +17,12 @@ import { AjeAuditTrail } from "./components/AjeAuditTrail";
 import { AjePeriodDialog } from "./components/AjePeriodDialog";
 import { formatDate, money, todayManila } from "./components/formatters";
 import { adjustingJournalEntriesApi as api, ajeReportUrl, fetchDepartmentOptions, fetchDivisionOptions } from "./services/adjusting-journal-entries.api";
-import type { AdjustingEntry, AdjustingEntryPayload, AdjustingEntryQuery, AdjustingEntrySummary, AjeAccess, AjeAccount, AjeAction, AjeAttachment, AjePeriod, AjeReversalPreview, DepartmentLookup, DivisionLookup } from "./types";
+import type { AdjustingEntry, AdjustingEntryPayload, AdjustingEntryQuery, AdjustingEntrySummary, AdjustingEntrySummaryQuery, AjeAccess, AjeAccount, AjeAction, AjeAttachment, AjePeriod, AjeReversalPreview, DepartmentLookup, DivisionLookup } from "./types";
 
 type Tab = "new" | "posting" | "audit" | "summary";
 type EntryListTab = Extract<Tab, "posting" | "summary">;
 type PostingQueue = "all" | "needs-action" | "submitted" | "approved" | "failed";
-type Lookups = { access: AjeAccess; accounts: AjeAccount[]; departments: DepartmentLookup[]; divisions: DivisionLookup[] };
+type CatalogLookups = { accounts: AjeAccount[]; departments: DepartmentLookup[]; divisions: DivisionLookup[] };
 const statuses = ["All","Draft","Submitted","Approved","Rejected","Posted","Cancelled","Failed","Voided"];
 const queueValues: PostingQueue[] = ["all","needs-action","submitted","approved","failed"];
 const pageSizes = [10,20,50,100];
@@ -70,10 +70,16 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   const latestSearchParams = React.useRef(searchParamText);
   const listFilters = React.useMemo(() => parseListFilters(new URLSearchParams(searchParamText)), [searchParamText]);
   const [tab, setTab] = React.useState<Tab>(initialView);
-  const [lookups, setLookups] = React.useState<Lookups | null>(null);
-  const [initialError, setInitialError] = React.useState("");
+  const [access, setAccess] = React.useState<AjeAccess | null>(null);
+  const [catalogs, setCatalogs] = React.useState<CatalogLookups | null>(null);
+  const [accessError, setAccessError] = React.useState("");
+  const [catalogsError, setCatalogsError] = React.useState("");
+  const [periodError, setPeriodError] = React.useState("");
   const [lookupRevision, setLookupRevision] = React.useState(0);
   const [period, setPeriod] = React.useState<AjePeriod | null>(null);
+  const [accessLoading, setAccessLoading] = React.useState(initialView === "new" || initialView === "posting");
+  const [catalogsLoading, setCatalogsLoading] = React.useState(initialView !== "audit");
+  const [periodLoading, setPeriodLoading] = React.useState(initialView === "new" || initialView === "posting");
   const [periodOpen, setPeriodOpen] = React.useState(false);
   const [savedPostingQueue, setSavedPostingQueue] = React.useState<PostingQueue | null>(null);
   const [queuePreferenceLoaded, setQueuePreferenceLoaded] = React.useState(false);
@@ -81,9 +87,14 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   const [summary, setSummary] = React.useState(emptySummary);
   const [totalPages, setTotalPages] = React.useState(0);
   const [totalElements, setTotalElements] = React.useState(0);
-  const [loading, setLoading] = React.useState(false);
+  const [listLoading, setListLoading] = React.useState(initialView === "posting" || initialView === "summary");
+  const [summaryLoading, setSummaryLoading] = React.useState(initialView === "posting" || initialView === "summary");
+  const [listError, setListError] = React.useState("");
+  const [summaryError, setSummaryError] = React.useState("");
   const [error, setError] = React.useState("");
-  const [revision, setRevision] = React.useState(0);
+  const [listRevision, setListRevision] = React.useState(0);
+  const [summaryRevision, setSummaryRevision] = React.useState(0);
+  const [auditRevision, setAuditRevision] = React.useState(0);
   const [editorEntry, setEditorEntry] = React.useState<AdjustingEntry | null>(null);
   const [editorSeed, setEditorSeed] = React.useState<AdjustingEntryPayload | null>(null);
   const [editorKey, setEditorKey] = React.useState(0);
@@ -105,11 +116,13 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   const [bulkBusy, setBulkBusy] = React.useState(false);
   const [bulkResult, setBulkResult] = React.useState<{ approved: number; failures: Array<{ jeNo: string; message: string }> } | null>(null);
   const commandLock = React.useRef(false);
-  const requestGeneration = React.useRef(0);
   const reviewRequestGeneration = React.useRef(0);
   const editorDirtyRef = React.useRef(false);
   const handledIntent = React.useRef("");
+  const searchCommitTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const search = listFilters.search;
+  const normalizedSearch = search.trim();
+  const [searchDraft, setSearchDraft] = React.useState(search);
   const postingQueue = listFilters.queue || (initialView === "posting" && listFilters.status !== "All" ? "all" : savedPostingQueue || "needs-action");
   const status = initialView === "posting" && postingQueue !== "all" ? "All" : listFilters.status;
   const startDate = listFilters.startDate;
@@ -120,7 +133,18 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   const sort = listFilters.sort;
   const page = listFilters.page;
   const pageSize = listFilters.pageSize;
-  const query = React.useMemo<AdjustingEntryQuery>(() => ({ page,pageSize,search,status,startDate,endDate,divisionId: division === "all" ? null : Number(division),departmentId: department === "all" ? null : Number(department),accountTypeId: accountType ? Number(accountType) : null,sort }), [page,pageSize,search,status,startDate,endDate,division,department,accountType,sort]);
+  const divisionId = division === "all" ? null : Number(division);
+  const departmentId = department === "all" ? null : Number(department);
+  const accountTypeId = accountType ? Number(accountType) : null;
+  const query = React.useMemo<AdjustingEntryQuery>(() => ({ page,pageSize,search:normalizedSearch || undefined,status,startDate,endDate,divisionId,departmentId,accountTypeId,sort }), [page,pageSize,normalizedSearch,status,startDate,endDate,divisionId,departmentId,accountTypeId,sort]);
+  const summaryQuery = React.useMemo<AdjustingEntrySummaryQuery>(() => ({ search:normalizedSearch || undefined,startDate,endDate,divisionId,departmentId,accountTypeId }), [normalizedSearch,startDate,endDate,divisionId,departmentId,accountTypeId]);
+  const listQuery = React.useMemo<AdjustingEntryQuery>(() => {
+    if (initialView !== "posting" || postingQueue === "all") return query;
+    const queueStatus = postingQueue === "needs-action" ? "Needs action" : postingQueue === "submitted" ? "Submitted" : postingQueue === "approved" ? "Approved" : "Failed";
+    return { ...query, status:queueStatus };
+  }, [initialView,postingQueue,query]);
+  const hasEntryList = initialView === "posting" || initialView === "summary";
+  const listViewActive = hasEntryList && tab === initialView;
 
   React.useEffect(() => {
     setSelectedApprovalIds(new Set());
@@ -128,10 +152,10 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   }, [tab,page,pageSize,search,status,startDate,endDate,division,department,accountType,postingQueue]);
 
   React.useEffect(() => {
-    if (!lookups) return;
-    const eligibleIds = new Set(entries.filter(entry => entry.entryOrigin === "MANUAL" && availableActions(entry).includes("approve") && !isSelfApproval(entry, lookups.access.userId)).map(entry => entry.id));
+    if (!access) return;
+    const eligibleIds = new Set(entries.filter(entry => entry.entryOrigin === "MANUAL" && availableActions(entry).includes("approve") && !isSelfApproval(entry, access.userId)).map(entry => entry.id));
     setSelectedApprovalIds(current => new Set([...current].filter(id => eligibleIds.has(id))));
-  }, [entries, lookups]);
+  }, [entries, access]);
 
   React.useEffect(() => { latestSearchParams.current = searchParamText; }, [searchParamText]);
 
@@ -150,9 +174,36 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
     updateListQuery({ ...updates, page:"0" });
   }, [updateListQuery]);
 
+  const cancelPendingSearchCommit = React.useCallback(() => {
+    if (searchCommitTimer.current) clearTimeout(searchCommitTimer.current);
+    searchCommitTimer.current = null;
+  }, []);
+
+  const handleSearchChange = React.useCallback((value: string) => {
+    setSearchDraft(value);
+    cancelPendingSearchCommit();
+    searchCommitTimer.current = setTimeout(() => {
+      searchCommitTimer.current = null;
+      updateFilters({ search:value || null });
+    }, 250);
+  }, [cancelPendingSearchCommit,updateFilters]);
+
+  React.useEffect(() => { setSearchDraft(search); }, [search]);
+
+  React.useEffect(() => {
+    const syncSearchFromLocation = () => {
+      cancelPendingSearchCommit();
+      setSearchDraft(parseListFilters(new URLSearchParams(window.location.search)).search);
+    };
+    window.addEventListener("popstate", syncSearchFromLocation);
+    return () => window.removeEventListener("popstate", syncSearchFromLocation);
+  }, [cancelPendingSearchCommit]);
+
+  React.useEffect(() => () => cancelPendingSearchCommit(), [cancelPendingSearchCommit]);
+
   function selectPostingQueue(value: PostingQueue) {
-    if (lookups) {
-      try { window.localStorage.setItem(`aje-posting-queue:${lookups.access.userId}`, value); } catch { /* Storage can be unavailable in private contexts. */ }
+    if (access) {
+      try { window.localStorage.setItem(`aje-posting-queue:${access.userId}`, value); } catch { /* Storage can be unavailable in private contexts. */ }
     }
     setSavedPostingQueue(value);
     updateListQuery({ queue:value, status:null, page:"0" });
@@ -160,24 +211,47 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
 
   React.useEffect(() => {
     let active = true;
-    Promise.all([api.access(),api.accounts(),fetchDepartmentOptions(),fetchDivisionOptions(),api.period()])
-      .then(([access,accounts,departments,divisions,cutoff]) => { if (active) { setLookups({ access,accounts,departments,divisions }); setPeriod(cutoff); setInitialError(""); } })
-      .catch(e => { if (active) setInitialError(e instanceof Error ? e.message : "Unable to load Adjusting Entries"); });
+    const needsAccess = initialView === "new" || initialView === "posting";
+    const needsCatalogs = initialView !== "audit";
+    const needsPeriod = initialView === "new" || initialView === "posting";
+
+    if (needsAccess) {
+      setAccessLoading(true);
+      setAccessError("");
+      api.access().then(value => { if (active) setAccess(value); })
+        .catch(e => { if (active) { setAccessError(e instanceof Error ? e.message : "Unable to load AJE permissions"); if (initialView === "posting") setQueuePreferenceLoaded(true); } })
+        .finally(() => { if (active) setAccessLoading(false); });
+    }
+    if (needsCatalogs) {
+      setCatalogsLoading(true);
+      setCatalogsError("");
+      Promise.all([api.accounts(),fetchDepartmentOptions(),fetchDivisionOptions()])
+        .then(([accounts,departments,divisions]) => { if (active) setCatalogs({ accounts,departments,divisions }); })
+        .catch(e => { if (active) setCatalogsError(e instanceof Error ? e.message : "Unable to load AJE lookup options"); })
+        .finally(() => { if (active) setCatalogsLoading(false); });
+    }
+    if (needsPeriod) {
+      setPeriodLoading(true);
+      setPeriodError("");
+      api.period().then(value => { if (active) setPeriod(value); })
+        .catch(e => { if (active) setPeriodError(e instanceof Error ? e.message : "Unable to load the accounting period cutoff"); })
+        .finally(() => { if (active) setPeriodLoading(false); });
+    }
     return () => { active = false; };
-  }, [lookupRevision]);
+  }, [initialView,lookupRevision]);
 
   React.useEffect(() => {
-    if (!lookups || queuePreferenceLoaded) return;
+    if (initialView !== "posting" || !access || queuePreferenceLoaded) return;
     let saved: PostingQueue | null = listFilters.queue;
     if (!saved) {
       try {
-        const stored = window.localStorage.getItem(`aje-posting-queue:${lookups.access.userId}`);
+        const stored = window.localStorage.getItem(`aje-posting-queue:${access.userId}`);
         if (stored && queueValues.includes(stored as PostingQueue)) saved = stored as PostingQueue;
       } catch { /* Storage can be unavailable in private contexts. */ }
     }
     setSavedPostingQueue(saved || "needs-action");
     setQueuePreferenceLoaded(true);
-  }, [lookups, listFilters.queue, queuePreferenceLoaded]);
+  }, [access,initialView,listFilters.queue,queuePreferenceLoaded]);
 
   React.useEffect(() => {
     if (initialView === "posting" && queuePreferenceLoaded) {
@@ -186,28 +260,48 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
     }
   }, [initialView, listFilters.queue, listFilters.status, postingQueue, queuePreferenceLoaded, updateListQuery]);
 
-  const reload = React.useCallback(async () => {
-    if (!lookups) return;
-    const generation = ++requestGeneration.current;
-    setLoading(true);
-    try {
-      const summaryQuery = initialView === "summary" || initialView === "posting" ? { ...query, status: "All" } : query;
-      const queueStatus = postingQueue === "needs-action" ? "Needs action" : postingQueue === "submitted" ? "Submitted" : postingQueue === "approved" ? "Approved" : postingQueue === "failed" ? "Failed" : query.status;
-      const listQuery = initialView === "posting" && postingQueue !== "all" ? { ...query, status: queueStatus } : query;
-      const [list,counts] = await Promise.all([api.list(listQuery),api.summary(summaryQuery)]);
-      if (generation !== requestGeneration.current) return;
-      setEntries(list.content); setTotalPages(list.totalPages); setTotalElements(list.totalElements); setSummary(counts); setError("");
-    } catch (e) { if (generation === requestGeneration.current) setError(e instanceof Error ? e.message : "Unable to load adjusting entries"); }
-    finally { if (generation === requestGeneration.current) setLoading(false); }
-  }, [initialView,lookups,query,postingQueue]);
+  React.useEffect(() => {
+    if (!listViewActive || (initialView === "posting" && !queuePreferenceLoaded)) {
+      setListLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setListLoading(true);
+    setListError("");
+    void api.list(listQuery, controller.signal)
+      .then(list => {
+        if (controller.signal.aborted) return;
+        setEntries(list.content);
+        setTotalPages(list.totalPages);
+        setTotalElements(list.totalElements);
+      })
+      .catch(e => { if (!controller.signal.aborted) setListError(e instanceof Error ? e.message : "Unable to load adjusting entries"); })
+      .finally(() => { if (!controller.signal.aborted) setListLoading(false); });
+    return () => controller.abort();
+  }, [initialView,listViewActive,queuePreferenceLoaded,listQuery,listRevision]);
 
   React.useEffect(() => {
-    const timer = setTimeout(() => void reload(),250);
-    return () => { clearTimeout(timer); };
-  }, [reload,revision]);
+    if (!listViewActive) {
+      setSummaryLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setSummaryLoading(true);
+    setSummaryError("");
+    void api.summary(summaryQuery, controller.signal)
+      .then(counts => { if (!controller.signal.aborted) setSummary(counts); })
+      .catch(e => { if (!controller.signal.aborted) setSummaryError(e instanceof Error ? e.message : "Unable to load adjusting entry summary"); })
+      .finally(() => { if (!controller.signal.aborted) setSummaryLoading(false); });
+    return () => controller.abort();
+  }, [listViewActive,summaryQuery,summaryRevision]);
+
+  function refreshEntriesAndSummary() {
+    setListRevision(value => value + 1);
+    setSummaryRevision(value => value + 1);
+  }
 
   React.useEffect(() => {
-    if (!lookups) return;
+    if (!access) return;
     const id = searchParams.get("editAjeId");
     const source = searchParams.get("sourceJeNo");
     const intent = id || source || "";
@@ -224,7 +318,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
     });
     load.catch(e => { if (active) setError(e instanceof Error ? e.message : "Unable to open linked adjusting entry"); });
     return () => { active = false; };
-  }, [initialView,lookups,searchParams]);
+  }, [access,initialView,searchParams]);
 
   function returnToEntryList() {
     if (!editorReturnTab) return;
@@ -269,7 +363,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
       setSelectedApprovalIds(current => new Set([...current].filter(id => !approved.includes(id))));
       setBulkConfirmEntries(null);
       setBulkResult({ approved: approved.length, failures });
-      setRevision(value => value + 1);
+      refreshEntriesAndSummary();
       if (failures.length) toast.error(`${approved.length} approved; ${failures.length} failed. Review the results below.`);
       else toast.success(`${approved.length} ${approved.length === 1 ? "entry" : "entries"} approved`);
     } finally {
@@ -303,12 +397,12 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
     commandLock.current = true; setBusy(true); setActionError("");
     try {
       const updated = await api.command(action.entry.id,action.action,action.entry.version,reason.trim() || undefined);
-      setAction(null); setRevision(v => v + 1); toast.success(`${actionLabels[action.action]} completed`);
+      setAction(null); refreshEntriesAndSummary(); toast.success(`${actionLabels[action.action]} completed`);
       if (reviewEntry?.id === updated.id) { setReviewEntry(updated); setReviewDetails(updated); }
       if (editorEntry?.id === updated.id || tab === "new") { setEditorEntry(updated); setEditorSeed(null); setReadOnly(updated.status !== "Draft"); setEditorKey(k => k + 1); }
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "The action failed");
-      setRevision(v => v + 1);
+      refreshEntriesAndSummary();
       try {
         const latest = await api.get(action.entry.id);
         setAction(current => current ? { ...current, entry: latest,
@@ -333,38 +427,42 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
     setEditorEntry(null); setEditorReturnTab(null); setReadOnly(false); setEditorKey(k => k + 1); setReversal(null); setTab("new");
   }
   function clearFilters() {
-    if (initialView === "posting" && lookups) {
-      try { window.localStorage.setItem(`aje-posting-queue:${lookups.access.userId}`, "all"); } catch { /* Storage can be unavailable in private contexts. */ }
+    cancelPendingSearchCommit();
+    setSearchDraft("");
+    if (initialView === "posting" && access) {
+      try { window.localStorage.setItem(`aje-posting-queue:${access.userId}`, "all"); } catch { /* Storage can be unavailable in private contexts. */ }
       setSavedPostingQueue("all");
     }
     updateListQuery({ search:null,status:null,startDate:null,endDate:null,divisionId:null,departmentId:null,accountTypeId:null,sort:null,page:"0",pageSize:null,...(initialView === "posting" ? { queue:"all" } : {}) });
   }
   const focusPosted = () => updateFilters({ status:"Posted",queue:"all" });
   const focusDrafts = () => updateFilters({ status:"Draft",queue:"all" });
-  const hasFilters = Boolean(search || status !== "All" || startDate || endDate || division !== "all" || department !== "all" || accountType || sort !== "transactionDate,desc" || page > 0 || pageSize !== 20 || (initialView === "posting" && postingQueue !== "all"));
+  const hasFilters = Boolean(searchDraft.trim() || status !== "All" || startDate || endDate || division !== "all" || department !== "all" || accountType || sort !== "transactionDate,desc" || page > 0 || pageSize !== 20 || (initialView === "posting" && postingQueue !== "all"));
   const summaryDateScope = startDate && endDate ? `${formatDate(startDate)} – ${formatDate(endDate)}` : startDate ? `From ${formatDate(startDate)}` : endDate ? `Through ${formatDate(endDate)}` : "All dates";
-  const accountTypes = React.useMemo(() => [...new Map((lookups?.accounts || []).filter(a => a.accountTypeId).map(a => [a.accountTypeId,{ id:a.accountTypeId!,name:a.accountTypeName || "Other" }])).values()], [lookups]);
+  const accountTypes = React.useMemo(() => [...new Map((catalogs?.accounts || []).filter(a => a.accountTypeId).map(a => [a.accountTypeId,{ id:a.accountTypeId!,name:a.accountTypeName || "Other" }])).values()], [catalogs]);
+  const lookupErrors = [accessError,catalogsError,periodError].filter(Boolean);
   const pageHeader = <div className="flex flex-wrap items-start justify-between gap-3"><div>
     <h1 className="text-xl font-semibold">{tab === "posting" ? "Posting of Entries" : tab === "new" ? "New Adjusting Entry" : tab === "audit" ? "Audit Trail" : "Summary"}</h1>
     <p className="text-sm text-muted-foreground">{tab === "posting" ? "Review adjusting entries and process approvals and postings." : tab === "new" ? "Prepare a balanced adjustment and submit it for review." : tab === "audit" ? "Chronological journal actions, revisions, supporting files, and period controls." : "Review adjusting entry workflow totals and journal activity."}</p>
-    {(tab === "posting" || tab === "new") && <p className="mt-1 text-xs text-muted-foreground">Closed through: {period?.closedThroughDate ? formatDate(period.closedThroughDate) : "No cutoff set"}</p>}
+    {(tab === "posting" || tab === "new") && <p className="mt-1 text-xs text-muted-foreground">Closed through: {periodLoading ? "Loading cutoff…" : periodError ? "Unavailable" : period?.closedThroughDate ? formatDate(period.closedThroughDate) : "No cutoff set"}</p>}
   </div><div className="flex flex-wrap gap-2">
-    {tab === "posting" && <><Button variant="outline" onClick={() => setRevision(v => v + 1)}>Refresh</Button><Button variant="outline" disabled={!period} onClick={() => setPeriodOpen(true)}>Period controls</Button></>}
+    {tab === "posting" && <><Button variant="outline" onClick={refreshEntriesAndSummary}>Refresh</Button><Button variant="outline" disabled={!period || periodLoading} onClick={() => setPeriodOpen(true)}>Period controls</Button></>}
     {tab === "summary" && <><a className="inline-flex h-9 items-center rounded-md border bg-background px-3 text-sm font-medium hover:bg-accent" href={ajeReportUrl(query,"csv")}>Export CSV</a><a className="inline-flex h-9 items-center rounded-md border bg-background px-3 text-sm font-medium hover:bg-accent" href={ajeReportUrl(query,"html")} target="_blank" rel="noreferrer">Print summary</a></>}
-    {(tab === "audit" || tab === "summary") && <Button variant="outline" onClick={() => setRevision(v => v + 1)}>Refresh</Button>}
+    {(tab === "audit" || tab === "summary") && <Button variant="outline" onClick={() => tab === "audit" ? setAuditRevision(v => v + 1) : refreshEntriesAndSummary()}>Refresh</Button>}
   </div></div>;
-  if (initialError) return <div className="space-y-5 p-4 sm:p-6">{pageHeader}<div className="space-y-3"><p role="alert" className="text-destructive">{initialError}</p><Button variant="outline" onClick={() => setLookupRevision(v => v + 1)}>Retry</Button></div></div>;
-  if (!lookups) return <div className="space-y-5 p-4 text-muted-foreground sm:p-6">{pageHeader}<p>Loading Adjusting Entries…</p></div>;
   return <div className="space-y-5 p-4 sm:p-6">
     {pageHeader}
+    {lookupErrors.length > 0 && tab !== "audit" && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"><span>{lookupErrors.join(" · ")}</span><Button variant="outline" size="sm" onClick={() => { setAccess(null); setCatalogs(null); setPeriod(null); setSavedPostingQueue(null); setQueuePreferenceLoaded(false); setLookupRevision(value => value + 1); }}>Retry lookups</Button></div>}
     {error && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
+    {listViewActive && listError && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{listError}</div>}
+    {listViewActive && summaryError && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{summaryError}</div>}
     {tab === "new" && <>
       {editorReturnTab && <div className="flex justify-start"><Button type="button" variant="outline" onClick={returnToEntryList}>{editorReturnTab === "posting" ? "Back to postings" : "Back to summary"}</Button></div>}
-      <AjeEntryEditor key={editorKey} initialEntry={editorEntry} seed={editorSeed} readOnly={readOnly} hideTitle={tab === "new"} dirtyRef={editorDirtyRef} access={lookups.access} accounts={lookups.accounts} departments={lookups.departments} divisions={lookups.divisions} onSaved={() => setRevision(v => v + 1)} onAction={requestAction} />
+      {(!access || !catalogs) ? <p role="status" className="text-sm text-muted-foreground">{accessLoading || catalogsLoading ? "Loading entry form…" : "The entry form is unavailable until its required lookup data loads."}</p> : <AjeEntryEditor key={editorKey} initialEntry={editorEntry} seed={editorSeed} readOnly={readOnly} hideTitle={tab === "new"} dirtyRef={editorDirtyRef} access={access} accounts={catalogs.accounts} departments={catalogs.departments} divisions={catalogs.divisions} onSaved={refreshEntriesAndSummary} onAction={requestAction} />}
     </>}
-    {tab === "audit" && <AjeAuditTrail revision={revision} />}
+    {tab === "audit" && <AjeAuditTrail revision={auditRevision} />}
     {(tab === "posting" || tab === "summary") && <>
-      {tab === "summary" && <AdjustingEntriesSummaryCards summary={summary} loading={loading} selectedStatus={status} onStatusSelect={value => updateFilters({ status:value === "All" ? null : value,queue:"all" })} showPostedAmounts onShowPosted={focusPosted} onInvestigatePosted={focusPosted} onShowUnbalancedDrafts={focusDrafts} />}
+      {tab === "summary" && <AdjustingEntriesSummaryCards summary={summary} loading={summaryLoading} selectedStatus={status} onStatusSelect={value => updateFilters({ status:value === "All" ? null : value,queue:"all" })} showPostedAmounts onShowPosted={focusPosted} onInvestigatePosted={focusPosted} onShowUnbalancedDrafts={focusDrafts} />}
       {tab === "summary" && <p className="text-xs text-muted-foreground">Accounting dates: {summaryDateScope}. Counts and posted amounts also reflect the search, division, department, and account-type filters. Status filters narrow the journal list only.</p>}
       {tab === "posting" && <div className="flex flex-wrap items-center gap-2" aria-label="Posting queue view">
         {([
@@ -375,19 +473,19 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
           ["failed", "Posting failed", summary.failed],
         ] as const).map(([value, label, count]) => <Button key={value} type="button" size="sm" aria-pressed={postingQueue === value && (value !== "all" || status === "All")} variant={postingQueue === value && (value !== "all" || status === "All") ? "default" : "outline"} onClick={() => selectPostingQueue(value)}>{label}<span className="ml-1 rounded-full bg-background/20 px-1.5 text-xs">{count}</span></Button>)}
       </div>}
-      <AdjustingEntriesFilters search={search} startDate={startDate} endDate={endDate} status={status} pageSize={pageSize} filterDivisionId={division} filterDepartmentId={department} statusOptions={statuses} pageSizes={[10,20,50,100]}
-        filterDivisionOptions={[{ value:"all",label:"All divisions" },...lookups.divisions.map(d => ({ value:String(d.id),label:d.name }))]}
-        filterDepartmentOptions={[{ value:"all",label:"All departments" },...lookups.departments.filter(d => division === "all" || !d.parentDivision || String(d.parentDivision) === division).map(d => ({ value:String(d.id),label:d.name }))]}
-        hasActiveFilters={hasFilters} moreFiltersCount={Number(division !== "all") + Number(department !== "all") + Number(Boolean(accountType))} onSearchChange={v => updateFilters({ search:v || null })} onStartDateChange={v => updateFilters({ startDate:v || null })} onEndDateChange={v => updateFilters({ endDate:v || null })}
+      <AdjustingEntriesFilters search={searchDraft} startDate={startDate} endDate={endDate} status={status} pageSize={pageSize} filterDivisionId={division} filterDepartmentId={department} statusOptions={statuses} pageSizes={[10,20,50,100]}
+        filterDivisionOptions={[{ value:"all",label:"All divisions" },...(catalogs?.divisions || []).map(d => ({ value:String(d.id),label:d.name }))]}
+        filterDepartmentOptions={[{ value:"all",label:"All departments" },...(catalogs?.departments || []).filter(d => division === "all" || !d.parentDivision || String(d.parentDivision) === division).map(d => ({ value:String(d.id),label:d.name }))]}
+        hasActiveFilters={hasFilters} moreFiltersCount={Number(division !== "all") + Number(department !== "all") + Number(Boolean(accountType))} onSearchChange={handleSearchChange} onStartDateChange={v => updateFilters({ startDate:v || null })} onEndDateChange={v => updateFilters({ endDate:v || null })}
         onStatusChange={v => updateFilters({ status:v === "All" ? null : v,queue:"all" })} onPageSizeChange={v => updateListQuery({ pageSize:String(v),page:"0" })} onDivisionChange={v => updateFilters({ divisionId:v === "all" ? null : v,departmentId:null })} onDepartmentChange={v => updateFilters({ departmentId:v === "all" ? null : v })} onClearFilters={clearFilters}>
         <div className="space-y-1.5"><Label htmlFor="aje-account-type" className="text-xs font-medium text-muted-foreground">Account type</Label><select id="aje-account-type" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={accountType} onChange={e => updateFilters({ accountTypeId:e.target.value || null })}><option value="">All account types</option>{accountTypes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
         <div className="space-y-1.5"><Label htmlFor="aje-sort" className="text-xs font-medium text-muted-foreground">Sort</Label><select id="aje-sort" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={sort} onChange={e => updateFilters({ sort:e.target.value === "transactionDate,desc" ? null : e.target.value })}><option value="transactionDate,desc">Accounting date: newest</option><option value="transactionDate,asc">Accounting date: oldest</option><option value="id,desc">Newest created</option><option value="jeNo,asc">Journal number</option><option value="status,asc">Status</option></select></div>
       </AdjustingEntriesFilters>
-      <AdjustingEntriesTable entries={entries} loading={loading || busy || bulkBusy} userId={lookups.access.userId} readOnly={tab === "summary"} onView={(entry,edit) => { if ((initialView === "posting" || initialView === "summary") && !edit) void openReview(entry); else void view(entry,edit); }} onAction={requestAction} onReverse={entry => void previewReversal(entry)} bulkActionsEnabled={tab === "posting"} selectedEntryIds={selectedApprovalIds} onToggleEntrySelection={toggleApprovalSelection} onTogglePageSelection={togglePageApprovalSelection} onBulkApprove={requestBulkApproval} bulkBusy={bulkBusy} />
+      <AdjustingEntriesTable entries={entries} loading={listLoading || busy || bulkBusy} userId={access?.userId} readOnly={tab === "summary" || !access} onView={(entry,edit) => { if ((initialView === "posting" || initialView === "summary") && !edit) void openReview(entry); else void view(entry,edit); }} onAction={requestAction} onReverse={entry => void previewReversal(entry)} bulkActionsEnabled={tab === "posting" && Boolean(access)} selectedEntryIds={selectedApprovalIds} onToggleEntrySelection={toggleApprovalSelection} onTogglePageSelection={togglePageApprovalSelection} onBulkApprove={requestBulkApproval} bulkBusy={bulkBusy} />
       {bulkResult && <div role="status" className="space-y-2 rounded-md border bg-muted/20 p-3 text-sm"><p>{bulkResult.approved} approved · {bulkResult.failures.length} failed</p>{bulkResult.failures.length > 0 && <ul className="list-inside list-disc text-destructive">{bulkResult.failures.map(failure => <li key={failure.jeNo}><span className="font-medium">{failure.jeNo}:</span> {failure.message}</li>)}</ul>}</div>}
-      <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>{totalElements > 0 ? `Showing ${page * pageSize + 1}–${Math.min((page + 1) * pageSize, totalElements)} of ${totalElements} entries · Page ${page + 1} of ${Math.max(totalPages, 1)}` : "0 entries"}</span><div className="flex gap-2"><Button variant="outline" size="icon-sm" aria-label="Go to first page" disabled={page === 0 || loading} onClick={() => updateListQuery({ page:"0" })}><ChevronsLeft className="h-4 w-4" /></Button><Button variant="outline" size="sm" disabled={page === 0 || loading} onClick={() => updateListQuery({ page:String(page - 1) })}>Previous</Button><Button variant="outline" size="sm" disabled={loading || page + 1 >= totalPages} onClick={() => updateListQuery({ page:String(page + 1) })}>Next</Button><Button variant="outline" size="icon-sm" aria-label="Go to last page" disabled={loading || page + 1 >= totalPages} onClick={() => updateListQuery({ page:String(Math.max(0, totalPages - 1)) })}><ChevronsRight className="h-4 w-4" /></Button></div></div>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>{totalElements > 0 ? `Showing ${page * pageSize + 1}–${Math.min((page + 1) * pageSize, totalElements)} of ${totalElements} entries · Page ${page + 1} of ${Math.max(totalPages, 1)}` : "0 entries"}</span><div className="flex gap-2"><Button variant="outline" size="icon-sm" aria-label="Go to first page" disabled={page === 0 || listLoading} onClick={() => updateListQuery({ page:"0" })}><ChevronsLeft className="h-4 w-4" /></Button><Button variant="outline" size="sm" disabled={page === 0 || listLoading} onClick={() => updateListQuery({ page:String(page - 1) })}>Previous</Button><Button variant="outline" size="sm" disabled={listLoading || page + 1 >= totalPages} onClick={() => updateListQuery({ page:String(page + 1) })}>Next</Button><Button variant="outline" size="icon-sm" aria-label="Go to last page" disabled={listLoading || page + 1 >= totalPages} onClick={() => updateListQuery({ page:String(Math.max(0, totalPages - 1)) })}><ChevronsRight className="h-4 w-4" /></Button></div></div>
     </>}
-    {periodOpen && period && <AjePeriodDialog period={period} onClose={() => setPeriodOpen(false)} onSaved={value => {setPeriod(value);setRevision(v => v + 1);}} />}
+    {periodOpen && period && <AjePeriodDialog period={period} onClose={() => setPeriodOpen(false)} onSaved={value => setPeriod(value)} />}
     <AlertDialog open={action !== null} onOpenChange={open => { if (!open && !busy) setAction(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{action ? `${actionLabels[action.action]} ${action.entry.jeNo}?` : "Confirm action"}</AlertDialogTitle><AlertDialogDescription>{action?.action === "post" || action?.action === "retry" ? "This commits the approved entry to the General Ledger. Posted entries are read-only." : "This action updates the journal workflow and records an audit event."}</AlertDialogDescription></AlertDialogHeader>
       {action && <div className="text-sm">Debit {money(action.entry.totalDebit)} · Credit {money(action.entry.totalCredit)}</div>}
       {action && reasonRequired.has(action.action) && <div className="space-y-1"><Label htmlFor="aje-action-reason">Reason *</Label><Textarea id="aje-action-reason" maxLength={4000} value={reason} disabled={busy} onChange={e => setReason(e.target.value)} /></div>}
@@ -402,6 +500,6 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
       <div className="max-h-80 overflow-auto"><table className="w-full text-sm"><thead><tr><th className="p-2 text-left">Account</th><th className="p-2 text-right">Original</th><th className="p-2 text-right">Reversed</th><th className="p-2 text-right">Remaining</th></tr></thead><tbody>{reversal?.lines.map(d => <tr key={d.originalDetailId} className="border-t"><td className="p-2">{d.accountNumber} · {d.accountTitle}<p className="text-xs text-muted-foreground">{d.departmentName}</p></td><td className="p-2 text-right">{money(d.originalDebit + d.originalCredit)}</td><td className="p-2 text-right">{money(d.reversedAmount)}</td><td className="p-2 text-right">{money(d.remainingAmount)}</td></tr>)}</tbody></table></div>
       <DialogFooter><Button variant="outline" onClick={() => setReversal(null)}>Cancel</Button><Button variant="outline" disabled={!reversal?.lines.some(d => d.remainingAmount > 0)} onClick={() => createReversal("PARTIAL")}>Partial / remaining reversal</Button><Button disabled={!reversal?.canFullReverse} onClick={() => createReversal("FULL")}>Full reversal</Button></DialogFooter>
     </DialogContent></Dialog>
-    {(initialView === "posting" || initialView === "summary") && <AjeReviewDialog open={reviewEntry !== null} journalNumber={reviewEntry?.jeNo || null} entry={reviewDetails} attachments={reviewAttachments} loading={reviewLoading} error={reviewError} attachmentsError={reviewAttachmentsError} canReview={tab === "posting"} userId={lookups.access.userId} onAction={requestAction} onClose={closeReview} />}
+    {(initialView === "posting" || initialView === "summary") && <AjeReviewDialog open={reviewEntry !== null} journalNumber={reviewEntry?.jeNo || null} entry={reviewDetails} attachments={reviewAttachments} loading={reviewLoading} error={reviewError} attachmentsError={reviewAttachmentsError} canReview={tab === "posting" && Boolean(access)} userId={access?.userId} onAction={requestAction} onClose={closeReview} />}
   </div>;
 }

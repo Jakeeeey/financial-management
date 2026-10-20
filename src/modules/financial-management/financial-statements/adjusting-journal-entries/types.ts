@@ -157,6 +157,8 @@ export type AdjustingEntryQuery = {
   accountTypeId?: number | null;
 };
 
+export type AdjustingEntrySummaryQuery = Pick<AdjustingEntryQuery, "search" | "startDate" | "endDate" | "divisionId" | "departmentId" | "accountTypeId">;
+
 export type AdjustingEntrySourceJournal = {
   jeNo: string;
   jeGroupCounter: number | null;

@@ -52,19 +52,35 @@ export async function uploadSupportingFile(id: string, file: File) {
       { message: error instanceof Error ? error.message : "Supporting document upload failed." }, { status: 502 }));
   }
 }
-export async function downloadSupportingFile(id: string, attachmentId: string, inlineImagePreview = false) {
+export type SupportingFileView = "download" | "thumbnail" | "preview";
+
+export async function downloadSupportingFile(id: string, attachmentId: string, view: SupportingFileView = "download") {
   const metadata = await proxySpring(buildSpringItemPath(id, `attachments/${encodeURIComponent(attachmentId)}`));
   if (!metadata.ok) return metadata;
   const file = await metadata.json() as ReservedFile;
+  const normalizedMimeType = file.mimeType.trim().toLowerCase().split(";")[0];
+  const canPreviewInline = INLINE_PREVIEW_MIME_TYPES.has(normalizedMimeType);
+  if (view !== "download" && !canPreviewInline) {
+    return copySessionCookies(metadata, NextResponse.json({ message: "Only supported image files can be previewed." }, { status: 415 }));
+  }
+
   const service = directus();
-  const response = await fetch(`${service.base}/assets/${encodeURIComponent(file.fileId)}`,
-    { headers: service.headers, cache: "no-store" });
+  const assetUrl = new URL(`${service.base}/assets/${encodeURIComponent(file.fileId)}`);
+  // Directus image transformations use Sharp, which does not support BMP input.
+  const directusTransformSupported = normalizedMimeType !== "image/bmp";
+  if (view === "thumbnail" && directusTransformSupported) assetUrl.searchParams.set("key", "system-small-cover");
+  else if (view === "preview" && normalizedMimeType !== "image/gif" && directusTransformSupported) assetUrl.searchParams.set("key", "system-large-contain");
+  const response = await fetch(assetUrl, { headers: service.headers, cache: "no-store" });
   if (!response.ok) return copySessionCookies(metadata, NextResponse.json({ message: "Supporting file is unavailable." }, { status: 502 }));
-  const canPreviewInline = inlineImagePreview && INLINE_PREVIEW_MIME_TYPES.has(file.mimeType.trim().toLowerCase().split(";")[0]);
+  const responseMimeType = response.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase();
+  if (view !== "download" && !responseMimeType?.startsWith("image/")) {
+    return copySessionCookies(metadata, NextResponse.json({ message: "The image preview returned an unsupported format." }, { status: 502 }));
+  }
+
   return copySessionCookies(metadata, new NextResponse(response.body, {
     headers: {
-      "Content-Type": file.mimeType,
-      "Content-Disposition": `${canPreviewInline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
+      "Content-Type": view === "download" ? file.mimeType : responseMimeType!,
+      "Content-Disposition": `${view === "download" ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
       "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox",
     },
   }));
