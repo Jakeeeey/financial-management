@@ -308,6 +308,7 @@ export async function validateSupplierMemoCaps(
     supplierId: number,
     lines: MemoCapInput[],
     excludeDisbursementId?: number,
+    validateDirection = true,
 ): Promise<MemoCapError | null> {
     const requested = new Map<string, number>();
     for (const line of lines) {
@@ -391,8 +392,8 @@ export async function validateSupplierMemoCaps(
         }
 
         const matchingLines = lines.filter((line) => normalizedReference(line.referenceNo) === reference);
-        const expectedSign = Number(memo.type) === 1 ? -1 : 1;
-        const hasWrongDirection = matchingLines.some((line) => {
+        const expectedSign = Number(memo.type) === 2 ? -1 : 1;
+        const hasWrongDirection = validateDirection && matchingLines.some((line) => {
             const amount = asNumber(line.amount);
             return amount !== undefined && amount !== 0 && Math.sign(amount) !== expectedSign;
         });
@@ -407,7 +408,7 @@ export async function validateSupplierMemoCaps(
                 lockingTrDocNo: balance.lockingTrDocNo,
                 lockingTrStatus: balance.lockingTrStatus,
                 lockingTrCount: balance.lockingTrCount,
-                message: `${reference} must be applied as a ${expectedSign < 0 ? "credit" : "debit"} amount.`,
+                message: `${reference} must be applied as a ${expectedSign < 0 ? "debit" : "credit"} amount.`,
             };
         }
 
