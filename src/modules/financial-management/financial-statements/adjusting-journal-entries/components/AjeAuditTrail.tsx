@@ -41,6 +41,13 @@ function groupEvents(events: AjeAuditEvent[], dayCounts: Record<string, number>)
   return [...groups.entries()].map(([date, rows]) => [date, rows, dayCounts[date] ?? rows.length] as const);
 }
 
+function auditChangeValue(field: string, value: string | null | undefined) {
+  if (!value) return "—";
+  if (field !== "Journal lines") return value;
+  return value.replace(/(\bDebit\s+)(-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)(,\s*Credit\s+)(-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)/g,
+    (_match, debitLabel: string, debit: string, creditLabel: string, credit: string) => `${debitLabel}${money(Number(debit))}${creditLabel}${money(Number(credit))}`);
+}
+
 function actionBadgeClass(action: string) {
   switch (action) {
     case "Rejected":
@@ -257,9 +264,9 @@ export function AjeAuditTrail({ entryId, revision }: { entryId?: number | null; 
             {event.reason && <p className="rounded-md bg-muted/40 p-3 text-sm"><span className="font-medium">Reason:</span> {event.reason}</p>}
             {otherChanges.length === 1 && <div className="rounded-md border bg-muted/20 p-3 text-sm" aria-label={`Change to ${otherChanges[0].field}`}>
               <span className="font-medium">{otherChanges[0].field}:</span>{" "}
-              <span className="whitespace-pre-wrap break-words text-muted-foreground">{otherChanges[0].before || "—"}</span>{" "}
+              <span className="whitespace-pre-wrap break-words text-muted-foreground">{auditChangeValue(otherChanges[0].field, otherChanges[0].before)}</span>{" "}
               <span aria-label="changed to">→</span>{" "}
-              <span className="whitespace-pre-wrap break-words">{otherChanges[0].after || "—"}</span>
+              <span className="whitespace-pre-wrap break-words">{auditChangeValue(otherChanges[0].field, otherChanges[0].after)}</span>
             </div>}
             {event.action === "Supporting Document Added" && event.entryId != null && (() => {
               const attachmentChange = event.changes.find(change => change.field === "Supporting document");
@@ -295,8 +302,8 @@ export function AjeAuditTrail({ entryId, revision }: { entryId?: number | null; 
               <div className="mt-2 space-y-2">
                 {otherChanges.map((change, index) => <div key={index} className="grid gap-2 rounded-md border bg-muted/20 p-3 sm:grid-cols-[minmax(8rem,0.7fr)_1fr_1fr]">
                   <p className="font-medium sm:row-span-2">{change.field}</p>
-                  <div><p className="text-xs text-muted-foreground">Before</p><p className="mt-1 whitespace-pre-wrap break-words text-sm">{change.before || "—"}</p></div>
-                  <div><p className="text-xs text-muted-foreground">After</p><p className="mt-1 whitespace-pre-wrap break-words text-sm">{change.after || "—"}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Before</p><p className="mt-1 whitespace-pre-wrap break-words text-sm">{auditChangeValue(change.field, change.before)}</p></div>
+                  <div><p className="text-xs text-muted-foreground">After</p><p className="mt-1 whitespace-pre-wrap break-words text-sm">{auditChangeValue(change.field, change.after)}</p></div>
                 </div>)}
               </div>
             </details>}

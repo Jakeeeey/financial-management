@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AdjustingEntriesFilters } from "./components/AdjustingEntriesFilters";
-import { AdjustingEntriesTable, actionLabels, availableActions, isSelfApproval } from "./components/AdjustingEntriesTable";
+import { AdjustingEntriesTable, actionLabelForEntry, availableActions, isSelfApproval } from "./components/AdjustingEntriesTable";
 import { AdjustingEntriesSummaryCards } from "./components/AdjustingEntriesSummaryCards";
 import { AjePeriodDialog } from "./components/AjePeriodDialog";
 import { AjeEntryEditorSkeleton } from "./components/AjeEntryEditorSkeleton";
@@ -303,16 +303,27 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
     setSummaryRevision(value => value + 1);
   }
 
+  function handleEditorSaved(saveCompleted: boolean) {
+    refreshEntriesAndSummary();
+    if (initialView === "new" && saveCompleted) {
+      setEditorEntry(null);
+      setEditorSeed(null);
+      setEditorReturnTab(null);
+      setReadOnly(false);
+      setEditorKey(key => key + 1);
+    }
+  }
+
   React.useEffect(() => {
     if (!access) return;
-    const id = searchParams.get("editAjeId");
-    const source = searchParams.get("sourceJeNo");
+    const id = initialView === "posting" ? searchParams.get("editAjeId") : null;
+    const source = initialView === "new" ? searchParams.get("sourceJeNo") : null;
     const intent = id || source || "";
     if (!intent || handledIntent.current === intent) return;
     handledIntent.current = intent;
     let active = true;
     const load = id ? api.get(Number(id)).then(entry => {
-      if (active) { setEditorEntry(entry); setEditorSeed(null); setEditorReturnTab(initialView === "posting" || initialView === "summary" ? initialView : null); setReadOnly(searchParams.get("mode") === "view" || entry.status !== "Draft"); setEditorKey(k => k + 1); setTab("new"); }
+     if (active) { setEditorEntry(entry); setEditorSeed(null); setEditorReturnTab(initialView === "posting" || initialView === "summary" ? initialView : null); setReadOnly(searchParams.get("mode") === "view" || entry.status !== "Draft" || entry.creatorId !== access.userId); setEditorKey(k => k + 1); setTab("new"); }
     }) : api.sourceJournalEntry(source!).then(original => {
       if (active) {
         setEditorEntry(null); setEditorReturnTab(null); setReadOnly(false); setEditorSeed({ reference:original.transactionRef || original.jeNo,transactionDate:todayManila(),description:`Adjustment for ${original.jeNo}: ${original.description || ""}`,divisionId:null,departmentId:null,sourceJeNo:original.jeNo,details:original.details.filter(d => d.coaId != null).map(d => ({ coaId:d.coaId!,debit:d.debit,credit:d.credit,departmentId:d.departmentId ?? null })) });
@@ -375,7 +386,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
     }
   }
   async function view(entry: AdjustingEntry, edit: boolean) {
-    try { setEditorEntry(await api.get(entry.id)); setEditorSeed(null); setEditorReturnTab(tab === "posting" || tab === "summary" ? tab : null); setReadOnly(!edit || entry.status !== "Draft" || entry.entryOrigin !== "MANUAL"); setEditorKey(k => k + 1); setTab("new"); }
+    try { const details = await api.get(entry.id); setEditorEntry(details); setEditorSeed(null); setEditorReturnTab(tab === "posting" || tab === "summary" ? tab : null); setReadOnly(!edit || details.status !== "Draft" || details.entryOrigin !== "MANUAL" || details.creatorId !== access?.userId); setEditorKey(k => k + 1); setTab("new"); }
     catch (e) { setError(e instanceof Error ? e.message : "Unable to open this entry"); }
   }
   function openReview(entry: AdjustingEntry) {
@@ -407,9 +418,9 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
     commandLock.current = true; setBusy(true); setActionError("");
     try {
       const updated = await api.command(action.entry.id,action.action,action.entry.version,reason.trim() || undefined);
-      setAction(null); refreshEntriesAndSummary(); toast.success(`${actionLabels[action.action]} completed`);
+      setAction(null); refreshEntriesAndSummary(); toast.success(`${actionLabelForEntry(action.entry, action.action)} completed · ${updated.jeNo || `Entry #${updated.id}`}`);
       if (reviewEntry?.id === updated.id) { setReviewEntry(updated); setReviewDetails(updated); }
-      if (editorEntry?.id === updated.id || tab === "new") { setEditorEntry(updated); setEditorSeed(null); setReadOnly(updated.status !== "Draft"); setEditorKey(k => k + 1); }
+      if (editorEntry?.id === updated.id || (initialView === "posting" && tab === "new")) { setEditorEntry(updated); setEditorSeed(null); setReadOnly(updated.status !== "Draft"); setEditorKey(k => k + 1); }
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "The action failed");
       refreshEntriesAndSummary();
@@ -418,7 +429,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
         setAction(current => current ? { ...current, entry: latest,
           action: latest.status === "Failed" && ["post","retry"].includes(current.action) ? "retry" : current.action } : null);
         if (reviewEntry?.id === latest.id) { setReviewEntry(latest); setReviewDetails(latest); }
-        if (editorEntry?.id === latest.id || tab === "new") {
+        if (editorEntry?.id === latest.id || (initialView === "posting" && tab === "new")) {
           setEditorEntry(latest); setReadOnly(latest.status !== "Draft"); setEditorKey(k => k + 1);
         }
       } catch { /* Keep the original error if the service is unavailable. */ }
@@ -434,7 +445,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
     const original = reversal.original;
     setEditorSeed({ reference:`REV-${original.reference || original.jeNo}`.slice(0,255),transactionDate:todayManila(),description:`Reversal of ${original.jeNo}: ${original.description}`,divisionId:original.divisionId,departmentId:null,sourceJeNo:original.jeNo,entryKind:"REVERSAL",originalEntryId:original.id,reversalMode:mode,
       details:reversal.lines.filter(d => d.remainingAmount > 0).map(d => ({ coaId:d.coaId,departmentId:d.departmentId,description:d.description || "",originalDetailId:d.originalDetailId,debit:d.originalCredit > 0 ? d.remainingAmount : 0,credit:d.originalDebit > 0 ? d.remainingAmount : 0 })) });
-    setEditorEntry(null); setEditorReturnTab(null); setReadOnly(false); setEditorKey(k => k + 1); setReversal(null); setTab("new");
+    setEditorEntry(null); setEditorReturnTab("posting"); setReadOnly(false); setEditorKey(k => k + 1); setReversal(null); setTab("new");
   }
   function clearFilters() {
     cancelPendingSearchCommit();
@@ -451,9 +462,10 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   const summaryDateScope = startDate && endDate ? `${formatDate(startDate)} – ${formatDate(endDate)}` : startDate ? `From ${formatDate(startDate)}` : endDate ? `Through ${formatDate(endDate)}` : "All dates";
   const accountTypes = React.useMemo(() => [...new Map((catalogs?.accounts || []).filter(a => a.accountTypeId).map(a => [a.accountTypeId,{ id:a.accountTypeId!,name:a.accountTypeName || "Other" }])).values()], [catalogs]);
   const lookupErrors = [accessError,catalogsError,periodError].filter(Boolean);
+  const editorTitle = editorEntry ? (readOnly ? "View Adjusting Entry" : "Editing Adjusting Entry") : editorSeed?.entryKind === "REVERSAL" ? "New Reversal" : "New Adjusting Entry";
   const pageHeader = <div className="flex flex-wrap items-start justify-between gap-3"><div>
-    <h1 className="text-xl font-semibold">{tab === "posting" ? "Posting of Entries" : tab === "new" ? "New Adjusting Entry" : tab === "audit" ? "Audit Trail" : "Summary"}</h1>
-    <p className="text-sm text-muted-foreground">{tab === "posting" ? "Review adjusting entries and process approvals and postings." : tab === "new" ? "Prepare a balanced adjustment and submit it for review." : tab === "audit" ? "Chronological journal actions, revisions, supporting files, and period controls." : "Review adjusting entry workflow totals and journal activity."}</p>
+    <h1 className="text-xl font-semibold">{tab === "posting" ? "Posting of Entries" : tab === "new" ? editorTitle : tab === "audit" ? "Audit Trail" : "Summary"}</h1>
+    <p className="text-sm text-muted-foreground">{tab === "posting" ? "Review adjusting entries and process approvals and postings." : tab === "new" ? editorEntry ? (readOnly ? "Review this adjusting entry." : "Update this existing draft adjusting entry.") : "Prepare a balanced adjustment and submit it for review." : tab === "audit" ? "Chronological journal actions, revisions, supporting files, and period controls." : "Review adjusting entry workflow totals and journal activity."}</p>
     {(tab === "posting" || tab === "new") && <p className="mt-1 text-xs text-muted-foreground">Closed through: {periodLoading ? "Loading cutoff…" : periodError ? "Unavailable" : period?.closedThroughDate ? formatDate(period.closedThroughDate) : "No cutoff set"}</p>}
   </div><div className="flex flex-wrap gap-2">
     {tab === "posting" && <><Button variant="outline" onClick={refreshEntriesAndSummary}>Refresh</Button><Button variant="outline" disabled={!period || periodLoading} onClick={() => setPeriodOpen(true)}>Period controls</Button></>}
@@ -468,7 +480,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
     {listViewActive && summaryError && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{summaryError}</div>}
     {tab === "new" && <>
       {editorReturnTab && <div className="flex justify-start"><Button type="button" variant="outline" onClick={returnToEntryList}>{editorReturnTab === "posting" ? "Back to postings" : "Back to summary"}</Button></div>}
-      {(!access || !catalogs) ? (accessLoading || catalogsLoading ? <AjeEntryEditorSkeleton /> : <p role="status" className="text-sm text-muted-foreground">The entry form is unavailable until its required lookup data loads.</p>) : <React.Suspense fallback={<AjeEntryEditorSkeleton />}><AjeEntryEditor key={editorKey} initialEntry={editorEntry} seed={editorSeed} readOnly={readOnly} hideTitle={tab === "new"} dirtyRef={editorDirtyRef} access={access} accounts={catalogs.accounts} departments={catalogs.departments} divisions={catalogs.divisions} onSaved={refreshEntriesAndSummary} onAction={requestAction} /></React.Suspense>}
+      {(!access || !catalogs) ? (accessLoading || catalogsLoading ? <AjeEntryEditorSkeleton /> : <p role="status" className="text-sm text-muted-foreground">The entry form is unavailable until its required lookup data loads.</p>) : <React.Suspense fallback={<AjeEntryEditorSkeleton />}><AjeEntryEditor key={editorKey} initialEntry={editorEntry} seed={editorSeed} readOnly={readOnly} hideTitle={tab === "new"} dirtyRef={editorDirtyRef} access={access} accounts={catalogs.accounts} departments={catalogs.departments} divisions={catalogs.divisions} onSaved={handleEditorSaved} onAction={requestAction} /></React.Suspense>}
     </>}
     {tab === "audit" && <React.Suspense fallback={<p role="status" className="text-sm text-muted-foreground">Loading audit trail…</p>}><AjeAuditTrail revision={auditRevision} /></React.Suspense>}
     {(tab === "posting" || tab === "summary") && <>
@@ -496,11 +508,11 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>{totalElements > 0 ? `Showing ${page * pageSize + 1}–${Math.min((page + 1) * pageSize, totalElements)} of ${totalElements} entries · Page ${page + 1} of ${Math.max(totalPages, 1)}` : "0 entries"}</span><div className="flex gap-2"><Button variant="outline" size="icon-sm" aria-label="Go to first page" disabled={page === 0 || listLoading} onClick={() => updateListQuery({ page:"0" })}><ChevronsLeft className="h-4 w-4" /></Button><Button variant="outline" size="sm" disabled={page === 0 || listLoading} onClick={() => updateListQuery({ page:String(page - 1) })}>Previous</Button><Button variant="outline" size="sm" disabled={listLoading || page + 1 >= totalPages} onClick={() => updateListQuery({ page:String(page + 1) })}>Next</Button><Button variant="outline" size="icon-sm" aria-label="Go to last page" disabled={listLoading || page + 1 >= totalPages} onClick={() => updateListQuery({ page:String(Math.max(0, totalPages - 1)) })}><ChevronsRight className="h-4 w-4" /></Button></div></div>
     </>}
     {periodOpen && period && <AjePeriodDialog period={period} onClose={() => setPeriodOpen(false)} onSaved={value => setPeriod(value)} />}
-    <AlertDialog open={action !== null} onOpenChange={open => { if (!open && !busy) setAction(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{action ? `${actionLabels[action.action]} ${action.entry.jeNo}?` : "Confirm action"}</AlertDialogTitle><AlertDialogDescription>{action?.action === "post" || action?.action === "retry" ? "This commits the approved entry to the General Ledger. Posted entries are read-only." : "This action updates the journal workflow and records an audit event."}</AlertDialogDescription></AlertDialogHeader>
+    <AlertDialog open={action !== null} onOpenChange={open => { if (!open && !busy) setAction(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{action ? `${actionLabelForEntry(action.entry, action.action)} ${action.entry.jeNo}?` : "Confirm action"}</AlertDialogTitle><AlertDialogDescription>{action?.action === "cancel" && action.entry.canCancelAfterReversalConflict ? "This cancels the failed full reversal and preserves the AJE and its audit history. It will not be permanently deleted." : action?.action === "post" || action?.action === "retry" ? "This commits the approved entry to the General Ledger. Posted entries are read-only." : "This action updates the journal workflow and records an audit event."}</AlertDialogDescription></AlertDialogHeader>
       {action && <div className="text-sm">Debit {money(action.entry.totalDebit)} · Credit {money(action.entry.totalCredit)}</div>}
       {action && reasonRequired.has(action.action) && <div className="space-y-1"><Label htmlFor="aje-action-reason">Reason *</Label><Textarea id="aje-action-reason" maxLength={4000} value={reason} disabled={busy} onChange={e => setReason(e.target.value)} /></div>}
       {actionError && <p role="alert" className="text-sm text-destructive">{actionError}</p>}
-      <AlertDialogFooter><AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel><AlertDialogAction disabled={busy} onClick={event => void runAction(event)}>{busy ? "Working…" : action ? actionLabels[action.action] : "Confirm"}</AlertDialogAction></AlertDialogFooter>
+      <AlertDialogFooter><AlertDialogCancel disabled={busy}>{action?.action === "cancel" && action.entry.canCancelAfterReversalConflict ? "Keep AJE" : "Cancel"}</AlertDialogCancel><AlertDialogAction disabled={busy} onClick={event => void runAction(event)}>{busy ? "Working…" : action ? actionLabelForEntry(action.entry, action.action) : "Confirm"}</AlertDialogAction></AlertDialogFooter>
     </AlertDialogContent></AlertDialog>
     <AlertDialog open={bulkConfirmEntries !== null} onOpenChange={open => { if (!open && !bulkBusy) setBulkConfirmEntries(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Approve {bulkConfirmEntries?.length || 0} selected entries?</AlertDialogTitle><AlertDialogDescription>Each entry will be approved separately using its current version. Entries that fail will remain selected so you can review and retry them.</AlertDialogDescription></AlertDialogHeader>
       {bulkConfirmEntries && <div className="max-h-48 overflow-y-auto rounded-md border p-3 text-sm"><ul className="list-inside list-disc">{bulkConfirmEntries.map(entry => <li key={entry.id}>{entry.jeNo} · {money(entry.totalDebit)} debit / {money(entry.totalCredit)} credit</li>)}</ul></div>}

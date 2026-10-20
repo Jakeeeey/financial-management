@@ -15,12 +15,27 @@ export function availableActions(entry: AdjustingEntry): AjeAction[] {
     case "Submitted": return ["approve", "reject", "withdraw", "cancel"];
     case "Approved": return ["post", "cancel"];
     case "Rejected": return ["revise", "cancel"];
-    case "Failed": return ["retry", "revise", "cancel"];
+    case "Failed": return entry.canCancelAfterReversalConflict ? ["cancel"] : ["retry", "revise", "cancel"];
     default: return [];
   }
 }
 
+const creatorOnlyActions = new Set<AjeAction>(["submit", "withdraw", "revise", "cancel"]);
+
+export function isEntryCreator(entry: AdjustingEntry, userId?: number) {
+  return userId != null && entry.creatorId === userId;
+}
+
+function availableActionsForUser(entry: AdjustingEntry, userId?: number) {
+  const actions = availableActions(entry);
+  return isEntryCreator(entry, userId) ? actions : actions.filter(action => !creatorOnlyActions.has(action));
+}
+
 export const actionLabels: Record<AjeAction, string> = { submit: "Submit", approve: "Approve", reject: "Reject", withdraw: "Withdraw", revise: "Revise", cancel: "Cancel entry", post: "Post", retry: "Retry posting" };
+
+export function actionLabelForEntry(entry: AdjustingEntry, action: AjeAction) {
+  return action === "cancel" && entry.canCancelAfterReversalConflict ? "Delete AJE" : actionLabels[action];
+}
 
 export function isSelfApproval(entry: AdjustingEntry, userId?: number) {
   return userId != null && [entry.creatorId, entry.preparedBy, entry.submittedBy].includes(userId);
@@ -50,7 +65,7 @@ function primaryAction(entry: AdjustingEntry): AjeAction | null {
     case "Submitted": return "approve";
     case "Approved": return "post";
     case "Rejected": return "revise";
-    case "Failed": return "retry";
+    case "Failed": return entry.canCancelAfterReversalConflict ? "cancel" : "retry";
     default: return null;
   }
 }
@@ -65,22 +80,23 @@ function EntryActions({ entry, userId, readOnly, onView, onAction, onReverse }: 
   onAction: (entry: AdjustingEntry, action: AjeAction) => void;
   onReverse: (entry: AdjustingEntry) => void;
 }) {
-  const actions = readOnly ? [] : availableActions(entry);
+  const actions = readOnly ? [] : availableActionsForUser(entry, userId);
   const mainAction = actions.includes(primaryAction(entry) as AjeAction) ? primaryAction(entry) : null;
   const secondaryActions = actions.filter(action => action !== mainAction);
+  const canEdit = !readOnly && entry.entryOrigin === "MANUAL" && entry.status === "Draft" && isEntryCreator(entry, userId);
   const selfReviewBlocked = !readOnly && userId != null && ["approve", "reject"].some(action => actions.includes(action as AjeAction)) && isSelfApproval(entry, userId);
-  const needsMore = secondaryActions.length > 0 || (!readOnly && entry.entryOrigin === "MANUAL" && entry.status === "Draft") || (!readOnly && canReverse(entry));
+  const needsMore = secondaryActions.length > 0 || canEdit || (!readOnly && canReverse(entry));
 
   return <div className="flex flex-wrap items-center gap-1.5">
     <Button size="sm" variant="outline" onClick={() => onView(entry, false)}>View</Button>
-    {mainAction && <Button size="sm" variant={["post", "retry", "approve", "submit"].includes(mainAction) ? "default" : "outline"} disabled={mainAction === "approve" && isSelfApproval(entry, userId)} title={mainAction === "approve" && isSelfApproval(entry, userId) ? "Another user must review your submission" : undefined} onClick={() => onAction(entry, mainAction)}>{actionLabels[mainAction]}</Button>}
+    {mainAction && <Button size="sm" variant={mainAction === "cancel" && entry.canCancelAfterReversalConflict ? "destructive" : ["post", "retry", "approve", "submit"].includes(mainAction) ? "default" : "outline"} disabled={mainAction === "approve" && isSelfApproval(entry, userId)} title={mainAction === "approve" && isSelfApproval(entry, userId) ? "Another user must review your submission" : undefined} onClick={() => onAction(entry, mainAction)}>{actionLabelForEntry(entry, mainAction)}</Button>}
     {!readOnly && selfReviewBlocked && <p className="basis-full text-xs text-amber-700">You created, prepared, or submitted this entry. Another user must review it.</p>}
     {needsMore && <DropdownMenu>
       <DropdownMenuTrigger asChild><Button size="sm" variant="outline" aria-label={`More actions for ${entry.jeNo}`}><MoreHorizontal className="size-4 sm:mr-1" /><span className="hidden sm:inline">More</span></Button></DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel>More actions</DropdownMenuLabel>
-        {!readOnly && entry.entryOrigin === "MANUAL" && entry.status === "Draft" && <DropdownMenuItem onSelect={() => onView(entry, true)}>Edit</DropdownMenuItem>}
-        {secondaryActions.map(action => <DropdownMenuItem key={action} disabled={["approve", "reject"].includes(action) && isSelfApproval(entry, userId)} onSelect={() => onAction(entry, action)}>{actionLabels[action]}</DropdownMenuItem>)}
+        {canEdit && <DropdownMenuItem onSelect={() => onView(entry, true)}>Edit</DropdownMenuItem>}
+        {secondaryActions.map(action => <DropdownMenuItem key={action} disabled={["approve", "reject"].includes(action) && isSelfApproval(entry, userId)} onSelect={() => onAction(entry, action)}>{actionLabelForEntry(entry, action)}</DropdownMenuItem>)}
         {!readOnly && canReverse(entry) && <DropdownMenuItem onSelect={() => onReverse(entry)}>Reverse</DropdownMenuItem>}
         {selfReviewBlocked && <><DropdownMenuSeparator /><div className="px-2 py-1.5 text-xs text-amber-700">A different user must approve or reject this entry.</div></>}
       </DropdownMenuContent>
