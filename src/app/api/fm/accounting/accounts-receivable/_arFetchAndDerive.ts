@@ -30,6 +30,7 @@ export interface ARRow {
   dispatchDate: string | null;
   paymentStatus: string;
   transactionStatus: string;
+  arStatus?: 'Due' | 'Overdue' | '—';
   grossAmount: number;
   discountAmount: number;
   netReceivable: number;
@@ -90,6 +91,8 @@ export interface ARFilterOptions {
   salesmen: string[];
   divisions: string[];
   operations: { value: string; label: string }[];
+  transactionStatuses: string[];
+  arStatuses: string[];
 }
 
 export interface ARFullPayload {
@@ -118,6 +121,8 @@ export interface ARTableFilters {
   operation?: string;
   agingRange?: string;
   search?: string;
+  arStatus?: string;
+  transactionStatus?: string;
 }
 
 export interface CustomerGroupRow {
@@ -443,12 +448,17 @@ function deriveMetricsFromRows(
 }
 
 function buildFilterOptions(rows: ARRow[], operationData: OperationBreakdown[]): ARFilterOptions {
+  const transactionStatuses = Array.from(
+    new Set(rows.map(r => r.transactionStatus).filter(Boolean))
+  ).sort();
   return {
     customers: Array.from(new Set(rows.map(r => r.customerName))).sort(),
     clusters: Array.from(new Set(rows.map(r => r.cluster).filter(c => c && c !== 'Unassigned'))).sort(),
     salesmen: Array.from(new Set(rows.map(r => r.salesman).filter(s => s && s !== 'Unknown'))).sort(),
     divisions: Array.from(new Set(rows.map(r => r.division).filter(d => d && d !== '—'))).sort(),
     operations: operationData.map(op => ({ value: String(op.id), label: op.name })),
+    transactionStatuses,
+    arStatuses: ['Due', 'Overdue'],
   };
 }
 
@@ -472,6 +482,12 @@ export function applyARFilters(rows: ARRow[], filters: ARTableFilters): ARRow[] 
     if (filters.salesman && row.salesman !== filters.salesman) return false;
     if (filters.division && row.division !== filters.division) return false;
     if (filters.operation && String(row.salesType) !== String(filters.operation)) return false;
+    if (filters.arStatus) {
+      const isOverdue = row.daysOverdue !== null && row.daysOverdue >= 0 && row.outstandingBalance > 0;
+      const rowArStatus = row.arStatus ?? (isOverdue ? 'Overdue' : (row.dispatchDate ? 'Due' : '—'));
+      if (rowArStatus !== filters.arStatus) return false;
+    }
+    if (filters.transactionStatus && row.transactionStatus !== filters.transactionStatus) return false;
     if (filters.agingRange) {
       const overdueDays = row.daysOverdue;
       if (overdueDays === null || overdueDays < 0) return false;
@@ -559,7 +575,7 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
     return {
       rows: [], operationData: [], agingData: deriveAgingData([]),
       salesmanData: [], metrics: deriveMetricsFromRows([], emptyPool),
-      filterOptions: { customers: [], clusters: [], salesmen: [], divisions: [], operations: [] },
+      filterOptions: { customers: [], clusters: [], salesmen: [], divisions: [], operations: [], transactionStatuses: [], arStatuses: ['Due', 'Overdue'] },
       salesmanUnposted: {}, sourceInvoiceCount: 0, ...emptyPool,
     };
   }
@@ -753,6 +769,9 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
       grossAmount, discountAmount, netReceivable, returnAmount, unfulfilledAmount,
       appliedCreditMemos: creditMemos, appliedDebitMemos: debitMemos, totalPaid, outstandingBalance,
       unpostedCollectionAmount: unpostedAgg.get(inv.invoice_id) || 0, daysOverdue,
+      arStatus: (daysOverdue !== null && daysOverdue >= 0 && outstandingBalance > 0)
+        ? 'Overdue'
+        : (inv.dispatch_date ? 'Due' : '—'),
       branch: inv.branch_id?.branch_name || 'Unknown',
       salesman: sm?.name || 'Unknown', salesmanCode: sm?.code || '—',
       supplierCode,

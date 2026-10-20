@@ -51,6 +51,8 @@ const EMPTY_FILTER_OPTIONS: ARFilterOptions = {
   salesmen: [],
   divisions: [],
   operations: [],
+  transactionStatuses: [],
+  arStatuses: ['Due', 'Overdue'],
 };
 
 const DEFAULT_TABLE_SORT: ARTableSort = { sortKey: null, sortOrder: null };
