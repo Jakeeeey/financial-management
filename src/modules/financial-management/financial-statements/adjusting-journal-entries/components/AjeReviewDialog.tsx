@@ -16,6 +16,7 @@ type Props = {
   attachments: AjeAttachment[];
   loading: boolean;
   error: string;
+  attachmentsLoading: boolean;
   attachmentsError: string;
   canReview: boolean;
   userId?: number;
@@ -23,7 +24,7 @@ type Props = {
   onClose: () => void;
 };
 
-export function AjeReviewDialog({ open, journalNumber, entry, attachments, loading, error, attachmentsError, canReview, userId, onAction, onClose }: Props) {
+export function AjeReviewDialog({ open, journalNumber, entry, attachments, loading, error, attachmentsLoading, attachmentsError, canReview, userId, onAction, onClose }: Props) {
   const reviewActions = entry ? availableActions(entry).filter(action => action === "approve" || action === "reject") : [];
   const selfReviewBlocked = Boolean(canReview && userId != null && entry && reviewActions.length && isSelfApproval(entry, userId));
   return <Dialog open={open} onOpenChange={value => { if (!value) onClose(); }}>
@@ -61,9 +62,10 @@ export function AjeReviewDialog({ open, journalNumber, entry, attachments, loadi
 
         <section aria-label="Supporting documents" className="space-y-2 rounded-md border p-3">
           <h3 className="font-semibold">Supporting documents</h3>
-          {attachmentsError && <p role="alert" className="text-sm text-amber-700">{attachmentsError}</p>}
-          {!attachmentsError && attachments.length === 0 && <p className="text-sm text-muted-foreground">No supporting documents attached.</p>}
-          {attachments.map(file => {
+          {attachmentsLoading && <p role="status" className="text-sm text-muted-foreground">Loading supporting documents…</p>}
+          {!attachmentsLoading && attachmentsError && <p role="alert" className="text-sm text-amber-700">{attachmentsError}</p>}
+          {!attachmentsLoading && !attachmentsError && attachments.length === 0 && <p className="text-sm text-muted-foreground">No supporting documents attached.</p>}
+          {!attachmentsLoading && !attachmentsError && attachments.map(file => {
             const previewable = file.state === "READY" && isPreviewableAjeImage(file.mimeType, file.filename);
             return <AjeAttachmentPreview key={file.id} fileName={file.filename}
               downloadUrl={file.state === "READY" ? ajeAttachmentUrl(file.entryId, file.id) : undefined}

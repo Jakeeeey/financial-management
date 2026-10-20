@@ -11,13 +11,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AdjustingEntriesFilters } from "./components/AdjustingEntriesFilters";
 import { AdjustingEntriesTable, actionLabels, availableActions, isSelfApproval } from "./components/AdjustingEntriesTable";
 import { AdjustingEntriesSummaryCards } from "./components/AdjustingEntriesSummaryCards";
-import { AjeEntryEditor } from "./components/AjeEntryEditor";
-import { AjeReviewDialog } from "./components/AjeReviewDialog";
-import { AjeAuditTrail } from "./components/AjeAuditTrail";
 import { AjePeriodDialog } from "./components/AjePeriodDialog";
+import { AjeEntryEditorSkeleton } from "./components/AjeEntryEditorSkeleton";
 import { formatDate, money, todayManila } from "./components/formatters";
 import { adjustingJournalEntriesApi as api, ajeReportUrl, fetchDepartmentOptions, fetchDivisionOptions } from "./services/adjusting-journal-entries.api";
 import type { AdjustingEntry, AdjustingEntryPayload, AdjustingEntryQuery, AdjustingEntrySummary, AdjustingEntrySummaryQuery, AjeAccess, AjeAccount, AjeAction, AjeAttachment, AjePeriod, AjeReversalPreview, DepartmentLookup, DivisionLookup } from "./types";
+
+const AjeEntryEditor = React.lazy(() => import("./components/AjeEntryEditor").then(module => ({ default:module.AjeEntryEditor })));
+const AjeReviewDialog = React.lazy(() => import("./components/AjeReviewDialog").then(module => ({ default:module.AjeReviewDialog })));
+const AjeAuditTrail = React.lazy(() => import("./components/AjeAuditTrail").then(module => ({ default:module.AjeAuditTrail })));
 
 type Tab = "new" | "posting" | "audit" | "summary";
 type EntryListTab = Extract<Tab, "posting" | "summary">;
@@ -26,7 +28,7 @@ type CatalogLookups = { accounts: AjeAccount[]; departments: DepartmentLookup[];
 const statuses = ["All","Draft","Submitted","Approved","Rejected","Posted","Cancelled","Failed","Voided"];
 const queueValues: PostingQueue[] = ["all","needs-action","submitted","approved","failed"];
 const pageSizes = [10,20,50,100];
-const sortValues = ["transactionDate,desc","transactionDate,asc","id,desc","jeNo,asc","status,asc"];
+const sortValues = ["lastActivity,desc","transactionDate,desc","transactionDate,asc","id,desc","jeNo,asc","status,asc"];
 const emptySummary: AdjustingEntrySummary = { draft:0, submitted:0, approved:0, posted:0, rejected:0, cancelled:0, failed:0, voided:0, imbalanced:0, totalRecords:0, postedDebit:0, postedCredit:0 };
 const reasonRequired = new Set<AjeAction>(["reject","cancel"]);
 
@@ -45,7 +47,7 @@ function pageNumber(value: string | null) {
 function parseListFilters(params: URLSearchParams) {
   const status = params.get("status") || "All";
   const pageSize = Number(params.get("pageSize"));
-  const sort = params.get("sort") || "transactionDate,desc";
+  const sort = params.get("sort") || "lastActivity,desc";
   const queue = params.get("queue");
   return {
     search: params.get("search") || "",
@@ -55,7 +57,7 @@ function parseListFilters(params: URLSearchParams) {
     division: positiveId(params.get("divisionId")) || "all",
     department: positiveId(params.get("departmentId")) || "all",
     accountType: positiveId(params.get("accountTypeId")),
-    sort: sortValues.includes(sort) ? sort : "transactionDate,desc",
+    sort: sortValues.includes(sort) ? sort : "lastActivity,desc",
     page: pageNumber(params.get("page")),
     pageSize: pageSizes.includes(pageSize) ? pageSize : 20,
     queue: queue && queueValues.includes(queue as PostingQueue) ? queue as PostingQueue : null,
@@ -109,6 +111,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   const [reviewDetails, setReviewDetails] = React.useState<AdjustingEntry | null>(null);
   const [reviewAttachments, setReviewAttachments] = React.useState<AjeAttachment[]>([]);
   const [reviewLoading, setReviewLoading] = React.useState(false);
+  const [reviewAttachmentsLoading, setReviewAttachmentsLoading] = React.useState(false);
   const [reviewError, setReviewError] = React.useState("");
   const [reviewAttachmentsError, setReviewAttachmentsError] = React.useState("");
   const [selectedApprovalIds, setSelectedApprovalIds] = React.useState<Set<number>>(() => new Set());
@@ -249,7 +252,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
         if (stored && queueValues.includes(stored as PostingQueue)) saved = stored as PostingQueue;
       } catch { /* Storage can be unavailable in private contexts. */ }
     }
-    setSavedPostingQueue(saved || "needs-action");
+    setSavedPostingQueue(saved || "all");
     setQueuePreferenceLoaded(true);
   }, [access,initialView,listFilters.queue,queuePreferenceLoaded]);
 
@@ -375,20 +378,27 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
     try { setEditorEntry(await api.get(entry.id)); setEditorSeed(null); setEditorReturnTab(tab === "posting" || tab === "summary" ? tab : null); setReadOnly(!edit || entry.status !== "Draft" || entry.entryOrigin !== "MANUAL"); setEditorKey(k => k + 1); setTab("new"); }
     catch (e) { setError(e instanceof Error ? e.message : "Unable to open this entry"); }
   }
-  async function openReview(entry: AdjustingEntry) {
+  function openReview(entry: AdjustingEntry) {
     const generation = ++reviewRequestGeneration.current;
-    setReviewEntry(entry); setReviewDetails(null); setReviewAttachments([]); setReviewLoading(true); setReviewError(""); setReviewAttachmentsError("");
-    const [detailsResult, attachmentsResult] = await Promise.allSettled([api.get(entry.id), api.attachments(entry.id)]);
-    if (generation !== reviewRequestGeneration.current) return;
-    if (detailsResult.status === "fulfilled") setReviewDetails(detailsResult.value);
-    else setReviewError(detailsResult.reason instanceof Error ? detailsResult.reason.message : "Unable to load journal details");
-    if (attachmentsResult.status === "fulfilled") setReviewAttachments(attachmentsResult.value);
-    else setReviewAttachmentsError(attachmentsResult.reason instanceof Error ? attachmentsResult.reason.message : "Unable to load supporting documents");
-    setReviewLoading(false);
+    setReviewEntry(entry); setReviewDetails(null); setReviewAttachments([]); setReviewLoading(true); setReviewAttachmentsLoading(true); setReviewError(""); setReviewAttachmentsError("");
+    void api.get(entry.id).then(details => {
+      if (generation === reviewRequestGeneration.current) setReviewDetails(details);
+    }).catch(error => {
+      if (generation === reviewRequestGeneration.current) setReviewError(error instanceof Error ? error.message : "Unable to load journal details");
+    }).finally(() => {
+      if (generation === reviewRequestGeneration.current) setReviewLoading(false);
+    });
+    void api.attachments(entry.id).then(attachments => {
+      if (generation === reviewRequestGeneration.current) setReviewAttachments(attachments);
+    }).catch(error => {
+      if (generation === reviewRequestGeneration.current) setReviewAttachmentsError(error instanceof Error ? error.message : "Unable to load supporting documents");
+    }).finally(() => {
+      if (generation === reviewRequestGeneration.current) setReviewAttachmentsLoading(false);
+    });
   }
   function closeReview() {
     reviewRequestGeneration.current += 1;
-    setReviewEntry(null); setReviewDetails(null); setReviewAttachments([]); setReviewLoading(false); setReviewError(""); setReviewAttachmentsError("");
+    setReviewEntry(null); setReviewDetails(null); setReviewAttachments([]); setReviewLoading(false); setReviewAttachmentsLoading(false); setReviewError(""); setReviewAttachmentsError("");
   }
   async function runAction(event: React.MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
@@ -437,7 +447,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   }
   const focusPosted = () => updateFilters({ status:"Posted",queue:"all" });
   const focusDrafts = () => updateFilters({ status:"Draft",queue:"all" });
-  const hasFilters = Boolean(searchDraft.trim() || status !== "All" || startDate || endDate || division !== "all" || department !== "all" || accountType || sort !== "transactionDate,desc" || page > 0 || pageSize !== 20 || (initialView === "posting" && postingQueue !== "all"));
+  const hasFilters = Boolean(searchDraft.trim() || status !== "All" || startDate || endDate || division !== "all" || department !== "all" || accountType || sort !== "lastActivity,desc" || page > 0 || pageSize !== 20 || (initialView === "posting" && postingQueue !== "all"));
   const summaryDateScope = startDate && endDate ? `${formatDate(startDate)} – ${formatDate(endDate)}` : startDate ? `From ${formatDate(startDate)}` : endDate ? `Through ${formatDate(endDate)}` : "All dates";
   const accountTypes = React.useMemo(() => [...new Map((catalogs?.accounts || []).filter(a => a.accountTypeId).map(a => [a.accountTypeId,{ id:a.accountTypeId!,name:a.accountTypeName || "Other" }])).values()], [catalogs]);
   const lookupErrors = [accessError,catalogsError,periodError].filter(Boolean);
@@ -458,9 +468,9 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
     {listViewActive && summaryError && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{summaryError}</div>}
     {tab === "new" && <>
       {editorReturnTab && <div className="flex justify-start"><Button type="button" variant="outline" onClick={returnToEntryList}>{editorReturnTab === "posting" ? "Back to postings" : "Back to summary"}</Button></div>}
-      {(!access || !catalogs) ? <p role="status" className="text-sm text-muted-foreground">{accessLoading || catalogsLoading ? "Loading entry form…" : "The entry form is unavailable until its required lookup data loads."}</p> : <AjeEntryEditor key={editorKey} initialEntry={editorEntry} seed={editorSeed} readOnly={readOnly} hideTitle={tab === "new"} dirtyRef={editorDirtyRef} access={access} accounts={catalogs.accounts} departments={catalogs.departments} divisions={catalogs.divisions} onSaved={refreshEntriesAndSummary} onAction={requestAction} />}
+      {(!access || !catalogs) ? (accessLoading || catalogsLoading ? <AjeEntryEditorSkeleton /> : <p role="status" className="text-sm text-muted-foreground">The entry form is unavailable until its required lookup data loads.</p>) : <React.Suspense fallback={<AjeEntryEditorSkeleton />}><AjeEntryEditor key={editorKey} initialEntry={editorEntry} seed={editorSeed} readOnly={readOnly} hideTitle={tab === "new"} dirtyRef={editorDirtyRef} access={access} accounts={catalogs.accounts} departments={catalogs.departments} divisions={catalogs.divisions} onSaved={refreshEntriesAndSummary} onAction={requestAction} /></React.Suspense>}
     </>}
-    {tab === "audit" && <AjeAuditTrail revision={auditRevision} />}
+    {tab === "audit" && <React.Suspense fallback={<p role="status" className="text-sm text-muted-foreground">Loading audit trail…</p>}><AjeAuditTrail revision={auditRevision} /></React.Suspense>}
     {(tab === "posting" || tab === "summary") && <>
       {tab === "summary" && <AdjustingEntriesSummaryCards summary={summary} loading={summaryLoading} selectedStatus={status} onStatusSelect={value => updateFilters({ status:value === "All" ? null : value,queue:"all" })} showPostedAmounts onShowPosted={focusPosted} onInvestigatePosted={focusPosted} onShowUnbalancedDrafts={focusDrafts} />}
       {tab === "summary" && <p className="text-xs text-muted-foreground">Accounting dates: {summaryDateScope}. Counts and posted amounts also reflect the search, division, department, and account-type filters. Status filters narrow the journal list only.</p>}
@@ -479,7 +489,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
         hasActiveFilters={hasFilters} moreFiltersCount={Number(division !== "all") + Number(department !== "all") + Number(Boolean(accountType))} onSearchChange={handleSearchChange} onStartDateChange={v => updateFilters({ startDate:v || null })} onEndDateChange={v => updateFilters({ endDate:v || null })}
         onStatusChange={v => updateFilters({ status:v === "All" ? null : v,queue:"all" })} onPageSizeChange={v => updateListQuery({ pageSize:String(v),page:"0" })} onDivisionChange={v => updateFilters({ divisionId:v === "all" ? null : v,departmentId:null })} onDepartmentChange={v => updateFilters({ departmentId:v === "all" ? null : v })} onClearFilters={clearFilters}>
         <div className="space-y-1.5"><Label htmlFor="aje-account-type" className="text-xs font-medium text-muted-foreground">Account type</Label><select id="aje-account-type" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={accountType} onChange={e => updateFilters({ accountTypeId:e.target.value || null })}><option value="">All account types</option>{accountTypes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
-        <div className="space-y-1.5"><Label htmlFor="aje-sort" className="text-xs font-medium text-muted-foreground">Sort</Label><select id="aje-sort" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={sort} onChange={e => updateFilters({ sort:e.target.value === "transactionDate,desc" ? null : e.target.value })}><option value="transactionDate,desc">Accounting date: newest</option><option value="transactionDate,asc">Accounting date: oldest</option><option value="id,desc">Newest created</option><option value="jeNo,asc">Journal number</option><option value="status,asc">Status</option></select></div>
+        <div className="space-y-1.5"><Label htmlFor="aje-sort" className="text-xs font-medium text-muted-foreground">Sort</Label><select id="aje-sort" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={sort} onChange={e => updateFilters({ sort:e.target.value === "lastActivity,desc" ? null : e.target.value })}><option value="lastActivity,desc">Last activity: newest</option><option value="transactionDate,desc">Accounting date: newest</option><option value="transactionDate,asc">Accounting date: oldest</option><option value="id,desc">Newest created</option><option value="jeNo,asc">Journal number</option><option value="status,asc">Status</option></select></div>
       </AdjustingEntriesFilters>
       <AdjustingEntriesTable entries={entries} loading={listLoading || busy || bulkBusy} userId={access?.userId} readOnly={tab === "summary" || !access} onView={(entry,edit) => { if ((initialView === "posting" || initialView === "summary") && !edit) void openReview(entry); else void view(entry,edit); }} onAction={requestAction} onReverse={entry => void previewReversal(entry)} bulkActionsEnabled={tab === "posting" && Boolean(access)} selectedEntryIds={selectedApprovalIds} onToggleEntrySelection={toggleApprovalSelection} onTogglePageSelection={togglePageApprovalSelection} onBulkApprove={requestBulkApproval} bulkBusy={bulkBusy} />
       {bulkResult && <div role="status" className="space-y-2 rounded-md border bg-muted/20 p-3 text-sm"><p>{bulkResult.approved} approved · {bulkResult.failures.length} failed</p>{bulkResult.failures.length > 0 && <ul className="list-inside list-disc text-destructive">{bulkResult.failures.map(failure => <li key={failure.jeNo}><span className="font-medium">{failure.jeNo}:</span> {failure.message}</li>)}</ul>}</div>}
@@ -500,6 +510,11 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
       <div className="max-h-80 overflow-auto"><table className="w-full text-sm"><thead><tr><th className="p-2 text-left">Account</th><th className="p-2 text-right">Original</th><th className="p-2 text-right">Reversed</th><th className="p-2 text-right">Remaining</th></tr></thead><tbody>{reversal?.lines.map(d => <tr key={d.originalDetailId} className="border-t"><td className="p-2">{d.accountNumber} · {d.accountTitle}<p className="text-xs text-muted-foreground">{d.departmentName}</p></td><td className="p-2 text-right">{money(d.originalDebit + d.originalCredit)}</td><td className="p-2 text-right">{money(d.reversedAmount)}</td><td className="p-2 text-right">{money(d.remainingAmount)}</td></tr>)}</tbody></table></div>
       <DialogFooter><Button variant="outline" onClick={() => setReversal(null)}>Cancel</Button><Button variant="outline" disabled={!reversal?.lines.some(d => d.remainingAmount > 0)} onClick={() => createReversal("PARTIAL")}>Partial / remaining reversal</Button><Button disabled={!reversal?.canFullReverse} onClick={() => createReversal("FULL")}>Full reversal</Button></DialogFooter>
     </DialogContent></Dialog>
-    {(initialView === "posting" || initialView === "summary") && <AjeReviewDialog open={reviewEntry !== null} journalNumber={reviewEntry?.jeNo || null} entry={reviewDetails} attachments={reviewAttachments} loading={reviewLoading} error={reviewError} attachmentsError={reviewAttachmentsError} canReview={tab === "posting" && Boolean(access)} userId={access?.userId} onAction={requestAction} onClose={closeReview} />}
+    {(initialView === "posting" || initialView === "summary") && reviewEntry !== null && <React.Suspense fallback={<Dialog open onOpenChange={open => { if (!open) closeReview(); }}>
+      <DialogContent className="sm:max-w-5xl"><DialogHeader><DialogTitle>{reviewEntry.jeNo || "Review adjusting entry"}</DialogTitle></DialogHeader>
+        <p role="status" className="py-8 text-center text-sm text-muted-foreground">Loading review dialog…</p>
+        <DialogFooter><Button type="button" variant="outline" onClick={closeReview}>Close</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>}><AjeReviewDialog open journalNumber={reviewEntry.jeNo || null} entry={reviewDetails} attachments={reviewAttachments} loading={reviewLoading} error={reviewError} attachmentsLoading={reviewAttachmentsLoading} attachmentsError={reviewAttachmentsError} canReview={tab === "posting" && Boolean(access)} userId={access?.userId} onAction={requestAction} onClose={closeReview} /></React.Suspense>}
   </div>;
 }
