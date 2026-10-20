@@ -135,6 +135,8 @@ export default function AccountsReceivableModule() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showAIInsights, setShowAIInsights] = useState(false);
   const [agingRange, setAgingRange] = useState('');
+  const [arStatus, setArStatus] = useState('');
+  const [transactionStatus, setTransactionStatus] = useState('');
 
   const deferredSearch = useDeferredValue(searchQuery);
 
@@ -148,7 +150,9 @@ export default function AccountsReceivableModule() {
     operation: operation || undefined,
     agingRange: agingRange || undefined,
     search: deferredSearch || undefined,
-  }), [dateFrom, dateTo, customer, cluster, salesman, division, operation, agingRange, deferredSearch]);
+    arStatus: arStatus || undefined,
+    transactionStatus: transactionStatus || undefined,
+  }), [dateFrom, dateTo, customer, cluster, salesman, division, operation, agingRange, deferredSearch, arStatus, transactionStatus]);
 
   const {
     loading,
@@ -172,7 +176,7 @@ export default function AccountsReceivableModule() {
     onTableSortChange,
   } = useAccountsReceivable(activeFilters);
 
-  const isFiltered = !!(dateFrom || dateTo || customer || cluster || salesman || division || operation || agingRange || searchQuery);
+  const isFiltered = !!(dateFrom || dateTo || customer || cluster || salesman || division || operation || agingRange || searchQuery || arStatus || transactionStatus);
 
   const aiInsights = useMemo(() => {
     return generateAIInsights(invoices, metrics);
@@ -189,7 +193,7 @@ export default function AccountsReceivableModule() {
   } = metrics;
 
   const clearFilters = () => {
-    setDateFrom(''); setDateTo(''); setCustomer(''); setCluster(''); setSalesman(''); setDivision(''); setOperation(''); setAgingRange(''); setSearchQuery('');
+    setDateFrom(''); setDateTo(''); setCustomer(''); setCluster(''); setSalesman(''); setDivision(''); setOperation(''); setAgingRange(''); setSearchQuery(''); setArStatus(''); setTransactionStatus('');
   };
 
   const handleRowClick = useCallback((inv: Invoice) => {
@@ -230,7 +234,7 @@ export default function AccountsReceivableModule() {
     doc.setFontSize(7.5);
     doc.setTextColor(120, 120, 120);
     const filterInfo =
-        `From: ${dateFrom || 'N/A'}   To: ${dateTo || 'N/A'}   Customer: ${customer || 'All'}   Cluster: ${cluster || 'All'}   Salesman: ${salesman || 'All'}   Division: ${division || 'All'}`;
+        `From: ${dateFrom || 'N/A'}   To: ${dateTo || 'N/A'}   Customer: ${customer || 'All'}   Cluster: ${cluster || 'All'}   Salesman: ${salesman || 'All'}   Division: ${division || 'All'}   AR Status: ${arStatus || 'All'}   Tx Status: ${transactionStatus || 'All'}`;
     doc.text(filterInfo, 10, 26);
     doc.text(
         `Exported: ${new Date().toLocaleString('en-PH')}   Total Records: ${invoices.length}`,
@@ -619,6 +623,28 @@ export default function AccountsReceivableModule() {
               options={[
                 { value: '', label: 'All Operations' },
                 ...filterOptions.operations,
+              ]}
+          />
+
+          <SearchableSelect
+              value={arStatus}
+              onValueChange={setArStatus}
+              placeholder="All AR Statuses"
+              className="h-7 w-[130px] text-[10px] !block text-left truncate relative pr-7 [&_svg]:absolute [&_svg]:right-2.5 [&_svg]:top-1/2 [&_svg]:-translate-y-1/2"
+              options={[
+                { value: '', label: 'All AR Statuses' },
+                ...(filterOptions.arStatuses || ['Due', 'Overdue']).map((name) => ({ value: name, label: name })),
+              ]}
+          />
+
+          <SearchableSelect
+              value={transactionStatus}
+              onValueChange={setTransactionStatus}
+              placeholder="All Tx Statuses"
+              className="h-7 w-[150px] text-[10px] !block text-left truncate relative pr-7 [&_svg]:absolute [&_svg]:right-2.5 [&_svg]:top-1/2 [&_svg]:-translate-y-1/2"
+              options={[
+                { value: '', label: 'All Tx Statuses' },
+                ...(filterOptions.transactionStatuses || []).map((name) => ({ value: name, label: name })),
               ]}
           />
 

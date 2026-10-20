@@ -239,6 +239,8 @@ export function buildARQueryParams(
     operation?: string;
     agingRange?: string;
     search?: string;
+    arStatus?: string;
+    transactionStatus?: string;
   },
   sort?: import('../types').ARTableSort,
 ): string {
@@ -252,6 +254,8 @@ export function buildARQueryParams(
   if (filters.operation) params.set('operation', filters.operation);
   if (filters.agingRange) params.set('agingRange', filters.agingRange);
   if (filters.search?.trim()) params.set('search', filters.search.trim());
+  if (filters.arStatus) params.set('arStatus', filters.arStatus);
+  if (filters.transactionStatus) params.set('transactionStatus', filters.transactionStatus);
   if (sort?.sortKey && sort?.sortOrder) {
     params.set('sortKey', sort.sortKey);
     params.set('sortOrder', sort.sortOrder);
