@@ -463,13 +463,15 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   const accountTypes = React.useMemo(() => [...new Map((catalogs?.accounts || []).filter(a => a.accountTypeId).map(a => [a.accountTypeId,{ id:a.accountTypeId!,name:a.accountTypeName || "Other" }])).values()], [catalogs]);
   const lookupErrors = [accessError,catalogsError,periodError].filter(Boolean);
   const editorTitle = editorEntry ? (readOnly ? "View Adjusting Entry" : "Editing Adjusting Entry") : editorSeed?.entryKind === "REVERSAL" ? "New Reversal" : "New Adjusting Entry";
+  const summaryPrintDisabled = listLoading || Boolean(listError) || searchDraft.trim() !== normalizedSearch;
   const pageHeader = <div className="flex flex-wrap items-start justify-between gap-3"><div>
     <h1 className="text-xl font-semibold">{tab === "posting" ? "Posting of Entries" : tab === "new" ? editorTitle : tab === "audit" ? "Audit Trail" : "Summary"}</h1>
     <p className="text-sm text-muted-foreground">{tab === "posting" ? "Review adjusting entries and process approvals and postings." : tab === "new" ? editorEntry ? (readOnly ? "Review this adjusting entry." : "Update this existing draft adjusting entry.") : "Prepare a balanced adjustment and submit it for review." : tab === "audit" ? "Chronological journal actions, revisions, supporting files, and period controls." : "Review adjusting entry workflow totals and journal activity."}</p>
     {(tab === "posting" || tab === "new") && <p className="mt-1 text-xs text-muted-foreground">Closed through: {periodLoading ? "Loading cutoff…" : periodError ? "Unavailable" : period?.closedThroughDate ? formatDate(period.closedThroughDate) : "No cutoff set"}</p>}
   </div><div className="flex flex-wrap gap-2">
     {tab === "posting" && <><Button variant="outline" onClick={refreshEntriesAndSummary}>Refresh</Button><Button variant="outline" disabled={!period || periodLoading} onClick={() => setPeriodOpen(true)}>Period controls</Button></>}
-    {tab === "summary" && <><a className="inline-flex h-9 items-center rounded-md border bg-background px-3 text-sm font-medium hover:bg-accent" href={ajeReportUrl(query,"csv")}>Export CSV</a><a className="inline-flex h-9 items-center rounded-md border bg-background px-3 text-sm font-medium hover:bg-accent" href={ajeReportUrl(query,"html")} target="_blank" rel="noreferrer">Print summary</a></>}
+    {tab === "summary" && <a className="inline-flex h-9 items-center rounded-md border bg-background px-3 text-sm font-medium hover:bg-accent" href={ajeReportUrl(listQuery,"csv")}>Export CSV</a>}
+    {(tab === "posting" || tab === "summary") && <Button variant="outline" disabled={summaryPrintDisabled} asChild><a href={ajeReportUrl(listQuery,"pdf")} target="_blank" rel="noopener noreferrer" aria-disabled={summaryPrintDisabled} onClick={event => { if (summaryPrintDisabled) event.preventDefault(); }}>Print summary</a></Button>}
     {(tab === "audit" || tab === "summary") && <Button variant="outline" onClick={() => tab === "audit" ? setAuditRevision(v => v + 1) : refreshEntriesAndSummary()}>Refresh</Button>}
   </div></div>;
   return <div className="space-y-5 p-4 sm:p-6">

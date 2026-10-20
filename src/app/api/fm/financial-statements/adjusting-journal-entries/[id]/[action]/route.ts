@@ -5,9 +5,12 @@ export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ id: string; action: string }> };
 const ACTIONS = new Set(["submit", "approve", "reject", "withdraw", "revise", "cancel", "retry"]);
 const AUTO_PRINT_SCRIPT = '<script>window.addEventListener("load",function(){window.setTimeout(function(){window.print();},250);},{once:true});</script>';
-export async function GET(_request: NextRequest, { params }: Context) {
+export async function GET(request: NextRequest, { params }: Context) {
   const { id, action } = await params;
   if (action !== "reversal-preview" && action !== "print") return NextResponse.json({ message: "Not found" }, { status: 404 });
+  if (action === "print" && request.nextUrl.searchParams.get("format") === "pdf") {
+    return (await import("../../_print")).ajePdfResponse({ id });
+  }
   const init = action === "print" ? { headers: { Accept: "text/html" } } : undefined;
   const springResponse = await proxySpring(buildSpringItemPath(id, action), init);
   if (action !== "print" || !springResponse.ok || !springResponse.headers.get("content-type")?.includes("text/html")) {

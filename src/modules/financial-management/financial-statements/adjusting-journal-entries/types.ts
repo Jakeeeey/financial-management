@@ -97,6 +97,15 @@ export type AdjustingEntryPage = {
   last: boolean;
 };
 
+export type AjePrintReport = {
+  entries: AdjustingEntry[];
+  totalRecords: number;
+  totalDebit: string;
+  totalCredit: string;
+  generatedBy: AjeAccess;
+  generatedAt: string;
+};
+
 export type AdjustingEntrySummary = {
   draft: number;
   posted: number;
