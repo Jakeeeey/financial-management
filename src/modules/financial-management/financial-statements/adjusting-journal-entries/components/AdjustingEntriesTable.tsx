@@ -22,8 +22,8 @@ export function availableActions(entry: AdjustingEntry): AjeAction[] {
 
 export const actionLabels: Record<AjeAction, string> = { submit: "Submit", approve: "Approve", reject: "Reject", withdraw: "Withdraw", revise: "Revise", cancel: "Cancel entry", post: "Post", retry: "Retry posting" };
 
-export function isSelfApproval(entry: AdjustingEntry, userId: number) {
-  return [entry.creatorId, entry.preparedBy, entry.submittedBy].includes(userId);
+export function isSelfApproval(entry: AdjustingEntry, userId?: number) {
+  return userId != null && [entry.creatorId, entry.preparedBy, entry.submittedBy].includes(userId);
 }
 
 function queueAge(entry: AdjustingEntry) {
@@ -60,7 +60,7 @@ function canReverse(entry: AdjustingEntry) {
 }
 
 function EntryActions({ entry, userId, readOnly, onView, onAction, onReverse }: {
-  entry: AdjustingEntry; userId: number; readOnly: boolean;
+  entry: AdjustingEntry; userId?: number; readOnly: boolean;
   onView: (entry: AdjustingEntry, edit: boolean) => void;
   onAction: (entry: AdjustingEntry, action: AjeAction) => void;
   onReverse: (entry: AdjustingEntry) => void;
@@ -68,7 +68,7 @@ function EntryActions({ entry, userId, readOnly, onView, onAction, onReverse }: 
   const actions = readOnly ? [] : availableActions(entry);
   const mainAction = actions.includes(primaryAction(entry) as AjeAction) ? primaryAction(entry) : null;
   const secondaryActions = actions.filter(action => action !== mainAction);
-  const selfReviewBlocked = !readOnly && ["approve", "reject"].some(action => actions.includes(action as AjeAction)) && isSelfApproval(entry, userId);
+  const selfReviewBlocked = !readOnly && userId != null && ["approve", "reject"].some(action => actions.includes(action as AjeAction)) && isSelfApproval(entry, userId);
   const needsMore = secondaryActions.length > 0 || (!readOnly && entry.entryOrigin === "MANUAL" && entry.status === "Draft") || (!readOnly && canReverse(entry));
 
   return <div className="flex flex-wrap items-center gap-1.5">
@@ -120,7 +120,7 @@ function EntriesSkeleton() {
 }
 
 export function AdjustingEntriesTable({ entries, loading, userId, readOnly, onView, onAction, onReverse, bulkActionsEnabled = false, selectedEntryIds, onToggleEntrySelection, onTogglePageSelection, onBulkApprove, bulkBusy = false }: {
-  entries: AdjustingEntry[]; loading: boolean; userId: number; readOnly: boolean;
+  entries: AdjustingEntry[]; loading: boolean; userId?: number; readOnly: boolean;
   onView: (entry: AdjustingEntry, edit: boolean) => void; onAction: (entry: AdjustingEntry, action: AjeAction) => void; onReverse: (entry: AdjustingEntry) => void;
   bulkActionsEnabled?: boolean; selectedEntryIds: ReadonlySet<number>; onToggleEntrySelection: (entryId: number, selected: boolean) => void;
   onTogglePageSelection: (entryIds: number[], selected: boolean) => void; onBulkApprove: (entries: AdjustingEntry[]) => void; bulkBusy?: boolean;
@@ -128,7 +128,7 @@ export function AdjustingEntriesTable({ entries, loading, userId, readOnly, onVi
   if (loading && entries.length === 0) return <EntriesSkeleton />;
   if (entries.length === 0) return <div className="rounded-md border bg-background p-8 text-center text-sm text-muted-foreground">No entries match these filters.</div>;
 
-  const eligibleForBulkApproval = bulkActionsEnabled ? entries.filter(entry => entry.entryOrigin === "MANUAL" && availableActions(entry).includes("approve") && !isSelfApproval(entry, userId)) : [];
+  const eligibleForBulkApproval = bulkActionsEnabled && userId != null ? entries.filter(entry => entry.entryOrigin === "MANUAL" && availableActions(entry).includes("approve") && !isSelfApproval(entry, userId)) : [];
   const selectedForBulkApproval = eligibleForBulkApproval.filter(entry => selectedEntryIds.has(entry.id));
   const allEligibleSelected = eligibleForBulkApproval.length > 0 && selectedForBulkApproval.length === eligibleForBulkApproval.length;
 

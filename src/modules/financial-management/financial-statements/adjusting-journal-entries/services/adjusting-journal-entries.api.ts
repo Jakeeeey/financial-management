@@ -8,6 +8,7 @@ import type {
   AdjustingEntrySourceJournalSummary,
   AdjustingEntrySourceTotals,
   AdjustingEntrySummary,
+  AdjustingEntrySummaryQuery,
   DepartmentLookup,
   DivisionLookup,
   AjeAccess, AjeAction, AjeAccount, AjeAttachment, AjePeriod, AjeAuditPage, AjeReversalPreview,
@@ -128,6 +129,8 @@ async function fetchWithAuthRetry(input: RequestInfo | URL, init?: RequestInit) 
   const res = await fetch(input, requestInit);
   if (res.status !== 401) return res;
 
+  if (requestInit.signal?.aborted) throw new DOMException("The request was aborted", "AbortError");
+
   const refreshed = await refreshSession();
   if (!refreshed) return res;
 
@@ -135,7 +138,7 @@ async function fetchWithAuthRetry(input: RequestInfo | URL, init?: RequestInit) 
 }
 
 export const adjustingJournalEntriesApi = {
-  async list(query: AdjustingEntryQuery): Promise<AdjustingEntryPage> {
+  async list(query: AdjustingEntryQuery, signal?: AbortSignal): Promise<AdjustingEntryPage> {
     const params = new URLSearchParams();
     params.set("page", String(query.page));
     params.set("pageSize", String(query.pageSize));
@@ -149,22 +152,21 @@ export const adjustingJournalEntriesApi = {
     appendOptional(params, "sort", query.sort);
     appendOptional(params, "accountTypeId", query.accountTypeId);
 
-    const res = await fetchWithAuthRetry(`${BASE}?${params.toString()}`, { cache: "no-store" });
+    const res = await fetchWithAuthRetry(`${BASE}?${params.toString()}`, { cache: "no-store", signal });
     const data = await parseResponse<AdjustingEntryPage & { page?: Partial<AdjustingEntryPage> }>(res, "Failed to load adjusting journal entries");
     return normalizePage(data);
   },
 
-  async summary(query: Omit<AdjustingEntryQuery, "page" | "pageSize">): Promise<AdjustingEntrySummary> {
+  async summary(query: AdjustingEntrySummaryQuery, signal?: AbortSignal): Promise<AdjustingEntrySummary> {
     const params = new URLSearchParams();
     appendOptional(params, "search", query.search?.trim());
     appendOptional(params, "startDate", query.startDate);
     appendOptional(params, "endDate", query.endDate);
     appendOptional(params, "divisionId", query.divisionId);
     appendOptional(params, "departmentId", query.departmentId);
-    appendOptional(params, "status", query.status === "All" ? undefined : query.status);
     appendOptional(params, "accountTypeId", query.accountTypeId);
 
-    const res = await fetchWithAuthRetry(`${BASE}/summary?${params.toString()}`, { cache: "no-store" });
+    const res = await fetchWithAuthRetry(`${BASE}/summary?${params.toString()}`, { cache: "no-store", signal });
     return parseResponse<AdjustingEntrySummary>(res, "Failed to load adjusting entry summary");
   },
 
@@ -287,6 +289,7 @@ async function request<T>(path: string, method = "GET", payload?: unknown): Prom
 }
 
 export function ajeAttachmentUrl(id: number, attachmentId: number) { return `${BASE}/${id}/attachments/${attachmentId}`; }
+export function ajeAttachmentThumbnailUrl(id: number, attachmentId: number) { return `${ajeAttachmentUrl(id, attachmentId)}?preview=thumbnail`; }
 export function ajeAttachmentPreviewUrl(id: number, attachmentId: number) { return `${ajeAttachmentUrl(id, attachmentId)}?preview=1`; }
 export function ajeEntryPrintUrl(id: number) { return `${BASE}/${id}/print`; }
 export function ajeReportUrl(query: AdjustingEntryQuery, format: "csv" | "html") {

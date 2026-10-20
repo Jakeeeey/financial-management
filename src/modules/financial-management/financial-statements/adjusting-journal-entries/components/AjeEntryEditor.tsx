@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { AjeSearchableSelect } from "./AjeSearchableSelect";
 import { money, formatDate, formatDateTime, todayManila } from "./formatters";
-import { ajeAttachmentPreviewUrl, ajeAttachmentUrl, ajeEntryPrintUrl, adjustingJournalEntriesApi as api } from "../services/adjusting-journal-entries.api";
+import { ajeAttachmentPreviewUrl, ajeAttachmentThumbnailUrl, ajeAttachmentUrl, ajeEntryPrintUrl, adjustingJournalEntriesApi as api } from "../services/adjusting-journal-entries.api";
 import { AjeAttachmentPreview, isPreviewableAjeImage } from "./AjeAttachmentPreview";
 import type { AdjustingEntry, AdjustingEntryPayload, AdjustingEntrySourceJournal, AdjustingEntrySourceJournalSummary, AjeAccess, AjeAccount, AjeAction, AjeAttachment, AjeReversalPreview, DepartmentLookup, DivisionLookup } from "../types";
 
@@ -434,12 +434,14 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
         const previewable = file.state === "READY" && isPreviewableAjeImage(file.mimeType, file.filename);
         return <AjeAttachmentPreview key={file.id} fileName={file.filename}
           downloadUrl={file.state === "READY" ? ajeAttachmentUrl(file.entryId, file.id) : undefined}
+          thumbnailUrl={previewable ? ajeAttachmentThumbnailUrl(file.entryId, file.id) : undefined}
           previewUrl={previewable ? ajeAttachmentPreviewUrl(file.entryId, file.id) : undefined}
           statusText={file.state === "READY" ? undefined : "Upload incomplete"}
           metadata={`by ${file.uploadedByName}`}
           onRemove={!frozen ? () => void removeAttachment(file) : undefined} removeDisabled={busy} />;
       })}
       {selectedFiles.map((file, index) => <AjeAttachmentPreview key={`${file.name}-${index}`} fileName={file.name}
+        thumbnailUrl={isPreviewableAjeImage(file.type, file.name, true) ? selectedFilePreviewUrls.current.get(file) : undefined}
         previewUrl={isPreviewableAjeImage(file.type, file.name, true) ? selectedFilePreviewUrls.current.get(file) : undefined}
         statusText="Pending save" onRemove={() => removeSelectedFile(file)} removeDisabled={busy} />)}
     </section>
