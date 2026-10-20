@@ -240,10 +240,12 @@ export function computeDerivedStatus(
   lookups: StatusLookupData
 ): string {
   const dbStatus = (dbTransactionStatus || '').trim();
+  const upperStatus = dbStatus.toUpperCase();
   if (
     dbStatus === 'Cancellation Requested' ||
-    dbStatus === 'Cancelled' ||
-    dbStatus === 'CANCELLED'
+    upperStatus === 'CANCELLED' ||
+    upperStatus === 'VOID' ||
+    upperStatus === 'VOIDED'
   ) {
     return dbStatus;
   }
@@ -559,9 +561,11 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
   ].join(',');
 
   const invoiceFilter =
-    `filter[payment_status][_nin]=Paid,Fully Paid` +
+    `filter[payment_status][_nin]=Paid,Fully Paid,Void,VOID` +
     `&filter[_or][0][isPosted][_null]=true` +
-    `&filter[_or][1][isPosted][_eq]=false`;
+    `&filter[_or][1][isPosted][_eq]=false` +
+    `&filter[_and][0][_or][0][transaction_status][_nin]=Cancelled,CANCELLED,Void,VOID,void` +
+    `&filter[_and][0][_or][1][transaction_status][_null]=true`;
 
   const collectionUrl = `${DIRECTUS_URL}/items/collection?limit=-1&fields=id,salesman_id,totalAmount&filter[isPosted][_neq]=true&filter[isCancelled][_neq]=true`;
 
@@ -677,7 +681,15 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
   const rows: ARRow[] = [];
   for (const inv of invoices) {
     if (parseBit(inv.isPosted)) continue;
-    if ((inv.transaction_status || '').trim().toUpperCase() === 'CANCELLED') continue;
+    const txStatus = (inv.transaction_status || '').trim().toUpperCase();
+    const payStatus = (inv.payment_status || '').trim().toUpperCase();
+    if (
+      txStatus === 'CANCELLED' ||
+      txStatus === 'VOID' ||
+      txStatus === 'VOIDED' ||
+      payStatus === 'VOID' ||
+      payStatus === 'VOIDED'
+    ) continue;
 
     const grossAmount = Number(inv.gross_amount) || 0;
     const discountAmount = Number(inv.discount_amount) || 0;

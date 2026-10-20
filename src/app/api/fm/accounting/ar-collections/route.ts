@@ -195,7 +195,7 @@ export async function GET(request: NextRequest) {
 
     // 2. Fetch Outstanding Invoices with Server-side Pagination & Filtering
     // We will build a query to retrieve only the required invoices for the current page
-    let directusFilter = `filter[payment_status][_nin]=Paid,Fully Paid&filter[_or][0][isPosted][_null]=true&filter[_or][1][isPosted][_eq]=false`;
+    let directusFilter = `filter[payment_status][_nin]=Paid,Fully Paid,Void,VOID&filter[_or][0][isPosted][_null]=true&filter[_or][1][isPosted][_eq]=false&filter[_and][0][_or][0][transaction_status][_nin]=Cancelled,CANCELLED,Void,VOID,void&filter[_and][0][_or][1][transaction_status][_null]=true`;
 
     // A. Apply Salesman filter
     if (salesman !== 'all') {
