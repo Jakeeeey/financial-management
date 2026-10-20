@@ -297,8 +297,8 @@ async function request<T>(path: string, method = "GET", payload?: unknown): Prom
 export function ajeAttachmentUrl(id: number, attachmentId: number) { return `${BASE}/${id}/attachments/${attachmentId}`; }
 export function ajeAttachmentThumbnailUrl(id: number, attachmentId: number) { return `${ajeAttachmentUrl(id, attachmentId)}?preview=thumbnail`; }
 export function ajeAttachmentPreviewUrl(id: number, attachmentId: number) { return `${ajeAttachmentUrl(id, attachmentId)}?preview=1`; }
-export function ajeEntryPrintUrl(id: number) { return `${BASE}/${id}/print`; }
-export function ajeReportUrl(query: AdjustingEntryQuery, format: "csv" | "html") {
+export function ajeEntryPrintUrl(id: number, format?: "pdf") { return `${BASE}/${id}/print${format === "pdf" ? "?format=pdf" : ""}`; }
+export function ajeReportUrl(query: AdjustingEntryQuery, format: "csv" | "html" | "pdf") {
   const params = new URLSearchParams({ format });
   for (const [key, value] of Object.entries(query)) {
     if (key === "page" || key === "pageSize" || value == null || value === "" || value === "All") continue;

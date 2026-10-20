@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, Printer } from "lucide-react";
+import { ajeEntryPrintUrl } from "../services/adjusting-journal-entries.api";
 import type { AdjustingEntry, AjeAction } from "../types";
 import { formatDate, formatDateTime, money, statusBadgeClass } from "./formatters";
 
@@ -85,13 +86,12 @@ function EntryActions({ entry, userId, readOnly, onView, onAction, onReverse }: 
   const secondaryActions = actions.filter(action => action !== mainAction);
   const canEdit = !readOnly && entry.entryOrigin === "MANUAL" && entry.status === "Draft" && isEntryCreator(entry, userId);
   const selfReviewBlocked = !readOnly && userId != null && ["approve", "reject"].some(action => actions.includes(action as AjeAction)) && isSelfApproval(entry, userId);
-  const needsMore = secondaryActions.length > 0 || canEdit || (!readOnly && canReverse(entry));
 
   return <div className="flex flex-wrap items-center gap-1.5">
     <Button size="sm" variant="outline" onClick={() => onView(entry, false)}>View</Button>
     {mainAction && <Button size="sm" variant={mainAction === "cancel" && entry.canCancelAfterReversalConflict ? "destructive" : ["post", "retry", "approve", "submit"].includes(mainAction) ? "default" : "outline"} disabled={mainAction === "approve" && isSelfApproval(entry, userId)} title={mainAction === "approve" && isSelfApproval(entry, userId) ? "Another user must review your submission" : undefined} onClick={() => onAction(entry, mainAction)}>{actionLabelForEntry(entry, mainAction)}</Button>}
     {!readOnly && selfReviewBlocked && <p className="basis-full text-xs text-amber-700">You created, prepared, or submitted this entry. Another user must review it.</p>}
-    {needsMore && <DropdownMenu>
+    <DropdownMenu>
       <DropdownMenuTrigger asChild><Button size="sm" variant="outline" aria-label={`More actions for ${entry.jeNo}`}><MoreHorizontal className="size-4 sm:mr-1" /><span className="hidden sm:inline">More</span></Button></DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel>More actions</DropdownMenuLabel>
@@ -99,8 +99,10 @@ function EntryActions({ entry, userId, readOnly, onView, onAction, onReverse }: 
         {secondaryActions.map(action => <DropdownMenuItem key={action} disabled={["approve", "reject"].includes(action) && isSelfApproval(entry, userId)} onSelect={() => onAction(entry, action)}>{actionLabelForEntry(entry, action)}</DropdownMenuItem>)}
         {!readOnly && canReverse(entry) && <DropdownMenuItem onSelect={() => onReverse(entry)}>Reverse</DropdownMenuItem>}
         {selfReviewBlocked && <><DropdownMenuSeparator /><div className="px-2 py-1.5 text-xs text-amber-700">A different user must approve or reject this entry.</div></>}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild><a href={ajeEntryPrintUrl(entry.id,"pdf")} target="_blank" rel="noopener noreferrer"><Printer className="size-4" /> Print PDF</a></DropdownMenuItem>
       </DropdownMenuContent>
-    </DropdownMenu>}
+    </DropdownMenu>
   </div>;
 }
 

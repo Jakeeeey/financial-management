@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { AjeAction, AjeAttachment, AdjustingEntry } from "../types";
-import { ajeAttachmentPreviewUrl, ajeAttachmentThumbnailUrl, ajeAttachmentUrl } from "../services/adjusting-journal-entries.api";
+import { ajeAttachmentPreviewUrl, ajeAttachmentThumbnailUrl, ajeAttachmentUrl, ajeEntryPrintUrl } from "../services/adjusting-journal-entries.api";
 import { AjeAttachmentPreview, isPreviewableAjeImage } from "./AjeAttachmentPreview";
 import { formatDate, formatDateTime, money, statusBadgeClass } from "./formatters";
 import { availableActions, isSelfApproval } from "./AdjustingEntriesTable";
@@ -78,7 +78,7 @@ export function AjeReviewDialog({ open, journalNumber, entry, attachments, loadi
         </section>
       </div>}
       {canReview && selfReviewBlocked && <p className="text-sm text-amber-700">Another user must review this entry because you created, prepared, or submitted it.</p>}
-      <DialogFooter>{canReview && entry && !selfReviewBlocked && reviewActions.includes("reject") && <Button type="button" variant="outline" onClick={() => onAction(entry, "reject")}>Reject</Button>}{canReview && entry && !selfReviewBlocked && reviewActions.includes("approve") && <Button type="button" onClick={() => onAction(entry, "approve")}>Approve</Button>}<DialogClose asChild><Button type="button" variant="outline">Close</Button></DialogClose></DialogFooter>
+      <DialogFooter className="flex-wrap">{!loading && entry && <Button type="button" variant="outline" asChild><a href={ajeEntryPrintUrl(entry.id,"pdf")} target="_blank" rel="noopener noreferrer">Print PDF</a></Button>}{canReview && entry && !selfReviewBlocked && reviewActions.includes("reject") && <Button type="button" variant="outline" onClick={() => onAction(entry, "reject")}>Reject</Button>}{canReview && entry && !selfReviewBlocked && reviewActions.includes("approve") && <Button type="button" onClick={() => onAction(entry, "approve")}>Approve</Button>}<DialogClose asChild><Button type="button" variant="outline">Close</Button></DialogClose></DialogFooter>
     </DialogContent>
   </Dialog>;
 }
