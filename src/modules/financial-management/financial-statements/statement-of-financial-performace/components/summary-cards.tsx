@@ -31,7 +31,7 @@ const EmptyCard = ({ title, subtitle }: { title: string, subtitle: string }) => 
 export function SummaryCards() {
   const { data, isLoading, isInitialLoad } = useFinancialPerformance();
 
-  const totalSales = Math.abs(data?.totalRevenue ?? 0);
+  const totalSales = data?.totalRevenue ?? 0;
   const cogs = data?.totalCostOfSales ?? 0;
   // Total expenses 
   const totalExpenses = (data?.totalOperatingExpenses ?? 0) + (data?.totalOtherExpense ?? 0);

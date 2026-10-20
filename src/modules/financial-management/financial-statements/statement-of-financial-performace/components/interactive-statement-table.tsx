@@ -34,7 +34,7 @@ const formatAccAmount = (amount?: number, isNegativeFormat: boolean = false) => 
     });
     
     const formatted = formatter.format(absValue);
-    return isNegative ? `(${formatted})` : formatted;
+    return isNegative ? `-${formatted}` : formatted;
 };
 
 // Simple variance format
@@ -297,7 +297,7 @@ export function InteractiveStatementTable() {
                                 </TableHeader>
                                 <TableBody className="bg-card">
                                     {/* --- SALES --- */}
-                                    {renderSummaryRow({ label: "Gross Sales", currentValue: Math.abs(summary.totalRevenue), priorValue: comparisonSummary ? Math.abs(comparisonSummary.totalRevenue) : undefined, isBold: true, hasBorderTop: false })}
+                                    {renderSummaryRow({ label: "Gross Sales", currentValue: summary.totalRevenue, priorValue: comparisonSummary?.totalRevenue, isBold: true, hasBorderTop: false })}
                                     
                                     {data.entries.filter((e: FinancialPerformanceEntry) => e.reportSection === "Contra Revenue").map((entry: FinancialPerformanceEntry, idx: number) => {
                                         const compEntry = comparisonSummary?.entries.find((c: FinancialPerformanceEntry) => c.accountTitle === entry.accountTitle);
@@ -323,8 +323,8 @@ export function InteractiveStatementTable() {
                                     
                                     {renderSummaryRow({
                                         label: "Net Sales", 
-                                        currentValue: Math.abs(summary.totalRevenue) - Math.abs(getSectionTotal(summary, "Contra Revenue") || 0), 
-                                        priorValue: comparisonSummary ? Math.abs(comparisonSummary.totalRevenue) - Math.abs(getSectionTotal(comparisonSummary, "Contra Revenue") || 0) : undefined, 
+                                        currentValue: summary.totalRevenue - Math.abs(getSectionTotal(summary, "Contra Revenue") || 0),
+                                        priorValue: comparisonSummary ? comparisonSummary.totalRevenue - Math.abs(getSectionTotal(comparisonSummary, "Contra Revenue") || 0) : undefined,
                                         isBold: true, hasBorderTop: true, hasBorderBottom: true 
                                     })}
                                     

@@ -87,7 +87,7 @@ export function ReportControlSection() {
                                     "bg-muted text-muted-foreground": isNeutral,
                                 })}
                             >
-                                {Math.abs(variance).toFixed(1)}%
+                                {variance > 0 ? "+" : ""}{variance.toFixed(1)}%
                             </span>
                         </div>
                     )}
