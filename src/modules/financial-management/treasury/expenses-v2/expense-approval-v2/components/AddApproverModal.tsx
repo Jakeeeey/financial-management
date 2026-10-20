@@ -146,7 +146,7 @@ export const AddApproverModal: React.FC<AddApproverModalProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-md bg-card border-border/80 text-foreground">
+      <DialogContent className="sm:max-w-md bg-card border-border/80 text-foreground [&_button]:cursor-pointer">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base font-semibold">
             <User className="w-4 h-4 text-primary" /> Assign Division Approver

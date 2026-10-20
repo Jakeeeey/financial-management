@@ -1,1296 +1,534 @@
 "use client";
-
 import * as React from "react";
-import { useSearchParams } from "next/navigation";
-import {
-  ChevronLeft,
-  ChevronRight,
-  Loader2,
-  Plus,
-  RefreshCw,
-  Save,
-  Search,
-  Send,
-  X,
-} from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
+import { ChevronsLeft, ChevronsRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
-
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AdjustingEntriesFilters } from "./components/AdjustingEntriesFilters";
+import { AdjustingEntriesTable, actionLabelForEntry, availableActions, isSelfApproval } from "./components/AdjustingEntriesTable";
 import { AdjustingEntriesSummaryCards } from "./components/AdjustingEntriesSummaryCards";
-import { AdjustingEntriesTable } from "./components/AdjustingEntriesTable";
-import { AdjustingEntryDetailsGrid } from "./components/AdjustingEntryDetailsGrid";
-import { AdjustingEntrySourcePanel } from "./components/AdjustingEntrySourcePanel";
-import { AjeSearchableSelect } from "./components/AjeSearchableSelect";
-import { balancedTolerance, formatDate, money, statusBadgeClass } from "./components/formatters";
-import type {
-  DetailFormRow,
-  EntryAction,
-  EntryForm,
-  PendingAction,
-  SortDirection,
-  SortKey,
-  SourceReferencePayload,
-} from "./components/types";
-import type {
-  AdjustingEntry,
-  AdjustingEntryDetail,
-  AdjustingEntryPage,
-  AdjustingEntryPayload,
-  AdjustingEntryPostedAdjustmentHistory,
-  AdjustingEntrySourceJournal,
-  AdjustingEntrySourceJournalSummary,
-  AdjustingEntrySummary,
-  DepartmentLookup,
-  DivisionLookup,
-  LookupOption,
-} from "./types";
-import {
-  adjustingJournalEntriesApi,
-  fetchCoaOptions,
-  fetchDepartmentOptions,
-  fetchDivisionOptions,
-} from "./services/adjusting-journal-entries.api";
+import { AjePeriodDialog } from "./components/AjePeriodDialog";
+import { AjeEntryEditorSkeleton } from "./components/AjeEntryEditorSkeleton";
+import { formatDate, money, todayManila } from "./components/formatters";
+import { adjustingJournalEntriesApi as api, ajeReportUrl, fetchDepartmentOptions, fetchDivisionOptions } from "./services/adjusting-journal-entries.api";
+import type { AdjustingEntry, AdjustingEntryPayload, AdjustingEntryQuery, AdjustingEntrySummary, AdjustingEntrySummaryQuery, AjeAccess, AjeAccount, AjeAction, AjeAttachment, AjePeriod, AjeReversalPreview, DepartmentLookup, DivisionLookup } from "./types";
 
-const pageSizes = [10, 20, 50];
-const statusOptions = ["All", "Draft", "Posted", "Voided"];
-const emptySummary: AdjustingEntrySummary = {
-  draft: 0,
-  posted: 0,
-  voided: 0,
-  imbalanced: 0,
-  totalRecords: 0,
-};
-const sortableColumns: Record<SortKey, { label: string; field: string }> = {
-  id: { label: "Created", field: "id" },
-  jeNo: { label: "JE No.", field: "jeNo" },
-  transactionDate: { label: "Date", field: "transactionDate" },
-  status: { label: "Status", field: "status" },
-};
+const AjeEntryEditor = React.lazy(() => import("./components/AjeEntryEditor").then(module => ({ default:module.AjeEntryEditor })));
+const AjeReviewDialog = React.lazy(() => import("./components/AjeReviewDialog").then(module => ({ default:module.AjeReviewDialog })));
+const AjeAuditTrail = React.lazy(() => import("./components/AjeAuditTrail").then(module => ({ default:module.AjeAuditTrail })));
 
-function todayInputValue() {
-  const date = new Date();
-  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
-  return date.toISOString().slice(0, 10);
+type Tab = "new" | "posting" | "audit" | "summary";
+type EntryListTab = Extract<Tab, "posting" | "summary">;
+type PostingQueue = "all" | "needs-action" | "submitted" | "approved" | "failed";
+type CatalogLookups = { accounts: AjeAccount[]; departments: DepartmentLookup[]; divisions: DivisionLookup[] };
+const statuses = ["All","Draft","Submitted","Approved","Rejected","Posted","Cancelled","Failed","Voided"];
+const queueValues: PostingQueue[] = ["all","needs-action","submitted","approved","failed"];
+const pageSizes = [10,20,50,100];
+const sortValues = ["lastActivity,desc","transactionDate,desc","transactionDate,asc","id,desc","jeNo,asc","status,asc"];
+const emptySummary: AdjustingEntrySummary = { draft:0, submitted:0, approved:0, posted:0, rejected:0, cancelled:0, failed:0, voided:0, imbalanced:0, totalRecords:0, postedDebit:0, postedCredit:0 };
+const reasonRequired = new Set<AjeAction>(["reject","cancel"]);
+
+function validDate(value: string | null) {
+  return value && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00`)) ? value : "";
 }
 
-function makeRow(detail?: AdjustingEntryDetail): DetailFormRow {
+function positiveId(value: string | null) {
+  return value && /^\d+$/.test(value) && Number(value) > 0 ? value : "";
+}
+
+function pageNumber(value: string | null) {
+  return value && /^\d+$/.test(value) ? Math.max(0, Number(value)) : 0;
+}
+
+function parseListFilters(params: URLSearchParams) {
+  const status = params.get("status") || "All";
+  const pageSize = Number(params.get("pageSize"));
+  const sort = params.get("sort") || "lastActivity,desc";
+  const queue = params.get("queue");
   return {
-    localId: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    id: detail?.id ?? null,
-    coaId: detail?.coaId ? String(detail.coaId) : "",
-    debit: detail && detail.debit > 0 ? detail.debit.toFixed(2) : "",
-    credit: detail && detail.credit > 0 ? detail.credit.toFixed(2) : "",
+    search: params.get("search") || "",
+    status: statuses.includes(status) ? status : "All",
+    startDate: validDate(params.get("startDate")),
+    endDate: validDate(params.get("endDate")),
+    division: positiveId(params.get("divisionId")) || "all",
+    department: positiveId(params.get("departmentId")) || "all",
+    accountType: positiveId(params.get("accountTypeId")),
+    sort: sortValues.includes(sort) ? sort : "lastActivity,desc",
+    page: pageNumber(params.get("page")),
+    pageSize: pageSizes.includes(pageSize) ? pageSize : 20,
+    queue: queue && queueValues.includes(queue as PostingQueue) ? queue as PostingQueue : null,
   };
 }
 
-function emptyForm(): EntryForm {
-  return {
-    transactionDate: todayInputValue(),
-    divisionId: "",
-    departmentId: "",
-    description: "",
-    details: [makeRow(), makeRow()],
-  };
-}
-
-function formFromEntry(entry: AdjustingEntry): EntryForm {
-  return {
-    transactionDate: entry.transactionDate?.slice(0, 10) || todayInputValue(),
-    divisionId: entry.divisionId ? String(entry.divisionId) : "",
-    departmentId: entry.departmentId ? String(entry.departmentId) : "",
-    description: entry.description || "",
-    details: entry.details.length > 0 ? entry.details.map(makeRow) : [makeRow()],
-  };
-}
-
-function formFromSourceJournal(source: AdjustingEntrySourceJournal): EntryForm {
-  const description = ["Adjustment for", source.jeNo, source.description ? `- ${source.description}` : ""]
-    .filter(Boolean)
-    .join(" ");
-
-  return {
-    transactionDate: source.transactionDate?.slice(0, 10) || todayInputValue(),
-    divisionId: "",
-    departmentId: "",
-    description,
-    details: [makeRow(), makeRow()],
-  };
-}
-
-function sourceReferenceFromJournal(source: AdjustingEntrySourceJournal): SourceReferencePayload {
-  return {
-    sourceJeNo: source.jeNo,
-    sourceJeGroupCounter: source.jeGroupCounter,
-    sourceModule: source.sourceModule,
-    sourceTransactionRef: source.transactionRef,
-    sourceTransactionDate: source.transactionDate?.slice(0, 10) || null,
-  };
-}
-
-function sourceReferenceFromEntry(entry: AdjustingEntry): SourceReferencePayload | null {
-  if (!entry.sourceJeNo) return null;
-
-  return {
-    sourceJeNo: entry.sourceJeNo,
-    sourceJeGroupCounter: entry.sourceJeGroupCounter,
-    sourceModule: entry.sourceModule,
-    sourceTransactionRef: entry.sourceTransactionRef,
-    sourceTransactionDate: entry.sourceTransactionDate,
-  };
-}
-
-function parseMoney(value: string) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return 0;
-  return Math.round(parsed * 100) / 100;
-}
-
-function actionLabel(action: EntryAction) {
-  if (action === "post") return "Post";
-  return "Delete";
-}
-
-function actionDescription(action: EntryAction) {
-  if (action === "post") return "This will move the draft into the posted ledger and prevent future edits.";
-  return "This will permanently remove the draft adjusting entry.";
-}
-
-function isBlankDetailRow(row: DetailFormRow) {
-  return !row.coaId && !row.debit.trim() && !row.credit.trim();
-}
-
-function toPayload(form: EntryForm, sourceReference?: SourceReferencePayload | null): AdjustingEntryPayload {
-  return {
-    transactionDate: form.transactionDate,
-    description: form.description.trim(),
-    divisionId: form.divisionId ? Number(form.divisionId) : null,
-    departmentId: form.departmentId ? Number(form.departmentId) : null,
-    ...(sourceReference ?? {}),
-    details: form.details
-      .filter((row) => !isBlankDetailRow(row))
-      .map((row) => ({
-        coaId: Number(row.coaId),
-        debit: parseMoney(row.debit),
-        credit: parseMoney(row.credit),
-      })),
-  };
-}
-
-function validateDetailRow(row: DetailFormRow) {
-  if (isBlankDetailRow(row)) return null;
-
-  const debit = parseMoney(row.debit);
-  const credit = parseMoney(row.credit);
-
-  if (!row.coaId) return "Chart of account is required";
-  if (debit < 0 || credit < 0) return "Amounts cannot be negative";
-  if (debit > 0 && credit > 0) return "Use either debit or credit";
-  if (debit === 0 && credit === 0) return "Enter a debit or credit amount";
-
-  return null;
-}
-
-function validateForm(form: EntryForm) {
-  if (!form.transactionDate) return "Transaction date is required";
-  if (!form.description.trim()) return "Description is required";
-  if (!form.details.some((row) => !isBlankDetailRow(row))) return "At least one detail line is required";
-
-  for (let index = 0; index < form.details.length; index += 1) {
-    const rowError = validateDetailRow(form.details[index]);
-    if (rowError) return `Line ${index + 1}: ${rowError}`;
-  }
-
-  return null;
-}
-
-export function AdjustingJournalEntriesModule() {
+export function AdjustingJournalEntriesModule({ initialView = "posting" }: { initialView?: Tab }) {
   const searchParams = useSearchParams();
-  const handledSourceIntentRef = React.useRef<string | null>(null);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParamText = searchParams.toString();
+  const latestSearchParams = React.useRef(searchParamText);
+  const listFilters = React.useMemo(() => parseListFilters(new URLSearchParams(searchParamText)), [searchParamText]);
+  const [tab, setTab] = React.useState<Tab>(initialView);
+  const [access, setAccess] = React.useState<AjeAccess | null>(null);
+  const [catalogs, setCatalogs] = React.useState<CatalogLookups | null>(null);
+  const [accessError, setAccessError] = React.useState("");
+  const [catalogsError, setCatalogsError] = React.useState("");
+  const [periodError, setPeriodError] = React.useState("");
+  const [lookupRevision, setLookupRevision] = React.useState(0);
+  const [period, setPeriod] = React.useState<AjePeriod | null>(null);
+  const [accessLoading, setAccessLoading] = React.useState(initialView === "new" || initialView === "posting");
+  const [catalogsLoading, setCatalogsLoading] = React.useState(initialView !== "audit");
+  const [periodLoading, setPeriodLoading] = React.useState(initialView === "new" || initialView === "posting");
+  const [periodOpen, setPeriodOpen] = React.useState(false);
+  const [savedPostingQueue, setSavedPostingQueue] = React.useState<PostingQueue | null>(null);
+  const [queuePreferenceLoaded, setQueuePreferenceLoaded] = React.useState(false);
   const [entries, setEntries] = React.useState<AdjustingEntry[]>([]);
-  const [summary, setSummary] = React.useState<AdjustingEntrySummary>(emptySummary);
-  const [pageData, setPageData] = React.useState<Pick<AdjustingEntryPage, "number" | "size" | "totalElements" | "totalPages">>({
-    number: 0,
-    size: 10,
-    totalElements: 0,
-    totalPages: 0,
-  });
-  const [search, setSearch] = React.useState("");
-  const [status, setStatus] = React.useState("All");
-  const [startDate, setStartDate] = React.useState("");
-  const [endDate, setEndDate] = React.useState("");
-  const [filterDivisionId, setFilterDivisionId] = React.useState("all");
-  const [filterDepartmentId, setFilterDepartmentId] = React.useState("all");
-  const [sortKey, setSortKey] = React.useState<SortKey>("id");
-  const [sortDirection, setSortDirection] = React.useState<SortDirection>("desc");
-  const [page, setPage] = React.useState(0);
-  const [pageSize, setPageSize] = React.useState(10);
-  const [isLoading, setIsLoading] = React.useState(false);
-  const [actionId, setActionId] = React.useState<number | null>(null);
-  const [pendingAction, setPendingAction] = React.useState<PendingAction | null>(null);
-  const [dialogOpen, setDialogOpen] = React.useState(false);
+  const [summary, setSummary] = React.useState(emptySummary);
+  const [totalPages, setTotalPages] = React.useState(0);
+  const [totalElements, setTotalElements] = React.useState(0);
+  const [listLoading, setListLoading] = React.useState(initialView === "posting" || initialView === "summary");
+  const [summaryLoading, setSummaryLoading] = React.useState(initialView === "posting" || initialView === "summary");
+  const [listError, setListError] = React.useState("");
+  const [summaryError, setSummaryError] = React.useState("");
+  const [error, setError] = React.useState("");
+  const [listRevision, setListRevision] = React.useState(0);
+  const [summaryRevision, setSummaryRevision] = React.useState(0);
+  const [auditRevision, setAuditRevision] = React.useState(0);
+  const [editorEntry, setEditorEntry] = React.useState<AdjustingEntry | null>(null);
+  const [editorSeed, setEditorSeed] = React.useState<AdjustingEntryPayload | null>(null);
+  const [editorKey, setEditorKey] = React.useState(0);
   const [readOnly, setReadOnly] = React.useState(false);
-  const [editingEntry, setEditingEntry] = React.useState<AdjustingEntry | null>(null);
-  const [form, setForm] = React.useState<EntryForm>(() => emptyForm());
-  const [saving, setSaving] = React.useState(false);
-  const [sourceJournalEntry, setSourceJournalEntry] = React.useState<AdjustingEntrySourceJournal | null>(null);
-  const [postedAdjustmentHistory, setPostedAdjustmentHistory] = React.useState<AdjustingEntryPostedAdjustmentHistory | null>(null);
-  const [pendingSourceJeNo, setPendingSourceJeNo] = React.useState("");
-  const [sourceSearchValue, setSourceSearchValue] = React.useState("");
-  const [sourceSuggestions, setSourceSuggestions] = React.useState<AdjustingEntrySourceJournalSummary[]>([]);
-  const [sourceSuggestionsOpen, setSourceSuggestionsOpen] = React.useState(false);
-  const [sourceSuggestionsLoading, setSourceSuggestionsLoading] = React.useState(false);
-  const [sourceSuggestionsError, setSourceSuggestionsError] = React.useState("");
-  const [sourceLoading, setSourceLoading] = React.useState(false);
-  const [postedAdjustmentHistoryLoading, setPostedAdjustmentHistoryLoading] = React.useState(false);
-  const [postedAdjustmentHistoryError, setPostedAdjustmentHistoryError] = React.useState("");
-  const [coaOptions, setCoaOptions] = React.useState<LookupOption[]>([]);
-  const [divisions, setDivisions] = React.useState<DivisionLookup[]>([]);
-  const [departments, setDepartments] = React.useState<DepartmentLookup[]>([]);
-  const [entryCombinedVariance, setEntryCombinedVariance] = React.useState<Record<number, number>>({});
+  const [editorReturnTab, setEditorReturnTab] = React.useState<EntryListTab | null>(null);
+  const [action, setAction] = React.useState<{ entry: AdjustingEntry; action: AjeAction } | null>(null);
+  const [reason, setReason] = React.useState("");
+  const [actionError, setActionError] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [reversal, setReversal] = React.useState<AjeReversalPreview | null>(null);
+  const [reviewEntry, setReviewEntry] = React.useState<AdjustingEntry | null>(null);
+  const [reviewDetails, setReviewDetails] = React.useState<AdjustingEntry | null>(null);
+  const [reviewAttachments, setReviewAttachments] = React.useState<AjeAttachment[]>([]);
+  const [reviewLoading, setReviewLoading] = React.useState(false);
+  const [reviewAttachmentsLoading, setReviewAttachmentsLoading] = React.useState(false);
+  const [reviewError, setReviewError] = React.useState("");
+  const [reviewAttachmentsError, setReviewAttachmentsError] = React.useState("");
+  const [selectedApprovalIds, setSelectedApprovalIds] = React.useState<Set<number>>(() => new Set());
+  const [bulkConfirmEntries, setBulkConfirmEntries] = React.useState<AdjustingEntry[] | null>(null);
+  const [bulkBusy, setBulkBusy] = React.useState(false);
+  const [bulkResult, setBulkResult] = React.useState<{ approved: number; failures: Array<{ jeNo: string; message: string }> } | null>(null);
+  const commandLock = React.useRef(false);
+  const reviewRequestGeneration = React.useRef(0);
+  const editorDirtyRef = React.useRef(false);
+  const handledIntent = React.useRef("");
+  const searchCommitTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const search = listFilters.search;
+  const normalizedSearch = search.trim();
+  const [searchDraft, setSearchDraft] = React.useState(search);
+  const postingQueue = listFilters.queue || (initialView === "posting" && listFilters.status !== "All" ? "all" : savedPostingQueue || "needs-action");
+  const status = initialView === "posting" && postingQueue !== "all" ? "All" : listFilters.status;
+  const startDate = listFilters.startDate;
+  const endDate = listFilters.endDate;
+  const division = listFilters.division;
+  const department = listFilters.department;
+  const accountType = listFilters.accountType;
+  const sort = listFilters.sort;
+  const page = listFilters.page;
+  const pageSize = listFilters.pageSize;
+  const divisionId = division === "all" ? null : Number(division);
+  const departmentId = department === "all" ? null : Number(department);
+  const accountTypeId = accountType ? Number(accountType) : null;
+  const query = React.useMemo<AdjustingEntryQuery>(() => ({ page,pageSize,search:normalizedSearch || undefined,status,startDate,endDate,divisionId,departmentId,accountTypeId,sort }), [page,pageSize,normalizedSearch,status,startDate,endDate,divisionId,departmentId,accountTypeId,sort]);
+  const summaryQuery = React.useMemo<AdjustingEntrySummaryQuery>(() => ({ search:normalizedSearch || undefined,startDate,endDate,divisionId,departmentId,accountTypeId }), [normalizedSearch,startDate,endDate,divisionId,departmentId,accountTypeId]);
+  const listQuery = React.useMemo<AdjustingEntryQuery>(() => {
+    if (initialView !== "posting" || postingQueue === "all") return query;
+    const queueStatus = postingQueue === "needs-action" ? "Needs action" : postingQueue === "submitted" ? "Submitted" : postingQueue === "approved" ? "Approved" : "Failed";
+    return { ...query, status:queueStatus };
+  }, [initialView,postingQueue,query]);
+  const hasEntryList = initialView === "posting" || initialView === "summary";
+  const listViewActive = hasEntryList && tab === initialView;
 
-  const loadEntries = React.useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const data = await adjustingJournalEntriesApi.list({
-        page,
-        pageSize,
-        search,
-        status,
-        startDate,
-        endDate,
-        divisionId: filterDivisionId === "all" ? null : Number(filterDivisionId),
-        departmentId: filterDepartmentId === "all" ? null : Number(filterDepartmentId),
-        sort: `${sortableColumns[sortKey].field},${sortDirection}`,
-      });
-      setEntries(data.content ?? []);
-      setPageData({
-        number: data.number ?? page,
-        size: data.size ?? pageSize,
-        totalElements: data.totalElements ?? 0,
-        totalPages: data.totalPages ?? 0,
-      });
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to load adjusting entries");
-    } finally {
-      setIsLoading(false);
+  React.useEffect(() => {
+    setSelectedApprovalIds(new Set());
+    setBulkResult(null);
+  }, [tab,page,pageSize,search,status,startDate,endDate,division,department,accountType,postingQueue]);
+
+  React.useEffect(() => {
+    if (!access) return;
+    const eligibleIds = new Set(entries.filter(entry => entry.entryOrigin === "MANUAL" && availableActions(entry).includes("approve") && !isSelfApproval(entry, access.userId)).map(entry => entry.id));
+    setSelectedApprovalIds(current => new Set([...current].filter(id => eligibleIds.has(id))));
+  }, [entries, access]);
+
+  React.useEffect(() => { latestSearchParams.current = searchParamText; }, [searchParamText]);
+
+  const updateListQuery = React.useCallback((updates: Record<string, string | null>) => {
+    const params = new URLSearchParams(latestSearchParams.current);
+    for (const [key, value] of Object.entries(updates)) {
+      if (value == null || value === "") params.delete(key);
+      else params.set(key, value);
     }
-  }, [
-    page,
-    pageSize,
-    search,
-    status,
-    startDate,
-    endDate,
-    filterDivisionId,
-    filterDepartmentId,
-    sortKey,
-    sortDirection,
-  ]);
+    const queryString = params.toString();
+    latestSearchParams.current = queryString;
+    router.replace(`${pathname}${queryString ? `?${queryString}` : ""}`, { scroll:false });
+  }, [pathname, router]);
 
-  const loadSummaryEntries = React.useCallback(async () => {
-    try {
-      const data = await adjustingJournalEntriesApi.summary({
-        search,
-        startDate,
-        endDate,
-        divisionId: filterDivisionId === "all" ? null : Number(filterDivisionId),
-        departmentId: filterDepartmentId === "all" ? null : Number(filterDepartmentId),
-      });
-      setSummary(data);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to load adjusting entry summary");
-    }
-  }, [
-    search,
-    startDate,
-    endDate,
-    filterDivisionId,
-    filterDepartmentId,
-  ]);
+  const updateFilters = React.useCallback((updates: Record<string, string | null>) => {
+    updateListQuery({ ...updates, page:"0" });
+  }, [updateListQuery]);
 
-  React.useEffect(() => {
-    void loadEntries();
-  }, [loadEntries]);
-
-  React.useEffect(() => {
-    void loadSummaryEntries();
-  }, [loadSummaryEntries]);
-
-  React.useEffect(() => {
-    let mounted = true;
-    Promise.all([fetchCoaOptions(), fetchDivisionOptions(), fetchDepartmentOptions()])
-      .then(([coa, divisionRows, departmentRows]) => {
-        if (!mounted) return;
-        setCoaOptions(coa);
-        setDivisions(divisionRows);
-        setDepartments(departmentRows);
-      })
-      .catch((error) => {
-        toast.error(error instanceof Error ? error.message : "Failed to load lookup data");
-      });
-
-    return () => {
-      mounted = false;
-    };
+  const cancelPendingSearchCommit = React.useCallback(() => {
+    if (searchCommitTimer.current) clearTimeout(searchCommitTimer.current);
+    searchCommitTimer.current = null;
   }, []);
 
+  const handleSearchChange = React.useCallback((value: string) => {
+    setSearchDraft(value);
+    cancelPendingSearchCommit();
+    searchCommitTimer.current = setTimeout(() => {
+      searchCommitTimer.current = null;
+      updateFilters({ search:value || null });
+    }, 250);
+  }, [cancelPendingSearchCommit,updateFilters]);
+
+  React.useEffect(() => { setSearchDraft(search); }, [search]);
+
   React.useEffect(() => {
-    const entriesWithSource = entries.filter((e) => e.sourceJeNo);
-    if (entriesWithSource.length === 0) {
-      setEntryCombinedVariance({});
-      return;
-    }
-
-    let cancelled = false;
-    const uniqueJeNos = [...new Set(entriesWithSource.map((e) => e.sourceJeNo!))];
-    Promise.all([
-      adjustingJournalEntriesApi.sourceTotals(uniqueJeNos),
-      adjustingJournalEntriesApi.postedTotals(uniqueJeNos),
-    ])
-      .then(([sourceTotalsBySource, postedTotalsBySource]) => {
-        if (cancelled) return;
-        const sourceVarianceByJeNo: Record<string, number> = {};
-        for (const total of sourceTotalsBySource) {
-          sourceVarianceByJeNo[total.sourceJeNo] = total.variance;
-        }
-        const postedVarianceByJeNo: Record<string, number> = {};
-        for (const total of postedTotalsBySource) {
-          postedVarianceByJeNo[total.sourceJeNo] = total.variance;
-        }
-        const combined: Record<number, number> = {};
-        for (const entry of entriesWithSource) {
-          const sourceVariance = sourceVarianceByJeNo[entry.sourceJeNo!] ?? 0;
-          const postedVariance = postedVarianceByJeNo[entry.sourceJeNo!] ?? 0;
-          const draftVariance = entry.status === "Draft" ? entry.variance : 0;
-          combined[entry.id] = Math.round((sourceVariance + postedVariance + draftVariance) * 100) / 100;
-        }
-        setEntryCombinedVariance(combined);
-      })
-      .catch(() => {});
-
-    return () => {
-      cancelled = true;
+    const syncSearchFromLocation = () => {
+      cancelPendingSearchCommit();
+      setSearchDraft(parseListFilters(new URLSearchParams(window.location.search)).search);
     };
-  }, [entries]);
+    window.addEventListener("popstate", syncSearchFromLocation);
+    return () => window.removeEventListener("popstate", syncSearchFromLocation);
+  }, [cancelPendingSearchCommit]);
 
-  const loadSourceJournalEntry = React.useCallback(async (jeNo: string, excludeAdjustmentId?: number | null) => {
-    const normalizedJeNo = jeNo.trim();
-    setSourceLoading(true);
-    setPostedAdjustmentHistoryLoading(true);
-    setPostedAdjustmentHistoryError("");
-    setSourceJournalEntry(null);
-    setPostedAdjustmentHistory(null);
-    try {
-      const [sourceResult, historyResult] = await Promise.allSettled([
-        adjustingJournalEntriesApi.sourceJournalEntry(normalizedJeNo),
-        adjustingJournalEntriesApi.postedAdjustmentHistory(normalizedJeNo, excludeAdjustmentId),
-      ]);
+  React.useEffect(() => () => cancelPendingSearchCommit(), [cancelPendingSearchCommit]);
 
-      if (sourceResult.status === "rejected") {
-        throw sourceResult.reason;
-      }
-
-      const source = sourceResult.value;
-      setSourceJournalEntry(source);
-      setSourceSearchValue(source.jeNo);
-
-      if (historyResult.status === "fulfilled") {
-        setPostedAdjustmentHistory(historyResult.value);
-      } else {
-        setPostedAdjustmentHistoryError(historyResult.reason instanceof Error ? historyResult.reason.message : "Failed to load existing posted adjustments");
-      }
-
-      return source;
-    } finally {
-      setSourceLoading(false);
-      setPostedAdjustmentHistoryLoading(false);
+  function selectPostingQueue(value: PostingQueue) {
+    if (access) {
+      try { window.localStorage.setItem(`aje-posting-queue:${access.userId}`, value); } catch { /* Storage can be unavailable in private contexts. */ }
     }
-  }, []);
+    setSavedPostingQueue(value);
+    updateListQuery({ queue:value, status:null, page:"0" });
+  }
 
   React.useEffect(() => {
-    const query = sourceSearchValue.trim();
-    const selectedJeNo = sourceJournalEntry?.jeNo || "";
+    let active = true;
+    const needsAccess = initialView === "new" || initialView === "posting";
+    const needsCatalogs = initialView !== "audit";
+    const needsPeriod = initialView === "new" || initialView === "posting";
 
-    if (editingEntry || readOnly || sourceLoading || query.length < 2 || query === selectedJeNo) {
-      setSourceSuggestions([]);
-      setSourceSuggestionsError("");
-      setSourceSuggestionsLoading(false);
-      return;
+    if (needsAccess) {
+      setAccessLoading(true);
+      setAccessError("");
+      api.access().then(value => { if (active) setAccess(value); })
+        .catch(e => { if (active) { setAccessError(e instanceof Error ? e.message : "Unable to load AJE permissions"); if (initialView === "posting") setQueuePreferenceLoaded(true); } })
+        .finally(() => { if (active) setAccessLoading(false); });
     }
-
-    let cancelled = false;
-    setSourceSuggestionsLoading(true);
-    setSourceSuggestionsError("");
-
-    const timeout = window.setTimeout(() => {
-      adjustingJournalEntriesApi.searchSourceJournalEntries(query, 10)
-        .then((results) => {
-          if (cancelled) return;
-          setSourceSuggestions(results);
-          setSourceSuggestionsOpen(true);
-        })
-        .catch((error) => {
-          if (cancelled) return;
-          setSourceSuggestions([]);
-          setSourceSuggestionsError(error instanceof Error ? error.message : "Failed to search source journal entries");
-          setSourceSuggestionsOpen(true);
-        })
-        .finally(() => {
-          if (!cancelled) setSourceSuggestionsLoading(false);
-        });
-    }, 300);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeout);
-    };
-  }, [editingEntry, readOnly, sourceJournalEntry?.jeNo, sourceLoading, sourceSearchValue]);
+    if (needsCatalogs) {
+      setCatalogsLoading(true);
+      setCatalogsError("");
+      Promise.all([api.accounts(),fetchDepartmentOptions(),fetchDivisionOptions()])
+        .then(([accounts,departments,divisions]) => { if (active) setCatalogs({ accounts,departments,divisions }); })
+        .catch(e => { if (active) setCatalogsError(e instanceof Error ? e.message : "Unable to load AJE lookup options"); })
+        .finally(() => { if (active) setCatalogsLoading(false); });
+    }
+    if (needsPeriod) {
+      setPeriodLoading(true);
+      setPeriodError("");
+      api.period().then(value => { if (active) setPeriod(value); })
+        .catch(e => { if (active) setPeriodError(e instanceof Error ? e.message : "Unable to load the accounting period cutoff"); })
+        .finally(() => { if (active) setPeriodLoading(false); });
+    }
+    return () => { active = false; };
+  }, [initialView,lookupRevision]);
 
   React.useEffect(() => {
-    const sourceJeNo = searchParams.get("sourceJeNo")?.trim() || "";
-    const editAjeId = searchParams.get("editAjeId")?.trim() || "";
-    const mode = searchParams.get("mode")?.trim() || "";
-    const intentKey = `${sourceJeNo}|${editAjeId}|${mode}`;
-
-    if (!sourceJeNo && !editAjeId) return;
-    if (handledSourceIntentRef.current === intentKey) return;
-
-    handledSourceIntentRef.current = intentKey;
-    let cancelled = false;
-
-    async function openLinkedAdjustingEntry() {
+    if (initialView !== "posting" || !access || queuePreferenceLoaded) return;
+    let saved: PostingQueue | null = listFilters.queue;
+    if (!saved) {
       try {
-        if (editAjeId) {
-          const entry = await adjustingJournalEntriesApi.get(Number(editAjeId));
-          if (cancelled) return;
-          const linkedJeNo = entry.sourceJeNo || sourceJeNo;
-          if (linkedJeNo) {
-            await loadSourceJournalEntry(linkedJeNo, entry.id);
-            if (cancelled) return;
-          }
-          setEditingEntry(entry);
-          setReadOnly(entry.status !== "Draft");
-          setForm(formFromEntry(entry));
-          setDialogOpen(true);
-          return;
-        }
-
-        const source = sourceJeNo ? await loadSourceJournalEntry(sourceJeNo) : null;
-        if (cancelled) return;
-
-        if (source && mode === "create") {
-          setEditingEntry(null);
-          setReadOnly(false);
-          setForm(formFromSourceJournal(source));
-          setDialogOpen(true);
-        }
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Failed to open linked adjusting entry");
-      }
+        const stored = window.localStorage.getItem(`aje-posting-queue:${access.userId}`);
+        if (stored && queueValues.includes(stored as PostingQueue)) saved = stored as PostingQueue;
+      } catch { /* Storage can be unavailable in private contexts. */ }
     }
+    setSavedPostingQueue(saved || "all");
+    setQueuePreferenceLoaded(true);
+  }, [access,initialView,listFilters.queue,queuePreferenceLoaded]);
 
-    if (sourceJeNo && mode === "create" && !editAjeId) {
-      setPendingSourceJeNo(sourceJeNo);
-      setSourceSearchValue(sourceJeNo);
-      setSourceJournalEntry(null);
-      setEditingEntry(null);
-      setReadOnly(false);
-      setForm({
-        ...emptyForm(),
-        description: `Adjustment for ${sourceJeNo}`,
-      });
-      setDialogOpen(true);
+  React.useEffect(() => {
+    if (initialView === "posting" && queuePreferenceLoaded) {
+      if (!listFilters.queue) updateListQuery({ queue:postingQueue });
+      else if (postingQueue !== "all" && listFilters.status !== "All") updateListQuery({ status:null });
     }
+  }, [initialView, listFilters.queue, listFilters.status, postingQueue, queuePreferenceLoaded, updateListQuery]);
 
-    void openLinkedAdjustingEntry();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [loadSourceJournalEntry, searchParams]);
-
-  const totals = React.useMemo(() => {
-    const totalDebit = form.details.reduce((sum, row) => sum + parseMoney(row.debit), 0);
-    const totalCredit = form.details.reduce((sum, row) => sum + parseMoney(row.credit), 0);
-    return {
-      totalDebit: Math.round(totalDebit * 100) / 100,
-      totalCredit: Math.round(totalCredit * 100) / 100,
-      variance: Math.round((totalDebit - totalCredit) * 100) / 100,
-    };
-  }, [form.details]);
-
-  const sourceTotals = React.useMemo(() => {
-    const totalDebit = sourceJournalEntry?.details.reduce((sum, row) => sum + Number(row.debit || 0), 0) ?? 0;
-    const totalCredit = sourceJournalEntry?.details.reduce((sum, row) => sum + Number(row.credit || 0), 0) ?? 0;
-    return {
-      totalDebit: Math.round(totalDebit * 100) / 100,
-      totalCredit: Math.round(totalCredit * 100) / 100,
-      variance: Math.round((totalDebit - totalCredit) * 100) / 100,
-      hasDetails: Boolean(sourceJournalEntry?.details?.length),
-    };
-  }, [sourceJournalEntry]);
-
-  const combinedTotals = React.useMemo(() => {
-    const netByAccount = new Map<number, number>();
-    for (const d of sourceJournalEntry?.details ?? []) {
-      const coaId = d.coaId ?? 0;
-      netByAccount.set(coaId, (netByAccount.get(coaId) ?? 0) + d.debit - d.credit);
-    }
-    for (const entry of postedAdjustmentHistory?.entries ?? []) {
-      for (const d of entry.details) {
-        const coaId = d.coaId ?? 0;
-        netByAccount.set(coaId, (netByAccount.get(coaId) ?? 0) + d.debit - d.credit);
-      }
-    }
-    for (const row of form.details) {
-      const coaId = Number(row.coaId);
-      if (!coaId) continue;
-      netByAccount.set(coaId, (netByAccount.get(coaId) ?? 0) + parseMoney(row.debit) - parseMoney(row.credit));
-    }
-    let totalDebit = 0;
-    let totalCredit = 0;
-    for (const net of netByAccount.values()) {
-      if (net > 0) totalDebit += net;
-      else totalCredit += Math.abs(net);
-    }
-    totalDebit = Math.round(totalDebit * 100) / 100;
-    totalCredit = Math.round(totalCredit * 100) / 100;
-    return {
-      totalDebit,
-      totalCredit,
-      variance: Math.round((totalDebit - totalCredit) * 100) / 100,
-    };
-  }, [form.details, postedAdjustmentHistory, sourceJournalEntry]);
-
-  const filteredDepartments = React.useMemo(() => {
-    if (!form.divisionId) return departments;
-    const divisionId = Number(form.divisionId);
-    return departments.filter((department) => !department.parentDivision || department.parentDivision === divisionId);
-  }, [departments, form.divisionId]);
-
-  const divisionOptions = React.useMemo<LookupOption[]>(
-    () => [
-      { value: "none", label: "None" },
-      ...divisions.map((division) => ({
-        value: String(division.id),
-        label: division.name,
-      })),
-    ],
-    [divisions],
-  );
-
-  const departmentOptions = React.useMemo<LookupOption[]>(
-    () => [
-      { value: "none", label: "None" },
-      ...filteredDepartments.map((department) => ({
-        value: String(department.id),
-        label: department.name,
-      })),
-    ],
-    [filteredDepartments],
-  );
-
-  const filteredDepartmentsForFilters = React.useMemo(() => {
-    if (filterDivisionId === "all") return departments;
-    const divisionId = Number(filterDivisionId);
-    return departments.filter((department) => !department.parentDivision || department.parentDivision === divisionId);
-  }, [departments, filterDivisionId]);
-
-  const filterDivisionOptions = React.useMemo<LookupOption[]>(
-    () => [
-      { value: "all", label: "All divisions" },
-      ...divisions.map((division) => ({
-        value: String(division.id),
-        label: division.name,
-      })),
-    ],
-    [divisions],
-  );
-
-  const filterDepartmentOptions = React.useMemo<LookupOption[]>(
-    () => [
-      { value: "all", label: "All departments" },
-      ...filteredDepartmentsForFilters.map((department) => ({
-        value: String(department.id),
-        label: department.name,
-      })),
-    ],
-    [filteredDepartmentsForFilters],
-  );
-
-  const pageSummary = summary;
-  const summaryRecordCount = summary.totalRecords;
-  const activeSummaryRecordCount = React.useMemo(() => {
-    if (status === "Draft") return pageSummary.draft + pageSummary.imbalanced;
-    if (status === "Posted") return pageSummary.posted;
-    if (status === "Voided") return pageSummary.voided;
-    return summaryRecordCount;
-  }, [pageSummary, status, summaryRecordCount]);
-  const fallbackTotalElements = Math.max(activeSummaryRecordCount, page * pageSize + entries.length);
-  const effectiveTotalElements = pageData.totalElements > 0 ? pageData.totalElements : fallbackTotalElements;
-  const effectiveTotalPages = pageData.totalPages > 0 ? pageData.totalPages : Math.ceil(effectiveTotalElements / pageSize);
-  const displayPageNumber = effectiveTotalPages === 0 ? 0 : Math.min(page + 1, effectiveTotalPages);
-  const activeSourceReference = React.useMemo<SourceReferencePayload | null>(() => {
-    if (sourceJournalEntry) return sourceReferenceFromJournal(sourceJournalEntry);
-    if (editingEntry) return sourceReferenceFromEntry(editingEntry);
-    return null;
-  }, [editingEntry, sourceJournalEntry]);
-  const linkedSourceJeNo = activeSourceReference?.sourceJeNo || pendingSourceJeNo;
-  const sourceContextLoading = Boolean(linkedSourceJeNo && (sourceLoading || postedAdjustmentHistoryLoading));
-  const sourceContextBlocked = Boolean(linkedSourceJeNo && postedAdjustmentHistoryError);
-  const sourceLinkPending = Boolean((pendingSourceJeNo && !activeSourceReference) || sourceContextLoading || sourceContextBlocked);
-
-  const lineErrors = React.useMemo(
-    () => form.details.map((row) => validateDetailRow(row)),
-    [form.details],
-  );
-
-  const hasLineErrors = lineErrors.some(Boolean);
-  const hasDetailRows = form.details.some((row) => !isBlankDetailRow(row));
-  const displayTotals = sourceJournalEntry ? combinedTotals : totals;
-  const isBalanced = Math.abs(displayTotals.variance) < balancedTolerance;
-  const canPostFromModal = Boolean(editingEntry && editingEntry.status === "Draft" && hasDetailRows && !hasLineErrors && !sourceLinkPending);
-  const hasActiveFilters = Boolean(
-    search.trim() ||
-    status !== "All" ||
-    startDate ||
-    endDate ||
-    filterDivisionId !== "all" ||
-    filterDepartmentId !== "all",
-  );
-
-  function openCreate() {
-    setEditingEntry(null);
-    setReadOnly(false);
-    setSourceJournalEntry(null);
-    setPostedAdjustmentHistory(null);
-    setPostedAdjustmentHistoryError("");
-    setPendingSourceJeNo("");
-    setSourceSearchValue("");
-    setForm(emptyForm());
-    setDialogOpen(true);
-  }
-
-  function openEntry(entry: AdjustingEntry, viewOnly: boolean) {
-    setEditingEntry(entry);
-    setReadOnly(viewOnly || entry.status !== "Draft");
-    setSourceJournalEntry(null);
-    setPostedAdjustmentHistory(null);
-    setPostedAdjustmentHistoryError("");
-    setPendingSourceJeNo(entry.sourceJeNo || "");
-    setSourceSearchValue(entry.sourceJeNo || "");
-    if (entry.sourceJeNo) {
-      void loadSourceJournalEntry(entry.sourceJeNo, entry.id).catch((error) => {
-        toast.error(error instanceof Error ? error.message : "Failed to load linked source journal entry");
-      });
-    }
-    setForm(formFromEntry(entry));
-    setDialogOpen(true);
-  }
-
-  function clearSourceJournalEntry() {
-    if (editingEntry) return;
-
-    setSourceJournalEntry(null);
-    setPostedAdjustmentHistory(null);
-    setPostedAdjustmentHistoryError("");
-    setPendingSourceJeNo("");
-    setSourceSearchValue("");
-    setSourceSuggestions([]);
-    setSourceSuggestionsOpen(false);
-    setForm((current) => ({
-      ...current,
-      description: current.description.startsWith("Adjustment for ") ? "" : current.description,
-    }));
-  }
-
-  function applySourceJournalToForm(source: AdjustingEntrySourceJournal) {
-    const sourceForm = formFromSourceJournal(source);
-    setForm((current) => ({
-      ...current,
-      transactionDate: sourceForm.transactionDate,
-      description: !current.description.trim() || current.description.startsWith("Adjustment for ")
-        ? sourceForm.description
-        : current.description,
-    }));
-  }
-
-  async function searchSourceJournalEntry() {
-    if (editingEntry) return;
-
-    const query = sourceSearchValue.trim();
-    if (!query) {
-      toast.error("Enter a JE No. or transaction reference to search");
+  React.useEffect(() => {
+    if (!listViewActive || (initialView === "posting" && !queuePreferenceLoaded)) {
+      setListLoading(false);
       return;
     }
+    const controller = new AbortController();
+    setListLoading(true);
+    setListError("");
+    void api.list(listQuery, controller.signal)
+      .then(list => {
+        if (controller.signal.aborted) return;
+        setEntries(list.content);
+        setTotalPages(list.totalPages);
+        setTotalElements(list.totalElements);
+      })
+      .catch(e => { if (!controller.signal.aborted) setListError(e instanceof Error ? e.message : "Unable to load adjusting entries"); })
+      .finally(() => { if (!controller.signal.aborted) setListLoading(false); });
+    return () => controller.abort();
+  }, [initialView,listViewActive,queuePreferenceLoaded,listQuery,listRevision]);
 
-    setSourceSuggestionsError("");
-    setSourceSuggestionsLoading(true);
-    setSourceSuggestionsOpen(true);
+  React.useEffect(() => {
+    if (!listViewActive) {
+      setSummaryLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setSummaryLoading(true);
+    setSummaryError("");
+    void api.summary(summaryQuery, controller.signal)
+      .then(counts => { if (!controller.signal.aborted) setSummary(counts); })
+      .catch(e => { if (!controller.signal.aborted) setSummaryError(e instanceof Error ? e.message : "Unable to load adjusting entry summary"); })
+      .finally(() => { if (!controller.signal.aborted) setSummaryLoading(false); });
+    return () => controller.abort();
+  }, [listViewActive,summaryQuery,summaryRevision]);
+
+  function refreshEntriesAndSummary() {
+    setListRevision(value => value + 1);
+    setSummaryRevision(value => value + 1);
+  }
+
+  function handleEditorSaved(saveCompleted: boolean) {
+    refreshEntriesAndSummary();
+    if (initialView === "new" && saveCompleted) {
+      setEditorEntry(null);
+      setEditorSeed(null);
+      setEditorReturnTab(null);
+      setReadOnly(false);
+      setEditorKey(key => key + 1);
+    }
+  }
+
+  React.useEffect(() => {
+    if (!access) return;
+    const id = initialView === "posting" ? searchParams.get("editAjeId") : null;
+    const source = initialView === "new" ? searchParams.get("sourceJeNo") : null;
+    const intent = id || source || "";
+    if (!intent || handledIntent.current === intent) return;
+    handledIntent.current = intent;
+    let active = true;
+    const load = id ? api.get(Number(id)).then(entry => {
+     if (active) { setEditorEntry(entry); setEditorSeed(null); setEditorReturnTab(initialView === "posting" || initialView === "summary" ? initialView : null); setReadOnly(searchParams.get("mode") === "view" || entry.status !== "Draft" || entry.creatorId !== access.userId); setEditorKey(k => k + 1); setTab("new"); }
+    }) : api.sourceJournalEntry(source!).then(original => {
+      if (active) {
+        setEditorEntry(null); setEditorReturnTab(null); setReadOnly(false); setEditorSeed({ reference:original.transactionRef || original.jeNo,transactionDate:todayManila(),description:`Adjustment for ${original.jeNo}: ${original.description || ""}`,divisionId:null,departmentId:null,sourceJeNo:original.jeNo,details:original.details.filter(d => d.coaId != null).map(d => ({ coaId:d.coaId!,debit:d.debit,credit:d.credit,departmentId:d.departmentId ?? null })) });
+        setEditorKey(k => k + 1); setTab("new");
+      }
+    });
+    load.catch(e => { if (active) setError(e instanceof Error ? e.message : "Unable to open linked adjusting entry"); });
+    return () => { active = false; };
+  }, [access,initialView,searchParams]);
+
+  function returnToEntryList() {
+    if (!editorReturnTab) return;
+    if (editorDirtyRef.current && !window.confirm("You have unsaved changes. Leave this adjusting entry without saving?")) return;
+    editorDirtyRef.current = false;
+    setTab(editorReturnTab);
+    setEditorReturnTab(null);
+    setEditorEntry(null);
+    setEditorSeed(null);
+    setReadOnly(false);
+  }
+  function requestAction(entry: AdjustingEntry, name: AjeAction) { if (commandLock.current || bulkBusy) return; setAction({ entry,action:name }); setReason(""); setActionError(""); }
+  function toggleApprovalSelection(entryId: number, selected: boolean) {
+    setSelectedApprovalIds(current => { const next = new Set(current); if (selected) next.add(entryId); else next.delete(entryId); return next; });
+    setBulkResult(null);
+  }
+  function togglePageApprovalSelection(entryIds: number[], selected: boolean) {
+    setSelectedApprovalIds(current => { const next = new Set(current); for (const id of entryIds) { if (selected) next.add(id); else next.delete(id); } return next; });
+    setBulkResult(null);
+  }
+  function requestBulkApproval(selected: AdjustingEntry[]) {
+    if (!selected.length || commandLock.current || busy || bulkBusy) return;
+    setBulkResult(null);
+    setBulkConfirmEntries(selected);
+  }
+  async function runBulkApproval() {
+    if (!bulkConfirmEntries?.length || commandLock.current) return;
+    commandLock.current = true;
+    setBulkBusy(true);
+    const approved: number[] = [];
+    const failures: Array<{ jeNo: string; message: string }> = [];
     try {
-      const results = await adjustingJournalEntriesApi.searchSourceJournalEntries(query, 10);
-      const normalizedQuery = query.toLowerCase();
-      const exactOrSingleMatch = results.find((result) => (
-        result.jeNo.toLowerCase() === normalizedQuery ||
-        result.transactionRef?.toLowerCase() === normalizedQuery
-      )) ?? (results.length === 1 ? results[0] : null);
-
-      setSourceSuggestions(results);
-
-      if (exactOrSingleMatch) {
-        await selectSourceJournalSuggestion(exactOrSingleMatch);
-        return;
+      for (const entry of bulkConfirmEntries) {
+        try {
+          const updated = await api.command(entry.id, "approve", entry.version);
+          approved.push(entry.id);
+          if (reviewEntry?.id === updated.id) { setReviewEntry(updated); setReviewDetails(updated); }
+        } catch (e) {
+          failures.push({ jeNo: entry.jeNo || `Entry #${entry.id}`, message: e instanceof Error ? e.message : "Approval failed" });
+        }
       }
-
-      if (results.length === 0) {
-        toast.error("No matching source journal entries found");
-      } else {
-        toast.info("Select a source journal entry from the results");
-      }
-    } catch (error) {
-      setSourceSuggestions([]);
-      setSourceSuggestionsError(error instanceof Error ? error.message : "Failed to search source journal entries");
-      toast.error(error instanceof Error ? error.message : "Failed to search source journal entries");
+      setSelectedApprovalIds(current => new Set([...current].filter(id => !approved.includes(id))));
+      setBulkConfirmEntries(null);
+      setBulkResult({ approved: approved.length, failures });
+      refreshEntriesAndSummary();
+      if (failures.length) toast.error(`${approved.length} approved; ${failures.length} failed. Review the results below.`);
+      else toast.success(`${approved.length} ${approved.length === 1 ? "entry" : "entries"} approved`);
     } finally {
-      setSourceSuggestionsLoading(false);
+      commandLock.current = false;
+      setBulkBusy(false);
     }
   }
-
-  async function selectSourceJournalSuggestion(sourceSummary: AdjustingEntrySourceJournalSummary) {
-    if (editingEntry) return;
-
-    setPendingSourceJeNo(sourceSummary.jeNo);
-    setSourceSearchValue(sourceSummary.jeNo);
-    setSourceJournalEntry(null);
-    setPostedAdjustmentHistory(null);
-    setPostedAdjustmentHistoryError("");
-    setSourceSuggestions([]);
-    setSourceSuggestionsOpen(false);
-
+  async function view(entry: AdjustingEntry, edit: boolean) {
+    try { const details = await api.get(entry.id); setEditorEntry(details); setEditorSeed(null); setEditorReturnTab(tab === "posting" || tab === "summary" ? tab : null); setReadOnly(!edit || details.status !== "Draft" || details.entryOrigin !== "MANUAL" || details.creatorId !== access?.userId); setEditorKey(k => k + 1); setTab("new"); }
+    catch (e) { setError(e instanceof Error ? e.message : "Unable to open this entry"); }
+  }
+  function openReview(entry: AdjustingEntry) {
+    const generation = ++reviewRequestGeneration.current;
+    setReviewEntry(entry); setReviewDetails(null); setReviewAttachments([]); setReviewLoading(true); setReviewAttachmentsLoading(true); setReviewError(""); setReviewAttachmentsError("");
+    void api.get(entry.id).then(details => {
+      if (generation === reviewRequestGeneration.current) setReviewDetails(details);
+    }).catch(error => {
+      if (generation === reviewRequestGeneration.current) setReviewError(error instanceof Error ? error.message : "Unable to load journal details");
+    }).finally(() => {
+      if (generation === reviewRequestGeneration.current) setReviewLoading(false);
+    });
+    void api.attachments(entry.id).then(attachments => {
+      if (generation === reviewRequestGeneration.current) setReviewAttachments(attachments);
+    }).catch(error => {
+      if (generation === reviewRequestGeneration.current) setReviewAttachmentsError(error instanceof Error ? error.message : "Unable to load supporting documents");
+    }).finally(() => {
+      if (generation === reviewRequestGeneration.current) setReviewAttachmentsLoading(false);
+    });
+  }
+  function closeReview() {
+    reviewRequestGeneration.current += 1;
+    setReviewEntry(null); setReviewDetails(null); setReviewAttachments([]); setReviewLoading(false); setReviewAttachmentsLoading(false); setReviewError(""); setReviewAttachmentsError("");
+  }
+  async function runAction(event: React.MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    if (!action || commandLock.current) return;
+    if (reasonRequired.has(action.action) && !reason.trim()) { setActionError("A reason is required."); return; }
+    commandLock.current = true; setBusy(true); setActionError("");
     try {
-      const source = await loadSourceJournalEntry(sourceSummary.jeNo);
-      applySourceJournalToForm(source);
-      toast.success(`Loaded source journal entry ${source.jeNo}`);
-    } catch (error) {
-      setPendingSourceJeNo("");
-      toast.error(error instanceof Error ? error.message : "Failed to load source journal entry");
+      const updated = await api.command(action.entry.id,action.action,action.entry.version,reason.trim() || undefined);
+      setAction(null); refreshEntriesAndSummary(); toast.success(`${actionLabelForEntry(action.entry, action.action)} completed · ${updated.jeNo || `Entry #${updated.id}`}`);
+      if (reviewEntry?.id === updated.id) { setReviewEntry(updated); setReviewDetails(updated); }
+      if (editorEntry?.id === updated.id || (initialView === "posting" && tab === "new")) { setEditorEntry(updated); setEditorSeed(null); setReadOnly(updated.status !== "Draft"); setEditorKey(k => k + 1); }
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "The action failed");
+      refreshEntriesAndSummary();
+      try {
+        const latest = await api.get(action.entry.id);
+        setAction(current => current ? { ...current, entry: latest,
+          action: latest.status === "Failed" && ["post","retry"].includes(current.action) ? "retry" : current.action } : null);
+        if (reviewEntry?.id === latest.id) { setReviewEntry(latest); setReviewDetails(latest); }
+        if (editorEntry?.id === latest.id || (initialView === "posting" && tab === "new")) {
+          setEditorEntry(latest); setReadOnly(latest.status !== "Draft"); setEditorKey(k => k + 1);
+        }
+      } catch { /* Keep the original error if the service is unavailable. */ }
     }
+    finally { commandLock.current = false; setBusy(false); }
   }
-
-  function updateForm<K extends keyof EntryForm>(key: K, value: EntryForm[K]) {
-    setForm((current) => ({ ...current, [key]: value }));
+  async function previewReversal(entry: AdjustingEntry) {
+    try { setReversal(await api.reversalPreview(entry.id)); }
+    catch (e) { setError(e instanceof Error ? e.message : "Unable to prepare a reversal"); }
   }
-
-  function updateRow(localId: string, field: keyof Pick<DetailFormRow, "coaId" | "debit" | "credit">, value: string) {
-    setForm((current) => ({
-      ...current,
-      details: current.details.map((row) => {
-        if (row.localId !== localId) return row;
-        const next = { ...row, [field]: value };
-        if (field === "debit" && parseMoney(value) > 0) next.credit = "";
-        if (field === "credit" && parseMoney(value) > 0) next.debit = "";
-        return next;
-      }),
-    }));
+  function createReversal(mode: "FULL" | "PARTIAL") {
+    if (!reversal) return;
+    const original = reversal.original;
+    setEditorSeed({ reference:`REV-${original.reference || original.jeNo}`.slice(0,255),transactionDate:todayManila(),description:`Reversal of ${original.jeNo}: ${original.description}`,divisionId:original.divisionId,departmentId:null,sourceJeNo:original.jeNo,entryKind:"REVERSAL",originalEntryId:original.id,reversalMode:mode,
+      details:reversal.lines.filter(d => d.remainingAmount > 0).map(d => ({ coaId:d.coaId,departmentId:d.departmentId,description:d.description || "",originalDetailId:d.originalDetailId,debit:d.originalCredit > 0 ? d.remainingAmount : 0,credit:d.originalDebit > 0 ? d.remainingAmount : 0 })) });
+    setEditorEntry(null); setEditorReturnTab("posting"); setReadOnly(false); setEditorKey(k => k + 1); setReversal(null); setTab("new");
   }
-
-  function removeRow(localId: string) {
-    setForm((current) => ({
-      ...current,
-      details: current.details.filter((row) => row.localId !== localId),
-    }));
-  }
-
   function clearFilters() {
-    setSearch("");
-    setStatus("All");
-    setStartDate("");
-    setEndDate("");
-    setFilterDivisionId("all");
-    setFilterDepartmentId("all");
-    setPage(0);
-  }
-
-  function toggleSort(nextKey: SortKey) {
-    if (sortKey === nextKey) {
-      setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(nextKey);
-      setSortDirection(nextKey === "transactionDate" || nextKey === "id" ? "desc" : "asc");
+    cancelPendingSearchCommit();
+    setSearchDraft("");
+    if (initialView === "posting" && access) {
+      try { window.localStorage.setItem(`aje-posting-queue:${access.userId}`, "all"); } catch { /* Storage can be unavailable in private contexts. */ }
+      setSavedPostingQueue("all");
     }
-    setPage(0);
+    updateListQuery({ search:null,status:null,startDate:null,endDate:null,divisionId:null,departmentId:null,accountTypeId:null,sort:null,page:"0",pageSize:null,...(initialView === "posting" ? { queue:"all" } : {}) });
   }
-
-  async function persistDraft(closeAfterSave: boolean) {
-    if (sourceLinkPending) {
-      toast.error(postedAdjustmentHistoryError || "Wait for the source journal entry and existing adjustments to finish loading before saving");
-      return null;
-    }
-
-    const validationError = validateForm(form);
-    if (validationError) {
-      toast.error(validationError);
-      return null;
-    }
-
-    setSaving(true);
-    try {
-      const payload = toPayload(form, activeSourceReference);
-      let savedEntry: AdjustingEntry;
-      if (editingEntry) {
-        savedEntry = await adjustingJournalEntriesApi.update(editingEntry.id, payload);
-        toast.success("Draft updated");
-      } else {
-        savedEntry = await adjustingJournalEntriesApi.create(payload);
-        toast.success("Draft saved");
-      }
-      if (closeAfterSave) setDialogOpen(false);
-      await loadEntries();
-      await loadSummaryEntries();
-      return savedEntry;
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to save draft");
-      return null;
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function saveDraft() {
-    await persistDraft(true);
-  }
-
-  async function saveAndRequestPost() {
-    if (!editingEntry) return;
-    const savedEntry = await persistDraft(false);
-    if (!savedEntry) return;
-    setPendingAction({ entry: savedEntry, action: "post", combinedVariance: displayTotals.variance });
-  }
-
-  function requestAction(entry: AdjustingEntry, action: EntryAction) {
-    const checkVariance = entryCombinedVariance[entry.id] ?? entry.combinedVariance ?? entry.variance;
-    setPendingAction({ entry, action, combinedVariance: action === "post" ? checkVariance : undefined });
-  }
-
-  async function runAction(entry: AdjustingEntry, action: EntryAction) {
-    setActionId(entry.id);
-    try {
-      if (action === "post") {
-        await adjustingJournalEntriesApi.post(entry.id);
-        toast.success("Entry posted");
-      } else {
-        await adjustingJournalEntriesApi.delete(entry.id);
-        toast.success("Draft deleted");
-      }
-      setPendingAction(null);
-      if (editingEntry?.id === entry.id && action === "post") setDialogOpen(false);
-      await loadEntries();
-      await loadSummaryEntries();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Action failed");
-    } finally {
-      setActionId(null);
-    }
-  }
-
-  const canPrev = page > 0;
-  const canNext = effectiveTotalPages > 0 && page + 1 < effectiveTotalPages;
-
-  return (
-    <div className="flex min-h-full flex-col bg-muted/10">
-      <div className="border-b bg-background px-6 py-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">Adjusting Journal Entries</h1>
-            <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
-              <span>{summaryRecordCount} records</span>
-              <Separator orientation="vertical" className="h-4" />
-              <span>Manual ledger adjustments for accruals, deferrals, and corrections</span>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void Promise.all([loadEntries(), loadSummaryEntries()])}
-              disabled={isLoading}
-            >
-              <RefreshCw className={cn("mr-2 size-4", isLoading && "animate-spin")} />
-              Refresh
-            </Button>
-            <Button size="sm" onClick={openCreate}>
-              <Plus className="mr-2 size-4" />
-              New Adjusting Entry
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-4 p-6">
-        <AdjustingEntriesSummaryCards summary={pageSummary} />
-
-        <AdjustingEntriesFilters
-          search={search}
-          startDate={startDate}
-          endDate={endDate}
-          status={status}
-          pageSize={pageSize}
-          filterDivisionId={filterDivisionId}
-          filterDepartmentId={filterDepartmentId}
-          statusOptions={statusOptions}
-          pageSizes={pageSizes}
-          filterDivisionOptions={filterDivisionOptions}
-          filterDepartmentOptions={filterDepartmentOptions}
-          hasActiveFilters={hasActiveFilters}
-          onSearchChange={(value) => {
-            setSearch(value);
-            setPage(0);
-          }}
-          onStartDateChange={(value) => {
-            setStartDate(value);
-            setPage(0);
-          }}
-          onEndDateChange={(value) => {
-            setEndDate(value);
-            setPage(0);
-          }}
-          onStatusChange={(value) => {
-            setStatus(value);
-            setPage(0);
-          }}
-          onPageSizeChange={(value) => {
-            setPageSize(value);
-            setPage(0);
-          }}
-          onDivisionChange={(value) => {
-            setFilterDivisionId(value);
-            setFilterDepartmentId("all");
-            setPage(0);
-          }}
-          onDepartmentChange={(value) => {
-            setFilterDepartmentId(value);
-            setPage(0);
-          }}
-          onClearFilters={clearFilters}
-        />
-
-        <AdjustingEntriesTable
-          entries={entries}
-          isLoading={isLoading}
-          actionId={actionId}
-          sortKey={sortKey}
-          sortDirection={sortDirection}
-          entryCombinedVariance={entryCombinedVariance}
-          onSort={toggleSort}
-          onCreate={openCreate}
-          onOpenEntry={openEntry}
-          onRequestAction={requestAction}
-        />
-
-        <div className="flex flex-col gap-3 rounded-md border bg-background px-3 py-2 text-sm shadow-sm md:flex-row md:items-center md:justify-between">
-          <div className="text-muted-foreground">
-            Page {displayPageNumber} of {effectiveTotalPages}
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" disabled={!canPrev} onClick={() => setPage((current) => Math.max(0, current - 1))}>
-              <ChevronLeft className="mr-1 size-4" />
-              Previous
-            </Button>
-            <Button variant="outline" size="sm" disabled={!canNext} onClick={() => setPage((current) => current + 1)}>
-              Next
-              <ChevronRight className="ml-1 size-4" />
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="flex max-h-[92vh] w-[96vw]! max-w-300! flex-col overflow-hidden">
-          <DialogHeader>
-            <DialogTitle>
-              {readOnly ? "View Adjusting Entry" : editingEntry ? "Edit Draft Adjusting Entry" : "New Adjusting Entry"}
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-1">
-            <div className="grid gap-4 md:grid-cols-4">
-              <div className="space-y-2">
-                <Label htmlFor="transactionDate">Transaction Date</Label>
-                <Input
-                  id="transactionDate"
-                  type="date"
-                  value={form.transactionDate}
-                  onChange={(event) => updateForm("transactionDate", event.target.value)}
-                  disabled={readOnly}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Division</Label>
-                <AjeSearchableSelect
-                  options={divisionOptions}
-                  value={form.divisionId || "none"}
-                  onValueChange={(value) => {
-                    updateForm("divisionId", value === "none" ? "" : value);
-                    updateForm("departmentId", "");
-                  }}
-                  placeholder="Select division"
-                  disabled={readOnly}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Department</Label>
-                <AjeSearchableSelect
-                  options={departmentOptions}
-                  value={form.departmentId || "none"}
-                  onValueChange={(value) => updateForm("departmentId", value === "none" ? "" : value)}
-                  placeholder="Select department"
-                  disabled={readOnly}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Status</Label>
-                <div className="flex h-9 items-center rounded-md border px-3">
-                  <Badge variant="outline" className={statusBadgeClass(editingEntry?.status || "Draft")}>
-                    {editingEntry?.status || "Draft"}
-                  </Badge>
-                </div>
-              </div>
-              {!editingEntry && !readOnly && (
-                <div className="space-y-2 md:col-span-4">
-                  <Label htmlFor="sourceJeNo">
-                    Source Journal Entry <span className="text-muted-foreground">(Optional)</span>
-                  </Label>
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <div className="relative min-w-0 flex-1">
-                      <Input
-                        id="sourceJeNo"
-                        value={sourceSearchValue}
-                        onChange={(event) => {
-                          const nextValue = event.target.value;
-                          setSourceSearchValue(nextValue);
-                          setPendingSourceJeNo(nextValue);
-                          setSourceSuggestionsOpen(nextValue.trim().length >= 2);
-                          if (sourceJournalEntry && nextValue.trim() !== sourceJournalEntry.jeNo) {
-                            setSourceJournalEntry(null);
-                            setPostedAdjustmentHistory(null);
-                            setPostedAdjustmentHistoryError("");
-                          }
-                        }}
-                        onFocus={() => {
-                          if (sourceSearchValue.trim().length >= 2) setSourceSuggestionsOpen(true);
-                        }}
-                        onBlur={() => {
-                          window.setTimeout(() => setSourceSuggestionsOpen(false), 150);
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            event.preventDefault();
-                            void searchSourceJournalEntry();
-                          }
-                        }}
-                        placeholder="Search JE No. or transaction ref"
-                        className="font-mono"
-                        disabled={sourceLoading}
-                        autoComplete="off"
-                      />
-                      {sourceSuggestionsOpen && (
-                        <div className="absolute z-30 mt-1 max-h-72 w-full overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
-                          {sourceSuggestionsLoading ? (
-                            <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
-                              <Loader2 className="size-4 animate-spin" />
-                              Searching source entries
-                            </div>
-                          ) : sourceSuggestionsError ? (
-                            <div className="px-3 py-2 text-sm text-destructive">{sourceSuggestionsError}</div>
-                          ) : sourceSuggestions.length > 0 ? (
-                            sourceSuggestions.map((suggestion) => (
-                              <button
-                                key={`${suggestion.jeNo}-${suggestion.transactionRef ?? ""}`}
-                                type="button"
-                                className="flex w-full flex-col rounded-sm px-3 py-2 text-left hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground focus:outline-none"
-                                onMouseDown={(event) => {
-                                  event.preventDefault();
-                                  void selectSourceJournalSuggestion(suggestion);
-                                }}
-                              >
-                                <span className="font-mono text-sm font-medium">{suggestion.jeNo}</span>
-                                <span className="text-xs text-muted-foreground">
-                                  {[suggestion.transactionRef, suggestion.sourceModule, suggestion.transactionDate ? formatDate(suggestion.transactionDate) : null].filter(Boolean).join(" - ")}
-                                </span>
-                              </button>
-                            ))
-                          ) : (
-                            <div className="px-3 py-2 text-sm text-muted-foreground">No similar source entries found.</div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => void searchSourceJournalEntry()}
-                      disabled={sourceLoading || !sourceSearchValue.trim()}
-                    >
-                      {sourceLoading ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Search className="mr-2 size-4" />}
-                      Search
-                    </Button>
-                    {linkedSourceJeNo && (
-                      <Button type="button" variant="ghost" onClick={clearSourceJournalEntry} disabled={sourceLoading}>
-                        <X className="mr-2 size-4" />
-                        Clear
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-2 md:col-span-4">
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  id="description"
-                  value={form.description}
-                  onChange={(event) => updateForm("description", event.target.value)}
-                  disabled={readOnly}
-                  placeholder="Business justification for the adjustment"
-                  className="min-h-24 resize-y px-3"
-                />
-              </div>
-            </div>
-
-            {linkedSourceJeNo && (
-              <AdjustingEntrySourcePanel
-                linkedSourceJeNo={linkedSourceJeNo}
-                activeSourceReference={activeSourceReference}
-                sourceJournalEntry={sourceJournalEntry}
-                sourceTotals={sourceTotals}
-                sourceLoading={sourceLoading}
-                postedAdjustmentHistory={postedAdjustmentHistory}
-                postedAdjustmentHistoryLoading={postedAdjustmentHistoryLoading}
-                postedAdjustmentHistoryError={postedAdjustmentHistoryError}
-                onRetryPostedAdjustments={() => linkedSourceJeNo && void loadSourceJournalEntry(linkedSourceJeNo, editingEntry?.id ?? null)}
-              />
-            )}
-
-            <AdjustingEntryDetailsGrid
-              rows={form.details}
-              coaOptions={coaOptions}
-              readOnly={readOnly}
-              isBalanced={isBalanced}
-              displayTotals={displayTotals}
-              lineErrors={lineErrors}
-              onAddRow={() => setForm((current) => ({ ...current, details: [...current.details, makeRow()] }))}
-              onUpdateRow={updateRow}
-              onRemoveRow={removeRow}
-              isBlankDetailRow={isBlankDetailRow}
-              parseMoney={parseMoney}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Close
-            </Button>
-            {!readOnly && (
-              <>
-                {editingEntry?.status === "Draft" && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => void saveAndRequestPost()}
-                    disabled={saving || sourceLinkPending || !canPostFromModal}
-                  >
-                    {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Send className="mr-2 size-4" />}
-                    Post Draft
-                  </Button>
-                )}
-                <Button onClick={() => void saveDraft()} disabled={saving || sourceLinkPending}>
-                  {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Save className="mr-2 size-4" />}
-                  Save Draft
-                </Button>
-              </>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog
-        open={Boolean(pendingAction)}
-        onOpenChange={(open) => {
-          if (!open) setPendingAction(null);
-        }}
-      >
-        <AlertDialogContent>
-          {pendingAction && (
-            <>
-              <AlertDialogHeader>
-                <AlertDialogTitle>
-                  {actionLabel(pendingAction.action)} {pendingAction.entry.jeNo || "this adjusting entry"}?
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  {actionDescription(pendingAction.action)}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-
-              <div className="grid gap-2 rounded-md border bg-muted/30 p-3 text-sm sm:grid-cols-2">
-                <div>
-                  <div className="text-xs uppercase text-muted-foreground">Status</div>
-                  <div className="font-medium">{pendingAction.entry.status}</div>
-                </div>
-                <div>
-                  <div className="text-xs uppercase text-muted-foreground">Variance</div>
-                  <div className={cn("font-mono font-medium", Math.abs(pendingAction.combinedVariance ?? pendingAction.entry.variance) >= balancedTolerance && "text-destructive")}>
-                    {money(pendingAction.combinedVariance ?? pendingAction.entry.variance)}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs uppercase text-muted-foreground">Total Debits</div>
-                  <div className="font-mono font-medium">{money(pendingAction.entry.totalDebit)}</div>
-                </div>
-                <div>
-                  <div className="text-xs uppercase text-muted-foreground">Total Credits</div>
-                  <div className="font-mono font-medium">{money(pendingAction.entry.totalCredit)}</div>
-                </div>
-              </div>
-
-              <AlertDialogFooter>
-                <AlertDialogCancel disabled={actionId === pendingAction.entry.id}>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  variant={pendingAction.action === "delete" ? "destructive" : "default"}
-                  disabled={actionId === pendingAction.entry.id}
-                  onClick={() => void runAction(pendingAction.entry, pendingAction.action)}
-                >
-                  {actionId === pendingAction.entry.id && <Loader2 className="mr-2 size-4 animate-spin" />}
-                  {actionLabel(pendingAction.action)}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </>
-          )}
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
-  );
+  const focusPosted = () => updateFilters({ status:"Posted",queue:"all" });
+  const focusDrafts = () => updateFilters({ status:"Draft",queue:"all" });
+  const hasFilters = Boolean(searchDraft.trim() || status !== "All" || startDate || endDate || division !== "all" || department !== "all" || accountType || sort !== "lastActivity,desc" || page > 0 || pageSize !== 20 || (initialView === "posting" && postingQueue !== "all"));
+  const summaryDateScope = startDate && endDate ? `${formatDate(startDate)} – ${formatDate(endDate)}` : startDate ? `From ${formatDate(startDate)}` : endDate ? `Through ${formatDate(endDate)}` : "All dates";
+  const accountTypes = React.useMemo(() => [...new Map((catalogs?.accounts || []).filter(a => a.accountTypeId).map(a => [a.accountTypeId,{ id:a.accountTypeId!,name:a.accountTypeName || "Other" }])).values()], [catalogs]);
+  const lookupErrors = [accessError,catalogsError,periodError].filter(Boolean);
+  const editorTitle = editorEntry ? (readOnly ? "View Adjusting Entry" : "Editing Adjusting Entry") : editorSeed?.entryKind === "REVERSAL" ? "New Reversal" : "New Adjusting Entry";
+  const summaryPrintDisabled = listLoading || Boolean(listError) || searchDraft.trim() !== normalizedSearch;
+  const pageHeader = <div className="flex flex-wrap items-start justify-between gap-3"><div>
+    <h1 className="text-xl font-semibold">{tab === "posting" ? "Posting of Entries" : tab === "new" ? editorTitle : tab === "audit" ? "Audit Trail" : "Summary"}</h1>
+    <p className="text-sm text-muted-foreground">{tab === "posting" ? "Review adjusting entries and process approvals and postings." : tab === "new" ? editorEntry ? (readOnly ? "Review this adjusting entry." : "Update this existing draft adjusting entry.") : "Prepare a balanced adjustment and submit it for review." : tab === "audit" ? "Chronological journal actions, revisions, supporting files, and period controls." : "Review adjusting entry workflow totals and journal activity."}</p>
+    {(tab === "posting" || tab === "new") && <p className="mt-1 text-xs text-muted-foreground">Closed through: {periodLoading ? "Loading cutoff…" : periodError ? "Unavailable" : period?.closedThroughDate ? formatDate(period.closedThroughDate) : "No cutoff set"}</p>}
+  </div><div className="flex flex-wrap gap-2">
+    {tab === "posting" && <><Button variant="outline" onClick={refreshEntriesAndSummary}>Refresh</Button><Button variant="outline" disabled={!period || periodLoading} onClick={() => setPeriodOpen(true)}>Period controls</Button></>}
+    {tab === "summary" && <a className="inline-flex h-9 items-center rounded-md border bg-background px-3 text-sm font-medium hover:bg-accent" href={ajeReportUrl(listQuery,"csv")}>Export CSV</a>}
+    {(tab === "posting" || tab === "summary") && <Button variant="outline" disabled={summaryPrintDisabled} asChild><a href={ajeReportUrl(listQuery,"pdf")} target="_blank" rel="noopener noreferrer" aria-disabled={summaryPrintDisabled} onClick={event => { if (summaryPrintDisabled) event.preventDefault(); }}>Print summary</a></Button>}
+    {(tab === "audit" || tab === "summary") && <Button variant="outline" onClick={() => tab === "audit" ? setAuditRevision(v => v + 1) : refreshEntriesAndSummary()}>Refresh</Button>}
+  </div></div>;
+  return <div className="space-y-5 p-4 sm:p-6">
+    {pageHeader}
+    {lookupErrors.length > 0 && tab !== "audit" && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"><span>{lookupErrors.join(" · ")}</span><Button variant="outline" size="sm" onClick={() => { setAccess(null); setCatalogs(null); setPeriod(null); setSavedPostingQueue(null); setQueuePreferenceLoaded(false); setLookupRevision(value => value + 1); }}>Retry lookups</Button></div>}
+    {error && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
+    {listViewActive && listError && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{listError}</div>}
+    {listViewActive && summaryError && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{summaryError}</div>}
+    {tab === "new" && <>
+      {editorReturnTab && <div className="flex justify-start"><Button type="button" variant="outline" onClick={returnToEntryList}>{editorReturnTab === "posting" ? "Back to postings" : "Back to summary"}</Button></div>}
+      {(!access || !catalogs) ? (accessLoading || catalogsLoading ? <AjeEntryEditorSkeleton /> : <p role="status" className="text-sm text-muted-foreground">The entry form is unavailable until its required lookup data loads.</p>) : <React.Suspense fallback={<AjeEntryEditorSkeleton />}><AjeEntryEditor key={editorKey} initialEntry={editorEntry} seed={editorSeed} readOnly={readOnly} hideTitle={tab === "new"} dirtyRef={editorDirtyRef} access={access} accounts={catalogs.accounts} departments={catalogs.departments} divisions={catalogs.divisions} onSaved={handleEditorSaved} onAction={requestAction} /></React.Suspense>}
+    </>}
+    {tab === "audit" && <React.Suspense fallback={<p role="status" className="text-sm text-muted-foreground">Loading audit trail…</p>}><AjeAuditTrail revision={auditRevision} /></React.Suspense>}
+    {(tab === "posting" || tab === "summary") && <>
+      {tab === "summary" && <AdjustingEntriesSummaryCards summary={summary} loading={summaryLoading} selectedStatus={status} onStatusSelect={value => updateFilters({ status:value === "All" ? null : value,queue:"all" })} showPostedAmounts onShowPosted={focusPosted} onInvestigatePosted={focusPosted} onShowUnbalancedDrafts={focusDrafts} />}
+      {tab === "summary" && <p className="text-xs text-muted-foreground">Accounting dates: {summaryDateScope}. Counts and posted amounts also reflect the search, division, department, and account-type filters. Status filters narrow the journal list only.</p>}
+      {tab === "posting" && <div className="flex flex-wrap items-center gap-2" aria-label="Posting queue view">
+        {([
+          ["all", "All statuses", summary.totalRecords],
+          ["needs-action", "Needs action", summary.submitted + summary.approved + summary.failed],
+          ["submitted", "Awaiting review", summary.submitted],
+          ["approved", "Ready to post", summary.approved],
+          ["failed", "Posting failed", summary.failed],
+        ] as const).map(([value, label, count]) => <Button key={value} type="button" size="sm" aria-pressed={postingQueue === value && (value !== "all" || status === "All")} variant={postingQueue === value && (value !== "all" || status === "All") ? "default" : "outline"} onClick={() => selectPostingQueue(value)}>{label}<span className="ml-1 rounded-full bg-background/20 px-1.5 text-xs">{count}</span></Button>)}
+      </div>}
+      <AdjustingEntriesFilters search={searchDraft} startDate={startDate} endDate={endDate} status={status} pageSize={pageSize} filterDivisionId={division} filterDepartmentId={department} statusOptions={statuses} pageSizes={[10,20,50,100]}
+        filterDivisionOptions={[{ value:"all",label:"All divisions" },...(catalogs?.divisions || []).map(d => ({ value:String(d.id),label:d.name }))]}
+        filterDepartmentOptions={[{ value:"all",label:"All departments" },...(catalogs?.departments || []).filter(d => division === "all" || !d.parentDivision || String(d.parentDivision) === division).map(d => ({ value:String(d.id),label:d.name }))]}
+        hasActiveFilters={hasFilters} moreFiltersCount={Number(division !== "all") + Number(department !== "all") + Number(Boolean(accountType))} onSearchChange={handleSearchChange} onStartDateChange={v => updateFilters({ startDate:v || null })} onEndDateChange={v => updateFilters({ endDate:v || null })}
+        onStatusChange={v => updateFilters({ status:v === "All" ? null : v,queue:"all" })} onPageSizeChange={v => updateListQuery({ pageSize:String(v),page:"0" })} onDivisionChange={v => updateFilters({ divisionId:v === "all" ? null : v,departmentId:null })} onDepartmentChange={v => updateFilters({ departmentId:v === "all" ? null : v })} onClearFilters={clearFilters}>
+        <div className="space-y-1.5"><Label htmlFor="aje-account-type" className="text-xs font-medium text-muted-foreground">Account type</Label><select id="aje-account-type" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={accountType} onChange={e => updateFilters({ accountTypeId:e.target.value || null })}><option value="">All account types</option>{accountTypes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
+        <div className="space-y-1.5"><Label htmlFor="aje-sort" className="text-xs font-medium text-muted-foreground">Sort</Label><select id="aje-sort" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={sort} onChange={e => updateFilters({ sort:e.target.value === "lastActivity,desc" ? null : e.target.value })}><option value="lastActivity,desc">Last activity: newest</option><option value="transactionDate,desc">Accounting date: newest</option><option value="transactionDate,asc">Accounting date: oldest</option><option value="id,desc">Newest created</option><option value="jeNo,asc">Journal number</option><option value="status,asc">Status</option></select></div>
+      </AdjustingEntriesFilters>
+      <AdjustingEntriesTable entries={entries} loading={listLoading || busy || bulkBusy} userId={access?.userId} readOnly={tab === "summary" || !access} onView={(entry,edit) => { if ((initialView === "posting" || initialView === "summary") && !edit) void openReview(entry); else void view(entry,edit); }} onAction={requestAction} onReverse={entry => void previewReversal(entry)} bulkActionsEnabled={tab === "posting" && Boolean(access)} selectedEntryIds={selectedApprovalIds} onToggleEntrySelection={toggleApprovalSelection} onTogglePageSelection={togglePageApprovalSelection} onBulkApprove={requestBulkApproval} bulkBusy={bulkBusy} />
+      {bulkResult && <div role="status" className="space-y-2 rounded-md border bg-muted/20 p-3 text-sm"><p>{bulkResult.approved} approved · {bulkResult.failures.length} failed</p>{bulkResult.failures.length > 0 && <ul className="list-inside list-disc text-destructive">{bulkResult.failures.map(failure => <li key={failure.jeNo}><span className="font-medium">{failure.jeNo}:</span> {failure.message}</li>)}</ul>}</div>}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>{totalElements > 0 ? `Showing ${page * pageSize + 1}–${Math.min((page + 1) * pageSize, totalElements)} of ${totalElements} entries · Page ${page + 1} of ${Math.max(totalPages, 1)}` : "0 entries"}</span><div className="flex gap-2"><Button variant="outline" size="icon-sm" aria-label="Go to first page" disabled={page === 0 || listLoading} onClick={() => updateListQuery({ page:"0" })}><ChevronsLeft className="h-4 w-4" /></Button><Button variant="outline" size="sm" disabled={page === 0 || listLoading} onClick={() => updateListQuery({ page:String(page - 1) })}>Previous</Button><Button variant="outline" size="sm" disabled={listLoading || page + 1 >= totalPages} onClick={() => updateListQuery({ page:String(page + 1) })}>Next</Button><Button variant="outline" size="icon-sm" aria-label="Go to last page" disabled={listLoading || page + 1 >= totalPages} onClick={() => updateListQuery({ page:String(Math.max(0, totalPages - 1)) })}><ChevronsRight className="h-4 w-4" /></Button></div></div>
+    </>}
+    {periodOpen && period && <AjePeriodDialog period={period} onClose={() => setPeriodOpen(false)} onSaved={value => setPeriod(value)} />}
+    <AlertDialog open={action !== null} onOpenChange={open => { if (!open && !busy) setAction(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{action ? `${actionLabelForEntry(action.entry, action.action)} ${action.entry.jeNo}?` : "Confirm action"}</AlertDialogTitle><AlertDialogDescription>{action?.action === "cancel" && action.entry.canCancelAfterReversalConflict ? "This cancels the failed full reversal and preserves the AJE and its audit history. It will not be permanently deleted." : action?.action === "post" || action?.action === "retry" ? "This commits the approved entry to the General Ledger. Posted entries are read-only." : "This action updates the journal workflow and records an audit event."}</AlertDialogDescription></AlertDialogHeader>
+      {action && <div className="text-sm">Debit {money(action.entry.totalDebit)} · Credit {money(action.entry.totalCredit)}</div>}
+      {action && reasonRequired.has(action.action) && <div className="space-y-1"><Label htmlFor="aje-action-reason">Reason *</Label><Textarea id="aje-action-reason" maxLength={4000} value={reason} disabled={busy} onChange={e => setReason(e.target.value)} /></div>}
+      {actionError && <p role="alert" className="text-sm text-destructive">{actionError}</p>}
+      <AlertDialogFooter><AlertDialogCancel disabled={busy}>{action?.action === "cancel" && action.entry.canCancelAfterReversalConflict ? "Keep AJE" : "Cancel"}</AlertDialogCancel><AlertDialogAction disabled={busy} onClick={event => void runAction(event)}>{busy ? "Working…" : action ? actionLabelForEntry(action.entry, action.action) : "Confirm"}</AlertDialogAction></AlertDialogFooter>
+    </AlertDialogContent></AlertDialog>
+    <AlertDialog open={bulkConfirmEntries !== null} onOpenChange={open => { if (!open && !bulkBusy) setBulkConfirmEntries(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Approve {bulkConfirmEntries?.length || 0} selected entries?</AlertDialogTitle><AlertDialogDescription>Each entry will be approved separately using its current version. Entries that fail will remain selected so you can review and retry them.</AlertDialogDescription></AlertDialogHeader>
+      {bulkConfirmEntries && <div className="max-h-48 overflow-y-auto rounded-md border p-3 text-sm"><ul className="list-inside list-disc">{bulkConfirmEntries.map(entry => <li key={entry.id}>{entry.jeNo} · {money(entry.totalDebit)} debit / {money(entry.totalCredit)} credit</li>)}</ul></div>}
+      <AlertDialogFooter><AlertDialogCancel disabled={bulkBusy}>Cancel</AlertDialogCancel><AlertDialogAction disabled={bulkBusy || !bulkConfirmEntries?.length} onClick={event => { event.preventDefault(); void runBulkApproval(); }}>{bulkBusy ? "Approving…" : "Approve selected"}</AlertDialogAction></AlertDialogFooter>
+    </AlertDialogContent></AlertDialog>
+    <Dialog open={reversal !== null} onOpenChange={open => {if (!open) setReversal(null);}}><DialogContent className="sm:max-w-3xl"><DialogHeader><DialogTitle>Reverse {reversal?.original.jeNo}</DialogTitle></DialogHeader><p className="text-sm text-muted-foreground">Posted reversals consume the eligible amounts of the original lines. The new reversal requires separate approval before posting.</p>
+      <div className="max-h-80 overflow-auto"><table className="w-full text-sm"><thead><tr><th className="p-2 text-left">Account</th><th className="p-2 text-right">Original</th><th className="p-2 text-right">Reversed</th><th className="p-2 text-right">Remaining</th></tr></thead><tbody>{reversal?.lines.map(d => <tr key={d.originalDetailId} className="border-t"><td className="p-2">{d.accountNumber} · {d.accountTitle}<p className="text-xs text-muted-foreground">{d.departmentName}</p></td><td className="p-2 text-right">{money(d.originalDebit + d.originalCredit)}</td><td className="p-2 text-right">{money(d.reversedAmount)}</td><td className="p-2 text-right">{money(d.remainingAmount)}</td></tr>)}</tbody></table></div>
+      <DialogFooter><Button variant="outline" onClick={() => setReversal(null)}>Cancel</Button><Button variant="outline" disabled={!reversal?.lines.some(d => d.remainingAmount > 0)} onClick={() => createReversal("PARTIAL")}>Partial / remaining reversal</Button><Button disabled={!reversal?.canFullReverse} onClick={() => createReversal("FULL")}>Full reversal</Button></DialogFooter>
+    </DialogContent></Dialog>
+    {(initialView === "posting" || initialView === "summary") && reviewEntry !== null && <React.Suspense fallback={<Dialog open onOpenChange={open => { if (!open) closeReview(); }}>
+      <DialogContent className="sm:max-w-5xl"><DialogHeader><DialogTitle>{reviewEntry.jeNo || "Review adjusting entry"}</DialogTitle></DialogHeader>
+        <p role="status" className="py-8 text-center text-sm text-muted-foreground">Loading review dialog…</p>
+        <DialogFooter><Button type="button" variant="outline" onClick={closeReview}>Close</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>}><AjeReviewDialog open journalNumber={reviewEntry.jeNo || null} entry={reviewDetails} attachments={reviewAttachments} loading={reviewLoading} error={reviewError} attachmentsLoading={reviewAttachmentsLoading} attachmentsError={reviewAttachmentsError} canReview={tab === "posting" && Boolean(access)} userId={access?.userId} onAction={requestAction} onClose={closeReview} /></React.Suspense>}
+  </div>;
 }

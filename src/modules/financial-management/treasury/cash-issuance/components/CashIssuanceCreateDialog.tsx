@@ -24,7 +24,7 @@ import { StickyTableWrapper } from "./StickyTableWrapper";
 import { SearchableDropdown } from "./SearchableDropdown";
 import { replaceEmptyPayablePlaceholders } from "@/modules/financial-management/treasury/components/payable-line-state";
 import { getMemoAvailableAmount } from "@/modules/financial-management/treasury/components/memo-cap";
-import { isMemoPayableLine, normalizeMemoReference, stripMemoLineMetadata } from "@/modules/financial-management/treasury/components/memo-payable-line";
+import { getMemoPayableAmount, isMemoPayableLine, normalizeMemoReference, stripMemoLineMetadata } from "@/modules/financial-management/treasury/components/memo-payable-line";
 import { updateVatSplitDivision } from "@/modules/financial-management/treasury/components/payable-line-splits";
 import { isPettyCashBankAccount } from "@/app/api/fm/treasury/disbursements/_payment-method";
 import { cn } from "@/lib/utils";
@@ -376,6 +376,46 @@ export function CashIssuanceCreateDialog({
         return () => controller.abort();
     }, [open, payeeId]);
 
+    useEffect(() => {
+        if (!open || !editData || !isPreparationPaymentEdit || memos.length === 0) return;
+
+        setPayables((current) => {
+            let changed = false;
+            const next = current.map((line) => {
+                const memo = memos.find((candidate) =>
+                    Number(candidate.supplier_id) === Number(payeeId)
+                    && normalizeMemoReference(candidate.memo_number) === normalizeMemoReference(line.memoNumber || line.referenceNo),
+                );
+                if (!memo) return line;
+
+                const amount = getMemoPayableAmount(memo.type, line.amount);
+                const memoOriginalAmount = line.memoOriginalAmount ?? Math.abs(Number(line.amount) || 0);
+                if (
+                    Number(line.amount) === amount
+                    && line.isMemo === true
+                    && line.memoId === memo.id
+                    && line.memoType === memo.type
+                    && line.memoNumber === memo.memo_number
+                    && Number(line.memoSupplierId) === Number(payeeId)
+                    && line.memoOriginalAmount === memoOriginalAmount
+                ) return line;
+
+                changed = true;
+                return {
+                    ...line,
+                    amount,
+                    isMemo: true,
+                    memoId: memo.id,
+                    memoType: memo.type,
+                    memoNumber: memo.memo_number,
+                    memoSupplierId: Number(payeeId),
+                    memoOriginalAmount,
+                };
+            });
+            return changed ? next : current;
+        });
+    }, [open, editData, isPreparationPaymentEdit, memos, payeeId]);
+
     const handleAddPayable = useCallback(() => setPayables((prev) => [...prev, {referenceNo: "", date: today, amount: 0, remarks: "", divisionId: undefined}]), [today]);
 
     const handleDivisionSelect = useCallback((index: number, divisionId?: number) => {
@@ -421,7 +461,7 @@ export function CashIssuanceCreateDialog({
 
             return {
                 ...line,
-                amount: memo.type === 1 ? -Math.abs(parsedAmount) : Math.abs(parsedAmount),
+                amount: getMemoPayableAmount(memo.type, parsedAmount),
             };
         }));
     }, [memos]);
@@ -605,7 +645,6 @@ export function CashIssuanceCreateDialog({
         if (isAlreadyInPayables) {
             return toast.error(`Memo ${memo.memo_number} is already applied to this TR.`);
         }
-        const isCredit = memo.type === 1;
         const remainingAmount = Number(memo.remaining_amount ?? memo.amount) || 0;
         const locallyRemainingAmount = getMemoAvailableAmount(remainingAmount, payables, memo.memo_number);
         const requestedAmount = Number(memoAmounts[String(memo.id)] ?? remainingAmount);
@@ -613,7 +652,7 @@ export function CashIssuanceCreateDialog({
         if (memoAmountError) {
             return toast.error(memoAmountError);
         }
-        const finalAmount = isCredit ? -Math.abs(requestedAmount) : Math.abs(requestedAmount);
+        const finalAmount = getMemoPayableAmount(memo.type, requestedAmount);
 
         setPayables((previous) => [...previous, {
             isMemo: true,
@@ -1293,7 +1332,7 @@ export function CashIssuanceCreateDialog({
                                             </TableCell>
                                             <TableCell
                                                 className={`text-xs font-black text-right ${memo.type === 1 ? 'text-emerald-600' : 'text-red-600'}`}>
-                                                <div>{memo.type === 1 ? '-' : '+'} ₱{memo.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}</div>
+                                                <div>{memo.type === 1 ? '+' : '-'} ₱{memo.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}</div>
                                                 <div className="text-[9px] font-bold text-muted-foreground">Remaining: ₱{(memo.remaining_amount ?? memo.amount).toLocaleString('en-US', {minimumFractionDigits: 2})}</div>
                                                 <Input
                                                     type="number"

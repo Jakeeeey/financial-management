@@ -131,22 +131,27 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
 
       const data = await res.json();
 
-      const safeAbs = (num: unknown) => (typeof num === "number" ? Math.abs(num) : 0);
-      
-      const normalizeEntries = (entries: Record<string, unknown>[]) => 
-        entries.map(e => ({ ...e, amount: safeAbs(e.amount) } as unknown as BalanceSheetEntry));
-        
+      const safeNumber = (num: unknown) => (typeof num === "number" && Number.isFinite(num) ? num : 0);
+
+      const normalizeEntries = (entries: Record<string, unknown>[]) =>
+        entries.map(e => ({ ...e, amount: safeNumber(e.amount) } as unknown as BalanceSheetEntry));
+
       const normalizeSummary = (s: Record<string, unknown> | null) => {
         if (!s) return null;
-        let variance = safeAbs(s.totalAssets) - (safeAbs(s.totalLiabilities) + safeAbs(s.totalEquity));
+        // Preserve signs: a credit-balance asset (e.g. an unfunded petty cash
+        // account) must render negative instead of being flipped positive.
+        const totalAssets = safeNumber(s.totalAssets);
+        const totalLiabilities = safeNumber(s.totalLiabilities);
+        const totalEquity = safeNumber(s.totalEquity);
+        let variance = totalAssets - (totalLiabilities + totalEquity);
         // Handle floating point precision issues
         variance = Math.round(variance * 100) / 100;
-        
+
         return {
           ...s,
-          totalAssets: safeAbs(s.totalAssets),
-          totalLiabilities: safeAbs(s.totalLiabilities),
-          totalEquity: safeAbs(s.totalEquity),
+          totalAssets,
+          totalLiabilities,
+          totalEquity,
           balanceVariance: variance
         } as unknown as BalanceSheetSummary;
       };
@@ -210,7 +215,7 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
       totalLiabilities: summary.totalLiabilities,
       totalEquity: summary.totalEquity,
       variance: summary.balanceVariance,
-      isBalanced: summary.balanceVariance === 0,
+      isBalanced: Math.abs(summary.balanceVariance) < 0.005,
     };
   }, [summary]);
 

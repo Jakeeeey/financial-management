@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { fetchPriceTypeDirectus, priceTypeErrorResponse } from "../../../price-types/_directus";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 const COLLECTION = "price_types";
@@ -11,16 +15,11 @@ type PriceTypeRow = {
     price_type_id?: number | string | null;
     price_type_name?: string | null;
     sort?: number | string | null;
+    is_active?: boolean | number | null;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null;
-}
-
-async function fetchDirectus<T>(url: string, init?: RequestInit): Promise<T> {
-    const res = await fetch(url, { cache: "no-store", ...init });
-    if (!res.ok) throw new Error(await res.text());
-    return (await res.json()) as T;
 }
 
 function decodeUserIdFromJwtCookie(req: NextRequest, cookieName = "vos_access_token") {
@@ -63,13 +62,16 @@ export async function PATCH(
         }
 
         const body = await req.json();
-        const payload = {
-            price_type_name: body.price_type_name,
-            sort: body.sort,
-        };
+        const payload: { price_type_name?: unknown; sort?: unknown; is_active?: boolean } = {};
+        if (Object.hasOwn(body, "price_type_name")) payload.price_type_name = body.price_type_name;
+        if (Object.hasOwn(body, "sort")) payload.sort = body.sort;
+        if (typeof body.is_active === "boolean") payload.is_active = body.is_active;
+        if (Object.keys(payload).length === 0) {
+            return NextResponse.json({ error: "At least one price type field must be provided." }, { status: 400 });
+        }
 
         const url = `${DIRECTUS_URL}/items/${COLLECTION}/${id}`;
-        const json = await fetchDirectus<{ data: PriceTypeRow }>(url, {
+        const json = await fetchPriceTypeDirectus<{ data: PriceTypeRow }>(url, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
@@ -77,13 +79,7 @@ export async function PATCH(
 
         return NextResponse.json({ data: json.data });
     } catch (error: unknown) {
-        return NextResponse.json(
-            {
-                error: "Unexpected error",
-                details: error instanceof Error ? error.message : String(error),
-            },
-            { status: 500 },
-        );
+        return priceTypeErrorResponse(error);
     }
 }
 
@@ -103,18 +99,12 @@ export async function DELETE(
         }
 
         const url = `${DIRECTUS_URL}/items/${COLLECTION}/${id}`;
-        await fetchDirectus<unknown>(url, {
+        await fetchPriceTypeDirectus<unknown>(url, {
             method: "DELETE",
         });
 
         return NextResponse.json({ ok: true });
     } catch (error: unknown) {
-        return NextResponse.json(
-            {
-                error: "Unexpected error",
-                details: error instanceof Error ? error.message : String(error),
-            },
-            { status: 500 },
-        );
+        return priceTypeErrorResponse(error);
     }
 }

@@ -61,7 +61,7 @@ export async function createBulkExpenses(
 
 export async function updateExpense(
   id: number,
-  data: Partial<ExpenseFormValues>,
+  data: Partial<ExpenseFormValues & { status?: string; current_approval_level?: number }>,
   logRemarks?: string
 ): Promise<ExpenseItem> {
   const res = await fetch(`${BASE_URL}/expense?id=${id}`, {

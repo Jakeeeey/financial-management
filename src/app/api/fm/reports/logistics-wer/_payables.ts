@@ -1,6 +1,13 @@
 import { NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
+import { proxySpring } from "@/app/api/fm/financial-statements/adjusting-journal-entries/_spring";
+import {
+  calculateBudgetBalances,
+  splitReservationSources,
+  type CoaAmount,
+  type CoaBudgetBalance,
+} from "@/modules/financial-management/reports/logistics-wer/utils/budget-balances";
 
 const DIRECTUS_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "");
 const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "";
@@ -23,6 +30,7 @@ export const ACTIVE_RESERVATION_STATUSES: LogisticsDraftStatus[] = ["submitted",
 export interface DraftRow {
   id: number;
   dispatch_plan_id: number | null;
+  department_id: number | null;
   status: string | null;
   total_amount: number | null;
   submitted_by: number | null;
@@ -45,6 +53,7 @@ export interface DraftLineRow {
   remarks: string | null;
   date: string | null;
   coa_id: number | null;
+  division_id: number | null;
   date_created: string | null;
 }
 
@@ -68,6 +77,11 @@ export interface PlanRemaining {
   baseline: number;
   reserved: number;
   remaining: number;
+  allocatedBudget: number;
+  unclassifiedBudgetAmount: number;
+  unclassifiedReservedAmount: number;
+  overBudgetAmount: number;
+  budgetBalancesByCoa: CoaBudgetBalance[];
 }
 
 export interface DraftSubmissionSummary {
@@ -80,6 +94,7 @@ export interface DraftSubmissionSummary {
   decidedAt: string | null;
   decisionRemarks: string | null;
   disbursementId: number | null;
+  disbursementDocNo: string | null;
   idempotencyKey: string | null;
   treasuryStatus: string | null;
   lineCount: number;
@@ -248,6 +263,7 @@ export async function getPlanBaseline(planId: number): Promise<PlanBaseline | nu
 
 export interface DraftSubmission {
   id: number;
+  departmentId: number | null;
   status: string | null;
   totalAmount: number;
   submittedBy: number | null;
@@ -265,6 +281,7 @@ export interface DraftSubmission {
     remarks: string | null;
     date: string | null;
     coaId: number | null;
+    divisionId: number | null;
     receipts: Array<{ id: number; fileId: string | null }>;
   }>;
 }
@@ -329,6 +346,7 @@ export async function getPlanDraftSummaries(planId: number): Promise<DraftSubmis
       decidedAt: asString(row.decided_at) || null,
       decisionRemarks: asString(row.decision_remarks) || null,
       disbursementId: asNullableNumber(row.disbursement_id),
+      disbursementDocNo: null,
       idempotencyKey: asString(row.idempotency_key) || null,
       treasuryStatus: null,
       lineCount: lineCountByDraft.get(draftId) ?? 0,
@@ -340,7 +358,7 @@ export async function getPlanDraftSummaries(planId: number): Promise<DraftSubmis
 /** Load one complete submission, verifying its owning plan from the same header read. */
 export async function getPlanSubmission(submissionId: number): Promise<{ planId: number; submission: DraftSubmission } | null> {
   const header = await directusFetch<{ data?: Record<string, unknown> }>(
-    `/items/${DRAFT_COLLECTION}/${submissionId}?fields=id,dispatch_plan_id,status,total_amount,submitted_by,submitted_at,decided_by,decided_at,decision_remarks,disbursement_id,idempotency_key`,
+    `/items/${DRAFT_COLLECTION}/${submissionId}?fields=id,dispatch_plan_id,department_id,status,total_amount,submitted_by,submitted_at,decided_by,decided_at,decision_remarks,disbursement_id,idempotency_key`,
   ).catch(() => null);
   const row = header?.data;
   const planId = asNumber(row?.dispatch_plan_id);
@@ -350,7 +368,7 @@ export async function getPlanSubmission(submissionId: number): Promise<{ planId:
     "filter[draft_id][_eq]": String(submissionId),
     sort: "line_no,id",
     limit: "-1",
-    fields: "id,draft_id,line_no,amount,reference_no,remarks,date,coa_id",
+    fields: "id,draft_id,line_no,amount,reference_no,remarks,date,coa_id,division_id",
   });
   const lines = await directusFetch<DirectusList<DraftLineRow>>(
     `items/${DRAFT_LINE_COLLECTION}?${lineParams.toString()}`,
@@ -381,6 +399,7 @@ export async function getPlanSubmission(submissionId: number): Promise<{ planId:
     planId,
     submission: {
       id: asNumber(row.id),
+      departmentId: asNullableNumber(row.department_id),
       status: asString(row.status) || null,
       totalAmount: asNumber(row.total_amount),
       submittedBy: asNullableNumber(row.submitted_by),
@@ -400,6 +419,7 @@ export async function getPlanSubmission(submissionId: number): Promise<{ planId:
           remarks: asString(line.remarks) || null,
           date: asString(line.date) || null,
           coaId: asNullableNumber(line.coa_id),
+          divisionId: asNullableNumber(line.division_id),
           receipts: receiptsByLine.get(lineId) ?? [],
         };
       }),
@@ -407,44 +427,36 @@ export async function getPlanSubmission(submissionId: number): Promise<{ planId:
   };
 }
 
-async function getDisbursementStatuses(disbursementIds: number[]): Promise<Map<number, string>> {
+interface DisbursementReference {
+  docNo: string | null;
+  status: string | null;
+}
+
+async function getDisbursementReferences(disbursementIds: number[]): Promise<Map<number, DisbursementReference>> {
   if (disbursementIds.length === 0) return new Map();
   const params = new URLSearchParams({
     "filter[id][_in]": disbursementIds.join(","),
-    fields: "id,status",
+    fields: "id,doc_no,status",
     limit: "-1",
   });
-  const result = await directusFetch<DirectusList<{ id?: unknown; status?: unknown }>>(
+  const result = await directusFetch<DirectusList<{ id?: unknown; doc_no?: unknown; status?: unknown }>>(
     `/items/disbursement?${params.toString()}`,
   );
-  const statuses = new Map<number, string>();
+  const references = new Map<number, DisbursementReference>();
   for (const row of result.data ?? []) {
     const id = asNumber(row.id);
-    const status = asString(row.status);
-    if (id > 0 && status) statuses.set(id, status);
+    if (id > 0) {
+      references.set(id, {
+        docNo: asString(row.doc_no) || null,
+        status: asString(row.status) || null,
+      });
+    }
   }
-  return statuses;
-}
-
-async function getApprovedDisbursementTotals(disbursementIds: number[]): Promise<Map<number, number>> {
-  if (disbursementIds.length === 0) return new Map();
-  const params = new URLSearchParams({
-    "filter[disbursement_id][_in]": disbursementIds.join(","),
-    limit: "-1",
-    fields: "disbursement_id,amount",
-  });
-  const result = await directusFetch<DirectusList<{ disbursement_id?: unknown; amount?: unknown }>>(
-    `/items/disbursement_payables?${params.toString()}`,
-  );
-  const totals = new Map<number, number>();
-  for (const row of result.data ?? []) {
-    const id = asNumber(row.disbursement_id);
-    if (id) totals.set(id, (totals.get(id) ?? 0) + asNumber(row.amount));
-  }
-  return totals;
+  return references;
 }
 
 interface DraftAccountingSummary {
+  id: number;
   status: string | null;
   totalAmount: number;
   disbursementId: number | null;
@@ -454,83 +466,211 @@ async function getPlanDraftAccountingRows(planId: number): Promise<DraftAccounti
   const params = new URLSearchParams({
     "filter[dispatch_plan_id][_eq]": String(planId),
     limit: "-1",
-    fields: "status,total_amount,disbursement_id",
+    fields: "id,status,total_amount,disbursement_id",
   });
   const result = await directusFetch<DirectusList<Record<string, unknown>>>(
     `items/${DRAFT_COLLECTION}?${params.toString()}`,
   );
   return (result.data ?? []).map((row) => ({
+    id: asNumber(row.id),
     status: asString(row.status) || null,
     totalAmount: asNumber(row.total_amount),
     disbursementId: asNullableNumber(row.disbursement_id),
   }));
 }
 
-function sumReservedAmount(
-  submissions: DraftAccountingSummary[],
-  approvedTotals: Map<number, number>,
-): number {
-  return submissions.reduce((reserved, submission) => {
-    const status = (submission.status || "").toLowerCase();
-    if (status === "approved" && submission.disbursementId) {
-      return reserved + (approvedTotals.get(submission.disbursementId) ?? 0);
+interface AccountingLine {
+  draft_id?: unknown;
+  disbursement_id?: unknown;
+  coa_id?: unknown;
+  amount?: unknown;
+}
+
+export interface DispatchBudgetLine extends CoaAmount {
+  id: number | null;
+}
+
+function asRelatedId(value: unknown): number | null {
+  if (value && typeof value === "object") {
+    const relation = value as Record<string, unknown>;
+    return asNullableNumber(relation.coa_id ?? relation.coaId ?? relation.id);
+  }
+  return asNullableNumber(value);
+}
+
+function strictAmount(value: unknown, label: string): number {
+  const amount = Number(value);
+  if (value === null || value === undefined || value === "" || !Number.isFinite(amount) || amount < 0) {
+    throw new Error(`${label} has an invalid amount.`);
+  }
+  return amount;
+}
+
+async function getSpringBudgetLines(planId: number): Promise<DispatchBudgetLine[]> {
+  const encodedId = encodeURIComponent(String(planId));
+  let response = await proxySpring(`/api/v1/dispatch-approval/${encodedId}`);
+  if (response.status === 404) {
+    response = await proxySpring(`/api/v1/dispatch-approvals/${encodedId}`);
+  }
+  const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+  if (!response.ok) {
+    throw new Error(`Unable to verify dispatch budget (HTTP ${response.status}).`);
+  }
+  if (!Array.isArray(payload?.budgets)) {
+    throw new Error("Dispatch approval response did not include budget lines.");
+  }
+
+  return normalizeSpringBudgetLines(payload.budgets);
+}
+
+export async function getPlanBudgetLines(planId: number): Promise<DispatchBudgetLine[]> {
+  return getSpringBudgetLines(planId);
+}
+
+async function getDraftAccountingLines(draftIds: number[]): Promise<Map<number, CoaAmount[]>> {
+  if (draftIds.length === 0) return new Map();
+  const params = new URLSearchParams({
+    "filter[draft_id][_in]": draftIds.join(","),
+    limit: "-1",
+    fields: "draft_id,coa_id,amount",
+  });
+  const result = await directusFetch<DirectusList<AccountingLine>>(
+    `items/${DRAFT_LINE_COLLECTION}?${params.toString()}`,
+  );
+  const linesByDraft = new Map<number, CoaAmount[]>();
+  for (const [index, row] of (result.data ?? []).entries()) {
+    const draftId = asNumber(row.draft_id);
+    if (!draftId) continue;
+    const lines = linesByDraft.get(draftId) ?? [];
+    lines.push({
+      coaId: asRelatedId(row.coa_id),
+      amount: strictAmount(row.amount, `Payable draft line ${index + 1}`),
+    });
+    linesByDraft.set(draftId, lines);
+  }
+  return linesByDraft;
+}
+
+async function getActualDisbursementLines(disbursementIds: number[]): Promise<Map<number, CoaAmount[]>> {
+  if (disbursementIds.length === 0) return new Map();
+  const params = new URLSearchParams({
+    "filter[disbursement_id][_in]": disbursementIds.join(","),
+    limit: "-1",
+    fields: "disbursement_id,coa_id,amount",
+  });
+  const result = await directusFetch<DirectusList<AccountingLine>>(
+    `/items/disbursement_payables?${params.toString()}`,
+  );
+  const linesByDisbursement = new Map<number, CoaAmount[]>();
+  for (const [index, row] of (result.data ?? []).entries()) {
+    const disbursementId = asNumber(row.disbursement_id);
+    if (!disbursementId) continue;
+    const lines = linesByDisbursement.get(disbursementId) ?? [];
+    lines.push({
+      coaId: asRelatedId(row.coa_id),
+      amount: strictAmount(row.amount, `Disbursement payable line ${index + 1}`),
+    });
+    linesByDisbursement.set(disbursementId, lines);
+  }
+  return linesByDisbursement;
+}
+
+async function getReservationLines(submissions: DraftAccountingSummary[]): Promise<CoaAmount[]> {
+  const { draftReservations, approvedDisbursementIds } = splitReservationSources(submissions);
+  const [draftLines, actualLines] = await Promise.all([
+    getDraftAccountingLines(draftReservations.map((submission) => submission.id)),
+    getActualDisbursementLines(approvedDisbursementIds),
+  ]);
+  const result: CoaAmount[] = [];
+
+  for (const submission of draftReservations) {
+    const lines = draftLines.get(submission.id) ?? [];
+    if (lines.length === 0) {
+      throw new Error(`Active payable submission #${submission.id} has no readable lines.`);
     }
-    return ACTIVE_RESERVATION_STATUSES.includes(status as (typeof ACTIVE_RESERVATION_STATUSES)[number])
-      ? reserved + submission.totalAmount
-      : reserved;
-  }, 0);
+    const lineTotal = lines.reduce((sum, line) => sum + line.amount, 0);
+    if (Math.abs(lineTotal - submission.totalAmount) > 0.01) {
+      throw new Error(`Active payable submission #${submission.id} does not match its line total.`);
+    }
+    result.push(...lines);
+  }
+
+  for (const disbursementId of approvedDisbursementIds) {
+    const lines = actualLines.get(disbursementId) ?? [];
+    if (lines.length === 0) {
+      throw new Error(`Approved disbursement #${disbursementId} has no readable payable lines.`);
+    }
+    result.push(...lines);
+  }
+
+  return result;
 }
 
 /** Compute the plan balance and compact payable summaries with batched reads. */
 export async function getPlanFinancialContext(
   planId: number,
   includeSubmissionSummaries = true,
+  springBudgetLines?: unknown,
 ): Promise<PlanFinancialContext> {
-  const [plan, submissions] = await Promise.all([
+  const [plan, submissions, accountingRows, budgetLines] = await Promise.all([
     getPlanBaseline(planId),
     includeSubmissionSummaries
       ? getPlanDraftSummaries(planId)
-      : getPlanDraftAccountingRows(planId),
+      : Promise.resolve([] as DraftSubmissionSummary[]),
+    getPlanDraftAccountingRows(planId),
+    springBudgetLines === undefined ? getSpringBudgetLines(planId) : normalizeSpringBudgetLines(springBudgetLines),
   ]);
-  const accountingRows: DraftAccountingSummary[] = submissions.map((submission) => ({
-    status: submission.status,
-    totalAmount: submission.totalAmount,
-    disbursementId: submission.disbursementId,
-  }));
-  const disbursementIds = includeSubmissionSummaries
-    ? Array.from(new Set(accountingRows.map((submission) => submission.disbursementId).filter((id): id is number => Boolean(id))))
-    : [];
-  const approvedIds = Array.from(new Set(
-    accountingRows
-      .filter((submission) => (submission.status || "").toLowerCase() === "approved")
-      .map((submission) => submission.disbursementId)
-      .filter((id): id is number => Boolean(id)),
+  const disbursementIds = Array.from(new Set(
+    accountingRows.map((submission) => submission.disbursementId).filter((id): id is number => Boolean(id)),
   ));
-  const [statusResult, totals] = await Promise.all([
-    getDisbursementStatuses(disbursementIds)
+  const [disbursementReferences, reservationLines] = await Promise.all([
+    getDisbursementReferences(disbursementIds)
       .catch((error) => {
-        console.error("[Logistics WER] Failed to load Treasury disbursement statuses:", error);
-        return new Map<number, string>();
+        console.error("[Logistics WER] Failed to load Treasury disbursement references:", error);
+        return new Map<number, DisbursementReference>();
       }),
-    getApprovedDisbursementTotals(approvedIds),
+    getReservationLines(accountingRows),
   ]);
-
-  const reserved = sumReservedAmount(accountingRows, totals);
+  const balances = calculateBudgetBalances(budgetLines, reservationLines);
 
   return {
     plan,
     baseline: plan?.amount ?? 0,
-    reserved,
-    remaining: (plan?.amount ?? 0) - reserved,
+    reserved: balances.reservedAmount,
+    remaining: balances.remainingAmount,
+    allocatedBudget: balances.allocatedBudget,
+    unclassifiedBudgetAmount: balances.unclassifiedBudgetAmount,
+    unclassifiedReservedAmount: balances.unclassifiedReservedAmount,
+    overBudgetAmount: balances.overBudgetAmount,
+    budgetBalancesByCoa: balances.byCoa,
     submissions: includeSubmissionSummaries
       ? (submissions as DraftSubmissionSummary[]).map((submission) => ({
           ...submission,
+          disbursementDocNo: submission.disbursementId
+            ? disbursementReferences.get(submission.disbursementId)?.docNo ?? null
+            : null,
           treasuryStatus: submission.disbursementId
-            ? statusResult.get(submission.disbursementId) ?? null
+            ? disbursementReferences.get(submission.disbursementId)?.status ?? null
             : null,
         }))
       : [],
   };
+}
+
+function normalizeSpringBudgetLines(value: unknown): DispatchBudgetLine[] {
+  if (!Array.isArray(value)) {
+    throw new Error("Dispatch approval response did not include budget lines.");
+  }
+  return value.map((entry, index) => {
+    const line = entry && typeof entry === "object" ? entry as Record<string, unknown> : {};
+    const coaId = asRelatedId(line.coaId ?? line.coa_id);
+    return {
+      id: asNullableNumber(line.id),
+      coaId: coaId && coaId > 0 ? coaId : null,
+      amount: strictAmount(line.amount, `Dispatch budget line ${index + 1}`),
+      classified: Boolean(coaId && coaId > 0 && asString(line.remarks)),
+    };
+  });
 }
 
 /** Liquidate a WER plan only after all approved payables are fully released. */
@@ -556,9 +696,11 @@ export async function markWerPlanLiquidatedIfSettled(draftId: number): Promise<v
   if (approved.some((row) => !row.disbursementId)) return;
 
   const approvedIds = Array.from(new Set(approved.map((row) => row.disbursementId as number)));
-  const statuses = await getDisbursementStatuses(approvedIds);
-  if (approvedIds.some((id) => !statuses.has(id))) return;
-  if (!approved.every((row) => ["Released", "Posted"].includes(statuses.get(row.disbursementId as number) || ""))) return;
+  const disbursementReferences = await getDisbursementReferences(approvedIds);
+  if (approvedIds.some((id) => !disbursementReferences.has(id))) return;
+  if (!approved.every((row) => ["Released", "Posted"].includes(
+    disbursementReferences.get(row.disbursementId as number)?.status || "",
+  ))) return;
 
   await directusWrite("PATCH", `/items/post_dispatch_plan/${planId}`, { is_liquidated: 1 });
 }
@@ -569,20 +711,34 @@ export async function markWerPlanLiquidatedIfSettled(draftId: number): Promise<v
  * via its resulting disbursement instead of its draft total.
  */
 export async function getPlanRemaining(planId: number): Promise<PlanRemaining> {
-  const [plan, submissions] = await Promise.all([
-    getPlanBaseline(planId),
-    getPlanDraftAccountingRows(planId),
-  ]);
-  const approvedIds = Array.from(new Set(
-    submissions
-      .filter((submission) => (submission.status || "").toLowerCase() === "approved")
-      .map((submission) => submission.disbursementId)
-      .filter((id): id is number => Boolean(id)),
-  ));
-  const approvedTotals = await getApprovedDisbursementTotals(approvedIds);
-  const baseline = plan?.amount ?? 0;
-  const reserved = sumReservedAmount(submissions, approvedTotals);
-  return { baseline, reserved, remaining: baseline - reserved };
+  try {
+    const [plan, submissions, budgetLines] = await Promise.all([
+      getPlanBaseline(planId),
+      getPlanDraftAccountingRows(planId),
+      getSpringBudgetLines(planId),
+    ]);
+    const reservationLines = await getReservationLines(submissions);
+    const balances = calculateBudgetBalances(budgetLines, reservationLines);
+    return {
+      baseline: plan?.amount ?? 0,
+      reserved: balances.reservedAmount,
+      remaining: balances.remainingAmount,
+      allocatedBudget: balances.allocatedBudget,
+      unclassifiedBudgetAmount: balances.unclassifiedBudgetAmount,
+      unclassifiedReservedAmount: balances.unclassifiedReservedAmount,
+      overBudgetAmount: balances.overBudgetAmount,
+      budgetBalancesByCoa: balances.byCoa,
+    };
+  } catch (error) {
+    throw new BudgetContextError(error instanceof Error ? error.message : "Unable to verify the dispatch expense budget.");
+  }
+}
+
+export class BudgetContextError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BudgetContextError";
+  }
 }
 
 /** In-process per-plan mutex. Single-instance dev guard, not a distributed lock. */
