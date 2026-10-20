@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, Plus, Save, Send, Trash2 } from "lucide-react";
+import { Copy, Loader2, Plus, Save, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -175,6 +175,84 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
       return updated;
     }) }));
   }
+  function duplicateLine(key: string) {
+    setForm(current => {
+      const index = current.details.findIndex(row => row.key === key);
+      if (index < 0) return current;
+      const source = current.details[index];
+      const duplicate = { ...source, key: crypto.randomUUID(), originalDetailId: null };
+      return { ...current, details: [...current.details.slice(0, index + 1), duplicate, ...current.details.slice(index + 1)] };
+    });
+  }
+  function addLineAndFocus() {
+    if (frozen || reversal || busy) return;
+    const nextLineNumber = form.details.length + 1;
+    setForm(current => ({ ...current, details: [...current.details, line()] }));
+    requestAnimationFrame(() => focusBlocker(`[aria-label="Line ${nextLineNumber} account"]`));
+  }
+  function handleLinePaste(event: React.ClipboardEvent<HTMLElement>) {
+    if (frozen || reversal || busy) return;
+    const target = event.target as HTMLElement;
+    const match = target.closest<HTMLElement>("[aria-label]")?.getAttribute("aria-label")?.match(/^Line (\d+) (account|department|description|debit|credit)$/);
+    const pasted = event.clipboardData.getData("text/plain");
+    if (!match || (!pasted.includes("\t") && !pasted.includes("\n"))) return;
+
+    event.preventDefault();
+    const startRow = Number(match[1]) - 1;
+    const startColumn = ["account", "department", "description", "debit", "credit"].indexOf(match[2]);
+    const rows = pasted.replace(/\r/g, "").split("\n");
+    while (rows.length && rows[rows.length - 1] === "") rows.pop();
+    const nextDetails = form.details.map(row => ({ ...row }));
+    while (nextDetails.length < startRow + rows.length) nextDetails.push(line());
+
+    const accountId = (value: string) => {
+      const normalized = value.trim().toLocaleLowerCase();
+      if (!normalized) return "";
+      const exact = accounts.find(account => String(account.id) === value.trim() || account.label.trim().toLocaleLowerCase() === normalized);
+      if (exact) return String(exact.id);
+      const codeMatches = accounts.filter(account => account.label.split(/\s+-\s+/, 1)[0].trim().toLocaleLowerCase() === normalized);
+      return codeMatches.length === 1 ? String(codeMatches[0].id) : null;
+    };
+    const departmentId = (value: string) => {
+      const normalized = value.trim().toLocaleLowerCase();
+      if (!normalized || normalized === "none") return "";
+      const exact = departmentOptions.find(option => option.label.trim().toLocaleLowerCase() === normalized || option.value === value.trim());
+      return exact && exact.value !== "none" ? exact.value : null;
+    };
+
+    for (const [rowOffset, rowText] of rows.entries()) {
+      const cells = rowText.split("\t");
+      if (startColumn + cells.length > 5) { toast.error("The pasted data has more columns than the journal line grid."); return; }
+      const targetIndex = startRow + rowOffset;
+      const row = { ...nextDetails[targetIndex] };
+      let debitPasted = false;
+      let creditPasted = false;
+      for (const [cellOffset, cell] of cells.entries()) {
+        const column = startColumn + cellOffset;
+        const value = column === 2 ? cell : cell.trim();
+        if (column === 0) {
+          const resolved = accountId(value);
+          if (resolved === null) { toast.error(`Line ${targetIndex + 1}: account “${value}” was not found. Paste the exact account name or code.`); return; }
+          row.coaId = resolved;
+        } else if (column === 1) {
+          const resolved = departmentId(value);
+          if (resolved === null) { toast.error(`Line ${targetIndex + 1}: department “${value}” was not found.`); return; }
+          row.departmentId = resolved;
+        } else if (column === 2) row.description = value;
+        else if (column === 3 || column === 4) {
+          if (value && (!Number.isFinite(cents(value)) || cents(value) < 0)) { toast.error(`Line ${targetIndex + 1}: amounts must be non-negative with up to two decimal places.`); return; }
+          if (column === 3) { debitPasted = true; row.debit = value; }
+          else { creditPasted = true; row.credit = value; }
+        }
+      }
+      if (debitPasted && creditPasted && cents(row.debit) > 0 && cents(row.credit) > 0) { toast.error(`Line ${targetIndex + 1}: enter either a debit or a credit, not both.`); return; }
+      if (debitPasted && cents(row.debit) > 0) row.credit = "";
+      if (creditPasted && cents(row.credit) > 0) row.debit = "";
+      nextDetails[targetIndex] = row;
+    }
+    setForm(current => ({ ...current, details: nextDetails }));
+    toast.success(`Pasted ${rows.length} journal ${rows.length === 1 ? "line" : "lines"}.`);
+  }
   async function searchSources() {
     setSourceBusy(true); setError(""); setSourceLoadError("");
     try { setSources(await api.searchSourceJournalEntries(sourceSearch)); setSourceSearched(true); }
@@ -317,17 +395,18 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
 
     {reversal && <div className="space-y-2 rounded-md border bg-muted/20 p-3 text-sm"><p>Reversal of {form.sourceJeNo}. Accounts and departments remain linked to the original lines.</p>{!frozen && <label className="flex items-center gap-2">Reversal mode <select className="rounded border bg-background px-2 py-1" value={form.reversalMode || "PARTIAL"} disabled={busy} onChange={e => changeReversalMode(e.target.value as "FULL" | "PARTIAL")}><option value="FULL" disabled={preview ? !preview.canFullReverse : true}>Full</option><option value="PARTIAL">Partial / remaining</option></select></label>}</div>}
 
-    <section className="space-y-3" aria-labelledby="aje-lines-heading">
+    <section className="space-y-3" aria-labelledby="aje-lines-heading" onPaste={handleLinePaste}>
       <div className="flex flex-wrap items-start justify-between gap-2"><div><h3 id="aje-lines-heading" tabIndex={-1} className="font-semibold">Journal lines</h3><p className="text-xs text-muted-foreground">Each line needs one debit or credit. Totals must balance before submission.</p></div>{!frozen && !reversal && <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => setForm({ ...form, details: [...form.details, line()] })}><Plus className="mr-2 size-4" />Add line</Button>}</div>
+      {!frozen && !reversal && <p className="text-xs text-muted-foreground">Duplicate a line or paste tab-separated rows into any line field. Paste columns follow Account, Department, Description, Debit, Credit.</p>}
       <div className="space-y-3 md:hidden">
         {form.details.map((row, index) => {
           const issue = lineError(row); const accountIssue = issue === "Select an account."; const departmentIssue = issue === "Department is required for this account."; const amountIssue = Boolean(issue && !accountIssue && !departmentIssue); const remaining = preview?.lines.find(d => d.originalDetailId === row.originalDetailId)?.remainingAmount;
           return <article key={row.key} className="space-y-3 rounded-md border p-3">
-            <div className="flex items-center justify-between"><h4 className="font-medium">Line {index + 1}</h4>{!frozen && !isFull && <Button type="button" size="icon" variant="ghost" aria-label={`Remove line ${index + 1}`} disabled={busy} onClick={() => setForm({ ...form, details: form.details.filter(d => d.key !== row.key) })}><Trash2 className="size-4" /></Button>}</div>
+            <div className="flex items-center justify-between"><h4 className="font-medium">Line {index + 1}</h4><div className="flex items-center">{!frozen && !reversal && <Button type="button" size="icon" variant="ghost" aria-label={`Duplicate line ${index + 1}`} disabled={busy} onClick={() => duplicateLine(row.key)}><Copy className="size-4" /></Button>}{!frozen && !isFull && <Button type="button" size="icon" variant="ghost" aria-label={`Remove line ${index + 1}`} disabled={busy} onClick={() => setForm({ ...form, details: form.details.filter(d => d.key !== row.key) })}><Trash2 className="size-4" /></Button>}</div></div>
             <div className="space-y-1"><Label>Account *</Label><AjeSearchableSelect options={accountOptions} value={row.coaId} onValueChange={v => updateLine(row.key, "coaId", v)} disabled={frozen || busy || reversal} placeholder="Select account" ariaLabel={`Line ${index + 1} account`} ariaInvalid={accountIssue} className={accountIssue ? "border-destructive" : ""} /></div>
             <div className="space-y-1"><Label>Department{accountById.get(row.coaId)?.departmentRequired ? " *" : ""}</Label><AjeSearchableSelect options={departmentOptions} value={row.departmentId || "none"} onValueChange={v => updateLine(row.key, "departmentId", v === "none" ? "" : v)} disabled={frozen || busy || reversal} placeholder="None" ariaLabel={`Line ${index + 1} department`} ariaInvalid={departmentIssue} className={departmentIssue ? "border-destructive" : ""} /></div>
             <div className="space-y-1"><Label htmlFor={`aje-line-desc-mobile-${index}`}>Line description</Label><Input id={`aje-line-desc-mobile-${index}`} aria-label={`Line ${index + 1} description`} value={row.description} maxLength={1000} disabled={frozen || busy} onChange={e => updateLine(row.key, "description", e.target.value)} /></div>
-            <div className="grid grid-cols-2 gap-2"><div className="space-y-1"><Label htmlFor={`aje-line-debit-mobile-${index}`}>Debit</Label><Input id={`aje-line-debit-mobile-${index}`} aria-label={`Line ${index + 1} debit`} aria-invalid={amountIssue} className={`text-right font-mono ${amountIssue ? "border-destructive" : ""}`} type="number" min="0" step="0.01" value={row.debit} disabled={frozen || busy || isFull} onChange={e => updateLine(row.key, "debit", e.target.value)} /></div><div className="space-y-1"><Label htmlFor={`aje-line-credit-mobile-${index}`}>Credit</Label><Input id={`aje-line-credit-mobile-${index}`} aria-label={`Line ${index + 1} credit`} aria-invalid={amountIssue} className={`text-right font-mono ${amountIssue ? "border-destructive" : ""}`} type="number" min="0" step="0.01" value={row.credit} disabled={frozen || busy || isFull} onChange={e => updateLine(row.key, "credit", e.target.value)} /></div></div>
+            <div className="grid grid-cols-2 gap-2"><div className="space-y-1"><Label htmlFor={`aje-line-debit-mobile-${index}`}>Debit</Label><Input id={`aje-line-debit-mobile-${index}`} aria-label={`Line ${index + 1} debit`} aria-invalid={amountIssue} className={`text-right font-mono ${amountIssue ? "border-destructive" : ""}`} type="number" min="0" step="0.01" value={row.debit} disabled={frozen || busy || isFull} onChange={e => updateLine(row.key, "debit", e.target.value)} onKeyDown={e => { if (e.key !== "Enter" || index !== form.details.length - 1) return; e.preventDefault(); if (row.coaId || row.departmentId || row.description.trim() || row.debit.trim() || row.credit.trim()) addLineAndFocus(); }} /></div><div className="space-y-1"><Label htmlFor={`aje-line-credit-mobile-${index}`}>Credit</Label><Input id={`aje-line-credit-mobile-${index}`} aria-label={`Line ${index + 1} credit`} aria-invalid={amountIssue} className={`text-right font-mono ${amountIssue ? "border-destructive" : ""}`} type="number" min="0" step="0.01" value={row.credit} disabled={frozen || busy || isFull} onChange={e => updateLine(row.key, "credit", e.target.value)} onKeyDown={e => { if (e.key !== "Enter" || index !== form.details.length - 1) return; e.preventDefault(); if (row.coaId || row.departmentId || row.description.trim() || row.debit.trim() || row.credit.trim()) addLineAndFocus(); }} /></div></div>
             {issue && <p className="text-xs text-destructive">{issue}</p>}{remaining !== undefined && <p className="text-xs text-muted-foreground">Remaining reversal amount: {money(remaining)}</p>}
           </article>;
         })}
@@ -340,9 +419,9 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
             return <tr key={row.key} className="border-t"><td className="min-w-64 p-2 align-top"><AjeSearchableSelect options={accountOptions} value={row.coaId} onValueChange={v => updateLine(row.key, "coaId", v)} disabled={frozen || busy || reversal} placeholder="Select account" ariaLabel={`Line ${index + 1} account`} ariaInvalid={accountIssue} className={accountIssue ? "border-destructive" : ""} />{issue && <p className="mt-1 text-xs text-destructive">Line {index + 1}: {issue}</p>}{remaining !== undefined && <p className="mt-1 text-xs text-muted-foreground">Remaining: {money(remaining)}</p>}</td>
               <td className="min-w-48 p-2 align-top"><AjeSearchableSelect options={departmentOptions} value={row.departmentId || "none"} onValueChange={v => updateLine(row.key, "departmentId", v === "none" ? "" : v)} disabled={frozen || busy || reversal} placeholder="None" ariaLabel={`Line ${index + 1} department`} ariaInvalid={departmentIssue} className={departmentIssue ? "border-destructive" : ""} />{accountById.get(row.coaId)?.departmentRequired && <span className="text-xs text-muted-foreground">Required</span>}</td>
               <td className="min-w-44 p-2 align-top"><Input aria-label={`Line ${index + 1} description`} value={row.description} maxLength={1000} disabled={frozen || busy} onChange={e => updateLine(row.key, "description", e.target.value)} /></td>
-              <td className="w-36 p-2 align-top"><Input aria-label={`Line ${index + 1} debit`} aria-invalid={amountIssue} className={`text-right font-mono ${amountIssue ? "border-destructive" : ""}`} type="number" min="0" step="0.01" value={row.debit} disabled={frozen || busy || isFull} onChange={e => updateLine(row.key, "debit", e.target.value)} /></td>
-              <td className="w-36 p-2 align-top"><Input aria-label={`Line ${index + 1} credit`} aria-invalid={amountIssue} className={`text-right font-mono ${amountIssue ? "border-destructive" : ""}`} type="number" min="0" step="0.01" value={row.credit} disabled={frozen || busy || isFull} onChange={e => updateLine(row.key, "credit", e.target.value)} /></td>
-              <td className="p-2 align-top">{!frozen && !isFull && <Button type="button" size="icon" variant="ghost" aria-label={`Remove line ${index + 1}`} disabled={busy} onClick={() => setForm({ ...form, details: form.details.filter(d => d.key !== row.key) })}><Trash2 className="size-4" /></Button>}</td></tr>;
+              <td className="w-36 p-2 align-top"><Input aria-label={`Line ${index + 1} debit`} aria-invalid={amountIssue} className={`text-right font-mono ${amountIssue ? "border-destructive" : ""}`} type="number" min="0" step="0.01" value={row.debit} disabled={frozen || busy || isFull} onChange={e => updateLine(row.key, "debit", e.target.value)} onKeyDown={e => { if (e.key !== "Enter" || index !== form.details.length - 1) return; e.preventDefault(); if (row.coaId || row.departmentId || row.description.trim() || row.debit.trim() || row.credit.trim()) addLineAndFocus(); }} /></td>
+              <td className="w-36 p-2 align-top"><Input aria-label={`Line ${index + 1} credit`} aria-invalid={amountIssue} className={`text-right font-mono ${amountIssue ? "border-destructive" : ""}`} type="number" min="0" step="0.01" value={row.credit} disabled={frozen || busy || isFull} onChange={e => updateLine(row.key, "credit", e.target.value)} onKeyDown={e => { if (e.key !== "Enter" || index !== form.details.length - 1) return; e.preventDefault(); if (row.coaId || row.departmentId || row.description.trim() || row.debit.trim() || row.credit.trim()) addLineAndFocus(); }} /></td>
+              <td className="p-2 align-top"><div className="flex">{!frozen && !reversal && <Button type="button" size="icon" variant="ghost" aria-label={`Duplicate line ${index + 1}`} disabled={busy} onClick={() => duplicateLine(row.key)}><Copy className="size-4" /></Button>}{!frozen && !isFull && <Button type="button" size="icon" variant="ghost" aria-label={`Remove line ${index + 1}`} disabled={busy} onClick={() => setForm({ ...form, details: form.details.filter(d => d.key !== row.key) })}><Trash2 className="size-4" /></Button>}</div></td></tr>;
           })}
         </tbody><tfoot className="border-t bg-muted/20"><tr><td className="p-3 font-semibold" colSpan={3}>Totals</td><td className="p-3 text-right font-mono">{money(totals.debit / 100)}</td><td className="p-3 text-right font-mono">{money(totals.credit / 100)}</td><td /></tr></tfoot></table>
       </div>

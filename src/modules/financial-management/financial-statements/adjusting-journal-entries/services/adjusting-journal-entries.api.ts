@@ -264,7 +264,7 @@ export const adjustingJournalEntriesApi = {
   },
   async audit(params: URLSearchParams): Promise<AjeAuditPage> {
     const page = await request<AjeAuditPage & { page?: { totalPages: number; totalElements: number } }>(`/audit?${params}`);
-    return { ...page, totalPages: page.totalPages ?? page.page?.totalPages ?? 0, totalElements: page.totalElements ?? page.page?.totalElements ?? 0 };
+    return { ...page, totalPages: page.totalPages ?? page.page?.totalPages ?? 0, totalElements: page.totalElements ?? page.page?.totalElements ?? 0, dayCounts: page.dayCounts ?? {} };
   },
   async auditUsers(): Promise<Array<{ id: number; name: string }>> { return request("/audit/users"); },
   async attachments(id: number): Promise<AjeAttachment[]> { return request<AjeAttachment[]>(`/${id}/attachments`); },
@@ -296,6 +296,15 @@ export function ajeReportUrl(query: AdjustingEntryQuery, format: "csv" | "html")
     params.set(key, String(value));
   }
   return `${BASE}/report?${params}`;
+}
+
+export function ajeAuditReportUrl(filters: { search:string; userId:string; action:string; status:string; fromDate:string; toDate:string; entryId?:number | null }, format: "csv" | "html") {
+  const params = new URLSearchParams({ format });
+  for (const [key, value] of Object.entries(filters)) {
+    if (value == null || value === "") continue;
+    params.set(key, String(value));
+  }
+  return `${BASE}/audit/report?${params}`;
 }
 
 export async function fetchCoaOptions() {
