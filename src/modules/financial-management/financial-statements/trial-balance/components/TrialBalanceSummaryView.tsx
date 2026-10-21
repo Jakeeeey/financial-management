@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TrialBalanceItem } from "../types/trial-balance.schema";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { formatCurrency } from "@/lib/utils";
+import { formatTrialBalanceAmount, getPeriodMovementLabel } from "../utils/money";
 import { ChevronRight } from "lucide-react";
 
 export function TrialBalanceSummaryView({
@@ -43,19 +43,17 @@ export function TrialBalanceSummaryView({
               </Badge>
             </CardHeader>
             <CardContent>
-              <div className="flex justify-between items-end">
-                <div className="space-y-1">
-                  <p className={cn(
-                    "text-2xl font-bold",
-                    account.netBalance < 0 && "text-destructive"
-                  )}>
-                    {formatCurrency(account.netBalance)}
+              <div className="flex items-end gap-3">
+                <div className="min-w-0 flex-1 space-y-1 text-right">
+                  <p className="text-xs text-muted-foreground">Net period movement</p>
+                  <p className="text-2xl font-bold tabular-nums break-words">
+                    {formatTrialBalanceAmount(account.netBalance)}
                   </p>
                   <p className="text-[10px] text-muted-foreground uppercase tracking-tight">
-                    {account.balanceType} balance • Click to review journal entry lines
+                    {getPeriodMovementLabel(account)} • Click to review journal entry lines
                   </p>
                 </div>
-                <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-1 transition-transform" />
+                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground group-hover:translate-x-1 transition-transform" />
               </div>
             </CardContent>
           </Card>

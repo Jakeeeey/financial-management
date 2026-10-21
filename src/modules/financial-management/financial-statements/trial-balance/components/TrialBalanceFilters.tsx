@@ -13,184 +13,95 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { useTrialBalance } from "../hooks/useTrialBalance";
+import type { TrialBalancePeriodType } from "../types/trial-balance.schema";
+import { getManilaDateParts, getTrialBalancePeriodRange, getTrialBalanceYears, validateTrialBalanceDateRange } from "../utils/periods";
+import { TRIAL_BALANCE_CATEGORIES, TRIAL_BALANCE_REVIEW_FLAGS } from "../utils/filter-state";
 
-/**
- * Filter item container to maintain consistent 4-per-row layout
- * while allowing items to grow and fill empty space.
- */
 const FilterItem = ({ children, className = "" }: { children: React.ReactNode; className?: string }) => (
-  <div className={`space-y-2 flex-grow basis-[calc(25%-1rem)] min-w-[200px] ${className}`}>
+  <div className={`flex w-full min-w-0 flex-col gap-1.5 sm:shrink-0 ${className}`}>
     {children}
   </div>
 );
 
-/**
- * Helper: Compute startDate and endDate from period type selections.
- */
-function computeDateRange(
-  periodType: string,
-  year: string,
-  month: string,
-  quarter: string,
-  manualStart: string,
-  manualEnd: string
-): { startDate: string; endDate: string } {
-  if (periodType === "manual") {
-    return { startDate: manualStart, endDate: manualEnd };
-  }
-
-  const y = parseInt(year, 10);
-
-  if (periodType === "monthly") {
-    const m = parseInt(month, 10);
-    const lastDay = new Date(y, m, 0).getDate();
-    return {
-      startDate: `${y}-${month}-01`,
-      endDate: `${y}-${month}-${String(lastDay).padStart(2, "0")}`,
-    };
-  }
-
-  if (periodType === "quarterly") {
-    const quarterMap: Record<string, { startMonth: string; endMonth: string; endDay: number }> = {
-      q1: { startMonth: "01", endMonth: "03", endDay: 31 },
-      q2: { startMonth: "04", endMonth: "06", endDay: 30 },
-      q3: { startMonth: "07", endMonth: "09", endDay: 30 },
-      q4: { startMonth: "10", endMonth: "12", endDay: 31 },
-    };
-    const q = quarterMap[quarter] || quarterMap.q1;
-    return {
-      startDate: `${y}-${q.startMonth}-01`,
-      endDate: `${y}-${q.endMonth}-${String(q.endDay).padStart(2, "0")}`,
-    };
-  }
-
-  // annually
-  return { startDate: `${y}-01-01`, endDate: `${y}-12-31` };
-}
-
 export function TrialBalanceFilters() {
-  const { filters, setFilters, resetFilters, isLoading } = useTrialBalance();
+  const { draftFilters: filters, setDraftFilters: setFilters, clearFilters, applyFilters,
+    isLoading, hasPendingChanges, validationError, urlError, error } = useTrialBalance();
 
-  // Local state for period-type child controls
-  const [periodType, setPeriodType] = React.useState(filters.periodType);
-  const [manualStart, setManualStart] = React.useState(filters.startDate);
-  const [manualEnd, setManualEnd] = React.useState(filters.endDate);
-  const [year, setYear] = React.useState("2025");
-  const [month, setMonth] = React.useState("03");
-  const [quarter, setQuarter] = React.useState("q1");
-  const [searchValue, setSearchValue] = React.useState(filters.search);
+  const periodType = filters.periodType;
+  const today = getManilaDateParts();
+  const year = Number(filters.startDate.slice(0, 4)) || today.year;
+  const month = Number(filters.startDate.slice(5, 7)) || today.month;
+  const quarter = Math.ceil(month / 3);
+  const years = getTrialBalanceYears(year);
+  const manualStart = filters.startDate;
+  const manualEnd = filters.endDate;
+  const dateError = periodType === "manual" ? validateTrialBalanceDateRange(manualStart, manualEnd) : null;
 
-  // Debounced search
-  const searchTimerRef = React.useRef<ReturnType<typeof setTimeout>>(null);
-
-  const handleSearchChange = (value: string) => {
-    setSearchValue(value);
-    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    searchTimerRef.current = setTimeout(() => {
-      setFilters((prev) => ({ ...prev, search: value }));
-    }, 500);
+  const applyPeriod = (nextType: TrialBalancePeriodType, nextYear = year, nextMonth = month, nextQuarter = quarter, now = new Date()) => {
+    const range = nextType === "manual" ? {} : getTrialBalancePeriodRange(nextType, nextYear, nextMonth, nextQuarter, now);
+    setFilters((prev) => ({ ...prev, periodType: nextType, ...range }));
   };
 
-  // Sync date range to provider when period controls change
-  const syncDateRange = React.useCallback(
-    (pt: string, y: string, m: string, q: string, ms: string, me: string) => {
-      const { startDate, endDate } = computeDateRange(pt, y, m, q, ms, me);
-      setFilters((prev) => ({
-        ...prev,
-        periodType: pt as "manual" | "monthly" | "quarterly" | "annually",
-        startDate,
-        endDate,
-      }));
-    },
-    [setFilters]
-  );
-
-  const handlePeriodTypeChange = (val: string) => {
-    setPeriodType(val as typeof periodType);
-    syncDateRange(val, year, month, quarter, manualStart, manualEnd);
+  const handleShortcut = (shortcut: "thisMonth" | "lastMonth" | "yearToDate") => {
+    const now = new Date();
+    const today = getManilaDateParts(now);
+    applyPeriod(shortcut === "yearToDate" ? "yearToDate" : "monthly", today.year, today.month - (shortcut === "lastMonth" ? 1 : 0), 1, now);
   };
 
-  const handleYearChange = (val: string) => {
-    setYear(val);
-    syncDateRange(periodType, val, month, quarter, manualStart, manualEnd);
-  };
-
-  const handleMonthChange = (val: string) => {
-    setMonth(val);
-    syncDateRange(periodType, year, val, quarter, manualStart, manualEnd);
-  };
-
-  const handleQuarterChange = (val: string) => {
-    setQuarter(val);
-    syncDateRange(periodType, year, month, val, manualStart, manualEnd);
-  };
-
-  const handleManualStartChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setManualStart(val);
-    syncDateRange(periodType, year, month, quarter, val, manualEnd);
-  };
-
-  const handleManualEndChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setManualEnd(val);
-    syncDateRange(periodType, year, month, quarter, manualStart, val);
-  };
-
-  const handleReset = () => {
-    setPeriodType("manual");
-    setManualStart("2025-01-01");
-    setManualEnd("2025-12-30");
-    setYear("2025");
-    setMonth("03");
-    setQuarter("q1");
-    setSearchValue("");
-    resetFilters();
+  const handleCustomDates = (startDate: string, endDate: string) => {
+    setFilters((prev) => ({ ...prev, startDate, endDate }));
   };
 
   return (
-    <div className="rounded-xl border bg-card p-4 shadow-sm mb-6">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+    <form noValidate onSubmit={event => { event.preventDefault(); if (!isLoading) applyFilters(); }} className="rounded-xl border bg-card p-4 shadow-sm mb-6">
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <h3 className="shrink-0 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
           Filters
           {isLoading && (
             <span className="ml-2 inline-block h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent align-middle" />
           )}
         </h3>
-        <Button variant="ghost" size="sm" className="h-8 gap-2 text-muted-foreground" onClick={handleReset}>
+        <div className="flex min-w-0 flex-wrap gap-2" role="group" aria-label="Period shortcuts">
+          <Button type="button" variant="outline" size="sm" onClick={() => handleShortcut("thisMonth")}>This month</Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => handleShortcut("lastMonth")}>Last month</Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => handleShortcut("yearToDate")}>Year to date</Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => applyPeriod("manual")}>Custom</Button>
+        </div>
+        <Button type="button" variant="ghost" size="sm" className="ml-auto h-8 shrink-0 gap-2 text-muted-foreground" onClick={clearFilters}>
           <RotateCcw className="h-4 w-4" />
-          Reset Filters
+          Clear all
         </Button>
       </div>
 
-      <div className="flex flex-wrap gap-4 items-end">
+      <div className="flex flex-wrap items-start gap-3">
         {/* Search Bar */}
-        <FilterItem>
+        <FilterItem className="sm:w-72">
           <Label htmlFor="tb-search">Quick Search</Label>
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               id="tb-search"
               placeholder="Search account code or title..."
-              className="pl-9 rounded-lg"
-              value={searchValue}
-              onChange={(e) => handleSearchChange(e.target.value)}
+              className="h-9 pl-9 rounded-lg"
+              value={filters.search}
+              onChange={event => setFilters(prev => ({ ...prev, search: event.target.value }))}
             />
           </div>
         </FilterItem>
 
         {/* Period Type */}
-        <FilterItem>
-          <Label>Period Type</Label>
-          <Select value={periodType} onValueChange={handlePeriodTypeChange}>
-            <SelectTrigger className="rounded-lg">
+        <FilterItem className="sm:w-40">
+          <Label htmlFor="tb-period-type">Period Type</Label>
+          <Select value={periodType} onValueChange={(value) => applyPeriod(value as TrialBalancePeriodType)}>
+            <SelectTrigger id="tb-period-type" className="h-9 w-full min-w-0 rounded-lg">
               <SelectValue placeholder="Select period" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="manual">Manual</SelectItem>
+              <SelectItem value="manual">Custom</SelectItem>
               <SelectItem value="monthly">Monthly</SelectItem>
               <SelectItem value="quarterly">Quarterly</SelectItem>
               <SelectItem value="annually">Annually</SelectItem>
+              <SelectItem value="yearToDate">Year to date</SelectItem>
             </SelectContent>
           </Select>
         </FilterItem>
@@ -198,38 +109,37 @@ export function TrialBalanceFilters() {
         {/* Conditional Date Filters */}
         {periodType === "manual" && (
           <>
-            <FilterItem>
-              <Label>Date From</Label>
-              <Input type="date" className="rounded-lg" value={manualStart} onChange={handleManualStartChange} />
+            <FilterItem className="sm:w-48">
+              <Label htmlFor="tb-start-date">Date From</Label>
+              <Input id="tb-start-date" type="date" className="h-9 w-full min-w-0 rounded-lg" value={manualStart} onChange={(event) => handleCustomDates(event.target.value, manualEnd)} aria-invalid={!!dateError} aria-describedby={dateError ? "tb-date-error" : undefined} />
             </FilterItem>
-            <FilterItem>
-              <Label>Date To</Label>
-              <Input type="date" className="rounded-lg" value={manualEnd} onChange={handleManualEndChange} />
+            <FilterItem className="sm:w-48">
+              <Label htmlFor="tb-end-date">Date To</Label>
+              <Input id="tb-end-date" type="date" className="h-9 w-full min-w-0 rounded-lg" value={manualEnd} onChange={(event) => handleCustomDates(manualStart, event.target.value)} aria-invalid={!!dateError} aria-describedby={dateError ? "tb-date-error" : undefined} />
+              {dateError && <p id="tb-date-error" role="alert" className="text-sm text-destructive">{dateError}</p>}
             </FilterItem>
           </>
         )}
 
         {(periodType === "monthly" || periodType === "quarterly" || periodType === "annually") && (
-          <FilterItem>
-            <Label>Year</Label>
-            <Select value={year} onValueChange={handleYearChange}>
-              <SelectTrigger className="rounded-lg">
+          <FilterItem className="sm:w-28">
+            <Label htmlFor="tb-year">Year</Label>
+            <Select value={String(year)} onValueChange={(value) => applyPeriod(periodType, Number(value))}>
+              <SelectTrigger id="tb-year" className="h-9 w-full min-w-0 rounded-lg">
                 <SelectValue placeholder="Select Year" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="2026">2026</SelectItem>
-                <SelectItem value="2025">2025</SelectItem>
-                <SelectItem value="2024">2024</SelectItem>
+                {years.map((option) => <SelectItem key={option} value={String(option)}>{option}</SelectItem>)}
               </SelectContent>
             </Select>
           </FilterItem>
         )}
 
         {periodType === "monthly" && (
-          <FilterItem>
-            <Label>Month</Label>
-            <Select value={month} onValueChange={handleMonthChange}>
-              <SelectTrigger className="rounded-lg">
+          <FilterItem className="sm:w-40">
+            <Label htmlFor="tb-month">Month</Label>
+            <Select value={String(month).padStart(2, "0")} onValueChange={(value) => applyPeriod(periodType, year, Number(value))}>
+              <SelectTrigger id="tb-month" className="h-9 w-full min-w-0 rounded-lg">
                 <SelectValue placeholder="Select Month" />
               </SelectTrigger>
               <SelectContent>
@@ -242,10 +152,10 @@ export function TrialBalanceFilters() {
         )}
 
         {periodType === "quarterly" && (
-          <FilterItem>
-            <Label>Quarter</Label>
-            <Select value={quarter} onValueChange={handleQuarterChange}>
-              <SelectTrigger className="rounded-lg">
+          <FilterItem className="sm:w-48">
+            <Label htmlFor="tb-quarter">Quarter</Label>
+            <Select value={`q${quarter}`} onValueChange={(value) => applyPeriod(periodType, year, month, Number(value.slice(1)))}>
+              <SelectTrigger id="tb-quarter" className="h-9 w-full min-w-0 rounded-lg">
                 <SelectValue placeholder="Select Quarter" />
               </SelectTrigger>
               <SelectContent>
@@ -259,61 +169,66 @@ export function TrialBalanceFilters() {
         )}
 
         {/* Standard Filters */}
-        <FilterItem>
-          <Label>Account Category</Label>
+        <FilterItem className="sm:w-44">
+          <Label htmlFor="tb-category">Account Category</Label>
           <Select
             value={filters.accountCategory}
             onValueChange={(val) => setFilters((prev) => ({ ...prev, accountCategory: val }))}
           >
-            <SelectTrigger className="rounded-lg">
+            <SelectTrigger id="tb-category" className="h-9 w-full min-w-0 rounded-lg">
               <SelectValue placeholder="All Categories" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Categories</SelectItem>
-              <SelectItem value="Assets">Assets</SelectItem>
-              <SelectItem value="Liabilities">Liabilities</SelectItem>
-              <SelectItem value="Equity">Equity</SelectItem>
-              <SelectItem value="Revenue">Revenue</SelectItem>
-              <SelectItem value="Expense">Expense</SelectItem>
+              {TRIAL_BALANCE_CATEGORIES.map(category => <SelectItem key={category} value={category}>{category}</SelectItem>)}
             </SelectContent>
           </Select>
         </FilterItem>
 
-        <FilterItem>
-          <Label>Status</Label>
+        <FilterItem className="sm:w-40">
+          <Label htmlFor="tb-status">Status</Label>
           <Select
             value={filters.status}
             onValueChange={(val) => setFilters((prev) => ({ ...prev, status: val }))}
           >
-            <SelectTrigger className="rounded-lg">
-              <SelectValue placeholder="All Status" />
+            <SelectTrigger id="tb-status" className="h-9 w-full min-w-0 rounded-lg">
+              <SelectValue placeholder="All statuses" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="all">All statuses</SelectItem>
               <SelectItem value="Posted">Posted</SelectItem>
               <SelectItem value="Unposted">Unposted</SelectItem>
             </SelectContent>
           </Select>
         </FilterItem>
 
-        <FilterItem>
-          <Label>Review Flag</Label>
+        <FilterItem className="sm:w-40">
+          <Label htmlFor="tb-review-flag">Review Flag</Label>
           <Select
             value={filters.reviewFlag}
             onValueChange={(val) => setFilters((prev) => ({ ...prev, reviewFlag: val }))}
           >
-            <SelectTrigger className="rounded-lg">
+            <SelectTrigger id="tb-review-flag" className="h-9 w-full min-w-0 rounded-lg">
               <SelectValue placeholder="All Flags" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Flags</SelectItem>
-              <SelectItem value="Normal">Normal</SelectItem>
-              <SelectItem value="High">High</SelectItem>
-              <SelectItem value="Critical">Critical</SelectItem>
+              {TRIAL_BALANCE_REVIEW_FLAGS.map(flag => <SelectItem key={flag} value={flag}>{flag}</SelectItem>)}
             </SelectContent>
           </Select>
         </FilterItem>
+        <div className="flex w-full justify-end sm:w-auto sm:self-end">
+          <Button type="submit" className="h-9" disabled={isLoading || !!validationError || (!hasPendingChanges && !error && !urlError)}>
+            {isLoading ? "Applying filters…" : "Apply filters"}
+          </Button>
+        </div>
       </div>
-    </div>
+      <p role="status" className="mt-3 text-xs text-muted-foreground">
+        {isLoading ? "Applying filters. Showing the last loaded report until the request completes."
+          : hasPendingChanges ? "Filter changes are waiting for Apply. The report and exports still use the applied filters."
+          : "Clear all restores the current month and All statuses."}
+      </p>
+      {urlError && <p role="alert" className="mt-2 text-sm text-destructive">{urlError}</p>}
+    </form>
   );
 }

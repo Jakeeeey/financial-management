@@ -6,10 +6,10 @@ export const TrialBalanceItemSchema = z.object({
   glCode: z.string(),
   accountTitle: z.string(),
   accountType: z.string(),
-  totalDebit: z.number(),
-  totalCredit: z.number(),
-  netBalance: z.number(),
-  balanceType: z.string(),
+  totalDebit: z.number(), // Signed debit activity within the applied report period and filters.
+  totalCredit: z.number(), // Signed credit activity within the applied report period and filters.
+  netBalance: z.number(), // Absolute net period movement; not an opening or closing balance.
+  balanceType: z.string(), // Debit/Credit direction of net period movement; neutral when netBalance is zero.
   reviewFlag: z.string(),
 });
 
@@ -19,11 +19,13 @@ export const TrialBalanceListSchema = z.array(TrialBalanceItemSchema);
 export type TrialBalanceItem = z.infer<typeof TrialBalanceItemSchema>;
 
 // ─── Filter state managed by the provider ───
+export type TrialBalancePeriodType = "manual" | "monthly" | "quarterly" | "annually" | "yearToDate";
+
 export interface TrialBalanceFilterState {
   search: string;
   startDate: string;
   endDate: string;
-  periodType: "manual" | "monthly" | "quarterly" | "annually";
+  periodType: TrialBalancePeriodType;
   status: string;
   accountCategory: string;
   reviewFlag: string;
@@ -33,6 +35,8 @@ export interface TrialBalanceFilterState {
   postedOnly: boolean;
 }
 
+export type TrialBalanceReportContext = TrialBalanceFilterState;
+
 // ─── Aggregated summary for the dashboard cards ───
 export interface TrialBalanceSummaryData {
   totalDebit: number;
@@ -40,6 +44,7 @@ export interface TrialBalanceSummaryData {
   difference: number;
   accountCount: number;
   isBalanced: boolean;
+  scope: "report" | "filtered";
 }
 
 // ─── Drill-down item from the trial-balance/drill-down endpoint ───

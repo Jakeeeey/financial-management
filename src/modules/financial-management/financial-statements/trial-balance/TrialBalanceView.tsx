@@ -4,6 +4,8 @@ import * as React from "react";
 import { TrialBalanceHeader } from "./components/TrialBalanceHeader";
 import { TrialBalanceFilters } from "./components/TrialBalanceFilters";
 import { TrialBalanceSummary } from "./components/TrialBalanceSummary";
+import { TrialBalanceReportContext } from "./components/TrialBalanceReportContext";
+import { TrialBalanceAppliedFilters } from "./components/TrialBalanceAppliedFilters";
 import { TrialBalanceDetailView } from "./components/TrialBalanceDetailView";
 import { TrialBalanceSummaryView } from "./components/TrialBalanceSummaryView";
 import { TrialBalanceDrillDown } from "./components/TrialBalanceDrillDown";
@@ -13,12 +15,13 @@ import { useTrialBalance } from "./hooks/useTrialBalance";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import { getTrialBalanceDifferenceMessage } from "./utils/summary";
 
 function TrialBalanceContent() {
-  const { items, summary, isLoading, error } = useTrialBalance();
+  const { items, summary, reportContext, isLoading, error } = useTrialBalance();
   const [viewMode, setViewMode] = React.useState<"detail" | "summary">("detail");
   const [selectedAccount, setSelectedAccount] = React.useState<TrialBalanceItem | null>(null);
+  const isPosted = reportContext?.postedOnly || reportContext?.status.toLowerCase() === "posted";
 
   if (selectedAccount) {
     return (
@@ -35,15 +38,18 @@ function TrialBalanceContent() {
 
       <TrialBalanceFilters />
 
-      <TrialBalanceSummary summary={summary} />
+      <TrialBalanceReportContext />
+      <TrialBalanceAppliedFilters />
 
-      {!summary.isBalanced && items.length > 0 && (
+      {reportContext && <TrialBalanceSummary summary={summary} />}
+
+      {reportContext && summary.scope === "report" && !summary.isBalanced && items.length > 0 && (
         <Alert variant="destructive" className="mb-6 animate-in slide-in-from-top-2">
           <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Out of Balance</AlertTitle>
+          <AlertTitle>{isPosted ? "Report debit–credit mismatch" : "Provisional report difference"}</AlertTitle>
           <AlertDescription>
-            Report is out of balance by {formatCurrency(summary.difference)}.
-            Please review flagged accounts and regenerate after correction.
+            {getTrialBalanceDifferenceMessage(summary.difference)}. This applies to the complete report for the reporting period and transaction scope shown above.
+            {!isPosted && " This is a provisional report that includes unposted transactions."}
           </AlertDescription>
         </Alert>
       )}

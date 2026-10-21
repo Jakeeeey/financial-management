@@ -15,7 +15,7 @@ import { TrialBalanceItem, TrialBalanceDrillDownItem } from "../types/trial-bala
 import { Label } from "@/components/ui/label";
 import { DataTable } from "@/components/ui/new-data-table";
 import { ColumnDef } from "@tanstack/react-table";
-import { formatCurrency } from "@/lib/utils";
+import { formatTrialBalanceAmount, getPeriodMovementLabel, PERIOD_ACTIVITY_NOTE } from "../utils/money";
 import { format } from "date-fns";
 import { useTrialBalanceContext } from "../providers/TrialBalanceProvider";
 import { toast } from "sonner";
@@ -30,12 +30,12 @@ const safeGet = {
     debit: (row: TrialBalanceDrillDownItem) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const r = row as any;
-        return Number(r.debit || r.debitAmount || 0);
+        return Number(r.debit ?? r.debitAmount ?? 0);
     },
     credit: (row: TrialBalanceDrillDownItem) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const r = row as any;
-        return Number(r.credit || r.creditAmount || 0);
+        return Number(r.credit ?? r.creditAmount ?? 0);
     },
 };
 
@@ -65,24 +65,24 @@ const columns: ColumnDef<TrialBalanceDrillDownItem>[] = [
   },
   {
     accessorKey: "debit",
-    header: () => <div className="text-right">Debit</div>,
+    header: () => <div className="text-right">Debit amount</div>,
     cell: ({ row }) => {
       const val = safeGet.debit(row.original);
       return (
-        <div className="text-right text-xs font-mono">
-          {val > 0 ? formatCurrency(val) : "—"}
+        <div className="text-right text-xs font-mono tabular-nums whitespace-nowrap">
+          {formatTrialBalanceAmount(val)}
         </div>
       );
     },
   },
   {
     accessorKey: "credit",
-    header: () => <div className="text-right">Credit</div>,
+    header: () => <div className="text-right">Credit amount</div>,
     cell: ({ row }) => {
       const val = safeGet.credit(row.original);
       return (
-        <div className="text-right text-xs font-mono text-primary">
-          {val > 0 ? formatCurrency(val) : "—"}
+        <div className="text-right text-xs font-mono tabular-nums whitespace-nowrap text-primary">
+          {formatTrialBalanceAmount(val)}
         </div>
       );
     },
@@ -116,7 +116,7 @@ export function TrialBalanceDrillDown({
   account: TrialBalanceItem;
   onBack: () => void;
 }) {
-  const { filters } = useTrialBalanceContext();
+  const { reportContext: filters } = useTrialBalanceContext();
   const [lines, setLines] = useState<TrialBalanceDrillDownItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isApplyingFilters, setIsApplyingFilters] = useState(false);
@@ -124,21 +124,16 @@ export function TrialBalanceDrillDown({
   // Draft States (Inputs)
   const [draftSearchQuery, setDraftSearchQuery] = useState("");
   const [draftMinAmount, setDraftMinAmount] = useState("");
-  const [draftStartDate, setDraftStartDate] = useState(filters.startDate);
-  const [draftEndDate, setDraftEndDate] = useState(filters.endDate);
+  const [draftStartDate, setDraftStartDate] = useState(filters?.startDate ?? "");
+  const [draftEndDate, setDraftEndDate] = useState(filters?.endDate ?? "");
 
   // Active States (Applied)
   const [activeSearchQuery, setActiveSearchQuery] = useState("");
   const [activeMinAmount, setActiveMinAmount] = useState("");
-  const [activeStartDate, setActiveStartDate] = useState(filters.startDate);
-  const [activeEndDate, setActiveEndDate] = useState(filters.endDate);
+  const [activeStartDate, setActiveStartDate] = useState(filters?.startDate ?? "");
+  const [activeEndDate, setActiveEndDate] = useState(filters?.endDate ?? "");
 
   const toastIdRef = useRef<string | number | undefined>(undefined);
-
-  const formatAmount = (val: number) => {
-    if (val === 0) return "—";
-    return formatCurrency(val);
-  };
 
   // Core fetch function
   const fetchDrillDown = async (startDate: string, endDate: string) => {
@@ -193,7 +188,7 @@ export function TrialBalanceDrillDown({
 
           const d = safeGet.debit(line);
           const c = safeGet.credit(line);
-          const maxVal = Math.max(d, c);
+          const maxVal = Math.max(Math.abs(d), Math.abs(c));
           const matchesMinAmount = !activeMinAmount || maxVal >= Number(activeMinAmount);
 
           return matchesSearch && matchesMinAmount;
@@ -260,13 +255,13 @@ export function TrialBalanceDrillDown({
   const handleReset = () => {
     setDraftSearchQuery("");
     setDraftMinAmount("");
-    setDraftStartDate(filters.startDate);
-    setDraftEndDate(filters.endDate);
+    setDraftStartDate(filters?.startDate ?? "");
+    setDraftEndDate(filters?.endDate ?? "");
     
     setActiveSearchQuery("");
     setActiveMinAmount("");
-    setActiveStartDate(filters.startDate);
-    setActiveEndDate(filters.endDate);
+    setActiveStartDate(filters?.startDate ?? "");
+    setActiveEndDate(filters?.endDate ?? "");
   };
 
   const showSkeleton = isLoading || isApplyingFilters;
@@ -288,24 +283,31 @@ export function TrialBalanceDrillDown({
               </Badge>
             </div>
             <p className="text-sm text-muted-foreground">
-              Detailed transaction analysis • {account.balanceType} balance
+              Detailed transaction analysis • {getPeriodMovementLabel(account)}
             </p>
           </div>
-          <div className="flex items-center gap-4 text-right">
-            <div>
-              <p className="text-[10px] text-muted-foreground uppercase font-bold">Debit Total</p>
-              <p className="font-mono font-bold">{formatAmount(account.totalDebit)}</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-muted-foreground uppercase font-bold">Credit Total</p>
-              <p className="font-mono font-bold text-primary">{formatAmount(account.totalCredit)}</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-muted-foreground uppercase font-bold">Net Balance</p>
-              <p className="font-mono font-bold">{formatCurrency(account.netBalance)}</p>
+          <div className="text-right">
+            <p className="mb-2 text-xs text-muted-foreground">Account activity in original report period</p>
+            <div className="flex items-center gap-4">
+              <div>
+                <p className="text-[10px] text-muted-foreground uppercase font-bold">Period debit activity</p>
+                <p className="font-mono font-bold tabular-nums whitespace-nowrap">{formatTrialBalanceAmount(account.totalDebit)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted-foreground uppercase font-bold">Period credit activity</p>
+                <p className="font-mono font-bold tabular-nums whitespace-nowrap text-primary">{formatTrialBalanceAmount(account.totalCredit)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted-foreground uppercase font-bold">Net period movement</p>
+                <p className="font-mono font-bold tabular-nums whitespace-nowrap">{formatTrialBalanceAmount(account.netBalance)}</p>
+                <p className="text-xs text-muted-foreground">{getPeriodMovementLabel(account)}</p>
+              </div>
             </div>
           </div>
         </div>
+        <p className="text-xs text-muted-foreground">
+          {PERIOD_ACTIVITY_NOTE} Header totals reflect the original report criteria and do not change with workspace filters.
+        </p>
       </div>
 
       <div className="flex flex-1 gap-6 min-h-0">
@@ -334,11 +336,17 @@ export function TrialBalanceDrillDown({
                 id="min-amount" 
                 type="number" 
                 placeholder="₱0.00" 
+                min="0"
+                step="0.01"
+                aria-describedby="min-amount-help"
                 className="h-9 text-xs" 
                 value={draftMinAmount}
                 onChange={(e) => setDraftMinAmount(e.target.value)}
                 disabled={isApplyingFilters}
               />
+              <p id="min-amount-help" className="text-[10px] text-muted-foreground">
+                Uses the absolute debit or credit amount, including negative transactions.
+              </p>
             </div>
 
             <div className="space-y-2">
