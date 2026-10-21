@@ -4,6 +4,7 @@ import { requireMemoAccess } from "./access";
 import { MemoError, positiveId, readRows, type Row } from "./directus";
 import { createMemo, getDetail, getHistory, listMemos, mutateMemo } from "./service";
 import { memoReport, memoSlip } from "./pdf";
+import { memoPrintTemplate, memoPrintTemplates } from "./print-options";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -38,6 +39,7 @@ export function memoRoutes(type: SupplierMemoType) {
       try {
         await requireMemoAccess(request, type);
         const action = request.nextUrl.searchParams.get("action");
+        if (action === "print-options") return NextResponse.json({ templates: await memoPrintTemplates() }, { headers: { "Cache-Control": "private, no-store" } });
         if (action === "suppliers") return NextResponse.json({ data: await readRows("suppliers",
           { isActive: { _eq: 1 }, supplier_type: { _eq: "TRADE" } }, "id,supplier_name,supplier_shortcut,supplier_type", "supplier_name,id") });
         if (action === "chart-of-accounts") return NextResponse.json({ data: await readRows("chart_of_accounts",
@@ -81,8 +83,8 @@ export function memoRoutes(type: SupplierMemoType) {
       try {
         const actor = await requireMemoAccess(request, type);
         const id = positiveId((await context.params).id);
-        const [detail, history] = await Promise.all([getDetail(id, type), getHistory(id, type)]);
-        return pdfResponse(await memoSlip(detail, history, actor), detail.memo.memo_number + ".pdf");
+        const [detail, history, template] = await Promise.all([getDetail(id, type), getHistory(id, type), memoPrintTemplate(request.nextUrl.searchParams.get("templateId"))]);
+        return pdfResponse(await memoSlip(detail, history, actor, template), detail.memo.memo_number + ".pdf");
       } catch (error) { return failure(error); }
     },
     async report(request: NextRequest) {

@@ -2,16 +2,17 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { memoDateTime, memoMoney, type MemoDetail, type MemoHistoryEvent, type SupplierMemo, type SupplierMemoFilters, type SupplierMemoType } from "@/modules/financial-management/accounting/supplier-memos/types";
+import { memoDateTime, memoMoney, type SupplierMemo, type SupplierMemoFilters, type SupplierMemoType } from "@/modules/financial-management/accounting/supplier-memos/types";
 import type { MemoActor } from "./access";
 import { readRows } from "./directus";
+export { memoSlip } from "./slip-pdf";
 
 let fonts: Promise<string[]> | undefined;
-async function document(format: "a5" | "a4") {
+async function document() {
   fonts ||= Promise.all(["Regular", "Bold"].map(async weight =>
     (await readFile(path.join(process.cwd(), "public/fonts/noto-sans/NotoSans-" + weight + ".ttf"))).toString("base64")));
   const [regular, bold] = await fonts;
-  const doc = new jsPDF({ format, orientation: format === "a5" ? "portrait" : "landscape", compress: true });
+  const doc = new jsPDF({ format: "a4", orientation: "landscape", compress: true });
   doc.addFileToVFS("NotoSans-Regular.ttf", regular);
   doc.addFont("NotoSans-Regular.ttf", "NotoSans", "normal");
   doc.addFileToVFS("NotoSans-Bold.ttf", bold);
@@ -53,35 +54,9 @@ function footer(doc: jsPDF, actor: MemoActor, generatedAt: string) {
 const date = (value: string) => value?.slice(0, 10) || "-";
 const status = (value: string) => value.toUpperCase() === "CANCELLED" ? "CANCELLED" : value;
 
-export async function memoSlip(detail: MemoDetail, history: MemoHistoryEvent[], actor: MemoActor): Promise<ArrayBuffer> {
-  const generatedAt = new Date().toISOString();
-  const doc = await document("a5");
-  const { memo, eligibility } = detail;
-  const y = await heading(doc, "Supplier " + (Number(memo.type) === 1 ? "Credit" : "Debit") + " Memo");
-  const cancellation = history.find(event => event.action === "CANCEL" && event.outcome === "completed");
-  const rows = [
-    ["Memo number", memo.memo_number], ["Date", date(memo.date)], ["Status", status(memo.status)],
-    ["Supplier", memo.supplierName || "-"], ["GL account", [memo.accountCode, memo.accountName].filter(Boolean).join(" - ")],
-    ["Memo reason", memo.reason || "-"], ["Original amount", memoMoney(Number(memo.amount))],
-    ["Posted usage", memoMoney(eligibility.appliedAmount)], ["Reserved / unposted", memoMoney(eligibility.reservedAmount)],
-    ["Remaining balance", memoMoney(eligibility.remainingAmount)], ["Created by", memo.creatorName || "Not recorded"],
-    ["Created at (PHT)", memoDateTime(memo.created_at)],
-    ...(memo.status.toUpperCase() === "CANCELLED" ? [["Cancellation", cancellation
-      ? cancellation.actorName + " | " + memoDateTime(cancellation.occurredAt) + "\nReason: " + cancellation.reason
-      : "Cancellation actor/reason not recorded in application history."]] : []),
-    ...(eligibility.ambiguous ? [["Usage requires review", eligibility.blockedReason || "The linked usage cannot be safely attributed."]] : []),
-  ];
-  autoTable(doc, { startY: y, body: rows, margin: { left: 12, right: 12, top: 15, bottom: 28 },
-    styles: { font: "NotoSans", fontSize: 8, cellPadding: 2.2, overflow: "linebreak", textColor: 30 },
-    columnStyles: { 0: { cellWidth: 39, fontStyle: "bold", fillColor: [244, 246, 249] }, 1: { cellWidth: 85 } },
-    theme: "grid", rowPageBreak: "avoid" });
-  footer(doc, actor, generatedAt);
-  return doc.output("arraybuffer");
-}
-
 export async function memoReport(memos: SupplierMemo[], type: SupplierMemoType, filters: SupplierMemoFilters, actor: MemoActor): Promise<ArrayBuffer> {
   const generatedAt = new Date().toISOString();
-  const doc = await document("a4");
+  const doc = await document();
   let y = await heading(doc, "Supplier " + (type === 1 ? "Credit" : "Debit") + " Memo Summary");
   const selectedSupplier = memos.find(memo => String(memo.supplier_id) === filters.supplier_id)?.supplierName || filters.supplier_id;
   const selectedAccount = memos.find(memo => String(memo.chart_of_account) === filters.chart_of_account)?.accountName || filters.chart_of_account;
