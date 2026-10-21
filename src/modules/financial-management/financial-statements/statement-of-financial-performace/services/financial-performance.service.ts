@@ -16,7 +16,7 @@ export async function getFinancialPerformance(
   query.set("startDate", params.startDate);
   query.set("endDate", params.endDate);
 
-  if (params.status && params.status !== "all") {
+  if (params.status) {
     query.set("status", params.status);
   }
   if (params.divisionName && params.divisionName !== "all") {
