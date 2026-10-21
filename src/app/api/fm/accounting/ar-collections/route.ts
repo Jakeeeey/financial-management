@@ -195,7 +195,7 @@ export async function GET(request: NextRequest) {
 
     // 2. Fetch Outstanding Invoices with Server-side Pagination & Filtering
     // We will build a query to retrieve only the required invoices for the current page
-    let directusFilter = `filter[payment_status][_nin]=Paid,Fully Paid,Void,VOID&filter[_or][0][isPosted][_null]=true&filter[_or][1][isPosted][_eq]=false&filter[_and][0][_or][0][transaction_status][_nin]=Cancelled,CANCELLED,Void,VOID,void&filter[_and][0][_or][1][transaction_status][_null]=true`;
+    let directusFilter = `filter[payment_status][_nin]=Paid,Fully Paid,Void,VOID,Cancelled,CANCELLED,Cancelled%20-%20Old%20Invoice,CANCELLED%20-%20OLD%20INVOICE&filter[_or][0][isPosted][_null]=true&filter[_or][1][isPosted][_eq]=false&filter[_and][0][_or][0][transaction_status][_nin]=Cancelled,CANCELLED,Void,VOID,void,Not%20Fulfilled,NOT%20FULFILLED,Cancelled%20-%20Old%20Invoice,CANCELLED%20-%20OLD%20INVOICE,cancelled%20-%20old%20invoice&filter[_and][0][_or][1][transaction_status][_null]=true`;
 
     // A. Apply Salesman filter
     if (salesman !== 'all') {
@@ -335,7 +335,17 @@ export async function GET(request: NextRequest) {
     today.setHours(0, 0, 0, 0);
 
     // Build the final merged rows list
-    const mergedRows = rawInvoices.map((inv: any) => {
+    const mergedRows = rawInvoices
+      .filter((inv: any) => {
+        const tx = (inv.transaction_status || '').trim().toUpperCase();
+        const pay = (inv.payment_status || '').trim().toUpperCase();
+        if (tx === 'NOT FULFILLED' || tx === 'NOT_FULFILLED') return false;
+        if (tx === 'CANCELLED' || tx.startsWith('CANCELLED -') || tx.includes('OLD INVOICE')) return false;
+        if (tx === 'VOID' || tx === 'VOIDED') return false;
+        if (pay === 'VOID' || pay === 'VOIDED' || pay === 'CANCELLED' || pay.startsWith('CANCELLED -') || pay.includes('OLD INVOICE')) return false;
+        return true;
+      })
+      .map((inv: any) => {
       const grossAmount = Number(inv.gross_amount) || 0;
       const discountAmount = Number(inv.discount_amount) || 0;
       const netReceivable = grossAmount - discountAmount;
@@ -539,14 +549,22 @@ export async function POST(request: NextRequest) {
     let rawInvoices: any[] = [];
     if (DIRECTUS_URL && DIRECTUS_STATIC_TOKEN) {
       try {
-        const fields = 'invoice_id,invoice_no,customer_code,salesman_id,gross_amount,discount_amount';
-        const directusFilter = `filter[salesman_id][_eq]=${resolvedSalesmanId}&filter[payment_status][_neq]=Paid`;
+        const fields = 'invoice_id,invoice_no,customer_code,salesman_id,gross_amount,discount_amount,transaction_status,payment_status';
+        const directusFilter = `filter[salesman_id][_eq]=${resolvedSalesmanId}&filter[payment_status][_nin]=Paid,Fully Paid,Void,VOID,Cancelled,CANCELLED,Cancelled%20-%20Old%20Invoice,CANCELLED%20-%20OLD%20INVOICE&filter[transaction_status][_nin]=Cancelled,CANCELLED,Void,VOID,void,Not%20Fulfilled,NOT%20FULFILLED,Cancelled%20-%20Old%20Invoice,CANCELLED%20-%20OLD%20INVOICE,cancelled%20-%20old%20invoice`;
         const resInv = await fetch(`${DIRECTUS_URL}/items/sales_invoice?fields=${fields}&${directusFilter}&limit=200`, {
           headers: { Authorization: `Bearer ${DIRECTUS_STATIC_TOKEN}` }
         });
         if (resInv.ok) {
           const jsonInv = await resInv.json();
-          rawInvoices = jsonInv.data || [];
+          rawInvoices = (jsonInv.data || []).filter((inv: any) => {
+            const tx = (inv.transaction_status || '').trim().toUpperCase();
+            const pay = (inv.payment_status || '').trim().toUpperCase();
+            if (tx === 'NOT FULFILLED' || tx === 'NOT_FULFILLED') return false;
+            if (tx === 'CANCELLED' || tx.startsWith('CANCELLED -') || tx.includes('OLD INVOICE')) return false;
+            if (tx === 'VOID' || tx === 'VOIDED') return false;
+            if (pay === 'VOID' || pay === 'VOIDED' || pay === 'CANCELLED' || pay.startsWith('CANCELLED -') || pay.includes('OLD INVOICE')) return false;
+            return true;
+          });
         }
       } catch (err) {
         console.error('[Collections API] Failed to fetch outstanding invoices in POST:', err);

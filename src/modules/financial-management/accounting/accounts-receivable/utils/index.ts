@@ -72,7 +72,17 @@ export function transformInvoices(data: RawInvoiceRow[]): {
   const salesmanMap: Record<string, number> = {};
   const customerMap: Record<string, number> = {};
 
-  const invoices: Invoice[] = data.map((row) => {
+  const validRows = data.filter((row) => {
+    const tx = String(row.transactionStatus || row.transaction_status || '').trim().toUpperCase();
+    const pay = String(row.paymentStatus || row.payment_status || '').trim().toUpperCase();
+    if (tx === 'NOT FULFILLED' || tx === 'NOT_FULFILLED') return false;
+    if (tx === 'CANCELLED' || tx.startsWith('CANCELLED -') || tx.includes('OLD INVOICE')) return false;
+    if (tx === 'VOID' || tx === 'VOIDED') return false;
+    if (pay === 'VOID' || pay === 'VOIDED' || pay === 'CANCELLED' || pay.startsWith('CANCELLED -') || pay.includes('OLD INVOICE')) return false;
+    return true;
+  });
+
+  const invoices: Invoice[] = validRows.map((row) => {
     const netReceivable    = Number(row.netReceivable    ?? row.grossAmount ?? 0);
     const totalPaid        = Number(row.totalPaid        ?? 0);
     const outstanding      = Number(row.outstandingBalance ?? Math.max(0, netReceivable - totalPaid));
