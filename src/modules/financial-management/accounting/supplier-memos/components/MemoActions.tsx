@@ -11,6 +11,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { memoDateTime, memoMoney, type MemoDetail, type MemoHistoryEvent, type MemoMutationResult, type SupplierMemo, type SupplierMemoFilters } from "../types";
+import { SupplierMemoPrintDialog } from "./SupplierMemoPrintDialog";
 
 type Mode = "view" | "edit" | "cancel" | "history";
 type Supplier = { id: number; supplier_name: string };
@@ -37,6 +38,7 @@ export function MemoRowActions({ memo, api, suppliers, accounts, onChanged }: {
   memo: SupplierMemo; api: string; suppliers: Supplier[]; accounts: Account[]; onChanged: () => void;
 }) {
   const [mode, setMode] = useState<Mode | null>(null);
+  const [printOpen, setPrintOpen] = useState(false);
   return <div className="flex items-center gap-1">
     <Button variant="outline" size="sm" onClick={() => setMode("view")}>View</Button>
     <DropdownMenu>
@@ -45,17 +47,18 @@ export function MemoRowActions({ memo, api, suppliers, accounts, onChanged }: {
         <DropdownMenuItem disabled={!memo.eligibility?.canEdit} onSelect={() => setMode("edit")}><Pencil /> Edit</DropdownMenuItem>
         <DropdownMenuItem disabled={!memo.eligibility?.canCancel} onSelect={() => setMode("cancel")} className="text-destructive"><Ban /> Cancel memo</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => setMode("history")}><History /> History</DropdownMenuItem>
-        <DropdownMenuItem asChild><a href={api + "/" + memo.id + "/print"} target="_blank" rel="noopener noreferrer"><Printer /> Print slip</a></DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => setPrintOpen(true)}><Printer /> Print</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
     {mode && <MemoDialog key={mode} memo={memo} api={api} mode={mode} suppliers={suppliers} accounts={accounts}
-      onMode={setMode} onClose={() => setMode(null)} onChanged={onChanged} />}
+      onMode={setMode} onClose={() => setMode(null)} onChanged={onChanged} onPrint={() => setPrintOpen(true)} />}
+    {printOpen && <SupplierMemoPrintDialog memo={memo} api={api} onClose={() => setPrintOpen(false)} />}
   </div>;
 }
 
-function MemoDialog({ memo, api, mode, suppliers, accounts, onMode, onClose, onChanged }: {
+function MemoDialog({ memo, api, mode, suppliers, accounts, onMode, onClose, onChanged, onPrint }: {
   memo: SupplierMemo; api: string; mode: Mode; suppliers: Supplier[]; accounts: Account[];
-  onMode: (mode: Mode) => void; onClose: () => void; onChanged: () => void;
+  onMode: (mode: Mode) => void; onClose: () => void; onChanged: () => void; onPrint: () => void;
 }) {
   const [detail, setDetail] = useState<MemoDetail | null>(null);
   const [events, setEvents] = useState<MemoHistoryEvent[]>([]);
@@ -185,7 +188,7 @@ function MemoDialog({ memo, api, mode, suppliers, accounts, onMode, onClose, onC
         <Button variant="outline" disabled={saving} onClick={onClose}>Close</Button>
         {mode === "history" && <Button variant="outline" onClick={() => onMode("view")}>Memo details</Button>}
         {mode !== "history" && <Button variant="outline" disabled={saving} onClick={() => onMode("history")}>History</Button>}
-        {mode === "view" && <Button variant="outline" asChild><a href={endpoint + "/print"} target="_blank" rel="noopener noreferrer">Print slip</a></Button>}
+        {mode === "view" && <Button variant="outline" disabled={loading || !detail} onClick={onPrint}>Print</Button>}
         {mode === "view" && detail?.eligibility.canEdit && <Button onClick={() => onMode("edit")}>Edit memo</Button>}
         {(editable || cancelling) && <Button variant={cancelling ? "destructive" : "default"} disabled={loading || saving || uncertain || !eligibility?.canEdit || !changeReason.trim()} onClick={() => void save()}>
           {saving ? "Saving…" : cancelling ? "Confirm cancellation" : "Save changes"}</Button>}
