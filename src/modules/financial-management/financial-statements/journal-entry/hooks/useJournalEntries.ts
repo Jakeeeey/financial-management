@@ -15,6 +15,9 @@ export function useJournalEntries() {
     groups: context.paginatedGroups,
     analytics: context.analytics,
     uniqueSourceModules: context.uniqueSourceModules,
+    filterOptions: context.filterOptions,
+    filterOptionsLoading: context.filterOptionsLoading,
+    filterOptionsError: context.filterOptionsError,
     
     // State
     filters: context.filters,

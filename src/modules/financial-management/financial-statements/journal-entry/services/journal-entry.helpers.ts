@@ -31,6 +31,8 @@ export function groupJournalEntries(entries: JournalEntry[]): JournalEntryGroup[
         department: e.department,
         departmentName: e.departmentName,
         creator: e.creator,
+        branchId: e.branchId ?? null,
+        branchName: e.branchName ?? null,
         entries: [],
         totalDebit: 0,
         totalCredit: 0,

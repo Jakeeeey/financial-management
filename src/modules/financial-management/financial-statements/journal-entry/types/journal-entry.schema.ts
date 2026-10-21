@@ -18,6 +18,8 @@ export const JournalEntrySchema = z.object({
   accountTitle: z.string().nullable().optional(),
   debit: z.number(),
   credit: z.number(),
+  branchId: z.string().nullable().optional(),
+  branchName: z.string().nullable().optional(),
   postingDate: z.string().nullable().optional(),
 });
 
@@ -38,6 +40,8 @@ export interface JournalEntryGroup {
   department: string | null;
   departmentName: string | null;
   creator: string | null;
+  branchId: string | null;
+  branchName: string | null;
   entries: JournalEntry[];
   totalDebit: number;
   totalCredit: number;
@@ -80,6 +84,17 @@ export interface FilterState {
   accountNumber?: string;
   sortField: string;
   sortOrder: "asc" | "desc" | null;
+}
+
+export interface JournalEntryFilterOption {
+  id: string;
+  name: string;
+}
+
+export interface JournalEntryFilterOptions {
+  branches: JournalEntryFilterOption[];
+  divisions: JournalEntryFilterOption[];
+  departments: JournalEntryFilterOption[];
 }
 
 export interface HighRiskEntry {
