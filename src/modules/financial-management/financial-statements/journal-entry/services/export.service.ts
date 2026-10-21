@@ -4,174 +4,189 @@ import autoTable from "jspdf-autotable";
 import { format } from "date-fns";
 import { JournalEntryGroup } from "../types";
 import type { AdjustingEntry } from "../../adjusting-journal-entries/types";
+import { formatJournalAmount } from "../utils/formatters";
 
 const COMPANY_NAME = "MEN2 MARKETING AND DISTRIBUTION ENTERPRISE CORPORATION";
 const REPORT_TITLE = "GENERAL JOURNAL";
 const BASIS = "Accrual Basis";
+const EXCEL_PHP_FORMAT = '"₱"#,##0.00;-"₱"#,##0.00;"₱"0.00';
 
-const formatNumber = (val: number) => {
-  if (val === 0) return "0.00";
-  return new Intl.NumberFormat('en-PH', {
-    style: 'decimal',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(val);
+type ExportRow = {
+  cells: (string | number)[];
+  kind: "detail" | "subtotal" | "total";
 };
 
-const buildExportData = (groups: JournalEntryGroup[], ajeData?: AdjustingEntry[]) => {
-  const rows: (string | number)[][] = [];
-  let sumDebit = 0;
-  let sumCredit = 0;
+const roundMoney = (value: number) => Number(value.toFixed(2));
+const buildExportData = (groups: JournalEntryGroup[], ajeData: AdjustingEntry[] = []): ExportRow[] => {
+  const rows: ExportRow[] = [];
+  let totalDebit = 0;
+  let totalCredit = 0;
 
   groups.forEach((group) => {
-    const debitEntries = group.entries.filter((e) => e.debit > 0);
-    const creditEntries = group.entries.filter((e) => e.credit > 0);
-
-    const currentDebitTotal = Number(debitEntries.reduce((sum, e) => sum + e.debit, 0).toFixed(2));
-    const currentCreditTotal = Number(creditEntries.reduce((sum, e) => sum + e.credit, 0).toFixed(2));
-    const netBalance = Number((currentDebitTotal - currentCreditTotal).toFixed(2));
-
-    sumDebit = Number((sumDebit + currentDebitTotal).toFixed(2));
-    sumCredit = Number((sumCredit + currentCreditTotal).toFixed(2));
-
+    let groupDebit = 0;
+    let groupCredit = 0;
     const formattedDate = group.transactionDate ? format(new Date(group.transactionDate), "yyyy-MM-dd") : "";
 
-    // Row 1: Debits
-    const lastDebitIdx = Math.max(0, debitEntries.length - 1);
-    debitEntries.forEach((entry, idx) => {
-      const isFirst = idx === 0;
-      const isLast = idx === lastDebitIdx;
-      const accountTitle = entry.accountTitle || "N/A";
-      rows.push([
-        isFirst ? formattedDate : "",
-        isFirst ? group.sourceModule.split(" ")[0] : "",
-        isFirst ? group.jeNo : "",
-        accountTitle,
-        isFirst ? (group.description || "N/A") : `- ${accountTitle} distribution`,
-        entry.debit,
-        "",
-        isLast ? currentDebitTotal : "",
-      ]);
-    });
+    group.entries.forEach((entry, index) => {
+      groupDebit += entry.debit;
+      groupCredit += entry.credit;
 
-    // Row 2: Credits
-    const lastCreditIdx = Math.max(0, creditEntries.length - 1);
-    creditEntries.forEach((entry, idx) => {
-      const isLast = idx === lastCreditIdx;
-      const accountTitle = entry.accountTitle || "N/A";
-      rows.push([
-        "",
-        "",
-        "",
-        `    ${accountTitle}`,
-        `- ${accountTitle} distribution`,
-        "",
-        entry.credit,
-        isLast ? netBalance : "",
-      ]);
-    });
-  });
-
-  // Adjusting Entries
-  if (ajeData && ajeData.length > 0) {
-    ajeData.forEach((aje) => {
-      const ajeDate = aje.transactionDate ? format(new Date(aje.transactionDate), "yyyy-MM-dd") : "";
-
-      aje.details.forEach((line) => {
-        rows.push([
-          ajeDate,
-          "Adjusting",
-          aje.jeNo || "",
-          line.accountTitle || "N/A",
-          aje.description || "Adjustment",
-          line.debit,
-          line.credit,
+      rows.push({
+        kind: "detail",
+        cells: [
+          index === 0 ? formattedDate : "",
+          index === 0 ? group.sourceModule.split(" ")[0] : "",
+          index === 0 ? group.jeNo : "",
+          entry.accountTitle || "N/A",
+          index === 0 ? group.description || "N/A" : `- ${entry.accountTitle || "N/A"} distribution`,
+          entry.debit,
+          entry.credit,
           "",
-        ]);
-        sumDebit = Number((sumDebit + line.debit).toFixed(2));
-        sumCredit = Number((sumCredit + line.credit).toFixed(2));
+        ],
       });
     });
-  }
 
-  // Total Row
-  rows.push([
-    "TOTAL", "", "", "", "", sumDebit, sumCredit, Number((sumDebit - sumCredit).toFixed(2))
-  ]);
+    ajeData
+      .filter((aje) => aje.sourceJeNo === group.jeNo)
+      .forEach((aje) => {
+        const ajeDate = aje.transactionDate ? format(new Date(aje.transactionDate), "yyyy-MM-dd") : "";
+
+        aje.details.forEach((line) => {
+          groupDebit += line.debit;
+          groupCredit += line.credit;
+
+          rows.push({
+            kind: "detail",
+            cells: [
+              ajeDate,
+              "Adjusting",
+              aje.jeNo || "",
+              line.accountTitle || "N/A",
+              aje.description || "Adjustment",
+              line.debit,
+              line.credit,
+              "",
+            ],
+          });
+        });
+      });
+
+    const roundedDebit = roundMoney(groupDebit);
+    const roundedCredit = roundMoney(groupCredit);
+    const difference = roundMoney(roundedDebit - roundedCredit);
+
+    rows.push({
+      kind: "subtotal",
+      cells: ["", "", group.jeNo, "", "Journal subtotal", roundedDebit, roundedCredit, difference],
+    });
+
+    totalDebit = roundMoney(totalDebit + roundedDebit);
+    totalCredit = roundMoney(totalCredit + roundedCredit);
+  });
+
+  rows.push({
+    kind: "total",
+    cells: ["TOTAL", "", "", "", "Grand total", totalDebit, totalCredit, roundMoney(totalDebit - totalCredit)],
+  });
 
   return rows;
 };
 
-export const exportJournalToExcel = (groups: JournalEntryGroup[], dateRangeText: string, filename: string = "Journal_Entries.xlsx", ajeData?: AdjustingEntry[]) => {
-  const dataRows = buildExportData(groups, ajeData);
-
+export const exportJournalToExcel = (
+  groups: JournalEntryGroup[],
+  dateRangeText: string,
+  filename: string = "Journal_Entries.xlsx",
+  ajeData?: AdjustingEntry[],
+  activeFilters?: string[]
+) => {
+  const exportRows = buildExportData(groups, ajeData);
+  const filterRows = activeFilters === undefined
+    ? []
+    : activeFilters.length > 0
+      ? [["Applied filters:"], ...activeFilters.map((filter) => [`- ${filter}`])]
+      : [["Applied filters: None"]];
   const worksheetData = [
     [COMPANY_NAME],
     [REPORT_TITLE],
-    [dateRangeText],
+    [activeFilters === undefined ? dateRangeText : `Reporting period: ${dateRangeText}`],
     [BASIS],
+    ...filterRows,
     [],
-    ["Transaction Date", "Type", "Ref No. / JE No.", "Account Title", "Description", "Debit", "Credit", "Balance"],
-    ...dataRows,
+    ["Transaction Date", "Type", "Ref No. / JE No.", "Account Title", "Description", "Debit", "Credit", "Debit–Credit Difference"],
+    ...exportRows.map((row) => row.cells),
   ];
 
-  const ws = XLSX.utils.aoa_to_sheet(worksheetData);
-
-  // Merge headers across all 8 columns
-  ws["!merges"] = [
+  const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+  worksheet["!merges"] = [
     { s: { r: 0, c: 0 }, e: { r: 0, c: 7 } },
     { s: { r: 1, c: 0 }, e: { r: 1, c: 7 } },
     { s: { r: 2, c: 0 }, e: { r: 2, c: 7 } },
     { s: { r: 3, c: 0 }, e: { r: 3, c: 7 } },
+    ...filterRows.map((_, index) => ({ s: { r: 4 + index, c: 0 }, e: { r: 4 + index, c: 7 } })),
   ];
 
-  // Set column widths
-  ws["!cols"] = [
-    { wch: 15 }, // Date
-    { wch: 12 }, // Type
-    { wch: 20 }, // Ref No
-    { wch: 35 }, // Account Title
-    { wch: 45 }, // Description
-    { wch: 15 }, // Debit
-    { wch: 15 }, // Credit
-    { wch: 15 }, // Balance
+  worksheet["!cols"] = [
+    { wch: 15 },
+    { wch: 12 },
+    { wch: 20 },
+    { wch: 35 },
+    { wch: 45 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 27 },
   ];
 
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "General Journal");
+  const firstDataRowIndex = 6 + filterRows.length;
+  for (let rowIndex = firstDataRowIndex; rowIndex < worksheetData.length; rowIndex += 1) {
+    for (let columnIndex = 5; columnIndex <= 7; columnIndex += 1) {
+      const cell = worksheet[XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex })];
+      if (cell && typeof cell.v === "number") cell.z = EXCEL_PHP_FORMAT;
+    }
+  }
 
-  XLSX.writeFile(wb, filename);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "General Journal");
+  XLSX.writeFile(workbook, filename);
 };
 
-export const exportJournalToPdf = (groups: JournalEntryGroup[], dateRangeText: string, filename: string = "Journal_Entries.pdf", ajeData?: AdjustingEntry[]) => {
+export const exportJournalToPdf = (
+  groups: JournalEntryGroup[],
+  dateRangeText: string,
+  filename: string = "Journal_Entries.pdf",
+  ajeData?: AdjustingEntry[],
+  activeFilters?: string[]
+) => {
   const doc = new jsPDF("landscape");
-  const dataRows = buildExportData(groups, ajeData);
-
-  // Format numbers for PDF display
-  const formattedRows = dataRows.map(row => 
-    row.map((cell, index) => {
-      if (index >= 5 && typeof cell === "number") return formatNumber(cell);
-      return cell;
-    })
+  const exportRows = buildExportData(groups, ajeData);
+  const filterSummary = activeFilters?.length ? activeFilters.join(" | ") : "None";
+  const formattedRows = exportRows.map(({ cells }) =>
+    cells.map((cell, index) => (index >= 5 && typeof cell === "number" ? formatJournalAmount(cell) : cell))
   );
 
-  // Centered Header Text
   const pageWidth = doc.internal.pageSize.width;
   doc.setFontSize(11);
   doc.setFont("helvetica", "bold");
   doc.text(COMPANY_NAME, pageWidth / 2, 14, { align: "center" });
-  
+
   doc.setFontSize(12);
   doc.text(REPORT_TITLE, pageWidth / 2, 20, { align: "center" });
-  
+
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
-  doc.text(dateRangeText, pageWidth / 2, 26, { align: "center" });
+  doc.text(activeFilters === undefined ? dateRangeText : `Reporting period: ${dateRangeText}`, pageWidth / 2, 26, { align: "center" });
   doc.text(BASIS, pageWidth / 2, 32, { align: "center" });
 
+  let tableStartY = 40;
+  if (activeFilters !== undefined) {
+    const filterLines = doc.splitTextToSize(`Applied filters: ${filterSummary}`, pageWidth - 28);
+    doc.setFontSize(8);
+    doc.text(filterLines, 14, 38);
+    tableStartY = 38 + filterLines.length * 4 + 3;
+  }
+
   autoTable(doc, {
-    startY: 40,
-    head: [["Transaction Date", "Type", "Ref No. / JE No.", "Account Title", "Description", "Debit", "Credit", "Balance"]],
+    startY: tableStartY,
+    head: [["Transaction Date", "Type", "Ref No. / JE No.", "Account Title", "Description", "Debit", "Credit", "Debit–Credit Difference"]],
     body: formattedRows,
     theme: "grid",
     styles: {
@@ -192,14 +207,14 @@ export const exportJournalToPdf = (groups: JournalEntryGroup[], dateRangeText: s
       4: { cellWidth: 70 },
       5: { halign: "right", cellWidth: 25 },
       6: { halign: "right", cellWidth: 25 },
-      7: { halign: "right", cellWidth: 25 },
+      7: { halign: "right", cellWidth: 35 },
     },
-    didParseCell: function(data) {
-      // Bold the TOTAL row
-      if (data.row.index === formattedRows.length - 1) {
+    didParseCell(data) {
+      const rowKind = exportRows[data.row.index]?.kind;
+      if (rowKind === "subtotal" || rowKind === "total") {
         data.cell.styles.fontStyle = "bold";
       }
-    }
+    },
   });
 
   doc.save(filename);

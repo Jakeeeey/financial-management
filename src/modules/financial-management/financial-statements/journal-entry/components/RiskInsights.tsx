@@ -5,21 +5,27 @@ import {
   Activity, 
   AlertTriangle, 
   ChevronLeft, 
-  ChevronRight 
+  ChevronRight,
+  CircleDollarSign,
+  LoaderCircle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AnalyticsSummary } from "../types";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { AnalyticsSummary, HighRiskEntry } from "../types";
 
 interface RiskInsightsProps {
   data: AnalyticsSummary;
+  onOpenJournal: (entry: HighRiskEntry, opener: HTMLElement) => Promise<void>;
 }
 
 const ITEMS_PER_PAGE = 5;
 
-export default function RiskInsights({ data }: RiskInsightsProps) {
+export default function RiskInsights({ data, onOpenJournal }: RiskInsightsProps) {
   const [riskPage, setRiskPage] = React.useState(0);
+  const [openingEntryKey, setOpeningEntryKey] = React.useState<number | null>(null);
 
   const statusEntries = Object.entries(data.statusBreakdown || {}).sort((a, b) => b[1] - a[1]);
   const highRisk = data.highRiskEntries || [];
@@ -29,6 +35,18 @@ export default function RiskInsights({ data }: RiskInsightsProps) {
     riskPage * ITEMS_PER_PAGE, 
     (riskPage + 1) * ITEMS_PER_PAGE
   );
+
+  const handleOpenJournal = async (entry: HighRiskEntry, opener: HTMLElement) => {
+    setOpeningEntryKey(entry.jeGroupCounter);
+    try {
+      await onOpenJournal(entry, opener);
+    } catch (error) {
+      console.error("Unable to open flagged journal entry:", error);
+      toast.error("Unable to load this journal entry. Please try again.");
+    } finally {
+      setOpeningEntryKey(null);
+    }
+  };
 
   return (
     <div className="grid grid-cols-1 gap-6">
@@ -100,29 +118,37 @@ export default function RiskInsights({ data }: RiskInsightsProps) {
         <CardContent className="p-0">
           <div className="divide-y divide-rose-100/30 dark:divide-rose-900/30">
             {currentRiskItems.map((entry, idx) => (
-              <div 
-                key={entry.jeNo + idx} 
-                className="flex items-center justify-between px-6 py-4 hover:bg-rose-50/30 dark:hover:bg-rose-900/20 transition-colors group"
+              <button
+                key={entry.jeGroupCounter ?? `${entry.jeNo}-${idx}`}
+                type="button"
+                onClick={(event) => void handleOpenJournal(entry, event.currentTarget)}
+                disabled={openingEntryKey !== null}
+                aria-label={`Open journal entry ${entry.jeNo} details`}
+                aria-busy={openingEntryKey === entry.jeGroupCounter}
+                className="group flex w-full items-center justify-between gap-4 px-6 py-4 text-left transition-colors hover:bg-rose-50/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary disabled:cursor-wait disabled:opacity-70 dark:hover:bg-rose-900/20"
               >
-                <div className="flex flex-col items-start">
-                  <span className="text-sm font-medium text-muted-foreground">
-                    {entry.jeNo}
-                  </span>
-                </div>
-                
-                <div className="flex flex-wrap justify-end gap-1.5">
-                  {entry.riskReasons.map((reason, rIdx) => (
-                    <React.Fragment key={rIdx}>
-                      <span className="text-sm font-semibold text-foreground">
-                        {reason}
-                      </span>
-                      {rIdx < entry.riskReasons.length - 1 && (
-                        <span className="text-muted-foreground/30 font-bold px-1">•</span>
-                      )}
-                    </React.Fragment>
-                  ))}
-                </div>
-              </div>
+                <span className="flex min-w-0 flex-col items-start">
+                  <span className="truncate text-sm font-semibold text-muted-foreground">{entry.jeNo}</span>
+                  <span className="mt-1 text-xs text-muted-foreground">View journal details</span>
+                </span>
+                <span className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
+                  {entry.riskReasons.map((reason) => {
+                    const presentation = getRiskReasonPresentation(reason);
+                    const Icon = presentation.icon;
+                    return (
+                      <Badge key={reason} variant="outline" className={cn("gap-1.5 whitespace-normal text-left", presentation.className)}>
+                        <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                        {presentation.label}
+                      </Badge>
+                    );
+                  })}
+                  {openingEntryKey === entry.jeGroupCounter ? (
+                    <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin text-rose-700" />
+                  ) : (
+                    <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                  )}
+                </span>
+              </button>
             ))}
             
             {highRisk.length === 0 && (
@@ -139,6 +165,30 @@ export default function RiskInsights({ data }: RiskInsightsProps) {
       </Card>
     </div>
   );
+}
+
+function getRiskReasonPresentation(reason: string) {
+  if (reason === "Imbalance") {
+    return {
+      label: "Debit and credit are out of balance",
+      icon: AlertTriangle,
+      className: "border-red-300 bg-red-100 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200",
+    };
+  }
+
+  if (reason === "Large Entry") {
+    return {
+      label: "Amount exceeds ₱50,000 review threshold",
+      icon: CircleDollarSign,
+      className: "border-amber-300 bg-amber-100 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200",
+    };
+  }
+
+  return {
+    label: reason,
+    icon: Activity,
+    className: "border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200",
+  };
 }
 
 function Zap({ className, ...props }: React.SVGProps<SVGSVGElement>) {

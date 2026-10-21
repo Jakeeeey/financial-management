@@ -76,10 +76,8 @@ export interface FilterState {
   branch: string;
   division: string;
   department: string;
-  entryType: string;
   coa: string;
   sourceModule: string;
-  showPostedOnly: boolean;
   status: string;
   accountNumber?: string;
   sortField: string;

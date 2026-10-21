@@ -26,6 +26,8 @@ interface JournalEntryFilterToolbarProps {
   filters: FilterState;
   setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
   isMoreFiltersOpen: boolean;
+  statusOptions: string[];
+  hasPendingChanges: boolean;
   onToggleMoreFilters: () => void;
   onApply: () => void;
   onReset: () => void;
@@ -35,6 +37,8 @@ export default function JournalEntryFilterToolbar({
   filters,
   setFilters,
   isMoreFiltersOpen,
+  statusOptions,
+  hasPendingChanges,
   onToggleMoreFilters,
   onApply,
   onReset,
@@ -168,18 +172,23 @@ export default function JournalEntryFilterToolbar({
           <Select value={filters.status} onValueChange={(value) => updateFilter("status", value)}>
             <SelectTrigger id="journal-entry-status" className="h-9 w-full min-w-0"><SelectValue /></SelectTrigger>
             <SelectContent>
-              {["All Statuses", "Posted", "For Review", "Approved", "Draft"].map((status) => (
+              {Array.from(new Set(["All Statuses", "Posted", "Unposted", "Dispatched", "For Review", "Approved", "Draft", ...statusOptions])).map((status) => (
                 <SelectItem key={status} value={status}>{status}</SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
 
-        <div className="col-span-2 grid grid-cols-2 gap-2 xl:col-span-4 xl:flex xl:justify-end">
+        <div className="col-span-2 flex flex-wrap items-center justify-end gap-2 xl:col-span-4">
+          {hasPendingChanges && (
+            <span role="status" className="mr-auto text-xs font-medium text-amber-700 dark:text-amber-400">
+              Filter changes are waiting for Apply.
+            </span>
+          )}
           <Button
             type="button"
             variant="outline"
-            className="col-span-2 h-9"
+            className="h-9"
             aria-expanded={isMoreFiltersOpen}
             aria-controls="journal-entry-advanced-filters"
             onClick={onToggleMoreFilters}
@@ -190,9 +199,9 @@ export default function JournalEntryFilterToolbar({
           </Button>
           <Button type="button" variant="outline" className="h-9" onClick={onReset}>
             <RotateCcw aria-hidden="true" className="mr-2 h-3.5 w-3.5" />
-            Reset
+            Clear all
           </Button>
-          <Button type="button" className="h-9" onClick={onApply}>
+          <Button type="button" className="h-9" onClick={onApply} disabled={!hasPendingChanges}>
             Apply filters
           </Button>
         </div>
