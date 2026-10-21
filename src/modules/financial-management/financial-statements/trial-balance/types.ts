@@ -1,4 +1,4 @@
-export type ReviewFlag = "normal" | "high" | "critical";
+export type ReviewFlag = "normal" | "critical";
 
 export interface TrialBalanceAccount {
   id: string;
@@ -14,6 +14,7 @@ export interface TrialBalanceAccount {
   credit: number;
   balance: number;
   reviewFlag: ReviewFlag;
+  reviewReason?: string | null;
   accountType: "Asset" | "Liability" | "Equity" | "Revenue" | "Expense";
 }
 

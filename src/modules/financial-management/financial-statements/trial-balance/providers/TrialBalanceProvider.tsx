@@ -7,7 +7,7 @@ import type { TrialBalanceItem, TrialBalanceFilterState, TrialBalanceReportConte
 import { createDefaultTrialBalanceFilters } from "../utils/periods";
 import { calculateTrialBalanceSummary } from "../utils/summary";
 import {
-  normalizeTrialBalanceFilters, parseTrialBalanceUrlState, serializeTrialBalanceFilters,
+  getNeedsReviewTrialBalanceFilters, normalizeTrialBalanceFilters, parseTrialBalanceUrlState, serializeTrialBalanceFilters,
   trialBalanceFilterReset, trialBalanceRequestQuery, trialBalanceUrlQuery, validateTrialBalanceFilters,
   type TrialBalanceFilterKey,
 } from "../utils/filter-state";
@@ -24,6 +24,7 @@ interface TrialBalanceContextType {
   urlError: string | null;
   validationError: string | null;
   applyFilters: () => void;
+  showAccountsNeedingReview: () => void;
   removeFilter: (key: TrialBalanceFilterKey) => void;
   clearFilters: () => void;
   refresh: () => Promise<void>;
@@ -132,6 +133,12 @@ export function TrialBalanceProvider({ children }: { children: React.ReactNode }
     setDraftFilters(next);
     commitFilters(next);
   };
+  const showAccountsNeedingReview = () => {
+    const next = getNeedsReviewTrialBalanceFilters(draftFilters);
+    if (validateTrialBalanceFilters(next)) return;
+    setDraftFilters(next);
+    commitFilters(next);
+  };
   const clearFilters = () => {
     const defaults = createDefaultTrialBalanceFilters();
     setDraftFilters(defaults);
@@ -148,7 +155,7 @@ export function TrialBalanceProvider({ children }: { children: React.ReactNode }
   return (
     <TrialBalanceContext.Provider value={{
       items, summary, reportContext, draftFilters, setDraftFilters, hasPendingChanges,
-      isLoading, error, urlError: urlState.error, validationError, applyFilters, removeFilter, clearFilters,
+      isLoading, error, urlError: urlState.error, validationError, applyFilters, showAccountsNeedingReview, removeFilter, clearFilters,
       refresh: () => loadReport(parseTrialBalanceUrlState(new URLSearchParams(requestedKey)).filters),
     }}>
       {children}

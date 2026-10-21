@@ -25,7 +25,7 @@ const FilterItem = ({ children, className = "" }: { children: React.ReactNode; c
 
 export function TrialBalanceFilters() {
   const { draftFilters: filters, setDraftFilters: setFilters, clearFilters, applyFilters,
-    isLoading, hasPendingChanges, validationError, urlError, error } = useTrialBalance();
+    showAccountsNeedingReview, isLoading, hasPendingChanges, validationError, urlError, error } = useTrialBalance();
 
   const periodType = filters.periodType;
   const today = getManilaDateParts();
@@ -203,21 +203,26 @@ export function TrialBalanceFilters() {
         </FilterItem>
 
         <FilterItem className="sm:w-40">
-          <Label htmlFor="tb-review-flag">Review Flag</Label>
+          <Label htmlFor="tb-review-flag">Review status</Label>
           <Select
             value={filters.reviewFlag}
             onValueChange={(val) => setFilters((prev) => ({ ...prev, reviewFlag: val }))}
           >
             <SelectTrigger id="tb-review-flag" className="h-9 w-full min-w-0 rounded-lg">
-              <SelectValue placeholder="All Flags" />
+              <SelectValue placeholder="All review statuses" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Flags</SelectItem>
-              {TRIAL_BALANCE_REVIEW_FLAGS.map(flag => <SelectItem key={flag} value={flag}>{flag}</SelectItem>)}
+              <SelectItem value="all">All review statuses</SelectItem>
+              {TRIAL_BALANCE_REVIEW_FLAGS.map(flag => (
+                <SelectItem key={flag} value={flag}>{flag === "Critical" ? "Needs review" : "No flag"}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </FilterItem>
-        <div className="flex w-full justify-end sm:w-auto sm:self-end">
+        <div className="flex w-full flex-wrap justify-end gap-2 sm:w-auto sm:self-end">
+          <Button type="button" variant="outline" className="h-9" onClick={showAccountsNeedingReview} disabled={isLoading || !!validationError}>
+            Show accounts needing review
+          </Button>
           <Button type="submit" className="h-9" disabled={isLoading || !!validationError || (!hasPendingChanges && !error && !urlError)}>
             {isLoading ? "Applying filters…" : "Apply filters"}
           </Button>

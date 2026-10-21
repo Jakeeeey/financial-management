@@ -1,5 +1,6 @@
 import type { TrialBalanceFilterState, TrialBalancePeriodType, TrialBalanceReportContext } from "../types/trial-balance.schema";
 import { createDefaultTrialBalanceFilters, getTrialBalancePeriodRange, validateTrialBalanceDateRange } from "./periods";
+import { getTrialBalanceReviewLabel } from "./review-flags";
 
 export const TRIAL_BALANCE_CATEGORIES = ["Assets", "Liabilities", "Equity", "Revenue", "Expenses", "Other"];
 export const TRIAL_BALANCE_REVIEW_FLAGS = ["Normal", "Critical"];
@@ -22,12 +23,16 @@ export function normalizeTrialBalanceFilters(filters: TrialBalanceFilterState): 
   };
 }
 
+export function getNeedsReviewTrialBalanceFilters(filters: TrialBalanceFilterState): TrialBalanceFilterState {
+  return normalizeTrialBalanceFilters({ ...filters, reviewFlag: "Critical" });
+}
+
 export function validateTrialBalanceFilters(filters: TrialBalanceFilterState): string | null {
   const dateError = validateTrialBalanceDateRange(filters.startDate, filters.endDate);
   if (dateError) return dateError;
   if (!["all", ...STATUSES].includes(filters.status)) return "Choose a supported transaction status.";
   if (!["all", ...TRIAL_BALANCE_CATEGORIES].includes(filters.accountCategory)) return "Choose a supported account category.";
-  if (!["all", ...TRIAL_BALANCE_REVIEW_FLAGS].includes(filters.reviewFlag)) return "Choose Normal, Critical, or All Flags.";
+  if (!["all", ...TRIAL_BALANCE_REVIEW_FLAGS].includes(filters.reviewFlag)) return "Choose Needs review, No flag, or All flags.";
   return null;
 }
 
@@ -109,7 +114,9 @@ export function getTrialBalanceAppliedFilters(context: TrialBalanceReportContext
   if (context.search) chips.push({ key: "search", label: `Search: ${context.search}` });
   if (context.accountCategory !== "all") chips.push({ key: "accountCategory", label: `Category: ${context.accountCategory}` });
   if (context.status !== "all") chips.push({ key: "status", label: `Status: ${context.status}` });
-  if (context.reviewFlag !== "all") chips.push({ key: "reviewFlag", label: `Review flag: ${context.reviewFlag}` });
+  if (context.reviewFlag !== "all") {
+    chips.push({ key: "reviewFlag", label: `Review: ${getTrialBalanceReviewLabel(context.reviewFlag)}` });
+  }
   if (context.divisionName) chips.push({ key: "divisionName", label: `Division: ${context.divisionName}` });
   if (context.departmentName) chips.push({ key: "departmentName", label: `Department: ${context.departmentName}` });
   for (const source of context.sourceModule) chips.push({ key: `sourceModule:${source}`, label: `Source: ${source}` });

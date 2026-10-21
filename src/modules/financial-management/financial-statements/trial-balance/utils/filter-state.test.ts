@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { createDefaultTrialBalanceFilters } from "./periods";
 import {
   getTrialBalanceAppliedFilters, getTrialBalanceReportLabels, normalizeTrialBalanceFilters,
-  parseTrialBalanceUrlState, serializeTrialBalanceFilters, trialBalanceFilterReset,
+  getNeedsReviewTrialBalanceFilters, parseTrialBalanceUrlState, serializeTrialBalanceFilters, trialBalanceFilterReset,
   trialBalanceRequestQuery, trialBalanceUrlQuery, validateTrialBalanceFilters,
 } from "./filter-state";
 
@@ -65,6 +65,11 @@ test("normalization and canonical URLs omit defaults without losing unrelated pa
   assert.equal(query.get("search"), "Cash");
 });
 
+test("show accounts needing review applies the review filter without dropping other draft criteria", () => {
+  const draft = { ...defaults, search: "petty cash", status: "Posted", accountCategory: "Assets", divisionName: "North", sourceModule: ["Disbursement"] };
+  assert.deepEqual(getNeedsReviewTrialBalanceFilters(draft), { ...draft, reviewFlag: "Critical" });
+});
+
 test("removing one restriction resets only its own fields", () => {
   const context = { ...defaults, search: "Cash", accountCategory: "Assets", startDate: "2026-09-01", endDate: "2026-09-30", sourceModule: ["Sales", "Adjustment"] };
   assert.deepEqual(trialBalanceFilterReset(context, "accountCategory", now), { accountCategory: "all" });
@@ -76,6 +81,6 @@ test("removing one restriction resets only its own fields", () => {
 
 test("report metadata includes every applied restriction and distinguishes provisional scope", () => {
   const context = { ...defaults, search: "Cash", accountCategory: "Expenses", reviewFlag: "Critical", divisionName: "North", departmentName: "Finance", sourceModule: ["Disbursement"] };
-  assert.deepEqual(getTrialBalanceReportLabels(context), ["Transaction scope: All statuses (Provisional)", "Search: Cash", "Category: Expenses", "Review flag: Critical", "Division: North", "Department: Finance", "Source: Disbursement"]);
+  assert.deepEqual(getTrialBalanceReportLabels(context), ["Transaction scope: All statuses (Provisional)", "Search: Cash", "Category: Expenses", "Review: Needs review", "Division: North", "Department: Finance", "Source: Disbursement"]);
   assert.deepEqual(getTrialBalanceReportLabels({ ...defaults, status: "Posted" }), ["Transaction scope: Posted transactions"]);
 });
