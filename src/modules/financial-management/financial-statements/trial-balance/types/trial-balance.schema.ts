@@ -11,6 +11,7 @@ export const TrialBalanceItemSchema = z.object({
   netBalance: z.number(), // Absolute net period movement; not an opening or closing balance.
   balanceType: z.string(), // Debit/Credit direction of net period movement; neutral when netBalance is zero.
   reviewFlag: z.string(),
+  reviewReason: z.string().nullable().optional(),
 });
 
 export const TrialBalanceListSchema = z.array(TrialBalanceItemSchema);

@@ -104,6 +104,12 @@ interface FetchDrillDownParams {
   glCode: string;
   startDate: string;
   endDate: string;
+  status?: string;
+  postedOnly?: boolean;
+  division?: string;
+  department?: string;
+  accountType?: string;
+  sourceModule?: string[];
 }
 
 export async function getTrialBalanceDrillDown(
@@ -116,6 +122,15 @@ export async function getTrialBalanceDrillDown(
   query.set("glCode", params.glCode);
   query.set("startDate", params.startDate);
   query.set("endDate", params.endDate);
+  if (params.postedOnly) {
+    query.set("postedOnly", "true");
+  } else if (params.status && params.status !== "all") {
+    query.set("status", params.status);
+  }
+  if (params.division) query.set("division", params.division);
+  if (params.department) query.set("department", params.department);
+  if (params.accountType) query.set("accountType", params.accountType);
+  for (const source of params.sourceModule ?? []) query.append("sourceModule", source);
 
   const url = `${API_BASE}?${query.toString()}`;
 

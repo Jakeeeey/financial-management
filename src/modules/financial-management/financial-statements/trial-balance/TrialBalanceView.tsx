@@ -6,7 +6,7 @@ import { TrialBalanceFilters } from "./components/TrialBalanceFilters";
 import { TrialBalanceSummary } from "./components/TrialBalanceSummary";
 import { TrialBalanceReportContext } from "./components/TrialBalanceReportContext";
 import { TrialBalanceAppliedFilters } from "./components/TrialBalanceAppliedFilters";
-import { TrialBalanceDetailView } from "./components/TrialBalanceDetailView";
+import { INITIAL_TRIAL_BALANCE_DETAIL_VIEW_STATE, TrialBalanceDetailView, type TrialBalanceDetailViewState } from "./components/TrialBalanceDetailView";
 import { TrialBalanceSummaryView } from "./components/TrialBalanceSummaryView";
 import { TrialBalanceDrillDown } from "./components/TrialBalanceDrillDown";
 import { TrialBalanceItem } from "./types/trial-balance.schema";
@@ -21,7 +21,27 @@ function TrialBalanceContent() {
   const { items, summary, reportContext, isLoading, error } = useTrialBalance();
   const [viewMode, setViewMode] = React.useState<"detail" | "summary">("detail");
   const [selectedAccount, setSelectedAccount] = React.useState<TrialBalanceItem | null>(null);
+  const [tableState, setTableState] = React.useState<TrialBalanceDetailViewState>(INITIAL_TRIAL_BALANCE_DETAIL_VIEW_STATE);
+  const returnFocusRef = React.useRef<HTMLButtonElement | null>(null);
+  const returnScrollRef = React.useRef<number | null>(null);
   const isPosted = reportContext?.postedOnly || reportContext?.status.toLowerCase() === "posted";
+
+  const openAccount = (account: TrialBalanceItem, trigger: HTMLButtonElement) => {
+    returnFocusRef.current = trigger;
+    returnScrollRef.current = window.scrollY;
+    setSelectedAccount(account);
+  };
+
+  React.useEffect(() => {
+    if (selectedAccount || !returnFocusRef.current) return;
+    const frame = window.requestAnimationFrame(() => {
+      if (returnScrollRef.current !== null) window.scrollTo(0, returnScrollRef.current);
+      returnFocusRef.current?.focus({ preventScroll: true });
+      returnFocusRef.current = null;
+      returnScrollRef.current = null;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedAccount]);
 
   if (selectedAccount) {
     return (
@@ -64,19 +84,25 @@ function TrialBalanceContent() {
 
       <div className="flex items-center justify-between mb-4">
         <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as "detail" | "summary")}>
-          <TabsList className="grid w-[200px] grid-cols-2 rounded-lg">
-            <TabsTrigger value="detail" className="rounded-md">Detail View</TabsTrigger>
-            <TabsTrigger value="summary" className="rounded-md">Summary View</TabsTrigger>
+          <TabsList className="grid w-fit grid-cols-2 rounded-lg">
+            <TabsTrigger value="detail" className="min-w-32 rounded-md">Account table</TabsTrigger>
+            <TabsTrigger value="summary" className="min-w-32 rounded-md">Account cards</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
 
       {viewMode === "detail" ? (
-        <TrialBalanceDetailView data={items} isLoading={isLoading} />
+        <TrialBalanceDetailView
+          data={items}
+          isLoading={isLoading}
+          onAccountClick={openAccount}
+          state={tableState}
+          onStateChange={setTableState}
+        />
       ) : (
         <TrialBalanceSummaryView
           data={items}
-          onAccountClick={(acc) => setSelectedAccount(acc)}
+          onAccountClick={openAccount}
         />
       )}
     </div>
