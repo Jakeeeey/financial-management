@@ -5,12 +5,7 @@ import { ColumnDef } from "@tanstack/react-table";
 import { TrialBalanceItem } from "../types/trial-balance.schema";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { formatCurrency } from "@/lib/utils";
-
-const formatAmount = (val: number) => {
-  if (val === 0) return "—";
-  return formatCurrency(val);
-};
+import { formatTrialBalanceAmount, getPeriodMovementLabel } from "../utils/money";
 
 export const columns: ColumnDef<TrialBalanceItem>[] = [
   {
@@ -32,31 +27,31 @@ export const columns: ColumnDef<TrialBalanceItem>[] = [
   },
   {
     accessorKey: "totalDebit",
-    header: () => <div className="text-right">Debit</div>,
+    header: () => <div className="text-right">Period debit activity</div>,
     cell: ({ row }) => (
-      <div className={cn("text-right font-medium font-mono", row.original.totalDebit < 0 && "text-destructive")}>
-        {formatAmount(row.original.totalDebit)}
+      <div className={cn("text-right font-medium font-mono tabular-nums whitespace-nowrap", row.original.totalDebit < 0 && "text-destructive")}>
+        {formatTrialBalanceAmount(row.original.totalDebit)}
       </div>
     ),
   },
   {
     accessorKey: "totalCredit",
-    header: () => <div className="text-right">Credit</div>,
+    header: () => <div className="text-right">Period credit activity</div>,
     cell: ({ row }) => (
-      <div className={cn("text-right font-medium font-mono", row.original.totalCredit < 0 && "text-destructive")}>
-        {formatAmount(row.original.totalCredit)}
+      <div className={cn("text-right font-medium font-mono tabular-nums whitespace-nowrap", row.original.totalCredit < 0 && "text-destructive")}>
+        {formatTrialBalanceAmount(row.original.totalCredit)}
       </div>
     ),
   },
   {
     accessorKey: "netBalance",
-    header: () => <div className="text-right">Net Balance</div>,
+    header: () => <div className="text-right">Net period movement</div>,
     cell: ({ row }) => (
       <div className="text-right">
-        <span className={cn("font-bold font-mono", row.original.netBalance < 0 && "text-destructive")}>
-          {formatCurrency(row.original.netBalance)}
+        <span className="font-bold font-mono tabular-nums whitespace-nowrap">
+          {formatTrialBalanceAmount(row.original.netBalance)}
         </span>
-        <span className="ml-2 text-xs text-muted-foreground">{row.original.balanceType}</span>
+        <span className="block text-xs text-muted-foreground">{getPeriodMovementLabel(row.original)}</span>
       </div>
     ),
   },
@@ -96,7 +91,6 @@ export function TrialBalanceDetailView({
         columns={columns}
         data={data}
         isLoading={isLoading}
-        searchKey="accountTitle"
         emptyTitle="No Accounts Found"
         emptyDescription="Try adjusting your filters or date range to see results."
         actionComponent={

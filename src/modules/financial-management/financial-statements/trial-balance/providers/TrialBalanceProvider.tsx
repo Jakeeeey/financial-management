@@ -1,165 +1,156 @@
 "use client";
 
 import * as React from "react";
-import {
-  TrialBalanceItem,
-  TrialBalanceFilterState,
-  TrialBalanceSummaryData,
-} from "../types/trial-balance.schema";
+import { usePathname, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import type { TrialBalanceItem, TrialBalanceFilterState, TrialBalanceReportContext, TrialBalanceSummaryData } from "../types/trial-balance.schema";
+import { createDefaultTrialBalanceFilters } from "../utils/periods";
+import { calculateTrialBalanceSummary } from "../utils/summary";
+import {
+  normalizeTrialBalanceFilters, parseTrialBalanceUrlState, serializeTrialBalanceFilters,
+  trialBalanceFilterReset, trialBalanceRequestQuery, trialBalanceUrlQuery, validateTrialBalanceFilters,
+  type TrialBalanceFilterKey,
+} from "../utils/filter-state";
 
 interface TrialBalanceContextType {
-  // Data
   items: TrialBalanceItem[];
   summary: TrialBalanceSummaryData;
-
-  // State
-  filters: TrialBalanceFilterState;
-  setFilters: React.Dispatch<React.SetStateAction<TrialBalanceFilterState>>;
+  reportContext: TrialBalanceReportContext | null;
+  draftFilters: TrialBalanceFilterState;
+  setDraftFilters: React.Dispatch<React.SetStateAction<TrialBalanceFilterState>>;
+  hasPendingChanges: boolean;
   isLoading: boolean;
   error: string | null;
-
-  // Actions
+  urlError: string | null;
+  validationError: string | null;
+  applyFilters: () => void;
+  removeFilter: (key: TrialBalanceFilterKey) => void;
+  clearFilters: () => void;
   refresh: () => Promise<void>;
-  resetFilters: () => void;
 }
-
-const DEFAULT_FILTERS: TrialBalanceFilterState = {
-  search: "",
-  startDate: "2025-01-01",
-  endDate: "2025-12-30",
-  periodType: "manual",
-  status: "all",
-  accountCategory: "all",
-  reviewFlag: "all",
-  sourceModule: [],
-  divisionName: "",
-  departmentName: "",
-  postedOnly: false,
-};
 
 const TrialBalanceContext = React.createContext<TrialBalanceContextType | undefined>(undefined);
 
 export function TrialBalanceProvider({ children }: { children: React.ReactNode }) {
-  const [items, setItems] = React.useState<TrialBalanceItem[]>([]);
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const urlSearch = searchParams.toString();
+  const urlState = React.useMemo(() => parseTrialBalanceUrlState(new URLSearchParams(urlSearch)), [urlSearch]);
+  const requestedKey = serializeTrialBalanceFilters(urlState.filters);
+  const [draftFilters, setDraftFilters] = React.useState(urlState.filters);
+  const [report, setReport] = React.useState<{ items: TrialBalanceItem[]; context: TrialBalanceReportContext | null }>({ items: [], context: null });
+  const { items, context: reportContext } = report;
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
-  const [filters, setFilters] = React.useState<TrialBalanceFilterState>(DEFAULT_FILTERS);
-
-  const lastFetchedQueryRef = React.useRef<string>("");
-  const fetchData = React.useCallback(async () => {
-    // Build query string for the local proxy
-    const query = new URLSearchParams();
-    query.set("startDate", filters.startDate);
-    query.set("endDate", filters.endDate);
-
-    if (filters.status !== "all") {
-      query.set("status", filters.status);
-    }
-    if (filters.accountCategory !== "all") {
-      query.set("accountCategory", filters.accountCategory);
-    }
-    if (filters.reviewFlag !== "all") {
-      query.set("reviewFlag", filters.reviewFlag);
-    }
-    if (filters.search) {
-      query.set("search", filters.search);
-    }
-    if (filters.divisionName) {
-      query.set("divisionName", filters.divisionName);
-    }
-    if (filters.departmentName) {
-      query.set("departmentName", filters.departmentName);
-    }
-    if (filters.postedOnly) {
-      query.set("postedOnly", "true");
-    }
-    if (filters.sourceModule.length > 0) {
-      for (const mod of filters.sourceModule) {
-        query.append("sourceModule", mod);
-      }
-    }
-
-    const queryString = query.toString();
-    
-    // Guard: Don't refetch if the query is identical to the last successful fetch
-    if (lastFetchedQueryRef.current === queryString && items.length > 0) {
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const url = `/api/fm/financial-statements/trial-balance?${queryString}`;
-      const res = await fetch(url);
-
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || "Failed to fetch trial balance");
-      }
-
-      const data = await res.json();
-      setItems(Array.isArray(data) ? data : []);
-      lastFetchedQueryRef.current = queryString;
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Unknown error";
-      console.error("Trial Balance Fetch Error:", e);
-      setError(message);
-      toast.error(`Database Error: ${message}`);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [
-    filters.startDate,
-    filters.endDate,
-    filters.status,
-    filters.accountCategory,
-    filters.reviewFlag,
-    filters.search,
-    filters.divisionName,
-    filters.departmentName,
-    filters.postedOnly,
-    filters.sourceModule,
-    items.length,
-  ]);
+  const requestGenerationRef = React.useRef(0);
+  const requestControllerRef = React.useRef<AbortController | null>(null);
+  const ownNavigationRef = React.useRef<string | null>(null);
+  const lastObservedSearchRef = React.useRef(urlSearch);
 
   React.useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (lastObservedSearchRef.current === urlSearch) return;
+    lastObservedSearchRef.current = urlSearch;
+    if (ownNavigationRef.current === urlSearch) {
+      ownNavigationRef.current = null;
+      return;
+    }
+    setDraftFilters(urlState.filters);
+  }, [urlSearch, urlState.filters]);
 
-  // Derived: Aggregated summary data for dashboard cards
-  const summary: TrialBalanceSummaryData = React.useMemo(() => {
-    const totalDebit = items.reduce((sum, item) => sum + item.totalDebit, 0);
-    const totalCredit = items.reduce((sum, item) => sum + item.totalCredit, 0);
-    const difference = Math.abs(totalDebit - totalCredit);
+  React.useEffect(() => {
+    if (urlState.error || window.location.search.slice(1) !== urlSearch) return;
+    const canonical = trialBalanceUrlQuery(urlState.filters, urlSearch);
+    if (canonical !== urlSearch) {
+      ownNavigationRef.current = canonical;
+      window.history.replaceState(null, "", `${pathname}?${canonical}${window.location.hash}`);
+    }
+  }, [urlSearch, urlState.filters, urlState.error, pathname]);
 
-    return {
-      totalDebit,
-      totalCredit,
-      difference,
-      accountCount: items.length,
-      isBalanced: difference === 0,
+  const loadReport = React.useCallback(async (filters: TrialBalanceFilterState) => {
+    const generation = ++requestGenerationRef.current;
+    requestControllerRef.current?.abort();
+    const controller = new AbortController();
+    requestControllerRef.current = controller;
+    const context = normalizeTrialBalanceFilters(filters);
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/fm/financial-statements/trial-balance?${trialBalanceRequestQuery(context)}`, {
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const payload = await response.json();
+        throw new Error(payload.error || "Failed to fetch trial balance");
+      }
+      const data = await response.json();
+      if (generation !== requestGenerationRef.current) return;
+      setReport({ items: Array.isArray(data) ? data : [], context });
+    } catch (failure: unknown) {
+      if (controller.signal.aborted || generation !== requestGenerationRef.current) return;
+      const message = failure instanceof Error ? failure.message : "Unknown error";
+      setError(message);
+      toast.error(`Trial balance: ${message}`);
+    } finally {
+      if (generation === requestGenerationRef.current) setIsLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (urlState.error) {
+      setIsLoading(false);
+      setError(null);
+    } else {
+      void loadReport(parseTrialBalanceUrlState(new URLSearchParams(requestedKey)).filters);
+    }
+    return () => {
+      requestGenerationRef.current += 1;
+      requestControllerRef.current?.abort();
     };
-  }, [items]);
+  }, [requestedKey, urlState.error, loadReport]);
 
-  const resetFilters = () => {
-    setFilters(DEFAULT_FILTERS);
+  const commitFilters = (filters: TrialBalanceFilterState) => {
+    requestGenerationRef.current += 1;
+    requestControllerRef.current?.abort();
+    setIsLoading(true);
+    setError(null);
+    const next = normalizeTrialBalanceFilters(filters);
+    // Read the live URL so a rapid Clear all cannot lose to an earlier filter action.
+    const currentSearch = window.location.search.slice(1);
+    const nextSearch = trialBalanceUrlQuery(next, currentSearch);
+    if (nextSearch === currentSearch) {
+      void loadReport(next);
+    } else {
+      ownNavigationRef.current = nextSearch;
+      window.history.pushState(null, "", `${pathname}?${nextSearch}${window.location.hash}`);
+    }
   };
 
-  const value = React.useMemo(() => ({
-    items,
-    summary,
-    filters,
-    setFilters,
-    isLoading,
-    error,
-    refresh: fetchData,
-    resetFilters,
-  }), [items, summary, filters, isLoading, error, fetchData]);
+  const validationError = validateTrialBalanceFilters(draftFilters);
+  const applyFilters = () => {
+    if (validationError) return;
+    const next = normalizeTrialBalanceFilters(draftFilters);
+    setDraftFilters(next);
+    commitFilters(next);
+  };
+  const clearFilters = () => {
+    const defaults = createDefaultTrialBalanceFilters();
+    setDraftFilters(defaults);
+    commitFilters(defaults);
+  };
+  const removeFilter = (key: TrialBalanceFilterKey) => {
+    if (!reportContext) return;
+    setDraftFilters(current => ({ ...current, ...trialBalanceFilterReset(current, key) }));
+    commitFilters({ ...reportContext, ...trialBalanceFilterReset(reportContext, key) });
+  };
+  const summary = React.useMemo(() => calculateTrialBalanceSummary(items, reportContext), [items, reportContext]);
+  const hasPendingChanges = !reportContext || serializeTrialBalanceFilters(draftFilters) !== serializeTrialBalanceFilters(reportContext);
 
   return (
-    <TrialBalanceContext.Provider value={value}>
+    <TrialBalanceContext.Provider value={{
+      items, summary, reportContext, draftFilters, setDraftFilters, hasPendingChanges,
+      isLoading, error, urlError: urlState.error, validationError, applyFilters, removeFilter, clearFilters,
+      refresh: () => loadReport(parseTrialBalanceUrlState(new URLSearchParams(requestedKey)).filters),
+    }}>
       {children}
     </TrialBalanceContext.Provider>
   );
@@ -167,8 +158,6 @@ export function TrialBalanceProvider({ children }: { children: React.ReactNode }
 
 export function useTrialBalanceContext() {
   const context = React.useContext(TrialBalanceContext);
-  if (context === undefined) {
-    throw new Error("useTrialBalanceContext must be used within a TrialBalanceProvider");
-  }
+  if (!context) throw new Error("useTrialBalanceContext must be used within a TrialBalanceProvider");
   return context;
 }

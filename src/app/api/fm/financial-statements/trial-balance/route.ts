@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getTrialBalance } from "@/modules/financial-management/financial-statements/trial-balance/services/trial-balance.service";
+import { getCurrentTrialBalanceMonth } from "@/modules/financial-management/financial-statements/trial-balance/utils/periods";
 
 /**
  * Proxy API route for the Trial Balance external endpoint.
@@ -9,8 +10,9 @@ import { getTrialBalance } from "@/modules/financial-management/financial-statem
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
 
-  const startDate = searchParams.get("startDate") || "2025-01-01";
-  const endDate = searchParams.get("endDate") || "2025-12-30";
+  const defaultRange = getCurrentTrialBalanceMonth();
+  const startDate = searchParams.get("startDate") || defaultRange.startDate;
+  const endDate = searchParams.get("endDate") || defaultRange.endDate;
   const status = searchParams.get("status") || undefined;
   const accountCategory = searchParams.get("accountCategory") || undefined;
   const reviewFlag = searchParams.get("reviewFlag") || undefined;
