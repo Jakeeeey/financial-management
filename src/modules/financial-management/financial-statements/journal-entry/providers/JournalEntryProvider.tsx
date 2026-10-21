@@ -4,7 +4,8 @@ import * as React from "react";
 import { 
   JournalEntryGroup, 
   AnalyticsSummary, 
-  FilterState 
+  FilterState,
+  JournalEntryFilterOptions,
 } from "../types";
 import { toast } from "sonner";
 
@@ -14,6 +15,9 @@ interface JournalEntryContextType {
   filters: FilterState;
   setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
   uniqueSourceModules: string[];
+  filterOptions: JournalEntryFilterOptions;
+  filterOptionsLoading: boolean;
+  filterOptionsError: string | null;
   isLoading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
@@ -27,6 +31,12 @@ interface JournalEntryContextType {
 }
 
 const JournalEntryContext = React.createContext<JournalEntryContextType | undefined>(undefined);
+
+const EMPTY_FILTER_OPTIONS: JournalEntryFilterOptions = {
+  branches: [],
+  divisions: [],
+  departments: [],
+};
 
 export function JournalEntryProvider({ children }: { children: React.ReactNode }) {
   const [paginatedGroups, setPaginatedGroups] = React.useState<JournalEntryGroup[]>([]);
@@ -43,6 +53,9 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
     highRiskEntries: []
   });
   const [uniqueSourceModules, setUniqueSourceModules] = React.useState<string[]>(["All Source Modules"]);
+  const [filterOptions, setFilterOptions] = React.useState<JournalEntryFilterOptions>(EMPTY_FILTER_OPTIONS);
+  const [filterOptionsLoading, setFilterOptionsLoading] = React.useState(true);
+  const [filterOptionsError, setFilterOptionsError] = React.useState<string | null>(null);
   const [totalGroupCount, setTotalGroupCount] = React.useState(0);
   const [pageCount, setPageCount] = React.useState(1);
   const [isLoading, setIsLoading] = React.useState(true);
@@ -81,6 +94,44 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
       sortOrder: "desc"
     };
   });
+
+  React.useEffect(() => {
+    let active = true;
+
+    const loadFilterOptions = async () => {
+      try {
+        const response = await fetch("/api/fm/financial-statements/journal-entry/lookups", { cache: "no-store" });
+        if (!response.ok) throw new Error("Unable to load branch, division, and department options.");
+
+        const data = await response.json() as Partial<JournalEntryFilterOptions>;
+        if (!active) return;
+
+        const normalizeOptions = (options: JournalEntryFilterOptions["branches"] | undefined) =>
+          Array.isArray(options)
+            ? options
+                .filter((option) => option && option.id != null && option.name?.trim())
+                .map((option) => ({ id: String(option.id), name: option.name.trim() }))
+            : [];
+
+        setFilterOptions({
+          branches: normalizeOptions(data.branches),
+          divisions: normalizeOptions(data.divisions),
+          departments: normalizeOptions(data.departments),
+        });
+        setFilterOptionsError(null);
+      } catch (loadError) {
+        if (!active) return;
+        const message = loadError instanceof Error ? loadError.message : "Unable to load filter options.";
+        setFilterOptionsError(message);
+        console.error("Journal Entry Filter Options Error:", loadError);
+      } finally {
+        if (active) setFilterOptionsLoading(false);
+      }
+    };
+
+    loadFilterOptions();
+    return () => { active = false; };
+  }, []);
 
   // Synchronize startDate and endDate based on preset range selections
   React.useEffect(() => {
@@ -228,6 +279,9 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
     filters,
     setFilters,
     uniqueSourceModules,
+    filterOptions,
+    filterOptionsLoading,
+    filterOptionsError,
     isLoading,
     error,
     refresh: fetchData,
@@ -242,7 +296,10 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
     paginatedGroups, 
     analytics, 
     filters, 
-    uniqueSourceModules, 
+    uniqueSourceModules,
+    filterOptions,
+    filterOptionsLoading,
+    filterOptionsError,
     isLoading, 
     error, 
     fetchData, 

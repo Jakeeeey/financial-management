@@ -13,6 +13,7 @@ import { JournalEntryProvider } from "./providers/JournalEntryProvider";
 
 import SummaryCards from "./components/SummaryCards";
 import FilterPanel from "./components/FilterPanel";
+import JournalEntryFilterToolbar from "./components/JournalEntryFilterToolbar";
 import RiskInsights from "./components/RiskInsights";
 import JournalEntryTable from "./components/JournalEntryTable";
 import JournalEntryDetailModal from "./components/JournalEntryDetailModal";
@@ -40,6 +41,9 @@ function JournalEntryDashboard() {
     filters, 
     setFilters, 
     uniqueSourceModules,
+    filterOptions,
+    filterOptionsLoading,
+    filterOptionsError,
     isLoading, 
     error, 
     refresh,
@@ -52,8 +56,29 @@ function JournalEntryDashboard() {
     setPageSize,
   } = useJournalEntries();
 
+  const [draftFilters, setDraftFilters] = React.useState(filters);
+  const [isMoreFiltersOpen, setIsMoreFiltersOpen] = React.useState(false);
   const [selectedGroup, setSelectedGroup] = React.useState<JournalEntryGroup | null>(null);
   const [isDetailOpen, setIsDetailOpen] = React.useState(false);
+  const resultsScrollRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    setDraftFilters(filters);
+  }, [filters]);
+
+  React.useEffect(() => {
+    if (isMoreFiltersOpen) {
+      resultsScrollRef.current?.scrollTo({ top: 0 });
+    }
+  }, [isMoreFiltersOpen]);
+
+  const applyDraftFilters = () => {
+    setFilters(draftFilters);
+  };
+
+  const resetAllFilters = () => {
+    resetFilters();
+  };
 
   const handleExport = async (type: "PDF" | "Excel") => {
     const formattedStart = format(new Date(filters.startDate), "MMM d, yyyy");
@@ -130,17 +155,28 @@ function JournalEntryDashboard() {
         </div>
       </div>
 
-      <div className="flex-1 flex overflow-hidden p-6 gap-6 min-h-0">
-        {/* Left Filter Panel */}
-        <FilterPanel 
-            filters={filters} 
-            setFilters={setFilters} 
-            uniqueSourceModules={uniqueSourceModules}
-            onReset={resetFilters} 
+      <JournalEntryFilterToolbar
+        filters={draftFilters}
+        setFilters={setDraftFilters}
+        isMoreFiltersOpen={isMoreFiltersOpen}
+        onToggleMoreFilters={() => setIsMoreFiltersOpen((open) => !open)}
+        onApply={applyDraftFilters}
+        onReset={resetAllFilters}
+      />
+
+      <div ref={resultsScrollRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto custom-scrollbar">
+        <FilterPanel
+          filters={draftFilters}
+          setFilters={setDraftFilters}
+          uniqueSourceModules={uniqueSourceModules}
+          filterOptions={filterOptions}
+          filterOptionsLoading={filterOptionsLoading}
+          filterOptionsError={filterOptionsError}
+          isOpen={isMoreFiltersOpen}
         />
 
-        {/* Right Content Area */}
-        <div className="flex-1 overflow-y-auto space-y-6 pr-1 custom-scrollbar">
+        {/* Results remain vertically scrollable; the table owns horizontal scrolling. */}
+        <div className="space-y-6 px-3 py-3 sm:px-6 sm:py-6">
           {/* Summary Stats */}
           <SummaryCards data={analytics} loading={isLoading} />
 
