@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { 
   JournalEntryGroup, 
   AnalyticsSummary, 
@@ -8,6 +9,7 @@ import {
   JournalEntryFilterOptions,
 } from "../types";
 import { toast } from "sonner";
+import { createDefaultFilterState, parseJournalEntryUrlState, serializeJournalEntryUrlState } from "../utils/filter-state";
 
 interface JournalEntryContextType {
   paginatedGroups: JournalEntryGroup[];
@@ -24,6 +26,7 @@ interface JournalEntryContextType {
   resetFilters: () => void;
   currentPage: number;
   pageSize: number;
+  urlRevision: number;
   pageCount: number;
   totalGroupCount: number;
   setCurrentPage: (page: number) => void;
@@ -39,6 +42,11 @@ const EMPTY_FILTER_OPTIONS: JournalEntryFilterOptions = {
 };
 
 export function JournalEntryProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlSearch = searchParams.toString();
+  const initialUrlState = React.useRef(parseJournalEntryUrlState(new URLSearchParams(urlSearch)));
   const [paginatedGroups, setPaginatedGroups] = React.useState<JournalEntryGroup[]>([]);
   const [analytics, setAnalytics] = React.useState<AnalyticsSummary>({
     jeCount: 0,
@@ -60,40 +68,47 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
   const [pageCount, setPageCount] = React.useState(1);
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
-  const [currentPage, setCurrentPage] = React.useState(0);
-  const [pageSize, setPageSize] = React.useState(10);
-  const [filters, setFilters] = React.useState<FilterState>(() => {
-    const now = new Date();
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const [currentPage, setCurrentPage] = React.useState(initialUrlState.current.page);
+  const [pageSize, setPageSize] = React.useState(initialUrlState.current.pageSize);
+  const [filters, setFilters] = React.useState<FilterState>(initialUrlState.current.filters);
+  const [urlRevision, setUrlRevision] = React.useState(0);
+  const lastObservedSearchRef = React.useRef(urlSearch);
+  const skipUrlWriteRef = React.useRef(false);
+  const initialUrlSyncRef = React.useRef(true);
 
-    const format = (date: Date) => {
-      const y = date.getFullYear();
-      const m = String(date.getMonth() + 1).padStart(2, '0');
-      const d = String(date.getDate()).padStart(2, '0');
-      return `${y}-${m}-${d}`;
-    };
+  React.useEffect(() => {
+    if (urlSearch === lastObservedSearchRef.current) return;
 
-    return {
-      search: "",
-      startDate: format(firstDay),
-      endDate: format(lastDay),
-      presetRange: "Monthly",
-      selectedMonth: now.getMonth(),
-      selectedQuarter: Math.floor(now.getMonth() / 3) + 1,
-      selectedYear: now.getFullYear(),
-      branch: "All Branches",
-      division: "All Divisions",
-      department: "All Departments",
-      entryType: "All Entry Types",
-      coa: "All Accounts",
-      sourceModule: "All Source Modules",
-      showPostedOnly: false,
-      status: "All Statuses",
-      sortField: "date",
-      sortOrder: "desc"
-    };
-  });
+    lastObservedSearchRef.current = urlSearch;
+    const restored = parseJournalEntryUrlState(new URLSearchParams(urlSearch));
+    skipUrlWriteRef.current = true;
+    setFilters(restored.filters);
+    setCurrentPage(restored.page);
+    setPageSize(restored.pageSize);
+    setUrlRevision((revision) => revision + 1);
+  }, [urlSearch]);
+
+  React.useEffect(() => {
+    if (skipUrlWriteRef.current) {
+      skipUrlWriteRef.current = false;
+      return;
+    }
+
+    const nextSearch = serializeJournalEntryUrlState(filters, currentPage, pageSize);
+    if (nextSearch === urlSearch) {
+      initialUrlSyncRef.current = false;
+      return;
+    }
+
+    lastObservedSearchRef.current = nextSearch;
+    const href = `${pathname}?${nextSearch}`;
+    if (initialUrlSyncRef.current) {
+      router.replace(href, { scroll: false });
+      initialUrlSyncRef.current = false;
+    } else {
+      router.push(href, { scroll: false });
+    }
+  }, [filters, currentPage, pageSize, pathname, router, urlSearch]);
 
   React.useEffect(() => {
     let active = true;
@@ -132,41 +147,6 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
     loadFilterOptions();
     return () => { active = false; };
   }, []);
-
-  // Synchronize startDate and endDate based on preset range selections
-  React.useEffect(() => {
-    if (filters.presetRange === "Custom") return;
-
-    let start = new Date(filters.selectedYear, 0, 1);
-    let end = new Date(filters.selectedYear, 11, 31);
-
-    if (filters.presetRange === "Monthly") {
-      start = new Date(filters.selectedYear, filters.selectedMonth, 1);
-      end = new Date(filters.selectedYear, filters.selectedMonth + 1, 0);
-    } else if (filters.presetRange === "Quarterly") {
-      const startMonth = (filters.selectedQuarter - 1) * 3;
-      start = new Date(filters.selectedYear, startMonth, 1);
-      end = new Date(filters.selectedYear, startMonth + 3, 0);
-    }
-
-    const formatDateLocal = (date: Date) => {
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    };
-
-    const startStr = formatDateLocal(start);
-    const endStr = formatDateLocal(end);
-
-    if (startStr !== filters.startDate || endStr !== filters.endDate) {
-      setFilters(prev => ({
-        ...prev,
-        startDate: startStr,
-        endDate: endStr
-      }));
-    }
-  }, [filters.presetRange, filters.selectedMonth, filters.selectedQuarter, filters.selectedYear, filters.startDate, filters.endDate]);
 
   const lastFetchedQueryRef = React.useRef<string>("");
   const fetchData = React.useCallback(async () => {
@@ -224,48 +204,9 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
     fetchData();
   }, [fetchData]);
 
-  // Reset page to 0 when filters change (except for pagination handled keys)
-  // We handle this carefully to avoid infinite loops
-  const prevFiltersRef = React.useRef(filters);
-  React.useEffect(() => {
-    // If anything other than date bounds changed (which are handled by the date effects), reset page
-    if (JSON.stringify(prevFiltersRef.current) !== JSON.stringify(filters)) {
-      setCurrentPage(0);
-      prevFiltersRef.current = filters;
-    }
-  }, [filters]);
-
   const resetFilters = () => {
-    const now = new Date();
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-
-    const format = (date: Date) => {
-      const y = date.getFullYear();
-      const m = String(date.getMonth() + 1).padStart(2, '0');
-      const d = String(date.getDate()).padStart(2, '0');
-      return `${y}-${m}-${d}`;
-    };
-
-    setFilters({
-      search: "",
-      startDate: format(firstDay),
-      endDate: format(lastDay),
-      presetRange: "Monthly",
-      selectedMonth: now.getMonth(),
-      selectedQuarter: Math.floor(now.getMonth() / 3) + 1,
-      selectedYear: now.getFullYear(),
-      branch: "All Branches",
-      division: "All Divisions",
-      department: "All Departments",
-      entryType: "All Entry Types",
-      coa: "All Accounts",
-      sourceModule: "All Source Modules",
-      showPostedOnly: false,
-      status: "All Statuses",
-      sortField: "date",
-      sortOrder: "desc"
-    });
+    setFilters(createDefaultFilterState());
+    setCurrentPage(0);
   };
 
   const handleSetPageSize = (size: number) => {
@@ -288,6 +229,7 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
     resetFilters,
     currentPage,
     pageSize,
+    urlRevision,
     pageCount,
     totalGroupCount,
     setCurrentPage,
@@ -305,6 +247,7 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
     fetchData, 
     currentPage, 
     pageSize, 
+    urlRevision,
     pageCount, 
     totalGroupCount
   ]);
