@@ -393,6 +393,7 @@ export type BatchCreatePlan = {
     linesToCreate: NormalizedBatchCreateLine[];
     skippedDuplicates: number;
     skippedExistingPending: number;
+    inactivePriceTypeIds: number[];
 };
 
 function batchLineKey(productId: number, priceTypeId: number) {
@@ -448,6 +449,12 @@ function snapshotPricesMatch(snapshot: number | null, live: number | null): bool
     return Math.abs(snapshot - live) <= 1e-9;
 }
 
+export function priceValuesMatch(leftValue: unknown, rightValue: unknown): boolean {
+    const left = parseSnapshotPrice(leftValue);
+    const right = parseSnapshotPrice(rightValue);
+    return left.valid && right.valid && snapshotPricesMatch(left.value, right.value);
+}
+
 export async function fetchLivePriceSnapshots(
     keys: Array<{ product_id: number; price_type_id: number }>,
 ): Promise<Map<string, number | null>> {
@@ -495,14 +502,17 @@ export async function findPriceSnapshotConflicts(
     for (const line of lines) {
         const stored = parseSnapshotPrice(line.current_price);
         const live = liveSnapshots.get(batchLineKey(line.product_id, line.price_type_id)) ?? null;
-        if (!stored.valid || !snapshotPricesMatch(stored.value, live)) {
+        const proposed = parseSnapshotPrice(line.proposed_price);
+        const alreadyAtProposal =
+            proposed.valid && proposed.value !== null && snapshotPricesMatch(proposed.value, live);
+        if ((!stored.valid || !snapshotPricesMatch(stored.value, live)) && !alreadyAtProposal) {
             conflicts.push({
                 request_id: line.request_id ?? 0,
                 product_id: line.product_id,
                 price_type_id: line.price_type_id,
                 snapshot_price: stored.value,
                 live_price: live,
-                proposed_price: parseSnapshotPrice(line.proposed_price).value,
+                proposed_price: proposed.value,
                 reason: stored.valid ? "stale_snapshot" : "invalid_snapshot",
             });
         }
@@ -622,6 +632,23 @@ export async function getExistingPendingBatchKeys(lines: NormalizedBatchCreateLi
     return keys;
 }
 
+async function findInactivePriceTypeIds(priceTypeIds: number[]): Promise<number[]> {
+    if (priceTypeIds.length === 0) return [];
+
+    const params = new URLSearchParams();
+    params.set("limit", "-1");
+    params.set("fields", "price_type_id");
+    params.set("filter[price_type_id][_in]", priceTypeIds.join(","));
+    params.set("filter[is_active][_eq]", "1");
+
+    const rows = await fetchDirectus<DirectusList<{ price_type_id?: number | string | null }>>(
+        `${mustBase()}/items/${PRICE_TYPES}?${params.toString()}`,
+        { headers: directusHeaders() },
+    );
+    const activeIds = new Set((rows.data ?? []).map((row) => Number(row.price_type_id)));
+    return priceTypeIds.filter((id) => !activeIds.has(id));
+}
+
 export async function normalizeBatchCreateLines(rawLines: BatchCreateLineInput[]): Promise<BatchCreatePlan> {
     const seen = new Set<string>();
     const normalizedLines: NormalizedBatchCreateLine[] = [];
@@ -651,6 +678,12 @@ export async function normalizeBatchCreateLines(rawLines: BatchCreateLineInput[]
         });
     }
 
+    const requestedPriceTypeIds = Array.from(new Set(normalizedLines.map((line) => line.price_type_id)));
+    const inactivePriceTypeIds = await findInactivePriceTypeIds(requestedPriceTypeIds);
+    if (inactivePriceTypeIds.length > 0) {
+        return { linesToCreate: [], skippedDuplicates, skippedExistingPending: 0, inactivePriceTypeIds };
+    }
+
     const existingPendingKeys = await getExistingPendingBatchKeys(normalizedLines);
     const linesToCreate = normalizedLines.filter(
         (line) => !existingPendingKeys.has(batchLineKey(line.product_id, line.price_type_id)),
@@ -661,6 +694,7 @@ export async function normalizeBatchCreateLines(rawLines: BatchCreateLineInput[]
         linesToCreate,
         skippedDuplicates,
         skippedExistingPending,
+        inactivePriceTypeIds,
     };
 }
 

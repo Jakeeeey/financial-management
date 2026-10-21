@@ -37,7 +37,7 @@ export async function GET() {
     let divisionId: number | null = null;
     let divisionName: string | null = null;
 
-    // 1. Check suppliers where user_id = userId
+    // 1. Check suppliers where user_id = userId (for payee & supplier info only)
     try {
       const suppRes = await fetch(
         `${API_BASE_URL}/items/suppliers?filter[user_id][_eq]=${userId}&limit=1`,
@@ -49,9 +49,6 @@ export async function GET() {
           const supp = suppJson.data[0];
           supplierId = Number(supp.id);
           supplierName = supp.supplier_name || null;
-          if (supp.division_id) {
-            divisionId = Number(supp.division_id);
-          }
         }
       }
     } catch (e) {
@@ -62,11 +59,12 @@ export async function GET() {
     let salesmanId: number | null = null;
     let salesmanName: string | null = null;
     let salesmanCode: string | null = null;
+    const allowedDivisionIds: number[] = [];
 
     // 2. Check salesman where employee_id = userId (active salesman records)
     try {
       const salesRes = await fetch(
-        `${API_BASE_URL}/items/salesman?filter[employee_id][_eq]=${userId}&filter[isActive][_eq]=1&sort=-id&limit=10`,
+        `${API_BASE_URL}/items/salesman?filter[employee_id][_eq]=${userId}&filter[isActive][_eq]=1&sort=-id&limit=50`,
         { headers: AUTH_HEADERS, cache: "no-store" }
       );
       if (salesRes.ok) {
@@ -79,7 +77,19 @@ export async function GET() {
         }> = salesJson.data || [];
 
         if (salesList.length > 0) {
-          // If multiple salesman records are linked to the employee, prioritize the one matching supplier_name or pick the first active
+          isSalesman = true;
+
+          // Collect unique division IDs from all active salesman records
+          salesList.forEach((s) => {
+            if (s.division_id) {
+              const divNum = Number(s.division_id);
+              if (!isNaN(divNum) && !allowedDivisionIds.includes(divNum)) {
+                allowedDivisionIds.push(divNum);
+              }
+            }
+          });
+
+          // Prioritize matching record by supplierName or pick the first active
           const matchedSalesman =
             salesList.find(
               (s) =>
@@ -89,12 +99,13 @@ export async function GET() {
                   supplierName.toLowerCase().trim()
             ) || salesList[0];
 
-          isSalesman = true;
           salesmanId = Number(matchedSalesman.id);
           salesmanName = matchedSalesman.salesman_name || null;
           salesmanCode = matchedSalesman.salesman_code || null;
           if (matchedSalesman.division_id) {
             divisionId = Number(matchedSalesman.division_id);
+          } else if (allowedDivisionIds.length > 0) {
+            divisionId = allowedDivisionIds[0];
           }
         }
       }
@@ -130,6 +141,7 @@ export async function GET() {
         salesman_id: salesmanId,
         salesman_name: salesmanName,
         salesman_code: salesmanCode,
+        allowed_division_ids: allowedDivisionIds,
       },
     });
   } catch (err: unknown) {

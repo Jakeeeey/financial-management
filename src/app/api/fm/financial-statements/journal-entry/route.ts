@@ -31,11 +31,11 @@ export async function GET(request: NextRequest) {
     branch: searchParams.get("branch") || "All Branches",
     division: searchParams.get("division") || "All Divisions",
     department: searchParams.get("department") || "All Departments",
-    entryType: searchParams.get("entryType") || "All Entry Types",
     coa: searchParams.get("coa") || "All Accounts",
     sourceModule: searchParams.get("sourceModule") || "All Source Modules",
-    showPostedOnly: searchParams.get("showPostedOnly") === "true",
-    status: searchParams.get("status") || "All Statuses",
+    status: (searchParams.get("showPostedOnly") === "true" && (!searchParams.get("status") || searchParams.get("status") === "All Statuses"))
+      ? "Posted"
+      : searchParams.get("status") || "All Statuses",
     accountNumber: accountNumber,
     sortField: searchParams.get("sortField") || "date",
     sortOrder: (searchParams.get("sortOrder") as "asc" | "desc") || "desc",
@@ -47,7 +47,13 @@ export async function GET(request: NextRequest) {
 
   try {
     if (mode !== "flat") {
-      const groupedResponse = await getGroupedJournalEntries(searchParams, token);
+      const groupedParams = new URLSearchParams(searchParams);
+      if ((!groupedParams.has("status") || groupedParams.get("status") === "All Statuses") && groupedParams.get("showPostedOnly") === "true") {
+        groupedParams.set("status", "Posted");
+      }
+      groupedParams.delete("showPostedOnly");
+      groupedParams.delete("entryType");
+      const groupedResponse = await getGroupedJournalEntries(groupedParams, token);
       return NextResponse.json(groupedResponse);
     }
 

@@ -26,7 +26,7 @@ import { generateDisbursementPDF } from "../utils/pdfGenerator";
 import { StickyTableWrapper } from "../components/StickyTableWrapper";
 import { isInheritedVatSplitLine, updateVatSplitDivision } from "@/modules/financial-management/treasury/components/payable-line-splits";
 import { replaceEmptyPayablePlaceholders } from "@/modules/financial-management/treasury/components/payable-line-state";
-import { isMemoPayableLine, normalizeMemoReference, stripMemoLineMetadata } from "@/modules/financial-management/treasury/components/memo-payable-line";
+import { getMemoPayableAmount, isMemoPayableLine, normalizeMemoReference, stripMemoLineMetadata } from "@/modules/financial-management/treasury/components/memo-payable-line";
 import {
     DisbursementPayload, PayableLine, SupplierDto, COADto, DivisionDto, DepartmentDto, Disbursement,
     UnpaidPoDto, MemoDto
@@ -360,6 +360,49 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
         return () => controller.abort();
     }, [payeeId]);
 
+    useEffect(() => {
+        if (
+            !activeVoucher
+            || (activeVoucher.status !== "Draft" && activeVoucher.status !== "Returned for Revision")
+            || memos.length === 0
+        ) return;
+        const supplierId = Number(activeVoucher.payeeId ?? payeeId);
+        if (!supplierId) return;
+
+        setPayables((current) => {
+            let changed = false;
+            const next = current.map((line) => {
+                const memo = memos.find((candidate) =>
+                    Number(candidate.supplier_id) === supplierId
+                    && normalizeMemoReference(candidate.memo_number) === normalizeMemoReference(line.memoNumber || line.referenceNo),
+                );
+                if (!memo) return line;
+
+                const amount = getMemoPayableAmount(memo.type, line.amount);
+                if (
+                    Number(line.amount) === amount
+                    && line.isMemo === true
+                    && line.memoId === memo.id
+                    && line.memoType === memo.type
+                    && line.memoNumber === memo.memo_number
+                    && Number(line.memoSupplierId) === supplierId
+                ) return line;
+
+                changed = true;
+                return {
+                    ...line,
+                    amount,
+                    isMemo: true,
+                    memoId: memo.id,
+                    memoType: memo.type,
+                    memoNumber: memo.memo_number,
+                    memoSupplierId: supplierId,
+                };
+            });
+            return changed ? next : current;
+        });
+    }, [activeVoucher, memos, payeeId]);
+
     const handleOpenPoModal = useCallback(async (supplierId: number) => {
         if (!Number.isInteger(supplierId) || supplierId <= 0) return toast.error("Please select a Payee first.");
 
@@ -499,13 +542,12 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
         if (isAlreadyInPayables) {
             return toast.error(`Memo ${memo.memo_number} is already applied to this TR.`);
         }
-        const isCredit = memo.type === 1;
         const remainingAmount = Number(memo.remaining_amount ?? memo.amount) || 0;
         const requestedAmount = Number(memoAmounts[String(memo.id)] ?? remainingAmount);
         if (!Number.isFinite(requestedAmount) || requestedAmount <= 0 || requestedAmount > remainingAmount + 0.01) {
             return toast.error(`Memo ${memo.memo_number} can only use up to ${remainingAmount.toFixed(2)}.`);
         }
-        const finalAmount = isCredit ? -Math.abs(requestedAmount) : Math.abs(requestedAmount);
+        const finalAmount = getMemoPayableAmount(memo.type, requestedAmount);
 
         setPayables([...payables, {
             isMemo: true,
@@ -589,7 +631,16 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
 
     const handlePayableChange = <K extends keyof PayableLine>(idx: number, key: K, val: PayableLine[K]) => {
         const copy = [...payables];
-        copy[idx] = { ...copy[idx], [key]: val };
+        let nextValue = val;
+        if (key === "amount") {
+            const line = copy[idx];
+            const memo = memos.find((candidate) =>
+                Number(candidate.supplier_id) === Number(payeeId)
+                && normalizeMemoReference(candidate.memo_number) === normalizeMemoReference(line.memoNumber || line.referenceNo),
+            );
+            if (memo) nextValue = getMemoPayableAmount(memo.type, Number(val)) as PayableLine[K];
+        }
+        copy[idx] = { ...copy[idx], [key]: nextValue };
         setPayables(copy);
     };
 
@@ -1528,7 +1579,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                                 {isMemoLocked && <div className="mt-1 text-[9px] font-bold text-amber-700">{lockDescription}</div>}
                                             </TableCell>
                                             <TableCell className={`text-xs font-black text-right ${memo.type === 1 ? 'text-emerald-600' : 'text-red-600'}`}>
-                                                <div>{memo.type === 1 ? '-' : '+'} ₱{memo.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}</div>
+                                                <div>{memo.type === 1 ? '+' : '-'} ₱{memo.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}</div>
                                                 <div className="text-[9px] font-bold text-muted-foreground">Remaining: ₱{(memo.remaining_amount ?? memo.amount).toLocaleString('en-US', {minimumFractionDigits: 2})}</div>
                                                 <Input
                                                     type="number"

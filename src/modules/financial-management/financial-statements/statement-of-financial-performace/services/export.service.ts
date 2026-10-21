@@ -19,7 +19,7 @@ const formatNumberStr = (val: number | undefined, isNegativeFormat: boolean = fa
         maximumFractionDigits: 2,
     }).format(absValue);
     
-    return isNegative ? `(P${formatted})` : `P${formatted}`;
+    return isNegative ? `-P${formatted}` : `P${formatted}`;
 };
 
 const getSectionTotal = (sourceData: FinancialPerformanceResponse | undefined, sectionName: string) => {
@@ -71,15 +71,15 @@ const buildExportData = (
     };
 
     // SALES
-    addRow("Gross Sales", Math.abs(summary.totalRevenue), comparisonSummary ? Math.abs(comparisonSummary.totalRevenue) : undefined, { isHeader: true });
+    addRow("Gross Sales", summary.totalRevenue, comparisonSummary?.totalRevenue, { isHeader: true });
     addEntries("Contra Revenue", true);
     
     const currTotalDeductions = getSectionTotal(summary, "Contra Revenue");
     const pastTotalDeductions = getSectionTotal(comparisonSummary, "Contra Revenue");
     addRow("Total Deductions", currTotalDeductions, pastTotalDeductions, { isHeader: true, isNegativeFormat: true });
 
-    const currNetSales = Math.abs(summary.totalRevenue) - Math.abs(currTotalDeductions);
-    const pastNetSales = comparisonSummary ? Math.abs(comparisonSummary.totalRevenue) - Math.abs(pastTotalDeductions) : undefined;
+    const currNetSales = summary.totalRevenue - Math.abs(currTotalDeductions);
+    const pastNetSales = comparisonSummary ? comparisonSummary.totalRevenue - Math.abs(pastTotalDeductions) : undefined;
     addRow("Net Sales", currNetSales, pastNetSales, { isHeader: true });
 
     // COGS

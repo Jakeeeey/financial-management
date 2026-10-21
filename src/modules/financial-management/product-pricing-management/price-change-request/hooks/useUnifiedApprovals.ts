@@ -201,7 +201,7 @@ export function useUnifiedApprovals(
                 expectedStatus: "APPROVED",
                 expectedApplicationStatus: "APPLIED",
             });
-            toast.success(`${result.affected} mixed batch line(s) force-applied and approved.`);
+            toast.success(`${result.applied ?? result.affected} mixed batch line(s) force-applied.`);
             await refresh();
         } catch (error: unknown) {
             if (applyActionError(error, "Failed to force apply mixed batch", { setUnauthorized })) throw error;

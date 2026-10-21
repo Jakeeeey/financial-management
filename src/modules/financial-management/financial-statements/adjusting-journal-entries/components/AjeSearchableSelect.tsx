@@ -28,6 +28,8 @@ type AjeSearchableSelectProps = {
   placeholder?: string;
   disabled?: boolean;
   className?: string;
+  ariaInvalid?: boolean;
+  ariaLabel?: string;
 };
 
 export function AjeSearchableSelect({
@@ -37,6 +39,8 @@ export function AjeSearchableSelect({
   placeholder = "Select option",
   disabled = false,
   className,
+  ariaInvalid,
+  ariaLabel,
 }: AjeSearchableSelectProps) {
   const [open, setOpen] = React.useState(false);
   const selectedLabel = React.useMemo(
@@ -51,6 +55,8 @@ export function AjeSearchableSelect({
           variant="outline"
           role="combobox"
           aria-expanded={open}
+          aria-invalid={ariaInvalid}
+          aria-label={ariaLabel}
           className={cn("w-full justify-between", !value && "text-muted-foreground", className)}
           disabled={disabled}
         >

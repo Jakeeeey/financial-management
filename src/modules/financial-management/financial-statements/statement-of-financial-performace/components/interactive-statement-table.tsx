@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useFinancialPerformance } from "../hooks/useFinancialPerformance";
 import { FinancialPerformanceEntry, FinancialPerformanceResponse } from "../types";
 import { Card } from "@/components/ui/card";
@@ -34,7 +34,7 @@ const formatAccAmount = (amount?: number, isNegativeFormat: boolean = false) => 
     });
     
     const formatted = formatter.format(absValue);
-    return isNegative ? `(${formatted})` : formatted;
+    return isNegative ? `-${formatted}` : formatted;
 };
 
 // Simple variance format
@@ -297,12 +297,12 @@ export function InteractiveStatementTable() {
                                 </TableHeader>
                                 <TableBody className="bg-card">
                                     {/* --- SALES --- */}
-                                    {renderSummaryRow({ label: "Gross Sales", currentValue: Math.abs(summary.totalRevenue), priorValue: comparisonSummary ? Math.abs(comparisonSummary.totalRevenue) : undefined, isBold: true, hasBorderTop: false })}
+                                    {renderSummaryRow({ label: "Gross Sales", currentValue: summary.totalRevenue, priorValue: comparisonSummary?.totalRevenue, isBold: true, hasBorderTop: false })}
                                     
                                     {data.entries.filter((e: FinancialPerformanceEntry) => e.reportSection === "Contra Revenue").map((entry: FinancialPerformanceEntry, idx: number) => {
                                         const compEntry = comparisonSummary?.entries.find((c: FinancialPerformanceEntry) => c.accountTitle === entry.accountTitle);
                                         return (
-                                            <div key={`sales-${entry.glCode}-${idx}`}>
+                                            <Fragment key={`sales-${entry.glCode}-${idx}`}>
                                                 {renderSummaryRow({
                                                     label: `Less: ${entry.accountTitle}`, 
                                                     currentValue: entry.amount, 
@@ -310,7 +310,7 @@ export function InteractiveStatementTable() {
                                                     isIndented: true, 
                                                     isNegativeFormat: true 
                                                 })}
-                                            </div>
+                                            </Fragment>
                                         );
                                     })}
 
@@ -323,8 +323,8 @@ export function InteractiveStatementTable() {
                                     
                                     {renderSummaryRow({
                                         label: "Net Sales", 
-                                        currentValue: Math.abs(summary.totalRevenue) - Math.abs(getSectionTotal(summary, "Contra Revenue") || 0), 
-                                        priorValue: comparisonSummary ? Math.abs(comparisonSummary.totalRevenue) - Math.abs(getSectionTotal(comparisonSummary, "Contra Revenue") || 0) : undefined, 
+                                        currentValue: summary.totalRevenue - Math.abs(getSectionTotal(summary, "Contra Revenue") || 0),
+                                        priorValue: comparisonSummary ? comparisonSummary.totalRevenue - Math.abs(getSectionTotal(comparisonSummary, "Contra Revenue") || 0) : undefined,
                                         isBold: true, hasBorderTop: true, hasBorderBottom: true 
                                     })}
                                     
@@ -342,14 +342,14 @@ export function InteractiveStatementTable() {
                                             {data.entries.filter((e: FinancialPerformanceEntry) => e.reportSection === "Purchases / Cost of Sales").map((entry: FinancialPerformanceEntry, idx: number) => {
                                                 const compEntry = comparisonSummary?.entries.find((c: FinancialPerformanceEntry) => c.accountTitle === entry.accountTitle);
                                                 return (
-                                                    <div key={`cogs-${entry.glCode}-${idx}`}>
+                                                    <Fragment key={`cogs-${entry.glCode}-${idx}`}>
                                                         {renderSummaryRow({
                                                             label: entry.accountTitle, 
                                                             currentValue: entry.amount, 
                                                             priorValue: compEntry?.amount, 
                                                             isIndented: true 
                                                         })}
-                                                    </div>
+                                                    </Fragment>
                                                 );
                                             })}
                                         </>
@@ -372,14 +372,14 @@ export function InteractiveStatementTable() {
                                             {data.entries.filter((e: FinancialPerformanceEntry) => e.reportSection === "Operating Expenses").map((entry: FinancialPerformanceEntry, idx: number) => {
                                                 const compEntry = comparisonSummary?.entries.find((c: FinancialPerformanceEntry) => c.accountTitle === entry.accountTitle);
                                                 return (
-                                                    <div key={`opex-${entry.glCode}-${idx}`}>
+                                                    <Fragment key={`opex-${entry.glCode}-${idx}`}>
                                                         {renderSummaryRow({
                                                             label: entry.accountTitle, 
                                                             currentValue: entry.amount, 
                                                             priorValue: compEntry?.amount, 
                                                             isIndented: true 
                                                         })}
-                                                    </div>
+                                                    </Fragment>
                                                 );
                                             })}
                                         </>
@@ -400,14 +400,14 @@ export function InteractiveStatementTable() {
                                             {data.entries.filter((e: FinancialPerformanceEntry) => e.reportSection === "Other Expense").map((entry: FinancialPerformanceEntry, idx: number) => {
                                                 const compEntry = comparisonSummary?.entries.find((c: FinancialPerformanceEntry) => c.accountTitle === entry.accountTitle);
                                                 return (
-                                                    <div key={`oexp-${entry.glCode}-${idx}`}>
+                                                    <Fragment key={`oexp-${entry.glCode}-${idx}`}>
                                                         {renderSummaryRow({
                                                             label: entry.accountTitle, 
                                                             currentValue: entry.amount, 
                                                             priorValue: compEntry?.amount, 
                                                             isIndented: true 
                                                         })}
-                                                    </div>
+                                                    </Fragment>
                                                 );
                                             })}
                                         </>
@@ -426,14 +426,14 @@ export function InteractiveStatementTable() {
                                             {data.entries.filter((e: FinancialPerformanceEntry) => e.reportSection === "Other Income").map((entry: FinancialPerformanceEntry, idx: number) => {
                                                 const compEntry = comparisonSummary?.entries.find((c: FinancialPerformanceEntry) => c.accountTitle === entry.accountTitle);
                                                 return (
-                                                    <div key={`oinc-${entry.glCode}-${idx}`}>
+                                                    <Fragment key={`oinc-${entry.glCode}-${idx}`}>
                                                         {renderSummaryRow({
                                                             label: entry.accountTitle, 
                                                             currentValue: entry.amount, 
                                                             priorValue: compEntry?.amount, 
                                                             isIndented: true 
                                                         })}
-                                                    </div>
+                                                    </Fragment>
                                                 );
                                             })}
                                         </>

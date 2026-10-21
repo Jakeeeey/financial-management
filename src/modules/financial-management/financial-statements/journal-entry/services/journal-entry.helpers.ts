@@ -31,6 +31,8 @@ export function groupJournalEntries(entries: JournalEntry[]): JournalEntryGroup[
         department: e.department,
         departmentName: e.departmentName,
         creator: e.creator,
+        branchId: e.branchId ?? null,
+        branchName: e.branchName ?? null,
         entries: [],
         totalDebit: 0,
         totalCredit: 0,
@@ -254,7 +256,6 @@ export function filterJournalEntries(entries: JournalEntry[], filters: FilterSta
     if (filters.department !== "All Departments" && e.department !== filters.department) return false;
     if (filters.status !== "All Statuses" && e.status !== filters.status) return false;
     if (filters.sourceModule !== "All Source Modules" && e.sourceModule !== filters.sourceModule) return false;
-    if (filters.showPostedOnly && e.status !== "Posted") return false;
     
     // Strict Date Filtering
     const entryDate = new Date(e.transactionDate);

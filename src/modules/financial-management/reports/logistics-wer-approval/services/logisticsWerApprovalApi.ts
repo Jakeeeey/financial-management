@@ -30,14 +30,20 @@ export interface ApprovalQueueQuery {
   size: number;
 }
 
+export interface ReviewBudgetByCoa {
+  coaId: number | null;
+  coaCode: string | null;
+  coaTitle: string | null;
+  allocatedAmount: number | null;
+}
+
 export interface SubmissionReview {
   submission: LogisticsWerPayableSubmission;
   dispatchPlanId: number;
   dispatchPlanDocNo: string;
   dispatchPlanStatus: string | null;
-  plannedAmount: number | null;
-  reservedAmount: number | null;
-  remainingAmount: number | null;
+  budgetByCoa: ReviewBudgetByCoa[];
+  disbursementDocNo: string | null;
   supplierEligibility: LogisticsWerSupplierEligibility | null;
 }
 
@@ -46,6 +52,7 @@ export type ApprovalDecision = "approve" | "return" | "reject";
 export interface DecisionResult {
   submission: LogisticsWerPayableSubmission;
   disbursementId: number | null;
+  disbursementDocNo: string | null;
   idempotent: boolean;
 }
 
@@ -91,10 +98,16 @@ export async function decideSubmission(
     body: JSON.stringify({ decision, remarks }),
     cache: "no-store",
   });
-  const payload = await readJson<{ draft?: LogisticsWerPayableSubmission; disbursementId?: unknown; idempotent?: unknown }>(response);
+  const payload = await readJson<{
+    draft?: LogisticsWerPayableSubmission;
+    disbursementId?: unknown;
+    disbursementDocNo?: unknown;
+    idempotent?: unknown;
+  }>(response);
   return {
     submission: payload.draft as LogisticsWerPayableSubmission,
     disbursementId: typeof payload.disbursementId === "number" ? payload.disbursementId : null,
+    disbursementDocNo: typeof payload.disbursementDocNo === "string" ? payload.disbursementDocNo : null,
     idempotent: payload.idempotent === true,
   };
 }
@@ -104,6 +117,7 @@ export interface BulkDecisionItemResult {
   ok: boolean;
   message: string | null;
   disbursementId: number | null;
+  disbursementDocNo: string | null;
   idempotent: boolean;
 }
 

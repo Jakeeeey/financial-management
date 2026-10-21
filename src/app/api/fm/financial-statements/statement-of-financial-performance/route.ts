@@ -18,11 +18,15 @@ export async function GET(request: NextRequest) {
     // Default source modules if none are provided
     if (!searchParams.has("sourceModule")) {
       searchParams.append("sourceModule", "Sales");
+      searchParams.append("sourceModule", "Sales Invoice");
       searchParams.append("sourceModule", "Disbursement");
       searchParams.append("sourceModule", "Collection");
     }
 
-    if (!searchParams.has("status") || searchParams.get("status") === "") {
+    const status = searchParams.get("status");
+    if (status?.toLowerCase() === "all") {
+      searchParams.delete("status");
+    } else if (!status && searchParams.get("postedOnly") !== "true") {
       searchParams.set("status", "Posted");
     }
 

@@ -10,6 +10,11 @@ export function normalizeMemoReference(value: unknown): string {
     return typeof value === "string" ? value.trim() : "";
 }
 
+export function getMemoPayableAmount(memoType: number, amount: number): number {
+    const magnitude = Math.abs(Number(amount) || 0);
+    return Number(memoType) === 2 ? -magnitude : magnitude;
+}
+
 export function isMemoPayableLine(
     line: MemoAwarePayableLine,
     memoReferences: ReadonlySet<string> = new Set(),
