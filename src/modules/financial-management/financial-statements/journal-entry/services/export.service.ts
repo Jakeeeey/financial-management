@@ -132,7 +132,7 @@ export const exportJournalToPdf = (
   const exportRows = buildJournalExportData(groups);
   const filterSummary = activeFilters?.length ? activeFilters.join(" | ") : "None";
   const formattedRows = exportRows.map(({ cells }) =>
-    cells.map((cell, index) => (index >= 5 && typeof cell === "number" ? formatJournalAmount(cell) : cell))
+    cells.map((cell, index) => (index >= 5 && typeof cell === "number" ? formatJournalAmount(cell).replace("₱", "PHP ") : cell))
   );
 
   const pageWidth = doc.internal.pageSize.width;
@@ -172,14 +172,14 @@ export const exportJournalToPdf = (
       halign: "center",
     },
     columnStyles: {
-      0: { cellWidth: 20 },
-      1: { cellWidth: 15 },
-      2: { cellWidth: 35 },
+      0: { cellWidth: 24 },
+      1: { cellWidth: 23 },
+      2: { cellWidth: 33 },
       3: { cellWidth: 50 },
-      4: { cellWidth: 70 },
-      5: { halign: "right", cellWidth: 25 },
-      6: { halign: "right", cellWidth: 25 },
-      7: { halign: "right", cellWidth: 35 },
+      4: { cellWidth: 55 },
+      5: { halign: "right", cellWidth: 27 },
+      6: { halign: "right", cellWidth: 27 },
+      7: { halign: "right", cellWidth: 30 },
     },
     didParseCell(data) {
       const rowKind = exportRows[data.row.index]?.kind;

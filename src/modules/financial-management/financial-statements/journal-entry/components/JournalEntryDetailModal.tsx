@@ -5,6 +5,7 @@ import {
   Dialog, 
   DialogContent, 
   DialogTitle, 
+  DialogDescription,
   DialogClose,
 } from "@/components/ui/dialog";
 import { JournalEntryGroup } from "../types";
@@ -138,6 +139,7 @@ function JournalEntryDetailContent({ group, open, onOpenChange, onRestoreFocus }
           <DialogTitle className="min-w-0 break-words text-lg font-bold text-foreground sm:text-xl">
             Journal Entry Detail · <span className="font-mono text-muted-foreground">{group.jeNo}</span>
           </DialogTitle>
+          <DialogDescription className="sr-only">Review this journal&apos;s accounting lines, linked adjustment context, and available audit history.</DialogDescription>
           <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:flex-nowrap">
             <Button 
               variant="outline" 
