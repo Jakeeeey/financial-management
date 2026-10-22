@@ -29,6 +29,8 @@ interface FinancialPerformanceContextType {
   filters: FinancialPerformanceFilterState;
   updateFilters: (updates: Partial<FinancialPerformanceFilterState>) => void;
   data: FinancialPerformanceResponse | null;
+  reportError: string | null;
+  lastUpdatedAt: Date | null;
   comparisonStatus: FinancialPerformanceComparisonStatus;
   appliedCriteria: FinancialPerformanceReportCriteria | null;
   hasPendingChanges: boolean;
@@ -52,6 +54,8 @@ export function FinancialPerformanceProvider({ children }: { children: ReactNode
   const urlState = useMemo(() => parseFinancialPerformanceUrl(new URLSearchParams(urlSearch)), [urlSearch]);
   const [filters, setFilters] = useState<FinancialPerformanceFilterState>(() => urlState.filters);
   const [report, setReport] = useState<{ data: FinancialPerformanceResponse; criteria: FinancialPerformanceReportCriteria } | null>(null);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [comparisonStatus, setComparisonStatus] = useState<FinancialPerformanceComparisonStatus>("not-requested");
   const data = report?.data ?? null;
   const appliedCriteria = report?.criteria ?? null;
@@ -104,8 +108,11 @@ export function FinancialPerformanceProvider({ children }: { children: ReactNode
       if (generation !== requestGenerationRef.current) return;
 
       setReport({ data: currentData, criteria });
+      setReportError(null);
+      setLastUpdatedAt(new Date());
       setValidation({ isValidated: true, isCertified: false, issues: [] });
       setComparisonStatus(criteria.includeComparison ? "loading" : "not-requested");
+      setIsLoading(false);
 
       if (urlMode) {
         const nextSearch = serializeFinancialPerformanceReportCriteria(criteria);
@@ -141,7 +148,7 @@ export function FinancialPerformanceProvider({ children }: { children: ReactNode
     } catch (error) {
       if (generation !== requestGenerationRef.current) return;
       console.error("Failed to load financial performance report", error);
-      toast.error("Failed to load the report. The last generated report is still displayed.");
+      setReportError("Failed to load the report. Please retry.");
       setValidation({ isValidated: false, isCertified: false, issues: ["Failed to fetch data completely"] });
     } finally {
       if (generation === requestGenerationRef.current) setIsLoading(false);
@@ -195,6 +202,8 @@ export function FinancialPerformanceProvider({ children }: { children: ReactNode
       requestGenerationRef.current += 1;
       setFilters(current => ({ ...createDefaultFinancialPerformanceFilters(), searchQuery: current.searchQuery }));
       setReport(null);
+      setReportError(null);
+      setLastUpdatedAt(null);
       setComparisonStatus("not-requested");
       setIsLoading(false);
       setIsInitialLoad(true);
@@ -229,6 +238,8 @@ export function FinancialPerformanceProvider({ children }: { children: ReactNode
         filters,
         updateFilters,
         data,
+        reportError,
+        lastUpdatedAt,
         comparisonStatus,
         appliedCriteria,
         hasPendingChanges,

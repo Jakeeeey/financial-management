@@ -17,12 +17,21 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { ChevronDown, X } from "lucide-react";
+import { ChevronDown, Loader2, X } from "lucide-react";
 import { CertificationModal } from "./CertificationModal";
-import { exportToExcel, exportToPdf } from "../services/export.service";
+import {
+    exportToExcel,
+    exportToPdf,
+    type FinancialPerformanceExportScope,
+} from "../services/export.service";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
     formatFinancialPerformanceDateRange,
-    getFinancialPerformanceComparisonLabel,
     getFinancialPerformancePeriodRange,
     getFinancialPerformanceToday,
     getFinancialPerformanceYears,
@@ -39,8 +48,14 @@ import {
     type FinancialPerformanceDivisionOption,
 } from "../services/financial-performance.service";
 
+const formatLastUpdated = (date: Date) => new Intl.DateTimeFormat("en-PH", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Manila",
+}).format(date);
+
 export function ReportControlSection() {
-    const { refresh, resetFilters, removeAppliedFilter, isLoading, isInitialLoad, filters, updateFilters: updateFilter, data, validation, appliedCriteria, hasPendingChanges, periodError, comparisonStatus } = useFinancialPerformance();
+    const { refresh, resetFilters, removeAppliedFilter, isLoading, isInitialLoad, filters, updateFilters: updateFilter, data, reportError, lastUpdatedAt, validation, appliedCriteria, hasPendingChanges, periodError, comparisonStatus } = useFinancialPerformance();
     const [isCertifyModalOpen, setIsCertifyModalOpen] = useState(false);
     const [isMoreFiltersOpen, setIsMoreFiltersOpen] = useState(false);
     const [divisions, setDivisions] = useState<FinancialPerformanceDivisionOption[]>([]);
@@ -51,6 +66,9 @@ export function ReportControlSection() {
     const [departmentLoadError, setDepartmentLoadError] = useState(false);
     const [divisionRetry, setDivisionRetry] = useState(0);
     const [departmentRetry, setDepartmentRetry] = useState(0);
+    const [exporting, setExporting] = useState<{ scope: FinancialPerformanceExportScope; format: "PDF" | "Excel" } | null>(null);
+    const [exportError, setExportError] = useState<string | null>(null);
+    const [exportStatus, setExportStatus] = useState("");
 
     useEffect(() => {
         let active = true;
@@ -100,14 +118,6 @@ export function ReportControlSection() {
         }
     };
 
-    const getComparisonLabel = () => {
-        return appliedCriteria ? getFinancialPerformanceComparisonLabel(appliedCriteria) : "";
-    };
-
-    const getDateRangeText = () => {
-        return appliedCriteria ? formatFinancialPerformanceDateRange(appliedCriteria.startDate, appliedCriteria.endDate) : "";
-    };
-
     const retryDivisionLookup = () => {
         setDivisionLoading(true);
         setDivisionLoadError(false);
@@ -120,31 +130,69 @@ export function ReportControlSection() {
         setDepartmentRetry(value => value + 1);
     };
 
-    const handleExportPdf = () => {
+    const handleExport = async (scope: FinancialPerformanceExportScope, format: "PDF" | "Excel") => {
         if (!canExport || !data || !appliedCriteria) {
             toast.error("Please generate a report first");
             return;
         }
-        exportToPdf(
-            data,
-            getDateRangeText(),
-            appliedCriteria.includeComparison,
-            comparisonStatus,
-            getComparisonLabel()
-        );
+        const scopeLabel = scope === "statement" ? "Statement" : "Account breakdown";
+        setExportError(null);
+        setExportStatus("");
+        setExporting({ scope, format });
+
+        try {
+            await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+            const context = {
+                criteria: appliedCriteria,
+                comparisonStatus,
+                searchQuery: filters.searchQuery,
+                generatedAt: new Date(),
+            };
+
+            if (format === "PDF") exportToPdf(data, scope, context);
+            else exportToExcel(data, scope, context);
+
+            const message = `${scopeLabel} ${format} export is ready.`;
+            setExportStatus(message);
+            toast.success(message);
+        } catch (error) {
+            const detail = error instanceof Error ? error.message : "Please try again.";
+            const message = `Unable to generate the ${scopeLabel.toLowerCase()} ${format} export. ${detail}`;
+            setExportError(message);
+            toast.error(message);
+        } finally {
+            setExporting(null);
+        }
     };
 
-    const handleExportExcel = () => {
-        if (!canExport || !data || !appliedCriteria) {
-            toast.error("Please generate a report first");
-            return;
-        }
-        exportToExcel(
-            data,
-            getDateRangeText(),
-            appliedCriteria.includeComparison,
-            comparisonStatus,
-            getComparisonLabel()
+    const renderExportMenu = (scope: FinancialPerformanceExportScope) => {
+        const scopeLabel = scope === "statement" ? "statement" : "account breakdown";
+        const isGenerating = exporting?.scope === scope;
+
+        return (
+            <DropdownMenu key={scope}>
+                <DropdownMenuTrigger asChild>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        className="h-9 rounded-xl px-4 text-xs font-bold shadow-sm"
+                        disabled={!canExport || !!exporting}
+                        aria-busy={isGenerating}
+                    >
+                        {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        {isGenerating ? "Generating…" : `Export ${scopeLabel}`}
+                        {!isGenerating ? <ChevronDown className="ml-2 h-4 w-4" /> : null}
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={() => void handleExport(scope, "PDF")}>
+                        Export as PDF
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => void handleExport(scope, "Excel")}>
+                        Export as Excel
+                    </DropdownMenuItem>
+                </DropdownMenuContent>
+            </DropdownMenu>
         );
     };
 
@@ -171,22 +219,8 @@ export function ReportControlSection() {
                                 {validation.isCertified ? "Certified" : "Validated"}
                             </div>
                         )}
-                        <Button 
-                            variant="outline" 
-                            className="rounded-xl shadow-sm h-9 px-4 text-xs font-bold"
-                            onClick={handleExportPdf}
-                            disabled={!canExport}
-                        >
-                            Export PDF
-                        </Button>
-                        <Button 
-                            variant="outline" 
-                            className="rounded-xl shadow-sm h-9 px-4 text-xs font-bold"
-                            onClick={handleExportExcel}
-                            disabled={!canExport}
-                        >
-                            Export Excel
-                        </Button>
+                        {renderExportMenu("statement")}
+                        {renderExportMenu("account-breakdown")}
                         {false && (
                             <Button 
                                 variant="default" 
@@ -199,6 +233,22 @@ export function ReportControlSection() {
                         )}
                     </div>
                 </div>
+
+                {(exporting || exportError || exportStatus) && (
+                    <div className="space-y-1 px-4 pb-3 text-xs sm:px-5">
+                        {exporting && (
+                            <p role="status" className="text-muted-foreground">
+                                Generating {exporting.scope === "statement" ? "statement" : "account breakdown"} {exporting.format}…
+                            </p>
+                        )}
+                        {exportStatus && !exporting && (
+                            <p role="status" className="text-muted-foreground">{exportStatus}</p>
+                        )}
+                        {exportError && !exporting && (
+                            <p role="alert" className="text-destructive">{exportError}</p>
+                        )}
+                    </div>
+                )}
 
                 <Separator />
 
@@ -492,6 +542,26 @@ export function ReportControlSection() {
                     {isLoading && (
                         <p role="status" aria-live="polite" className="text-xs text-muted-foreground">
                             {data ? "Generating report. The last successful report remains displayed." : "Generating report…"}
+                        </p>
+                    )}
+                    {reportError && !isLoading && (
+                        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
+                            <div>
+                                <p className="font-medium text-destructive">{reportError}</p>
+                                {data && lastUpdatedAt && (
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                        Showing the last successful report from {formatLastUpdated(lastUpdatedAt)} PHT.
+                                    </p>
+                                )}
+                            </div>
+                            <Button type="button" variant="outline" size="sm" disabled={isLoading} onClick={() => void refresh()}>
+                                Retry
+                            </Button>
+                        </div>
+                    )}
+                    {data && lastUpdatedAt && (
+                        <p role="status" aria-live="polite" className="text-xs text-muted-foreground">
+                            Report ready. Last updated: {formatLastUpdated(lastUpdatedAt)} PHT
                         </p>
                     )}
                     {hasPendingChanges && (

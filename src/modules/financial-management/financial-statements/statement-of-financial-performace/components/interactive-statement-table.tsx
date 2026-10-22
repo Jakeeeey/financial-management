@@ -2,12 +2,17 @@
 
 import { Fragment, useState } from "react";
 import { useFinancialPerformance } from "../hooks/useFinancialPerformance";
+import {
+    isFinancialPerformanceAccountBreakdownEntry,
+    matchesFinancialPerformanceEntrySearch,
+} from "../utils/account-search";
 import { FinancialPerformanceEntry } from "../types";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
     Table,
     TableBody,
@@ -54,7 +59,7 @@ const formatVarianceAmount = (variance: number) => {
 };
 
 export function InteractiveStatementTable() {
-    const { data, appliedCriteria, comparisonStatus, retryComparison, isLoading, isInitialLoad, filters, updateFilters } = useFinancialPerformance();
+    const { data, reportError, appliedCriteria, comparisonStatus, retryComparison, isLoading, isInitialLoad, filters, updateFilters } = useFinancialPerformance();
     const [activeTab, setActiveTab] = useState("statement");
     const [selectedTransactionAccount, setSelectedTransactionAccount] = useState<FinancialPerformanceEntry | null>(null);
 
@@ -71,14 +76,39 @@ export function InteractiveStatementTable() {
 
     if (isLoading && !data) {
         return (
-            <div className="space-y-4">
-                <div className="h-10 w-48 bg-muted rounded-full animate-pulse mx-auto sm:mx-0"></div>
-                <Card className="h-[600px] flex items-center justify-center border-border shadow-sm bg-card">
-                    <p className="text-muted-foreground text-sm font-medium animate-pulse">Loading statement data...</p>
+            <div className="space-y-4" aria-busy="true">
+                <Skeleton className="h-10 w-48 rounded-full" />
+                <Card className="min-w-0 overflow-hidden border-border bg-card shadow-sm">
+                    <div className="border-b border-border p-5 sm:p-6 lg:p-8">
+                        <Skeleton className="h-6 w-72 max-w-full" />
+                    </div>
+                    <div className="overflow-x-auto p-4">
+                        <div className="min-w-[800px] space-y-0">
+                            <div className={cn("grid gap-4 border-b px-4 py-4", filters.includeComparison
+                                ? "grid-cols-[minmax(240px,2fr)_repeat(3,minmax(120px,1fr))]"
+                                : "grid-cols-[minmax(240px,2fr)_minmax(120px,1fr)]")}>
+                                {Array.from({ length: filters.includeComparison ? 4 : 2 }, (_, index) => (
+                                    <Skeleton key={`header-${index}`} className="h-4 w-3/4" />
+                                ))}
+                            </div>
+                            {Array.from({ length: 9 }, (_, rowIndex) => (
+                                <div key={`row-${rowIndex}`} className={cn("grid gap-4 border-b border-border/60 px-4 py-5", filters.includeComparison
+                                    ? "grid-cols-[minmax(240px,2fr)_repeat(3,minmax(120px,1fr))]"
+                                    : "grid-cols-[minmax(240px,2fr)_minmax(120px,1fr)]")}>
+                                    <Skeleton className={cn("h-4", rowIndex % 3 === 0 ? "w-3/4" : "w-1/2")} />
+                                    {Array.from({ length: filters.includeComparison ? 3 : 1 }, (_, valueIndex) => (
+                                        <Skeleton key={`value-${rowIndex}-${valueIndex}`} className="ml-auto h-4 w-2/3" />
+                                    ))}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 </Card>
             </div>
         );
     }
+
+    if (reportError && !data) return null;
 
     if (isInitialLoad || !data) {
         return (
@@ -120,17 +150,10 @@ export function InteractiveStatementTable() {
         (current ?? comparison)?.reportSection === sectionName
     );
     const normalizedSearchQuery = filters.searchQuery.trim().toLowerCase();
-    const filteredDetailEntries = data.entries.filter((entry: FinancialPerformanceEntry) => {
-        if (!normalizedSearchQuery) return true;
-
-        return [
-            entry.glCode,
-            entry.accountTitle,
-            entry.reportSection,
-            entry.division,
-            entry.department,
-        ].some(value => (value ?? "").toLowerCase().includes(normalizedSearchQuery));
-    });
+    const filteredDetailEntries = data.entries.filter(entry =>
+        isFinancialPerformanceAccountBreakdownEntry(entry)
+        && matchesFinancialPerformanceEntrySearch(entry, filters.searchQuery)
+    );
 
     // ----- SUMMARY VIEW RENDERER -----
     const renderSummaryRow = ({
@@ -282,7 +305,7 @@ export function InteractiveStatementTable() {
 
 
     return (
-        <div className="min-w-0 max-w-full space-y-4 animate-in fade-in duration-500">
+        <div className="min-w-0 max-w-full space-y-4 animate-in fade-in duration-500" aria-busy={isLoading}>
             <div aria-label="Generated report periods" className="rounded-xl border border-border bg-card p-4 text-sm space-y-1">
                 <p><span className="font-medium">Reporting period:</span> {formatFinancialPerformanceDateRange(appliedCriteria.startDate, appliedCriteria.endDate)}</p>
                 {includeComparison && (
@@ -301,6 +324,11 @@ export function InteractiveStatementTable() {
                 )}
                 {isLoading && comparisonState !== "loading" && <p role="status" aria-live="polite" className="text-xs text-muted-foreground">Generating report; showing the last successful results.</p>}
             </div>
+            {data.entries.length === 0 && (
+                <p role="status" aria-live="polite" className="rounded-md border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+                    No accounts matched the applied report criteria.
+                </p>
+            )}
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full min-w-0">
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-muted p-1 rounded-full w-full sm:w-fit mb-6 shadow-inner">
                     <TabsList className="bg-transparent h-10 p-0 shadow-none border-0 w-full sm:w-auto">
@@ -522,7 +550,7 @@ export function InteractiveStatementTable() {
                                             ? `${filteredDetailEntries.length} matching account ${filteredDetailEntries.length === 1 ? "row" : "rows"}. `
                                             : `Showing all ${filteredDetailEntries.length} account ${filteredDetailEntries.length === 1 ? "row" : "rows"}. `}
                                     </span>
-                                    Search only hides detail rows; summary totals, KPIs, Net Income, and exports use the full applied report.
+                                    Search only hides account rows. Statement totals remain based on the full applied report; the account breakdown export includes these matches.
                                 </p>
                             </div>
                         </div>
