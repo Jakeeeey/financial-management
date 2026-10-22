@@ -6,6 +6,7 @@ import {
   FinancialPerformanceFilterState,
   FinancialPerformanceReportCriteria,
   FinancialPerformanceResponse,
+  FinancialPerformanceComparisonStatus,
   ValidationStatus,
 } from "../types";
 import { getFinancialPerformance } from "../services/financial-performance.service";
@@ -28,6 +29,7 @@ interface FinancialPerformanceContextType {
   filters: FinancialPerformanceFilterState;
   updateFilters: (updates: Partial<FinancialPerformanceFilterState>) => void;
   data: FinancialPerformanceResponse | null;
+  comparisonStatus: FinancialPerformanceComparisonStatus;
   appliedCriteria: FinancialPerformanceReportCriteria | null;
   hasPendingChanges: boolean;
   periodError: string | null;
@@ -35,6 +37,7 @@ interface FinancialPerformanceContextType {
   isInitialLoad: boolean;
   validation: ValidationStatus;
   refresh: () => Promise<void>;
+  retryComparison: () => Promise<void>;
   resetFilters: () => void;
   removeAppliedFilter: (key: FinancialPerformanceFilterChipKey) => void;
   certifyStatement: (certifiedBy: string, role: string, remarks?: string) => Promise<boolean>;
@@ -49,6 +52,7 @@ export function FinancialPerformanceProvider({ children }: { children: ReactNode
   const urlState = useMemo(() => parseFinancialPerformanceUrl(new URLSearchParams(urlSearch)), [urlSearch]);
   const [filters, setFilters] = useState<FinancialPerformanceFilterState>(() => urlState.filters);
   const [report, setReport] = useState<{ data: FinancialPerformanceResponse; criteria: FinancialPerformanceReportCriteria } | null>(null);
+  const [comparisonStatus, setComparisonStatus] = useState<FinancialPerformanceComparisonStatus>("not-requested");
   const data = report?.data ?? null;
   const appliedCriteria = report?.criteria ?? null;
   const hasPendingChanges = hasPendingFinancialPerformanceChanges(filters, appliedCriteria);
@@ -97,25 +101,11 @@ export function FinancialPerformanceProvider({ children }: { children: ReactNode
         taxRate: criteria.taxRate,
       });
 
-      let comparisonDataObj: FinancialPerformanceResponse["comparisonData"];
-      if (criteria.includeComparison) {
-        comparisonDataObj = await getFinancialPerformance({
-          startDate: criteria.comparisonStartDate,
-          endDate: criteria.comparisonEndDate,
-          status: criteria.status,
-          divisionName: criteria.divisionName,
-          departmentName: criteria.departmentName,
-          taxRate: criteria.taxRate,
-        });
-      }
-
       if (generation !== requestGenerationRef.current) return;
 
-      setReport({
-        data: { ...currentData, comparisonData: comparisonDataObj },
-        criteria,
-      });
+      setReport({ data: currentData, criteria });
       setValidation({ isValidated: true, isCertified: false, issues: [] });
+      setComparisonStatus(criteria.includeComparison ? "loading" : "not-requested");
 
       if (urlMode) {
         const nextSearch = serializeFinancialPerformanceReportCriteria(criteria);
@@ -127,17 +117,63 @@ export function FinancialPerformanceProvider({ children }: { children: ReactNode
           else window.history.replaceState(null, "", nextUrl);
         }
       }
+
+      if (criteria.includeComparison) {
+        try {
+          const comparisonData = await getFinancialPerformance({
+            startDate: criteria.comparisonStartDate,
+            endDate: criteria.comparisonEndDate,
+            status: criteria.status,
+            divisionName: criteria.divisionName,
+            departmentName: criteria.departmentName,
+            taxRate: criteria.taxRate,
+          });
+          if (generation !== requestGenerationRef.current) return;
+          setReport({ data: { ...currentData, comparisonData }, criteria });
+          setComparisonStatus("available");
+        } catch (error) {
+          if (generation !== requestGenerationRef.current) return;
+          console.error("Failed to load financial performance comparison", error);
+          setComparisonStatus("unavailable");
+          toast.error("The report loaded, but comparison data is unavailable. Retry the comparison before relying on variances.");
+        }
+      }
     } catch (error) {
       if (generation !== requestGenerationRef.current) return;
       console.error("Failed to load financial performance report", error);
-      toast.error(criteria.includeComparison
-        ? "Failed to load the report and comparison. The last generated report is still displayed."
-        : "Failed to load the report. The last generated report is still displayed.");
+      toast.error("Failed to load the report. The last generated report is still displayed.");
       setValidation({ isValidated: false, isCertified: false, issues: ["Failed to fetch data completely"] });
     } finally {
       if (generation === requestGenerationRef.current) setIsLoading(false);
     }
   }, [pathname]);
+
+  const retryComparison = useCallback(async () => {
+    if (!appliedCriteria?.includeComparison) return;
+
+    const criteria = appliedCriteria;
+    const generation = ++requestGenerationRef.current;
+    setComparisonStatus("loading");
+    try {
+      const comparisonData = await getFinancialPerformance({
+        startDate: criteria.comparisonStartDate,
+        endDate: criteria.comparisonEndDate,
+        status: criteria.status,
+        divisionName: criteria.divisionName,
+        departmentName: criteria.departmentName,
+        taxRate: criteria.taxRate,
+      });
+      if (generation !== requestGenerationRef.current) return;
+      setReport(current => current ? { ...current, data: { ...current.data, comparisonData } } : current);
+      setComparisonStatus("available");
+      toast.success("Comparison data loaded.");
+    } catch (error) {
+      if (generation !== requestGenerationRef.current) return;
+      console.error("Failed to retry financial performance comparison", error);
+      setComparisonStatus("unavailable");
+      toast.error("Comparison data is still unavailable. You can retry again.");
+    }
+  }, [appliedCriteria]);
 
   useEffect(() => {
     const previousUrl = lastObservedUrlRef.current;
@@ -159,6 +195,7 @@ export function FinancialPerformanceProvider({ children }: { children: ReactNode
       requestGenerationRef.current += 1;
       setFilters(current => ({ ...createDefaultFinancialPerformanceFilters(), searchQuery: current.searchQuery }));
       setReport(null);
+      setComparisonStatus("not-requested");
       setIsLoading(false);
       setIsInitialLoad(true);
       setValidation({ isValidated: true, isCertified: false, issues: [] });
@@ -192,6 +229,7 @@ export function FinancialPerformanceProvider({ children }: { children: ReactNode
         filters,
         updateFilters,
         data,
+        comparisonStatus,
         appliedCriteria,
         hasPendingChanges,
         periodError,
@@ -199,6 +237,7 @@ export function FinancialPerformanceProvider({ children }: { children: ReactNode
         isInitialLoad,
         validation,
         refresh,
+        retryComparison,
         resetFilters,
         removeAppliedFilter,
         certifyStatement,

@@ -40,7 +40,7 @@ import {
 } from "../services/financial-performance.service";
 
 export function ReportControlSection() {
-    const { refresh, resetFilters, removeAppliedFilter, isLoading, isInitialLoad, filters, updateFilters: updateFilter, data, validation, appliedCriteria, hasPendingChanges, periodError } = useFinancialPerformance();
+    const { refresh, resetFilters, removeAppliedFilter, isLoading, isInitialLoad, filters, updateFilters: updateFilter, data, validation, appliedCriteria, hasPendingChanges, periodError, comparisonStatus } = useFinancialPerformance();
     const [isCertifyModalOpen, setIsCertifyModalOpen] = useState(false);
     const [isMoreFiltersOpen, setIsMoreFiltersOpen] = useState(false);
     const [divisions, setDivisions] = useState<FinancialPerformanceDivisionOption[]>([]);
@@ -84,7 +84,7 @@ export function ReportControlSection() {
     ];
     const appliedFilterChips = appliedCriteria ? getFinancialPerformanceAppliedFilterChips(appliedCriteria) : [];
     const draftFilterChipKeys = new Set(getFinancialPerformanceAppliedFilterChips(toFinancialPerformanceReportCriteria(filters)).map(chip => chip.key));
-    const canExport = !!data && !!appliedCriteria && !isInitialLoad && !isLoading && !hasPendingChanges;
+    const canExport = !!data && !!appliedCriteria && !isInitialLoad && !isLoading && comparisonStatus !== "loading" && !hasPendingChanges;
     const divisionNames = [...new Set(divisions.map(option => option.divisionName).filter((name): name is string => typeof name === "string" && name.trim().length > 0))];
     const departmentNames = [...new Set(departments.map(option => option.departmentName).filter((name): name is string => typeof name === "string" && name.trim().length > 0))];
 
@@ -129,8 +129,8 @@ export function ReportControlSection() {
             data,
             getDateRangeText(),
             appliedCriteria.includeComparison,
-            getComparisonLabel(),
-            appliedCriteria.taxRate
+            comparisonStatus,
+            getComparisonLabel()
         );
     };
 
@@ -143,8 +143,8 @@ export function ReportControlSection() {
             data,
             getDateRangeText(),
             appliedCriteria.includeComparison,
-            getComparisonLabel(),
-            appliedCriteria.taxRate
+            comparisonStatus,
+            getComparisonLabel()
         );
     };
 

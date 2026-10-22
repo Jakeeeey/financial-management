@@ -10,7 +10,7 @@ const formatAmount = (amount?: number) => {
   }).format(amount);
 };
 
-const metricTitles = ["Total Sales", "Gross Profit", "Total Expenses", "Net Income"];
+const metricTitles = ["Sales activity", "Gross Profit", "Total Expenses", "Net Income"];
 
 const CardSkeleton = () => (
   <div className="min-w-0 animate-pulse rounded-xl border border-border bg-card p-4 shadow-sm">
@@ -45,7 +45,7 @@ export function SummaryCards() {
 
   const totalExpenses = (data.totalOperatingExpenses ?? 0) + (data.totalOtherExpense ?? 0);
   const metrics = [
-    { title: "Total Sales", value: data.totalRevenue, subtitle: "Before deductions" },
+    { title: "Sales activity", value: data.totalRevenue, subtitle: "Credit less debit from included sales accounts" },
     { title: "Gross Profit", value: data.grossProfit, subtitle: "Sales less cost of sales" },
     { title: "Total Expenses", value: totalExpenses, subtitle: "Operating and other expenses" },
     { title: "Net Income", value: data.netIncome, subtitle: "After tax" },
