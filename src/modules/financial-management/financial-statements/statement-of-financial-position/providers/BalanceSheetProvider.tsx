@@ -23,6 +23,7 @@ interface BalanceSheetContextType {
 
   // State
   filters: BalanceSheetFilterState;
+  appliedFilters: BalanceSheetFilterState | null;
   setFilters: React.Dispatch<React.SetStateAction<BalanceSheetFilterState>>;
   isLoading: boolean;
   isInitialLoad: boolean;
@@ -83,6 +84,7 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
   const [isInitialLoad, setIsInitialLoad] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [filters, setFilters] = React.useState<BalanceSheetFilterState>(DEFAULT_FILTERS);
+  const [appliedFilters, setAppliedFilters] = React.useState<BalanceSheetFilterState | null>(null);
 
   const filtersRef = React.useRef(filters);
   React.useEffect(() => {
@@ -160,6 +162,7 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
       setComparisonEntries(Array.isArray(data.comparisonEntries) ? normalizeEntries(data.comparisonEntries) : []);
       setSummary(normalizeSummary(data.summary));
       setComparisonSummary(normalizeSummary(data.comparisonSummary));
+      setAppliedFilters({ ...currentFilters });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Unknown error";
       console.error("Balance Sheet Fetch Error:", e);
@@ -255,6 +258,7 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
     setComparisonEntries([]);
     setSummary(null);
     setComparisonSummary(null);
+    setAppliedFilters(null);
     setIsInitialLoad(true);
   };
 
@@ -267,6 +271,7 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
     validation,
     ratios,
     filters,
+    appliedFilters,
     setFilters,
     isLoading,
     isInitialLoad,

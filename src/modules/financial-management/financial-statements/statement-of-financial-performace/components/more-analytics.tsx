@@ -8,8 +8,10 @@ import { useFinancialPerformance } from "../hooks/useFinancialPerformance";
 import { formatFinancialPerformanceRatioChange, getFinancialPerformanceRatioChange } from "../utils/variances";
 
 export function MoreAnalytics() {
-  const { data, appliedCriteria, comparisonStatus, isInitialLoad } = useFinancialPerformance();
+  const { data, reportError, appliedCriteria, comparisonStatus, isInitialLoad, isLoading } = useFinancialPerformance();
   const [isOpen, setIsOpen] = useState(false);
+
+  if (reportError && !data) return null;
 
   const ratios = [
     {
@@ -39,7 +41,7 @@ export function MoreAnalytics() {
   ];
 
   return (
-    <section className="min-w-0">
+    <section className="min-w-0" aria-busy={isLoading}>
       <Button
         type="button"
         variant="outline"

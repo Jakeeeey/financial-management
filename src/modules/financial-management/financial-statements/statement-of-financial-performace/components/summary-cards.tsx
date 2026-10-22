@@ -20,19 +20,21 @@ const CardSkeleton = () => (
 );
 
 export function SummaryCards() {
-  const { data, isLoading, isInitialLoad } = useFinancialPerformance();
+  const { data, reportError, isLoading, isInitialLoad } = useFinancialPerformance();
 
   if (isLoading && !data) {
     return (
-      <div className="mb-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Loading financial metrics">
+      <div className="mb-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Loading financial metrics" aria-busy="true">
         {metricTitles.map(title => <CardSkeleton key={title} />)}
       </div>
     );
   }
 
+  if (reportError && !data) return null;
+
   if (isInitialLoad || !data) {
     return (
-      <div className="mb-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Financial metrics">
+      <div className="mb-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Financial metrics" aria-busy={isLoading}>
         {metricTitles.map(title => (
           <div key={title} className="min-w-0 rounded-xl border border-dashed border-border bg-card/50 p-4 shadow-sm">
             <h3 className="text-xs font-semibold text-muted-foreground">{title}</h3>
@@ -52,7 +54,7 @@ export function SummaryCards() {
   ];
 
   return (
-    <div className="mb-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Financial metrics">
+    <div className="mb-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Financial metrics" aria-busy={isLoading}>
       {metrics.map(metric => (
         <div key={metric.title} className="min-w-0 rounded-xl border border-border bg-card p-4 shadow-sm">
           <h3 className="text-xs font-semibold text-muted-foreground">{metric.title}</h3>
