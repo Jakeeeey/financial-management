@@ -2,7 +2,7 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { format } from "date-fns";
-import { TrialBalanceItem, TrialBalanceReportContext } from "../types/trial-balance.schema";
+import { TrialBalanceItem, TrialBalanceReportContext, TrialBalanceSummaryData } from "../types/trial-balance.schema";
 import { getTrialBalanceReportLabels } from "../utils/filter-state";
 import { calculateTrialBalanceSummary } from "../utils/summary";
 import { formatTrialBalanceAmount, PERIOD_ACTIVITY_NOTE, PESO_NUMBER_FORMAT } from "../utils/money";
@@ -10,6 +10,18 @@ import { formatTrialBalanceAmount, PERIOD_ACTIVITY_NOTE, PESO_NUMBER_FORMAT } fr
 const COMPANY_NAME = process.env.NEXT_PUBLIC_COMPANY_NAME || "MEN2 MARKETING AND DISTRIBUTION ENTERPRISE CORPORATION";
 const REPORT_TITLE = "TRIAL BALANCE";
 const BASIS = "Accrual Basis";
+const CURRENCY = "Philippine peso (PHP / ₱)";
+const reportDateFormatter = new Intl.DateTimeFormat("en-PH", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  timeZone: "UTC",
+});
+const generatedAtFormatter = new Intl.DateTimeFormat("en-PH", {
+  dateStyle: "medium",
+  timeStyle: "medium",
+  timeZone: "Asia/Manila",
+});
 
 let pdfFonts: Promise<string[]> | undefined;
 
@@ -40,9 +52,7 @@ async function registerPdfFonts(doc: jsPDF) {
  * Only: Code | Account Title | Period debit activity | Period credit activity
  * Plus a GRAND TOTAL row at the bottom.
  */
-const buildExportRows = (items: TrialBalanceItem[]) => {
-  const totals = calculateTrialBalanceSummary(items, null);
-
+const buildExportRows = (items: TrialBalanceItem[], totals: TrialBalanceSummaryData) => {
   const rows: (string | number)[][] = items.map(item => {
     return [
       item.glCode,
@@ -63,20 +73,35 @@ const buildExportRows = (items: TrialBalanceItem[]) => {
   return rows;
 };
 
-export const exportTrialBalanceToExcel = (items: TrialBalanceItem[], context: TrialBalanceReportContext) => {
+const buildMetadataRows = (context: TrialBalanceReportContext, generatedAt: Date): string[][] => {
   const { startDate, endDate } = context;
-  const dateRangeText = `${format(new Date(startDate), "MMM d, yyyy")} to ${format(new Date(endDate), "MMM d, yyyy")}`;
-  const rows = buildExportRows(items);
-
-  const worksheetData = [
+  const dateRangeText = `${reportDateFormatter.format(new Date(`${startDate}T00:00:00Z`))} to ${reportDateFormatter.format(new Date(`${endDate}T00:00:00Z`))}`;
+  return [
     [COMPANY_NAME],
     [REPORT_TITLE],
-    [dateRangeText],
-    [BASIS],
+    [`Reporting period: ${dateRangeText}`],
+    [`Reporting basis: ${BASIS}`],
+    [`Currency: ${CURRENCY}`],
+    [`Generated at: ${generatedAtFormatter.format(generatedAt)} PHT`],
     [PERIOD_ACTIVITY_NOTE],
     ...getTrialBalanceReportLabels(context).flatMap(label => (label.match(/.{1,100}/gu) || [label]).map(line => [line])),
+  ];
+};
+
+export const exportTrialBalanceToExcel = (items: TrialBalanceItem[], context: TrialBalanceReportContext) => {
+  const generatedAt = new Date();
+  const summary = calculateTrialBalanceSummary(items, context);
+  const metadataRows = buildMetadataRows(context, generatedAt);
+  const rows = buildExportRows(items, summary);
+  const totalsHeadingRow = metadataRows.length + 1;
+  const worksheetData = [
+    ...metadataRows,
     [],
-    ["Code", "Account Title", "Period debit activity", "Period credit activity"],
+    ["REPORT TOTALS"],
+    ["Account count", summary.accountCount, "Debit-credit difference (PHP)", summary.difference],
+    ["Total debit activity (PHP)", summary.totalDebit, "Total credit activity (PHP)", summary.totalCredit],
+    [],
+    ["Code", "Account Title", "Period debit activity (PHP)", "Period credit activity (PHP)"],
     ...rows
   ];
 
@@ -84,9 +109,23 @@ export const exportTrialBalanceToExcel = (items: TrialBalanceItem[], context: Tr
 
   // Styling and Merging
   const headerRow = worksheetData.findIndex(row => row[0] === "Code");
-  ws["!merges"] = Array.from({ length: headerRow - 1 }, (_, row) => ({ s: { r: row, c: 0 }, e: { r: row, c: 3 } }));
+  ws["!merges"] = [
+    ...Array.from({ length: metadataRows.length }, (_, row) => ({ s: { r: row, c: 0 }, e: { r: row, c: 3 } })),
+    { s: { r: totalsHeadingRow, c: 0 }, e: { r: totalsHeadingRow, c: 3 } },
+  ];
+  for (const [row, column] of [
+    [totalsHeadingRow + 1, 3],
+    [totalsHeadingRow + 2, 1],
+    [totalsHeadingRow + 2, 3],
+  ]) {
+    const cell = ws[XLSX.utils.encode_cell({ r: row, c: column })];
+    if (cell) cell.z = PESO_NUMBER_FORMAT;
+  }
   for (let row = headerRow + 1; row < worksheetData.length; row++) {
-    for (const column of [2, 3]) ws[XLSX.utils.encode_cell({ r: row, c: column })].z = PESO_NUMBER_FORMAT;
+    for (const column of [2, 3]) {
+      const cell = ws[XLSX.utils.encode_cell({ r: row, c: column })];
+      if (cell) cell.z = PESO_NUMBER_FORMAT;
+    }
   }
 
   ws["!cols"] = [
@@ -98,14 +137,15 @@ export const exportTrialBalanceToExcel = (items: TrialBalanceItem[], context: Tr
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Trial Balance");
-  XLSX.writeFile(wb, `Trial_Balance_${format(new Date(), "yyyyMMdd")}.xlsx`);
+  XLSX.writeFile(wb, `Trial_Balance_${format(generatedAt, "yyyyMMdd")}.xlsx`);
 };
 
 export const exportTrialBalanceToPdf = async (items: TrialBalanceItem[], context: TrialBalanceReportContext) => {
-  const { startDate, endDate } = context;
+  const generatedAt = new Date();
   const doc = new jsPDF("p", "mm", "a4");
-  const dateRangeText = `${format(new Date(startDate), "MMM d, yyyy")} to ${format(new Date(endDate), "MMM d, yyyy")}`;
-  const rows = buildExportRows(items);
+  const summary = calculateTrialBalanceSummary(items, context);
+  const metadataRows = buildMetadataRows(context, generatedAt);
+  const rows = buildExportRows(items, summary);
   await registerPdfFonts(doc);
 
   // Header
@@ -117,18 +157,29 @@ export const exportTrialBalanceToPdf = async (items: TrialBalanceItem[], context
   doc.setFontSize(12);
   doc.text(REPORT_TITLE, pageWidth / 2, 20, { align: "center" });
   
-  doc.setFontSize(10);
-  doc.setFont("NotoSans", "normal");
-  doc.text(dateRangeText, pageWidth / 2, 26, { align: "center" });
-  doc.text(BASIS, pageWidth / 2, 32, { align: "center" });
-
   autoTable(doc, {
-    startY: 36,
-    body: [PERIOD_ACTIVITY_NOTE, ...getTrialBalanceReportLabels(context)].map(label => [label]),
+    startY: 26,
+    body: metadataRows.slice(2).map(row => [row[0]]),
     theme: "plain",
     styles: { font: "NotoSans", fontSize: 8, cellPadding: 1, overflow: "linebreak" },
   });
   const metadataEnd = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
+
+  autoTable(doc, {
+    startY: metadataEnd + 3,
+    head: [["Report totals", "Value"]],
+    body: [
+      ["Account count", String(summary.accountCount)],
+      ["Total debit activity (PHP)", formatTrialBalanceAmount(summary.totalDebit)],
+      ["Total credit activity (PHP)", formatTrialBalanceAmount(summary.totalCredit)],
+      ["Debit-credit difference (PHP)", formatTrialBalanceAmount(summary.difference)],
+    ],
+    theme: "plain",
+    styles: { font: "NotoSans", fontSize: 8, cellPadding: 1, overflow: "linebreak" },
+    headStyles: { fontStyle: "bold" },
+    columnStyles: { 1: { halign: "right", cellWidth: 40 } },
+  });
+  const totalsEnd = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
 
   const formattedRows = rows.map(row => 
     row.map((cell: string | number, index: number) => {
@@ -138,8 +189,8 @@ export const exportTrialBalanceToPdf = async (items: TrialBalanceItem[], context
   );
 
   autoTable(doc, {
-    startY: metadataEnd + 4,
-    head: [["Code", "Account Title", "Period debit activity", "Period credit activity"]],
+    startY: totalsEnd + 4,
+    head: [["Code", "Account Title", "Period debit activity (PHP)", "Period credit activity (PHP)"]],
     body: formattedRows,
     theme: "grid",
     styles: {
@@ -171,5 +222,5 @@ export const exportTrialBalanceToPdf = async (items: TrialBalanceItem[], context
     }
   });
 
-  doc.save(`Trial_Balance_${format(new Date(), "yyyyMMdd")}.pdf`);
+  doc.save(`Trial_Balance_${format(generatedAt, "yyyyMMdd")}.pdf`);
 };

@@ -111,8 +111,6 @@ const columns: ColumnDef<TrialBalanceDrillDownItem>[] = [
   },
 ];
 
-const MIN_LOADING_DELAY = 800;
-
 export function TrialBalanceDrillDown({
   account,
   onBack,
@@ -125,6 +123,9 @@ export function TrialBalanceDrillDown({
   const [isLoading, setIsLoading] = useState(true);
   const [isApplyingFilters, setIsApplyingFilters] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [hasLoadedLines, setHasLoadedLines] = useState(false);
+  const [failedDateRange, setFailedDateRange] = useState<{ startDate: string; endDate: string } | null>(null);
+  const [statusMessage, setStatusMessage] = useState("");
 
   // Draft States (Inputs)
   const [draftSearchQuery, setDraftSearchQuery] = useState("");
@@ -154,7 +155,7 @@ export function TrialBalanceDrillDown({
     for (const source of filters?.sourceModule ?? []) query.append("sourceModule", source);
 
     const url = `/api/fm/financial-statements/trial-balance/drill-down?${query.toString()}`;
-    const res = await fetch(url);
+    const res = await fetch(url, { cache: "no-store" });
 
     if (!res.ok) {
       throw new Error("Failed to fetch drill-down records.");
@@ -172,9 +173,14 @@ export function TrialBalanceDrillDown({
       try {
         const data = await fetchDrillDown(activeStartDate, activeEndDate);
         setLines(data);
+        setHasLoadedLines(true);
+        setFailedDateRange(null);
+        setStatusMessage(`Transaction details loaded. ${data.length} transactions.`);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Unknown error";
         setLoadError(message);
+        setFailedDateRange({ startDate: activeStartDate, endDate: activeEndDate });
+        setStatusMessage("Transaction details could not be loaded.");
         toast.error(`Error loading records: ${message}`);
         setLines([]);
       } finally {
@@ -220,38 +226,66 @@ export function TrialBalanceDrillDown({
   const reportScopeLabels = filters ? getTrialBalanceReportLabels(filters) : [];
 
   const handleApplyFilters = async () => {
-    setIsApplyingFilters(true);
-    const loadingToastId = toast.loading("Applying filters...");
-    toastIdRef.current = loadingToastId;
-
-    const startTime = Date.now();
     const datesChanged = draftStartDate !== activeStartDate || draftEndDate !== activeEndDate;
-
-    try {
-      if (datesChanged) {
-        // Dates changed — need to refetch from API
-        setLoadError(null);
-        const data = await fetchDrillDown(draftStartDate, draftEndDate);
-        setLines(data);
-        setActiveStartDate(draftStartDate);
-        setActiveEndDate(draftEndDate);
-      }
-
-      // Apply client-side filters
+    if (!datesChanged) {
       setActiveSearchQuery(draftSearchQuery);
       setActiveMinAmount(draftMinAmount);
+      setStatusMessage(`Filters applied. ${filteredLines.length} transactions shown.`);
+      toast.success("Filters applied successfully.");
+      return;
+    }
 
-      // Ensure minimum visual delay for the skeleton pulse
-      const elapsed = Date.now() - startTime;
-      if (elapsed < MIN_LOADING_DELAY) {
-        await new Promise(resolve => setTimeout(resolve, MIN_LOADING_DELAY - elapsed));
-      }
-
+    setIsApplyingFilters(true);
+    setStatusMessage("Refreshing transactions. Showing the last loaded results until the request completes.");
+    const loadingToastId = toast.loading("Refreshing transactions...");
+    toastIdRef.current = loadingToastId;
+    try {
+      const data = await fetchDrillDown(draftStartDate, draftEndDate);
+      setLines(data);
+      setLoadError(null);
+      setHasLoadedLines(true);
+      setFailedDateRange(null);
+      setActiveStartDate(draftStartDate);
+      setActiveEndDate(draftEndDate);
+      setActiveSearchQuery(draftSearchQuery);
+      setActiveMinAmount(draftMinAmount);
+      setStatusMessage(`Filters applied. ${data.length} transactions loaded before search and amount filters.`);
       toast.success("Filters applied successfully.", { id: loadingToastId });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      if (datesChanged) setLoadError(message);
-      toast.error(`Failed to apply filters: ${message}`, { id: loadingToastId });
+      setLoadError(message);
+      setFailedDateRange({ startDate: draftStartDate, endDate: draftEndDate });
+      setStatusMessage("Transaction refresh failed. The last loaded results remain visible.");
+      toast.error(`Failed to refresh transactions: ${message}`, { id: loadingToastId });
+    } finally {
+      setIsApplyingFilters(false);
+    }
+  };
+
+  const handleRetry = async () => {
+    const range = failedDateRange ?? { startDate: activeStartDate, endDate: activeEndDate };
+    setIsApplyingFilters(true);
+    setStatusMessage("Retrying transaction request. Showing the last loaded results until it completes.");
+    try {
+      const data = await fetchDrillDown(range.startDate, range.endDate);
+      setLines(data);
+      setLoadError(null);
+      setHasLoadedLines(true);
+      setFailedDateRange(null);
+      setActiveStartDate(range.startDate);
+      setActiveEndDate(range.endDate);
+      setDraftStartDate(range.startDate);
+      setDraftEndDate(range.endDate);
+      setActiveSearchQuery(draftSearchQuery);
+      setActiveMinAmount(draftMinAmount);
+      setStatusMessage(`Transaction request completed. ${data.length} transactions loaded before search and amount filters.`);
+      toast.success("Transaction details loaded.");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      setLoadError(message);
+      setFailedDateRange(range);
+      setStatusMessage("Transaction request failed. The last loaded results remain visible.");
+      toast.error(`Error loading records: ${message}`);
     } finally {
       setIsApplyingFilters(false);
     }
@@ -285,13 +319,18 @@ export function TrialBalanceDrillDown({
     const datesChanged = activeStartDate !== reportStartDate || activeEndDate !== reportEndDate;
     if (datesChanged || loadError) {
       setIsApplyingFilters(true);
-      setLoadError(null);
       try {
         const data = await fetchDrillDown(reportStartDate, reportEndDate);
         setLines(data);
+        setLoadError(null);
+        setHasLoadedLines(true);
+        setFailedDateRange(null);
+        setStatusMessage("Workspace filters reset to the report criteria.");
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Unknown error";
         setLoadError(message);
+        setFailedDateRange({ startDate: reportStartDate, endDate: reportEndDate });
+        setStatusMessage("Could not restore the report date range. The last loaded results remain visible.");
         toast.error(`Failed to restore report date range: ${message}`);
         setIsApplyingFilters(false);
         return;
@@ -307,9 +346,12 @@ export function TrialBalanceDrillDown({
     setActiveMinAmount("");
     setActiveStartDate(reportStartDate);
     setActiveEndDate(reportEndDate);
+    setLoadError(null);
+    setFailedDateRange(null);
+    setStatusMessage("Workspace filters reset.");
   };
 
-  const showSkeleton = isLoading || isApplyingFilters;
+  const showSkeleton = isLoading && !hasLoadedLines;
 
   return (
     <div className="flex min-h-0 w-full min-w-0 flex-col bg-background animate-in fade-in slide-in-from-right-4 duration-300">
@@ -349,15 +391,15 @@ export function TrialBalanceDrillDown({
             <p className="text-xs font-semibold text-muted-foreground">Filtered transaction total</p>
             <p className="mt-1 text-xs text-muted-foreground">After workspace date, search, and minimum amount filters</p>
             <div className="mt-2 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-              <p>Debit <span className="min-w-0 break-words font-mono font-semibold tabular-nums">{isLoading || isApplyingFilters ? "Loading…" : loadError ? "Unavailable" : formatTrialBalanceAmount(filteredTotals.debitCentavos / 100)}</span></p>
-              <p>Credit <span className="min-w-0 break-words font-mono font-semibold tabular-nums">{isLoading || isApplyingFilters ? "Loading…" : loadError ? "Unavailable" : formatTrialBalanceAmount(filteredTotals.creditCentavos / 100)}</span></p>
+              <p>Debit <span className="min-w-0 break-words font-mono font-semibold tabular-nums">{isLoading && !hasLoadedLines ? "Loading…" : loadError && !hasLoadedLines ? "Unavailable" : formatTrialBalanceAmount(filteredTotals.debitCentavos / 100)}</span></p>
+              <p>Credit <span className="min-w-0 break-words font-mono font-semibold tabular-nums">{isLoading && !hasLoadedLines ? "Loading…" : loadError && !hasLoadedLines ? "Unavailable" : formatTrialBalanceAmount(filteredTotals.creditCentavos / 100)}</span></p>
             </div>
-            {!isLoading && !isApplyingFilters && !loadError && (debitDifferenceCentavos !== 0 || creditDifferenceCentavos !== 0) && (
+            {hasLoadedLines && (debitDifferenceCentavos !== 0 || creditDifferenceCentavos !== 0) && (
               <p className="mt-2 text-xs text-muted-foreground">
                 Filtered minus report total: debit {formatTrialBalanceAmount(debitDifferenceCentavos / 100)}, credit {formatTrialBalanceAmount(creditDifferenceCentavos / 100)}.
               </p>
             )}
-            {!isLoading && !isApplyingFilters && !loadError && debitDifferenceCentavos === 0 && creditDifferenceCentavos === 0 && (
+            {hasLoadedLines && debitDifferenceCentavos === 0 && creditDifferenceCentavos === 0 && (
               <p className="mt-2 text-xs text-emerald-700">Matches the report account total.</p>
             )}
           </div>
@@ -398,7 +440,7 @@ export function TrialBalanceDrillDown({
                     className="h-9 min-w-0 pl-8 text-xs"
                     value={draftSearchQuery}
                     onChange={(e) => setDraftSearchQuery(e.target.value)}
-                    disabled={isApplyingFilters}
+                    disabled={isApplyingFilters || isLoading}
                   />
                 </div>
               </div>
@@ -415,7 +457,7 @@ export function TrialBalanceDrillDown({
                   className="h-9 min-w-0 text-xs"
                   value={draftMinAmount}
                   onChange={(e) => setDraftMinAmount(e.target.value)}
-                  disabled={isApplyingFilters}
+                  disabled={isApplyingFilters || isLoading}
                 />
                 <p id="min-amount-help" className="text-[10px] text-muted-foreground">
                   Uses the absolute debit or credit amount, including negative transactions.
@@ -434,7 +476,7 @@ export function TrialBalanceDrillDown({
                       className="h-8 w-full min-w-0 text-xs"
                       value={draftStartDate}
                       onChange={(e) => setDraftStartDate(e.target.value)}
-                      disabled={isApplyingFilters}
+                      disabled={isApplyingFilters || isLoading}
                     />
                   </div>
                   <div className="min-w-0">
@@ -446,7 +488,7 @@ export function TrialBalanceDrillDown({
                       className="h-8 w-full min-w-0 text-xs"
                       value={draftEndDate}
                       onChange={(e) => setDraftEndDate(e.target.value)}
-                      disabled={isApplyingFilters}
+                      disabled={isApplyingFilters || isLoading}
                     />
                   </div>
                 </div>
@@ -459,7 +501,7 @@ export function TrialBalanceDrillDown({
                   variant="default"
                   className="h-8 w-full justify-center gap-2 text-xs sm:w-auto"
                   onClick={handleApplyFilters}
-                  disabled={isApplyingFilters}
+                  disabled={isApplyingFilters || isLoading}
                 >
                   {isApplyingFilters ? (
                     <>
@@ -473,15 +515,15 @@ export function TrialBalanceDrillDown({
                     </>
                   )}
                 </Button>
-                <Button size="sm" variant="default" className="h-8 w-full justify-start gap-2 text-xs sm:w-auto" onClick={() => void handleReset()} disabled={isApplyingFilters}>
+                <Button size="sm" variant="default" className="h-8 w-full justify-start gap-2 text-xs sm:w-auto" onClick={() => void handleReset()} disabled={isApplyingFilters || isLoading}>
                   <RotateCcw className="h-3.5 w-3.5" />
                   Reset Workspace
                 </Button>
-                <Button size="sm" variant="default" className="h-8 w-full justify-start gap-2 text-xs sm:w-auto" onClick={handleExportExcel} disabled={isApplyingFilters}>
+                <Button size="sm" variant="default" className="h-8 w-full justify-start gap-2 text-xs sm:w-auto" onClick={handleExportExcel} disabled={isApplyingFilters || isLoading}>
                   <FileSpreadsheet className="h-3.5 w-3.5" />
                   Export Excel
                 </Button>
-                <Button size="sm" variant="default" className="h-8 w-full justify-start gap-2 text-xs sm:w-auto" onClick={handleExportCSV} disabled={isApplyingFilters}>
+                <Button size="sm" variant="default" className="h-8 w-full justify-start gap-2 text-xs sm:w-auto" onClick={handleExportCSV} disabled={isApplyingFilters || isLoading}>
                   <Download className="h-3.5 w-3.5" />
                   Export CSV
                 </Button>
@@ -491,19 +533,35 @@ export function TrialBalanceDrillDown({
         </Collapsible>
 
         <div className={`${styles.tableHost} w-full min-w-0 max-w-full`}>
-          {loadError && <p role="alert" className="mb-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">Transaction details could not be loaded for this scope: {loadError}</p>}
-          <DataTable 
-            columns={columns}
-            data={showSkeleton ? [] : filteredLines}
-            isLoading={showSkeleton}
-            emptyTitle="No records found"
-            emptyDescription="There are no transactions for this account in the selected date range."
-            actionComponent={
-              <Badge variant="outline" className="h-8 px-3 font-medium bg-background">
-                {showSkeleton ? "..." : filteredLines.length} Lines
-              </Badge>
-            }
-          />
+          <p role="status" aria-live="polite" className="mb-2 text-xs text-muted-foreground">
+            {isLoading ? "Loading transaction details." : isApplyingFilters ? "Refreshing transactions. Showing the last loaded results." : loadError ? "" : statusMessage}
+          </p>
+          {loadError && (
+            <div role="alert" className="mb-3 flex flex-col gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between">
+              <span>
+                Transaction details could not be loaded for this scope: {loadError}
+                {hasLoadedLines ? " The last loaded transactions remain visible." : " No transaction results are available yet."}
+              </span>
+              <Button type="button" size="sm" variant="outline" onClick={() => void handleRetry()} disabled={isApplyingFilters} className="shrink-0">
+                {isApplyingFilters ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
+                {isApplyingFilters ? "Working…" : "Retry"}
+              </Button>
+            </div>
+          )}
+          {(hasLoadedLines || isLoading) && (
+            <DataTable
+              columns={columns}
+              data={showSkeleton ? [] : filteredLines}
+              isLoading={showSkeleton}
+              emptyTitle="No records found"
+              emptyDescription="There are no transactions for this account in the selected date range."
+              actionComponent={
+                <Badge variant="outline" className="h-8 px-3 font-medium bg-background">
+                  {showSkeleton ? "..." : filteredLines.length} Lines
+                </Badge>
+              }
+            />
+          )}
         </div>
       </div>
     </div>

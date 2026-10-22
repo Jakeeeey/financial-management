@@ -165,7 +165,7 @@ export function TrialBalanceDetailView({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Badge variant="outline" className="h-8 px-3 font-medium">{data.length} Accounts</Badge>
+        <Badge variant="outline" className="h-8 px-3 font-medium">{isLoading ? "Loading accounts…" : `${data.length} Accounts`}</Badge>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" className="gap-2">
@@ -319,7 +319,7 @@ export function TrialBalanceDetailView({
 
       <div className="flex flex-wrap items-center justify-between gap-3 px-1 text-sm">
         <p className="text-muted-foreground" aria-live="polite">
-          {data.length === 0 ? "Showing 0 accounts" : `Showing ${pageStart + 1}–${pageEnd} of ${data.length} accounts`}
+          {isLoading ? "Loading accounts…" : data.length === 0 ? "Showing 0 accounts" : `Showing ${pageStart + 1}–${pageEnd} of ${data.length} accounts`}
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-muted-foreground">
