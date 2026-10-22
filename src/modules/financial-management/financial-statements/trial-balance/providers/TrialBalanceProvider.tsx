@@ -16,6 +16,7 @@ interface TrialBalanceContextType {
   items: TrialBalanceItem[];
   summary: TrialBalanceSummaryData;
   reportContext: TrialBalanceReportContext | null;
+  lastUpdatedAt: Date | null;
   draftFilters: TrialBalanceFilterState;
   setDraftFilters: React.Dispatch<React.SetStateAction<TrialBalanceFilterState>>;
   hasPendingChanges: boolean;
@@ -41,6 +42,7 @@ export function TrialBalanceProvider({ children }: { children: React.ReactNode }
   const [draftFilters, setDraftFilters] = React.useState(urlState.filters);
   const [report, setReport] = React.useState<{ items: TrialBalanceItem[]; context: TrialBalanceReportContext | null }>({ items: [], context: null });
   const { items, context: reportContext } = report;
+  const [lastUpdatedAt, setLastUpdatedAt] = React.useState<Date | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const requestGenerationRef = React.useRef(0);
@@ -77,6 +79,7 @@ export function TrialBalanceProvider({ children }: { children: React.ReactNode }
     setError(null);
     try {
       const response = await fetch(`/api/fm/financial-statements/trial-balance?${trialBalanceRequestQuery(context)}`, {
+        cache: "no-store",
         signal: controller.signal,
       });
       if (!response.ok) {
@@ -86,6 +89,7 @@ export function TrialBalanceProvider({ children }: { children: React.ReactNode }
       const data = await response.json();
       if (generation !== requestGenerationRef.current) return;
       setReport({ items: Array.isArray(data) ? data : [], context });
+      setLastUpdatedAt(new Date());
     } catch (failure: unknown) {
       if (controller.signal.aborted || generation !== requestGenerationRef.current) return;
       const message = failure instanceof Error ? failure.message : "Unknown error";
@@ -154,7 +158,7 @@ export function TrialBalanceProvider({ children }: { children: React.ReactNode }
 
   return (
     <TrialBalanceContext.Provider value={{
-      items, summary, reportContext, draftFilters, setDraftFilters, hasPendingChanges,
+      items, summary, reportContext, lastUpdatedAt, draftFilters, setDraftFilters, hasPendingChanges,
       isLoading, error, urlError: urlState.error, validationError, applyFilters, showAccountsNeedingReview, removeFilter, clearFilters,
       refresh: () => loadReport(parseTrialBalanceUrlState(new URLSearchParams(requestedKey)).filters),
     }}>

@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { ChevronRight } from "lucide-react";
 import type { TrialBalanceItem } from "../types/trial-balance.schema";
@@ -12,10 +13,36 @@ import { getTrialBalanceReviewLabel, getTrialBalanceReviewReason } from "../util
 export function TrialBalanceSummaryView({
   data,
   onAccountClick,
+  isLoading = false,
 }: {
   data: TrialBalanceItem[];
   onAccountClick: (account: TrialBalanceItem, trigger: HTMLButtonElement) => void;
+  isLoading?: boolean;
 }) {
+  if (isLoading) {
+    return (
+      <div aria-busy="true" className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <p role="status" aria-live="polite" className="sr-only">Loading trial balance accounts.</p>
+        {Array.from({ length: 6 }, (_, index) => (
+          <Card key={index}>
+            <CardHeader className="space-y-3">
+              <Skeleton className="h-5 w-3/4" />
+              <Skeleton className="h-4 w-24" />
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Skeleton className="ml-auto h-7 w-36" />
+              <Skeleton className="h-9 w-full" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
+  if (data.length === 0) {
+    return <p role="status" className="rounded-md border p-6 text-center text-sm text-muted-foreground">No accounts match the applied filters.</p>;
+  }
+
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
       {data.map(account => {

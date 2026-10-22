@@ -1,6 +1,7 @@
 "use client";
 
 import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, CheckCircle2, Info, ListFilter } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatTrialBalanceAmount } from "../utils/money";
@@ -45,7 +46,26 @@ function SummaryCard({ label, value, subLabel, type = "default", icon, monetary 
   );
 }
 
-export function TrialBalanceSummary({ summary }: { summary: TrialBalanceSummaryData }) {
+export function TrialBalanceSummary({ summary, isLoading = false }: { summary?: TrialBalanceSummaryData; isLoading?: boolean }) {
+  if (isLoading || !summary) {
+    return (
+      <section aria-label="Trial balance totals" aria-busy="true" className="mb-6 space-y-3">
+        <p role="status" aria-live="polite" className="sr-only">Loading trial balance totals.</p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }, (_, index) => (
+            <Card key={index}>
+              <CardContent className="space-y-3 p-4">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-7 w-40" />
+                <Skeleton className="h-3 w-28" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
   const canReconcile = summary.scope === "report" && summary.accountCount > 0;
 
   return (
