@@ -63,16 +63,12 @@ export async function GET(request: NextRequest) {
     // 2. Apply filtering (Search, Status, Division, etc.)
     const filteredEntries = filterJournalEntries(entries, filters);
 
-    // 3. Exclude adjusting journal entries from the main JE list
-    const isAJE = (e: typeof filteredEntries[number]) => e.jeNo?.startsWith("AJE-");
-    const regularEntries = filteredEntries.filter((e) => !isAJE(e));
-    
     // Optimization: if in flat mode, bypass expensive grouping and analytics
     if (mode === "flat") {
         let totalDebit = 0;
         let totalCredit = 0;
         
-        regularEntries.forEach(e => {
+        filteredEntries.forEach(e => {
             totalDebit += e.debit;
             totalCredit += e.credit;
         });
@@ -82,12 +78,12 @@ export async function GET(request: NextRequest) {
                 totalDebit,
                 totalCredit,
                 netBalance: Number((totalDebit - totalCredit).toFixed(2)),
-                count: regularEntries.length,
+                count: filteredEntries.length,
                 currentPage: 0,
-                pageSize: regularEntries.length,
+                pageSize: filteredEntries.length,
                 totalPages: 1
             },
-            data: regularEntries
+            data: filteredEntries
         });
     }
   } catch (error: unknown) {

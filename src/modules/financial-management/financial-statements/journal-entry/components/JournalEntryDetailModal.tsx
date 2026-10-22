@@ -5,6 +5,7 @@ import {
   Dialog, 
   DialogContent, 
   DialogTitle, 
+  DialogDescription,
   DialogClose,
 } from "@/components/ui/dialog";
 import { JournalEntryGroup } from "../types";
@@ -19,31 +20,20 @@ import {
   TableRow 
 } from "@/components/ui/table";
 import { format } from "date-fns";
-import { Clock, ShieldCheck, Printer, FileDown } from "lucide-react";
+import { ShieldCheck, Printer, FileDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { exportJournalToExcel, exportJournalToPdf } from "../services/export.service";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { adjustingJournalEntriesApi } from "../../adjusting-journal-entries/services/adjusting-journal-entries.api";
 import { AdjustingEntry } from "../../adjusting-journal-entries/types";
+import { JournalEntryAuditTrail } from "./JournalEntryAuditTrail";
 
 interface JournalEntryDetailModalProps {
   group: JournalEntryGroup | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onRestoreFocus: () => void;
-}
-
-// =============================================================================
-// MOCK DATA INTERFACES — Ready for real backend data integration
-// When the backend provides audit trail and drill-through data, replace the
-// mock generation below with props or fetched data. The UI will remain unchanged.
-// =============================================================================
-interface AuditEntry {
-  action: string;
-  user: string;
-  timestamp: Date;
-  note: string;
 }
 
 interface DrillThroughContext {
@@ -57,28 +47,37 @@ interface DrillThroughContext {
 // =============================================================================
 // MAIN COMPONENT
 // =============================================================================
-export default function JournalEntryDetailModal({ group, open, onOpenChange, onRestoreFocus }: JournalEntryDetailModalProps) {
+export default function JournalEntryDetailModal(props: JournalEntryDetailModalProps) {
+  return <JournalEntryDetailContent key={props.group?.jeNo ?? "closed"} {...props} />;
+}
+
+function JournalEntryDetailContent({ group, open, onOpenChange, onRestoreFocus }: JournalEntryDetailModalProps) {
   const [drillThrough, setDrillThrough] = React.useState<DrillThroughContext | null>(null);
-  const [isLoading, setIsLoading] = React.useState(false);
+  const [isLoading, setIsLoading] = React.useState(Boolean(open && group?.jeNo));
   const [linkedAjes, setLinkedAjes] = React.useState<AdjustingEntry[]>([]);
-  const [isLoadingAjes, setIsLoadingAjes] = React.useState(false);
+  const [isLoadingAjes, setIsLoadingAjes] = React.useState(Boolean(open && group?.jeNo));
+  const [linkedAjesError, setLinkedAjesError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (open && group?.jeNo) {
       let isMounted = true;
+      const controller = new AbortController();
+      setDrillThrough(null);
+      setLinkedAjes([]);
+      setLinkedAjesError(null);
       setIsLoading(true);
       setIsLoadingAjes(true);
       
       const fetchDrillDown = async () => {
         try {
-          const res = await fetch(`/api/fm/financial-statements/journal-entry/drill-down?jeNo=${group.jeNo}`);
+          const res = await fetch(`/api/fm/financial-statements/journal-entry/drill-down?jeNo=${encodeURIComponent(group.jeNo)}`, { signal: controller.signal });
           if (!res.ok) throw new Error("Failed to fetch drill-down context.");
           const data = await res.json();
           if (isMounted) {
             setDrillThrough(data);
           }
         } catch (err) {
-          console.error(err);
+          if (isMounted) console.error(err);
         } finally {
           if (isMounted) setIsLoading(false);
         }
@@ -86,17 +85,24 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange, onR
 
       const fetchLinkedAjes = async () => {
         try {
-          const res = await adjustingJournalEntriesApi.list({
-            page: 0,
-            pageSize: 50,
-            status: "Posted",
-            sourceJeNo: group.jeNo,
-          });
-          if (isMounted) {
-            setLinkedAjes(res.content ?? []);
+          const entries: AdjustingEntry[] = [];
+          let totalPages = 1;
+          for (let page = 0; page < totalPages; page += 1) {
+            const res = await adjustingJournalEntriesApi.list({
+              page,
+              pageSize: 50,
+              status: "Posted",
+              sourceJeNo: group.jeNo,
+            }, controller.signal);
+            entries.push(...res.content);
+            totalPages = res.totalPages;
           }
+          if (isMounted) setLinkedAjes(entries);
         } catch (err) {
-          console.error(err);
+          if (isMounted) {
+            console.error(err);
+            setLinkedAjesError("Linked adjustments are unavailable. Journal totals and exports include only this journal's lines.");
+          }
         } finally {
           if (isMounted) setIsLoadingAjes(false);
         }
@@ -105,7 +111,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange, onR
       fetchDrillDown();
       fetchLinkedAjes();
       
-      return () => { isMounted = false; };
+      return () => { isMounted = false; controller.abort(); };
     } else {
        setDrillThrough(null);
        setLinkedAjes([]);
@@ -116,9 +122,6 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange, onR
 
   const ajeTotalDebit = linkedAjes.reduce((sum, aje) => sum + aje.totalDebit, 0);
   const ajeTotalCredit = linkedAjes.reduce((sum, aje) => sum + aje.totalCredit, 0);
-
-  // Audit trail is empty for now, ready for real data integration
-  const auditTrail: AuditEntry[] = [];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -136,6 +139,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange, onR
           <DialogTitle className="min-w-0 break-words text-lg font-bold text-foreground sm:text-xl">
             Journal Entry Detail · <span className="font-mono text-muted-foreground">{group.jeNo}</span>
           </DialogTitle>
+          <DialogDescription className="sr-only">Review this journal&apos;s accounting lines, linked adjustment context, and available audit history.</DialogDescription>
           <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:flex-nowrap">
             <Button 
               variant="outline" 
@@ -144,7 +148,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange, onR
               onClick={() => {
                 try {
                   const dateStr = `Transaction Date: ${format(new Date(group.transactionDate), "MMMM d, yyyy")}`;
-                  exportJournalToPdf([group], dateStr, `Journal_Entry_${group.jeNo}.pdf`, linkedAjes);
+                  exportJournalToPdf([group], dateStr, `Journal_Entry_${group.jeNo}.pdf`);
                   toast.success("PDF exported successfully!");
                 } catch {
                   toast.error("Failed to export PDF");
@@ -159,7 +163,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange, onR
               onClick={() => {
                 try {
                   const dateStr = `Transaction Date: ${format(new Date(group.transactionDate), "MMMM d, yyyy")}`;
-                  exportJournalToExcel([group], dateStr, `Journal_Entry_${group.jeNo}.xlsx`, linkedAjes);
+                  exportJournalToExcel([group], dateStr, `Journal_Entry_${group.jeNo}.xlsx`);
                   toast.success("Excel exported successfully!");
                 } catch {
                   toast.error("Failed to export Excel");
@@ -184,13 +188,17 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange, onR
             <div className="flex flex-wrap gap-2">
               <ParamCard label="JE No." value={group.jeNo} loading={isLoading} />
               <StatusParamCard label="Status" value={group.status} loading={isLoading} />
-              <ParamCard label="Type" value={group.sourceModule.split(" ")[0] || "N/A"} loading={isLoading} />
+              <ParamCard label="Type" value={group.sourceModule || "N/A"} loading={isLoading} />
               <ParamCard label="Division" value={group.division || "N/A"} loading={isLoading} />
               <ParamCard label="Department" value={group.department || "N/A"} loading={isLoading} />
               <ParamCard label="Transaction Date" value={format(new Date(group.transactionDate), "yyyy-MM-dd")} loading={isLoading} />
-              <ParamCard label="Posting Date" value={group.postingDate ? format(new Date(group.postingDate), "yyyy-MM-dd") : "Not posted"} loading={isLoading} />
+              <ParamCard label="Posting Date" value={group.postingDate ? format(new Date(group.postingDate), "yyyy-MM-dd") : group.status.toLowerCase() === "posted" ? "Unavailable" : "Not posted"} loading={isLoading} />
               <ParamCard label="Creator" value={group.creator || "System"} loading={isLoading} />
             </div>
+
+            <p className="text-xs text-muted-foreground">
+              Journal totals and exports include only this journal&apos;s lines. Linked adjustments below show all dates for context and appear as separate journals when they match the report filters.
+            </p>
 
             {/* ── JOURNAL DETAILS AND CONTEXT ── */}
             <div className="grid min-w-0 grid-cols-1 items-start gap-6">
@@ -210,7 +218,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange, onR
                     <TableBody>
                       <TableRow className="bg-blue-50/60 hover:bg-blue-50/60 dark:bg-blue-950/20 dark:hover:bg-blue-950/20">
                         <TableCell colSpan={5} className="py-2 text-xs font-bold uppercase tracking-wide text-blue-800 dark:text-blue-200">
-                          Original Journal
+                          Journal lines
                         </TableCell>
                       </TableRow>
                       {isLoading ? (
@@ -255,7 +263,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange, onR
 
                       {!isLoading && (
                         <TableRow className="bg-blue-50/30 hover:bg-blue-50/30 dark:bg-blue-950/10 dark:hover:bg-blue-950/10">
-                          <TableCell colSpan={3} className="py-2.5 text-sm font-semibold text-foreground">Original journal subtotal</TableCell>
+                          <TableCell colSpan={3} className="py-2.5 text-sm font-semibold text-foreground">Journal subtotal</TableCell>
                           <TableCell className="py-2.5 text-right text-sm font-semibold tabular-nums whitespace-nowrap">{formatJournalAmount(group.totalDebit)}</TableCell>
                           <TableCell className="py-2.5 text-right text-sm font-semibold tabular-nums whitespace-nowrap">{formatJournalAmount(group.totalCredit)}</TableCell>
                         </TableRow>
@@ -263,7 +271,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange, onR
 
                       <TableRow className="bg-amber-50/60 hover:bg-amber-50/60 dark:bg-amber-950/20 dark:hover:bg-amber-950/20">
                         <TableCell colSpan={5} className="py-2 text-xs font-bold uppercase tracking-wide text-amber-800 dark:text-amber-200">
-                          Posted Adjustments
+                          Linked posted adjustments · All dates · Context only
                         </TableCell>
                       </TableRow>
                       {isLoadingAjes && (
@@ -276,6 +284,8 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange, onR
                           </TableCell>
                         </TableRow>
                       )}
+
+                      {linkedAjesError && <TableRow><TableCell colSpan={5}><p role="alert" className="py-2 text-sm text-destructive">{linkedAjesError}</p></TableCell></TableRow>}
 
                       {!isLoadingAjes && linkedAjes.map((aje) => (
                         <React.Fragment key={aje.id}>
@@ -318,7 +328,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange, onR
                         </React.Fragment>
                       ))}
 
-                      <TableRow className="bg-amber-50/30 hover:bg-amber-50/30 dark:bg-amber-950/10 dark:hover:bg-amber-950/10">
+                      {!linkedAjesError && <TableRow className="bg-amber-50/30 hover:bg-amber-50/30 dark:bg-amber-950/10 dark:hover:bg-amber-950/10">
                         <TableCell colSpan={3} className="py-2.5 text-sm font-semibold text-foreground">Posted adjustments subtotal</TableCell>
                         <TableCell className="py-2.5 text-right text-sm font-semibold tabular-nums whitespace-nowrap">
                           {isLoadingAjes ? <Skeleton className="ml-auto h-4 w-24" /> : formatJournalAmount(ajeTotalDebit)}
@@ -326,11 +336,11 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange, onR
                         <TableCell className="py-2.5 text-right text-sm font-semibold tabular-nums whitespace-nowrap">
                           {isLoadingAjes ? <Skeleton className="ml-auto h-4 w-24" /> : formatJournalAmount(ajeTotalCredit)}
                         </TableCell>
-                      </TableRow>
+                      </TableRow>}
 
                       {/* Combined Total */}
-                      <TableRow className="bg-muted/30 hover:bg-muted/30 border-t-2 border-border/80">
-                        <TableCell colSpan={3} className="py-3 text-sm font-black text-foreground">Combined total</TableCell>
+                      {!linkedAjesError && <TableRow className="bg-muted/30 hover:bg-muted/30 border-t-2 border-border/80">
+                        <TableCell colSpan={3} className="py-3 text-sm font-black text-foreground">Journal + linked adjustments (context only)</TableCell>
                         <TableCell className="py-3 text-right font-black text-sm tabular-nums whitespace-nowrap">
                           {isLoading || isLoadingAjes ? (
                             <Skeleton className="h-5 w-24 ml-auto" />
@@ -345,7 +355,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange, onR
                             formatJournalAmount(group.totalCredit + ajeTotalCredit)
                           )}
                         </TableCell>
-                      </TableRow>
+                      </TableRow>}
                     </TableBody>
                 </Table>
               </div>
@@ -353,7 +363,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange, onR
               <div className="space-y-4 lg:hidden">
                 <section className="overflow-hidden rounded-lg border border-border bg-background">
                   <div className="bg-blue-50/60 px-3 py-2 text-xs font-bold uppercase tracking-wide text-blue-800 dark:bg-blue-950/20 dark:text-blue-200">
-                    Original Journal
+                    Journal lines
                   </div>
                   <div className="space-y-2 p-3">
                     {isLoading ? (
@@ -378,7 +388,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange, onR
                     )}
                     {!isLoading && (
                       <MobileAmountSummary
-                        label="Original journal subtotal"
+                        label="Journal subtotal"
                         debit={group.totalDebit}
                         credit={group.totalCredit}
                       />
@@ -388,7 +398,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange, onR
 
                 <section className="overflow-hidden rounded-lg border border-border bg-background">
                   <div className="bg-amber-50/60 px-3 py-2 text-xs font-bold uppercase tracking-wide text-amber-800 dark:bg-amber-950/20 dark:text-amber-200">
-                    Posted Adjustments
+                    Linked posted adjustments · All dates · Context only
                   </div>
                   <div className="space-y-3 p-3">
                     {isLoadingAjes ? (
@@ -396,6 +406,8 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange, onR
                         <Skeleton className="h-4 w-4 rounded" />
                         <Skeleton className="h-4 w-40" />
                       </div>
+                    ) : linkedAjesError ? (
+                      <p role="alert" className="text-sm text-destructive">{linkedAjesError}</p>
                     ) : linkedAjes.length > 0 ? (
                       linkedAjes.map((aje) => (
                         <div key={aje.id} className="space-y-2">
@@ -426,22 +438,22 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange, onR
                         No posted adjustments.
                       </p>
                     )}
-                    <MobileAmountSummary
+                    {!linkedAjesError && <MobileAmountSummary
                       label="Posted adjustments subtotal"
                       debit={ajeTotalDebit}
                       credit={ajeTotalCredit}
                       loading={isLoadingAjes}
-                    />
+                    />}
                   </div>
                 </section>
 
-                <MobileAmountSummary
-                  label="Combined total"
+                {!linkedAjesError && <MobileAmountSummary
+                  label="Journal + linked adjustments (context only)"
                   debit={group.totalDebit + ajeTotalDebit}
                   credit={group.totalCredit + ajeTotalCredit}
                   loading={isLoading || isLoadingAjes}
                   emphasized
-                />
+                />}
               </div>
 
               {/* Drill-through context and audit trail */}
@@ -452,7 +464,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange, onR
                   <h3 className="text-sm font-bold text-foreground flex items-center gap-1.5 mb-3">
                     <ShieldCheck className="w-3.5 h-3.5 text-muted-foreground" /> Drill-through Context
                   </h3>
-                  {isLoading || !drillThrough ? (
+                  {isLoading ? (
                     <div className="space-y-3">
                       <div>
                         <Skeleton className="h-3 w-20 mb-1.5 rounded-sm" />
@@ -475,7 +487,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange, onR
                         <Skeleton className="h-4 w-12 rounded-sm" />
                       </div>
                     </div>
-                  ) : (
+                  ) : drillThrough ? (
                     <dl className="space-y-2.5 text-xs">
                       <ContextRow label="Source Module:" value={drillThrough.sourceModule || "N/A"} />
                       <ContextRow label="Source Report:" value={drillThrough.sourceReport || "N/A"} />
@@ -483,59 +495,10 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange, onR
                       <ContextRow label="Source Reference:" value={drillThrough.referenceLink || "N/A"} />
                       <ContextRow label="Posted Only View:" value={drillThrough.postedOnlyView || "N/A"} />
                     </dl>
-                  )}
+                  ) : <p role="status" className="text-xs text-muted-foreground">Journal context unavailable.</p>}
                 </div>
 
-                {/* Audit Trail */}
-                <div className="border border-border rounded-lg p-4 bg-background">
-                  <h3 className="text-sm font-bold text-foreground flex items-center gap-1.5 mb-3">
-                    <Clock className="w-3.5 h-3.5 text-muted-foreground" /> Audit Trail
-                  </h3>
-                  <div className="space-y-0">
-                    {auditTrail.length > 0 ? (
-                      auditTrail.map((audit, idx) => (
-                        <div key={idx} className="flex gap-3 relative">
-                          {/* Vertical line */}
-                          <div className="flex flex-col items-center pt-1.5">
-                            <div className={cn(
-                              "w-2 h-2 rounded-full shrink-0",
-                              audit.action === "Post" ? "bg-emerald-500" : "bg-muted-foreground/30"
-                            )} />
-                            {idx < auditTrail.length - 1 && (
-                              <div className="w-px flex-1 bg-border mt-1" />
-                            )}
-                          </div>
-
-                          {/* Content */}
-                          <div className="pb-4 flex-1 min-w-0">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className={cn(
-                                "text-xs font-bold uppercase px-1.5 py-0.5 rounded",
-                                audit.action === "Post"
-                                  ? "bg-emerald-50 max-dark:bg-emerald-900/30 text-emerald-700 max-dark:text-emerald-400"
-                                  : "bg-muted text-muted-foreground"
-                              )}>
-                                {audit.action}
-                              </span>
-                              <span className="text-xs text-muted-foreground whitespace-nowrap flex items-center gap-1">
-                                <Clock className="w-2.5 h-2.5" />
-                                {format(audit.timestamp, "yyyy-MM-dd HH:mm")}
-                              </span>
-                            </div>
-                            <p className="text-xs font-semibold text-foreground mt-1">{audit.user}</p>
-                            <p className="text-xs text-muted-foreground mt-0.5">{audit.note}</p>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="rounded-lg border border-dashed border-muted bg-muted/20 px-4 py-6 text-center">
-                        <Clock className="mx-auto mb-2 h-6 w-6 text-muted-foreground/40" />
-                        <p className="text-xs font-semibold text-foreground">Audit history unavailable</p>
-                        <p className="mt-1 text-xs text-muted-foreground">Audit events are not connected to this view.</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <JournalEntryAuditTrail journalNumber={group.sourceModule === "Adjusting Entry" || group.jeNo.toUpperCase().startsWith("AJE-") ? group.jeNo : null} open={open} />
               </div>
             </div>
           </div>

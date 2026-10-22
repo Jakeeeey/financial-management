@@ -3,7 +3,6 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { format } from "date-fns";
 import { JournalEntryGroup } from "../types";
-import type { AdjustingEntry } from "../../adjusting-journal-entries/types";
 import { formatJournalAmount } from "../utils/formatters";
 
 const COMPANY_NAME = "MEN2 MARKETING AND DISTRIBUTION ENTERPRISE CORPORATION";
@@ -17,7 +16,7 @@ type ExportRow = {
 };
 
 const roundMoney = (value: number) => Number(value.toFixed(2));
-const buildExportData = (groups: JournalEntryGroup[], ajeData: AdjustingEntry[] = []): ExportRow[] => {
+export const buildJournalExportData = (groups: JournalEntryGroup[]): ExportRow[] => {
   const rows: ExportRow[] = [];
   let totalDebit = 0;
   let totalCredit = 0;
@@ -35,7 +34,7 @@ const buildExportData = (groups: JournalEntryGroup[], ajeData: AdjustingEntry[] 
         kind: "detail",
         cells: [
           index === 0 ? formattedDate : "",
-          index === 0 ? group.sourceModule.split(" ")[0] : "",
+          index === 0 ? group.sourceModule : "",
           index === 0 ? group.jeNo : "",
           entry.accountTitle || "N/A",
           index === 0 ? group.description || "N/A" : `- ${entry.accountTitle || "N/A"} distribution`,
@@ -45,31 +44,6 @@ const buildExportData = (groups: JournalEntryGroup[], ajeData: AdjustingEntry[] 
         ],
       });
     });
-
-    ajeData
-      .filter((aje) => aje.sourceJeNo === group.jeNo)
-      .forEach((aje) => {
-        const ajeDate = aje.transactionDate ? format(new Date(aje.transactionDate), "yyyy-MM-dd") : "";
-
-        aje.details.forEach((line) => {
-          groupDebit += line.debit;
-          groupCredit += line.credit;
-
-          rows.push({
-            kind: "detail",
-            cells: [
-              ajeDate,
-              "Adjusting",
-              aje.jeNo || "",
-              line.accountTitle || "N/A",
-              aje.description || "Adjustment",
-              line.debit,
-              line.credit,
-              "",
-            ],
-          });
-        });
-      });
 
     const roundedDebit = roundMoney(groupDebit);
     const roundedCredit = roundMoney(groupCredit);
@@ -96,10 +70,9 @@ export const exportJournalToExcel = (
   groups: JournalEntryGroup[],
   dateRangeText: string,
   filename: string = "Journal_Entries.xlsx",
-  ajeData?: AdjustingEntry[],
   activeFilters?: string[]
 ) => {
-  const exportRows = buildExportData(groups, ajeData);
+  const exportRows = buildJournalExportData(groups);
   const filterRows = activeFilters === undefined
     ? []
     : activeFilters.length > 0
@@ -153,14 +126,13 @@ export const exportJournalToPdf = (
   groups: JournalEntryGroup[],
   dateRangeText: string,
   filename: string = "Journal_Entries.pdf",
-  ajeData?: AdjustingEntry[],
   activeFilters?: string[]
 ) => {
   const doc = new jsPDF("landscape");
-  const exportRows = buildExportData(groups, ajeData);
+  const exportRows = buildJournalExportData(groups);
   const filterSummary = activeFilters?.length ? activeFilters.join(" | ") : "None";
   const formattedRows = exportRows.map(({ cells }) =>
-    cells.map((cell, index) => (index >= 5 && typeof cell === "number" ? formatJournalAmount(cell) : cell))
+    cells.map((cell, index) => (index >= 5 && typeof cell === "number" ? formatJournalAmount(cell).replace("₱", "PHP ") : cell))
   );
 
   const pageWidth = doc.internal.pageSize.width;
@@ -200,14 +172,14 @@ export const exportJournalToPdf = (
       halign: "center",
     },
     columnStyles: {
-      0: { cellWidth: 20 },
-      1: { cellWidth: 15 },
-      2: { cellWidth: 35 },
+      0: { cellWidth: 24 },
+      1: { cellWidth: 23 },
+      2: { cellWidth: 33 },
       3: { cellWidth: 50 },
-      4: { cellWidth: 70 },
-      5: { halign: "right", cellWidth: 25 },
-      6: { halign: "right", cellWidth: 25 },
-      7: { halign: "right", cellWidth: 35 },
+      4: { cellWidth: 55 },
+      5: { halign: "right", cellWidth: 27 },
+      6: { halign: "right", cellWidth: 27 },
+      7: { halign: "right", cellWidth: 30 },
     },
     didParseCell(data) {
       const rowKind = exportRows[data.row.index]?.kind;

@@ -264,8 +264,8 @@ export const adjustingJournalEntriesApi = {
   async setPeriod(closedThroughDate: string | null, version: number, reason: string): Promise<AjePeriod> {
     return request<AjePeriod>("/controls/period", "PUT", { closedThroughDate, version, reason });
   },
-  async audit(params: URLSearchParams): Promise<AjeAuditPage> {
-    const page = await request<AjeAuditPage & { page?: { totalPages: number; totalElements: number } }>(`/audit?${params}`);
+  async audit(params: URLSearchParams, signal?: AbortSignal): Promise<AjeAuditPage> {
+    const page = await request<AjeAuditPage & { page?: { totalPages: number; totalElements: number } }>(`/audit?${params}`, "GET", undefined, signal);
     return { ...page, totalPages: page.totalPages ?? page.page?.totalPages ?? 0, totalElements: page.totalElements ?? page.page?.totalElements ?? 0, dayCounts: page.dayCounts ?? {} };
   },
   async auditUsers(): Promise<Array<{ id: number; name: string }>> { return request("/audit/users"); },
@@ -286,9 +286,9 @@ export const adjustingJournalEntriesApi = {
   },
 };
 
-async function request<T>(path: string, method = "GET", payload?: unknown): Promise<T> {
+async function request<T>(path: string, method = "GET", payload?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetchWithAuthRetry(BASE + path, {
-    method, cache: "no-store",
+    method, cache: "no-store", signal,
     ...(payload !== undefined ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) } : {}),
   });
   return parseResponse<T>(response, "Adjusting entry request failed");
