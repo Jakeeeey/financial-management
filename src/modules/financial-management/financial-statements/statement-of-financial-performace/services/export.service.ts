@@ -1,7 +1,9 @@
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { FinancialPerformanceResponse } from "../types";
+import { FinancialPerformanceComparisonStatus, FinancialPerformanceResponse } from "../types";
+import { alignFinancialPerformanceEntries } from "../utils/comparison-entries";
+import { formatFinancialPerformanceChange, getFinancialPerformanceChange } from "../utils/variances";
 
 const COMPANY_NAME = "MEN2 MARKETING AND DISTRIBUTION ENTERPRISE CORPORATION";
 const REPORT_TITLE = "STATEMENT OF FINANCIAL PERFORMANCE";
@@ -22,65 +24,53 @@ const formatNumberStr = (val: number | undefined, isNegativeFormat: boolean = fa
     return isNegative ? `-P${formatted}` : `P${formatted}`;
 };
 
-const getSectionTotal = (sourceData: FinancialPerformanceResponse | undefined, sectionName: string) => {
-    if (!sourceData || !sourceData.entries) return 0;
-    return sourceData.entries
-        .filter(e => e.reportSection === sectionName)
-        .reduce((acc, curr) => acc + curr.amount, 0);
-};
-
-const buildExportData = (
+export const buildFinancialPerformanceExportData = (
     data: FinancialPerformanceResponse, 
     includeComparison: boolean, 
-    comparisonLabel: string, 
-    taxRate: number
+    comparisonStatus: FinancialPerformanceComparisonStatus,
+    comparisonLabel: string
 ) => {
     const summary = data;
     const comparisonSummary = data.comparisonData;
+    const comparisonAvailable = includeComparison && comparisonStatus === "available" && !!comparisonSummary;
 
-    const rows: Array<{ label: string; current: number; past?: number; variance?: number; isIndented?: boolean; isHeader?: boolean; isNegativeFormat?: boolean }> = [];
+    const rows: Array<{ label: string; current: number; past?: number | string; variance?: number; isIndented?: boolean; isHeader?: boolean; isNegativeFormat?: boolean; currentZeroActivity?: boolean; priorZeroActivity?: boolean }> = [];
 
     const addRow = (
         label: string, 
         current: number | undefined, 
         past: number | undefined, 
-        options: { isIndented?: boolean; isHeader?: boolean; isNegativeFormat?: boolean } = {}
+        options: { isIndented?: boolean; isHeader?: boolean; isNegativeFormat?: boolean; currentZeroActivity?: boolean; priorZeroActivity?: boolean } = {}
     ) => {
         const c = current || 0;
-        const p = past || 0;
+        const p = past ?? 0;
         rows.push({
             label,
             current: c,
-            past: includeComparison ? p : undefined,
-            variance: includeComparison ? c - p : undefined,
+            past: includeComparison ? comparisonAvailable ? p : "Comparison unavailable" : undefined,
+            variance: comparisonAvailable ? getFinancialPerformanceChange(c, p, options.isNegativeFormat) : undefined,
             ...options
         });
     };
 
     const addEntries = (sectionKey: string, isNegativeFormat: boolean = false) => {
-        const filteredEntries = summary.entries.filter(e => e.reportSection === sectionKey);
-        filteredEntries.forEach(entry => {
-            const compEntry = comparisonSummary?.entries.find(c => c.accountTitle === entry.accountTitle);
+        const alignedEntries = alignFinancialPerformanceEntries(
+            summary.entries,
+            comparisonAvailable ? comparisonSummary?.entries ?? [] : [],
+        ).filter(({ current, comparison }) => (current ?? comparison)?.reportSection === sectionKey);
+        alignedEntries.forEach(({ current, comparison }) => {
+            const entry = current ?? comparison!;
             addRow(
-                sectionKey === "Contra Revenue" ? `Less: ${entry.accountTitle}` : entry.accountTitle,
-                entry.amount,
-                compEntry?.amount,
-                { isIndented: true, isNegativeFormat }
+                entry.accountTitle,
+                current?.amount ?? 0,
+                comparison?.amount ?? 0,
+                { isIndented: true, isNegativeFormat, currentZeroActivity: !current, priorZeroActivity: !comparison }
             );
         });
     };
 
     // SALES
-    addRow("Gross Sales", summary.totalRevenue, comparisonSummary?.totalRevenue, { isHeader: true });
-    addEntries("Contra Revenue", true);
-    
-    const currTotalDeductions = getSectionTotal(summary, "Contra Revenue");
-    const pastTotalDeductions = getSectionTotal(comparisonSummary, "Contra Revenue");
-    addRow("Total Deductions", currTotalDeductions, pastTotalDeductions, { isHeader: true, isNegativeFormat: true });
-
-    const currNetSales = summary.totalRevenue - Math.abs(currTotalDeductions);
-    const pastNetSales = comparisonSummary ? comparisonSummary.totalRevenue - Math.abs(pastTotalDeductions) : undefined;
-    addRow("Net Sales", currNetSales, pastNetSales, { isHeader: true });
+    addRow("Sales activity (credit less debit)", summary.totalRevenue, comparisonSummary?.totalRevenue, { isHeader: true });
 
     // COGS
     addRow("Cost of Goods Sold", summary.totalCostOfSales, comparisonSummary?.totalCostOfSales, { isHeader: true });
@@ -105,14 +95,14 @@ const buildExportData = (
 
     // NET INCOME BEFORE TAX
     addRow("Income Before Tax", summary.incomeBeforeTax, comparisonSummary?.incomeBeforeTax, { isHeader: true });
-    addRow(`Tax (${taxRate}%)`, summary.incomeTaxExpense, comparisonSummary?.incomeTaxExpense, { isIndented: true, isNegativeFormat: true });
+    addRow(`Estimated income tax (${(summary.taxRateUsed * 100).toFixed(2)}% of positive pre-tax income)`, summary.incomeTaxExpense, comparisonSummary?.incomeTaxExpense, { isIndented: true, isNegativeFormat: true });
 
     // NET INCOME
     addRow("Net Income", summary.netIncome, comparisonSummary?.netIncome, { isHeader: true });
 
     // Convert structured rows to array data formatted for tables
     const headers = includeComparison 
-        ? ["Particulars", "Current", comparisonLabel, "Variance"]
+        ? ["Particulars", "Current", comparisonLabel, "Change (current minus comparison)"]
         : ["Particulars", "Current"];
 
     const tableRows = rows.map(r => {
@@ -124,8 +114,8 @@ const buildExportData = (
         ];
         
         if (includeComparison) {
-            rowData.push(r.past as number);
-            rowData.push(r.variance as number);
+            rowData.push(r.past ?? "Comparison unavailable");
+            rowData.push(r.variance ?? "");
         }
         
         return {
@@ -137,35 +127,49 @@ const buildExportData = (
     return { headers, tableRows };
 };
 
+function formatExportCell(
+    cell: string | number,
+    row: { isNegativeFormat?: boolean; currentZeroActivity?: boolean; priorZeroActivity?: boolean },
+    columnIndex: number,
+): string | number {
+    if (typeof cell !== "number" || columnIndex === 0) return cell;
+    if (columnIndex === 3) {
+        return formatFinancialPerformanceChange(cell, amount => formatNumberStr(amount));
+    }
+    const zeroActivity = columnIndex === 1 ? row.currentZeroActivity : columnIndex === 2 ? row.priorZeroActivity : false;
+    return `${formatNumberStr(cell, row.isNegativeFormat)}${zeroActivity ? " (Zero activity)" : ""}`;
+}
+
+function formatExcelCell(
+    cell: string | number,
+    row: { isNegativeFormat?: boolean; currentZeroActivity?: boolean; priorZeroActivity?: boolean },
+    columnIndex: number,
+): string | number {
+    if (columnIndex === 3 && typeof cell === "number") return cell;
+    return formatExportCell(cell, row, columnIndex);
+}
+
 export const exportToExcel = (
     data: FinancialPerformanceResponse | null, 
     dateRangeText: string, 
     includeComparison: boolean, 
+    comparisonStatus: FinancialPerformanceComparisonStatus,
     comparisonLabel: string, 
-    taxRate: number, 
     filename: string = "Statement_Of_Financial_Performance.xlsx"
 ) => {
     if (!data) return;
     
-    const { headers, tableRows } = buildExportData(data, includeComparison, comparisonLabel, taxRate);
+    const { headers, tableRows } = buildFinancialPerformanceExportData(data, includeComparison, comparisonStatus, comparisonLabel);
 
     // Prepare rows for Excel
-    const dataRows = tableRows.map(tr => tr.raw.map((cell, idx) => {
-        if (idx > 0 && typeof cell === "number") {
-             // For excel, returning actual number so Excel handles it properly, 
-             // but if they want the parens, we could format it here.
-             // Best to use raw numbers for excel, and let the user format or we format strictly.
-             // We will apply strict string format for consistency with UI.
-             return formatNumberStr(cell, tr.meta.isNegativeFormat);
-        }
-        return cell;
-    }));
+    const dataRows = tableRows.map(tr => tr.raw.map((cell, idx) => formatExcelCell(cell, tr.meta, idx)));
+    const exportBasis = includeComparison && (comparisonStatus !== "available" || !data.comparisonData) ? `${BASIS} · Comparison unavailable` : BASIS;
 
     const worksheetData = [
         [COMPANY_NAME],
         [REPORT_TITLE],
         [dateRangeText],
-        [BASIS],
+        [exportBasis],
         [],
         headers,
         ...dataRows,
@@ -173,6 +177,13 @@ export const exportToExcel = (
 
     const ws = XLSX.utils.aoa_to_sheet(worksheetData);
     const colCount = headers.length;
+
+    if (includeComparison && colCount > 3) {
+        for (let rowIndex = 6; rowIndex < worksheetData.length; rowIndex += 1) {
+            const cell = ws[XLSX.utils.encode_cell({ r: rowIndex, c: 3 })];
+            if (cell?.t === "n") cell.z = "₱#,##0.00;-₱#,##0.00;₱0.00";
+        }
+    }
 
     // Merge headers
     ws["!merges"] = [
@@ -199,25 +210,19 @@ export const exportToPdf = (
     data: FinancialPerformanceResponse | null, 
     dateRangeText: string, 
     includeComparison: boolean, 
+    comparisonStatus: FinancialPerformanceComparisonStatus,
     comparisonLabel: string, 
-    taxRate: number, 
     filename: string = "Statement_Of_Financial_Performance.pdf"
 ) => {
     if (!data) return;
 
     // Switch to Portrait to maximize vertical space and fit the columns better
     const doc = new jsPDF("p", "mm", "a4");
-    const { headers, tableRows } = buildExportData(data, includeComparison, comparisonLabel, taxRate);
+    const { headers, tableRows } = buildFinancialPerformanceExportData(data, includeComparison, comparisonStatus, comparisonLabel);
 
     // Format numbers for PDF display
-    const formattedRows = tableRows.map(tr => 
-        tr.raw.map((cell, idx) => {
-            if (idx > 0 && typeof cell === "number") {
-               return formatNumberStr(cell, tr.meta.isNegativeFormat);
-            }
-            return cell;
-        })
-    );
+    const formattedRows = tableRows.map(tr => tr.raw.map((cell, idx) => formatExportCell(cell, tr.meta, idx)));
+    const exportBasis = includeComparison && (comparisonStatus !== "available" || !data.comparisonData) ? `${BASIS} · Comparison unavailable` : BASIS;
 
     // Centered Header Text
     const pageWidth = doc.internal.pageSize.width;
@@ -231,7 +236,7 @@ export const exportToPdf = (
     doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
     doc.text(dateRangeText, pageWidth / 2, 26, { align: "center" });
-    doc.text(BASIS, pageWidth / 2, 32, { align: "center" });
+    doc.text(exportBasis, pageWidth / 2, 32, { align: "center" });
 
     // Setup column styles dynamically - remove fixed cellWidth to allow full-width stretching
     const colStyles: { [key: number]: { halign: "left" | "center" | "right" } } = {

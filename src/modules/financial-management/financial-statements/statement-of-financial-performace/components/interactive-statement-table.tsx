@@ -2,8 +2,9 @@
 
 import { Fragment, useState } from "react";
 import { useFinancialPerformance } from "../hooks/useFinancialPerformance";
-import { FinancialPerformanceEntry, FinancialPerformanceResponse } from "../types";
+import { FinancialPerformanceEntry } from "../types";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -18,14 +19,22 @@ import {
 import { ChevronRight, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatFinancialPerformanceDateRange, getFinancialPerformanceComparisonLabel } from "../utils/periods";
+import { alignFinancialPerformanceEntries } from "../utils/comparison-entries";
+import { formatFinancialPerformanceChange, getDisplayedFinancialPerformanceAmount, getFinancialPerformanceChange } from "../utils/variances";
+import { FinancialPerformanceTransactionsDialog } from "./financial-performance-transactions-dialog";
+
+const formatCurrency = (amount: number) => new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+}).format(amount);
 
 // Format helper
 const formatAccAmount = (amount?: number, isNegativeFormat: boolean = false) => {
     if (amount === undefined) return "₱0.00";
-    
-    // For specific deduction rows, we might want to display them as negative
-    // even if the backend returns them as positive (or vice-versa) based on isNegativeFormat
-    const displayAmount = isNegativeFormat ? -Math.abs(amount) : amount;
+
+    const displayAmount = getDisplayedFinancialPerformanceAmount(amount, isNegativeFormat);
     
     const isNegative = displayAmount < 0;
     const absValue = Math.abs(displayAmount);
@@ -39,34 +48,15 @@ const formatAccAmount = (amount?: number, isNegativeFormat: boolean = false) => 
     return isNegative ? `-${formatted}` : formatted;
 };
 
-// Simple variance format
 const formatVarianceAmount = (variance: number) => {
-    const isNegative = variance < 0;
-    const isNeutral = variance === 0;
-    
-    const formatter = new Intl.NumberFormat("en-PH", {
-        style: "currency",
-        currency: "PHP",
-    });
-    
-    const formatted = formatter.format(Math.abs(variance));
-    
-    if (isNeutral) return { elem: <span className="text-muted-foreground">{formatted}</span> };
-    
-    if (isNegative) {
-        return { 
-            elem: <span className="text-destructive font-bold flex items-center gap-1 justify-end">▼ {formatted}</span> 
-        };
-    }
-    
-    return { 
-        elem: <span className="text-success font-bold flex items-center gap-1 justify-end">▲ {formatted}</span> 
-    };
+    const label = formatFinancialPerformanceChange(variance, formatCurrency);
+    return <span className="text-muted-foreground font-medium">{label}</span>;
 };
 
 export function InteractiveStatementTable() {
-    const { data, appliedCriteria, isLoading, isInitialLoad, filters, updateFilters } = useFinancialPerformance();
-    const [activeTab, setActiveTab] = useState("summary");
+    const { data, appliedCriteria, comparisonStatus, retryComparison, isLoading, isInitialLoad, filters, updateFilters } = useFinancialPerformance();
+    const [activeTab, setActiveTab] = useState("statement");
+    const [selectedTransactionAccount, setSelectedTransactionAccount] = useState<FinancialPerformanceEntry | null>(null);
 
     const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
         cogs: false,
@@ -113,7 +103,22 @@ export function InteractiveStatementTable() {
 
     const summary = data;
     const comparisonSummary = data.comparisonData;
-    const includeComparison = appliedCriteria.includeComparison && !!comparisonSummary;
+    const includeComparison = appliedCriteria.includeComparison;
+    const comparisonAvailable = includeComparison && comparisonStatus === "available" && !!comparisonSummary;
+    const comparisonState = !includeComparison
+        ? "not-requested"
+        : comparisonAvailable
+            ? "available"
+            : comparisonStatus === "loading"
+                ? "loading"
+                : "unavailable";
+    const netIncomeChange = comparisonAvailable
+        ? getFinancialPerformanceChange(summary.netIncome, comparisonSummary?.netIncome)
+        : undefined;
+    const alignedEntries = alignFinancialPerformanceEntries(data.entries, comparisonSummary?.entries ?? []);
+    const getSectionEntries = (sectionName: string) => alignedEntries.filter(({ current, comparison }) =>
+        (current ?? comparison)?.reportSection === sectionName
+    );
     const normalizedSearchQuery = filters.searchQuery.trim().toLowerCase();
     const filteredDetailEntries = data.entries.filter((entry: FinancialPerformanceEntry) => {
         if (!normalizedSearchQuery) return true;
@@ -126,14 +131,6 @@ export function InteractiveStatementTable() {
             entry.department,
         ].some(value => (value ?? "").toLowerCase().includes(normalizedSearchQuery));
     });
-
-    // Helper to get total of a specific section in entries
-    const getSectionTotal = (sourceData: FinancialPerformanceResponse | undefined, sectionName: string) => {
-        if (!sourceData || !sourceData.entries) return undefined;
-        return sourceData.entries
-            .filter(e => e.reportSection === sectionName)
-            .reduce((acc, curr) => acc + curr.amount, 0);
-    };
 
     // ----- SUMMARY VIEW RENDERER -----
     const renderSummaryRow = ({
@@ -148,6 +145,8 @@ export function InteractiveStatementTable() {
         hasBorderBottom = false,
         expandable = false,
         sectionKey = "",
+        currentZeroActivity = false,
+        priorZeroActivity = false,
     }: {
         label: React.ReactNode;
         currentValue?: number;
@@ -160,28 +159,50 @@ export function InteractiveStatementTable() {
         hasBorderBottom?: boolean;
         expandable?: boolean;
         sectionKey?: string;
+        currentZeroActivity?: boolean;
+        priorZeroActivity?: boolean;
     }) => {
-        const variance = currentValue !== undefined && priorValue !== undefined ? currentValue - priorValue : undefined;
+        const variance = comparisonAvailable
+            ? getFinancialPerformanceChange(currentValue, priorValue, isNegativeFormat)
+            : undefined;
+        const sectionExpanded = expandedSections[sectionKey] ?? false;
+        const sectionName = typeof label === "string" ? label : "this section";
         
         return (
             <TableRow className={cn("hover:bg-muted/30 transition-colors border-0", {
+                "bg-muted/20": expandable,
                 "border-t border-border": hasBorderTop,
                 "border-b-2 border-foreground": hasBorderBottom && isBold,
                 "border-b border-border": hasBorderBottom && !isBold,
             })}>
                 <TableCell className={cn("py-3 px-4 font-medium", {
+                    "sticky left-0 z-10 bg-muted/20 shadow-[4px_0_8px_-6px_rgba(0,0,0,0.35)]": expandable,
+                    "sticky left-0 z-10 bg-card shadow-[4px_0_8px_-6px_rgba(0,0,0,0.25)]": !expandable,
                     "font-bold text-foreground": isBold,
                     "text-muted-foreground": !isBold,
                     "pl-12": isIndented,
                     "pl-20 text-xs": isDoubleIndented,
-                    "cursor-pointer hover:text-foreground transition-colors": expandable
-                })} onClick={expandable ? () => toggleSection(sectionKey) : undefined}>
-                    <div className="flex items-center gap-2">
-                        {label}
+                })}>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span>{label}</span>
                         {expandable && (
-                            expandedSections[sectionKey] ? 
-                            <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" /> : 
-                            <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+                            <>
+                                <span className="rounded border border-border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Subtotal</span>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    aria-expanded={sectionExpanded}
+                                    aria-label={`${sectionExpanded ? "Hide" : "Show"} accounts for ${sectionName}`}
+                                    onClick={() => toggleSection(sectionKey)}
+                                    className="h-7 gap-1 px-2 text-xs focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                >
+                                    {sectionExpanded
+                                        ? <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+                                        : <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />}
+                                    {sectionExpanded ? "Hide accounts" : "Show accounts"}
+                                </Button>
+                            </>
                         )}
                     </div>
                 </TableCell>
@@ -190,6 +211,7 @@ export function InteractiveStatementTable() {
                     "font-medium": !isBold,
                 })}>
                     {formatAccAmount(currentValue, isNegativeFormat)}
+                    {currentZeroActivity && <span className="mt-0.5 block text-[10px] font-normal text-muted-foreground">Zero activity</span>}
                 </TableCell>
                 {includeComparison && (
                     <>
@@ -197,10 +219,13 @@ export function InteractiveStatementTable() {
                             "font-bold": isBold,
                             "font-medium": !isBold,
                         })}>
-                            {formatAccAmount(priorValue, isNegativeFormat)}
+                            {comparisonState === "available" ? <>
+                                {formatAccAmount(priorValue, isNegativeFormat)}
+                                {priorZeroActivity && <span className="mt-0.5 block text-[10px] font-normal text-muted-foreground">Zero activity</span>}
+                            </> : <span className="text-xs font-normal">{comparisonState === "loading" ? "Loading comparison…" : "Comparison unavailable"}</span>}
                         </TableCell>
                         <TableCell className="py-3 px-4 text-right tabular-nums">
-                            {variance !== undefined ? formatVarianceAmount(variance).elem : "-"}
+                            {variance !== undefined ? formatVarianceAmount(variance) : "—"}
                         </TableCell>
                     </>
                 )}
@@ -221,18 +246,33 @@ export function InteractiveStatementTable() {
         return (
             <>
                 <TableRow className="bg-muted hover:bg-muted">
-                    <TableCell colSpan={5} className="py-2 px-4 font-bold text-foreground text-xs uppercase tracking-wider">
+                    <TableCell colSpan={6} className="py-2 px-4 font-bold text-foreground text-xs uppercase tracking-wider">
                         {typeLabel}
                     </TableCell>
                 </TableRow>
                 {filteredEntries.map((entry: FinancialPerformanceEntry, idx: number) => (
-                    <TableRow key={`${entry.glCode}-${idx}`} className="border-0 hover:bg-muted/30">
-                        <TableCell className="py-3 px-4 text-muted-foreground font-medium">{entry.reportSection}</TableCell>
-                        <TableCell className="py-3 px-4 font-bold text-foreground">{entry.accountTitle}</TableCell>
+                    <TableRow key={`${entry.coaId}-${entry.glCode}-${entry.division}-${entry.department}-${idx}`} className="border-0 hover:bg-muted/30">
+                        <TableCell className="sticky left-0 z-10 w-[160px] min-w-[160px] bg-card py-3 px-4 text-muted-foreground font-medium shadow-[4px_0_8px_-6px_rgba(0,0,0,0.25)]">{entry.reportSection}</TableCell>
+                        <TableCell className="sticky left-[160px] z-10 w-[280px] min-w-[280px] bg-card py-3 px-4 font-bold text-foreground shadow-[4px_0_8px_-6px_rgba(0,0,0,0.35)]">
+                            <span className="block">{entry.accountTitle}</span>
+                            <span className="mt-0.5 block text-xs font-medium text-muted-foreground">GL code: {entry.glCode || "Unavailable"}</span>
+                        </TableCell>
                         <TableCell className="py-3 px-4 text-muted-foreground">{entry.division || "-"}</TableCell>
                         <TableCell className="py-3 px-4 text-muted-foreground">{entry.department || "-"}</TableCell>
                         <TableCell className="py-3 px-4 text-right tabular-nums font-medium">
                             {formatAccAmount(entry.amount, entry.amount < 0)}
+                        </TableCell>
+                        <TableCell className="py-3 px-4">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={entry.coaId == null}
+                                aria-label={`View transactions for ${entry.glCode || entry.accountTitle}`}
+                                onClick={() => setSelectedTransactionAccount(entry)}
+                            >
+                                View transactions
+                            </Button>
                         </TableCell>
                     </TableRow>
                 ))}
@@ -248,27 +288,38 @@ export function InteractiveStatementTable() {
                 {includeComparison && (
                     <p><span className="font-medium">Comparison period:</span> {formatFinancialPerformanceDateRange(appliedCriteria.comparisonStartDate, appliedCriteria.comparisonEndDate)}</p>
                 )}
-                {isLoading && <p role="status" aria-live="polite" className="text-xs text-muted-foreground">Generating report; showing the last successful results.</p>}
+                <p><span className="font-medium">Sales activity:</span> Credit less debit from included sales accounts.</p>
+                <p><span className="font-medium">Income tax estimate:</span> Calculated at {(summary.taxRateUsed * 100).toFixed(2)}% when income before tax is positive.</p>
+                {includeComparison && comparisonState === "loading" && <p role="status" aria-live="polite" className="text-xs text-muted-foreground">Loading comparison data…</p>}
+                {includeComparison && comparisonState === "unavailable" && (
+                    <div role="alert" className="flex flex-wrap items-center gap-2 text-xs text-destructive">
+                        <span>Comparison unavailable. Variances are withheld; current-period results remain available.</span>
+                        <Button type="button" variant="outline" size="sm" disabled={isLoading} onClick={() => void retryComparison()} className="h-7">
+                            Retry comparison
+                        </Button>
+                    </div>
+                )}
+                {isLoading && comparisonState !== "loading" && <p role="status" aria-live="polite" className="text-xs text-muted-foreground">Generating report; showing the last successful results.</p>}
             </div>
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full min-w-0">
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-muted p-1 rounded-full w-full sm:w-fit mb-6 shadow-inner">
                     <TabsList className="bg-transparent h-10 p-0 shadow-none border-0 w-full sm:w-auto">
                         <TabsTrigger 
-                            value="summary" 
+                            value="statement"
                             className="rounded-full px-6 data-[state=active]:bg-zinc-950 data-[state=active]:text-zinc-50 data-[state=active]:shadow-md transition-all font-bold text-xs"
                         >
-                            Summary View
+                            Statement
                         </TabsTrigger>
                         <TabsTrigger 
-                            value="detail" 
+                            value="account-breakdown"
                             className="rounded-full px-6 data-[state=active]:bg-zinc-950 data-[state=active]:text-zinc-50 data-[state=active]:shadow-md transition-all font-bold text-xs"
                         >
-                            Detail View
+                            Account breakdown
                         </TabsTrigger>
                     </TabsList>
                 </div>
 
-                <TabsContent value="summary" className="m-0 mt-0">
+                <TabsContent value="statement" className="m-0 mt-0">
                     <Card className="min-w-0 max-w-full overflow-hidden border-border bg-card shadow-sm">
                         <div className="p-5 sm:p-6 lg:p-8 bg-card border-b border-border">
                             <h2 className="text-xl font-bold tracking-tight text-foreground">Statement of Financial Performance</h2>
@@ -278,48 +329,19 @@ export function InteractiveStatementTable() {
                             <Table className="min-w-[800px] w-full text-sm">
                                 <TableHeader className="bg-background sticky top-0 z-10 border-b border-border shadow-sm">
                                     <TableRow className="hover:bg-background border-0">
-                                        <TableHead className="py-4 px-4 font-bold text-muted-foreground w-[40%]">Particulars</TableHead>
+                                        <TableHead className="sticky left-0 z-30 bg-background py-4 px-4 font-bold text-muted-foreground w-[40%] shadow-[4px_0_8px_-6px_rgba(0,0,0,0.35)]">Particulars</TableHead>
                                         <TableHead className="py-4 px-4 font-bold text-foreground text-right w-[20%]">Current</TableHead>
                                         {includeComparison && (
                                             <>
                                                 <TableHead className="py-4 px-4 font-bold text-muted-foreground text-right w-[20%]">{getComparisonLabel()}</TableHead>
-                                                <TableHead className="py-4 px-4 font-bold text-muted-foreground text-right w-[20%]">Variance</TableHead>
+                                                <TableHead className="py-4 px-4 font-bold text-muted-foreground text-right w-[20%]">Change (current minus comparison)</TableHead>
                                             </>
                                         )}
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody className="bg-card">
                                     {/* --- SALES --- */}
-                                    {renderSummaryRow({ label: "Gross Sales", currentValue: summary.totalRevenue, priorValue: comparisonSummary?.totalRevenue, isBold: true, hasBorderTop: false })}
-                                    
-                                    {data.entries.filter((e: FinancialPerformanceEntry) => e.reportSection === "Contra Revenue").map((entry: FinancialPerformanceEntry, idx: number) => {
-                                        const compEntry = comparisonSummary?.entries.find((c: FinancialPerformanceEntry) => c.accountTitle === entry.accountTitle);
-                                        return (
-                                            <Fragment key={`sales-${entry.glCode}-${idx}`}>
-                                                {renderSummaryRow({
-                                                    label: `Less: ${entry.accountTitle}`, 
-                                                    currentValue: entry.amount, 
-                                                    priorValue: compEntry?.amount, 
-                                                    isIndented: true, 
-                                                    isNegativeFormat: true 
-                                                })}
-                                            </Fragment>
-                                        );
-                                    })}
-
-                                    {renderSummaryRow({
-                                        label: "Total Deductions", 
-                                        currentValue: getSectionTotal(summary, "Contra Revenue"), 
-                                        priorValue: getSectionTotal(comparisonSummary, "Contra Revenue"), 
-                                        isBold: true, hasBorderTop: true, isNegativeFormat: true 
-                                    })}
-                                    
-                                    {renderSummaryRow({
-                                        label: "Net Sales", 
-                                        currentValue: summary.totalRevenue - Math.abs(getSectionTotal(summary, "Contra Revenue") || 0),
-                                        priorValue: comparisonSummary ? comparisonSummary.totalRevenue - Math.abs(getSectionTotal(comparisonSummary, "Contra Revenue") || 0) : undefined,
-                                        isBold: true, hasBorderTop: true, hasBorderBottom: true 
-                                    })}
+                                    {renderSummaryRow({ label: "Sales activity (credit less debit)", currentValue: summary.totalRevenue, priorValue: comparisonSummary?.totalRevenue, isBold: true, hasBorderTop: false })}
                                     
                                     {/* --- COGS --- */}
                                     {renderSummaryRow({
@@ -332,15 +354,17 @@ export function InteractiveStatementTable() {
                                     })}
                                     {expandedSections.cogs && (
                                         <>
-                                            {data.entries.filter((e: FinancialPerformanceEntry) => e.reportSection === "Purchases / Cost of Sales").map((entry: FinancialPerformanceEntry, idx: number) => {
-                                                const compEntry = comparisonSummary?.entries.find((c: FinancialPerformanceEntry) => c.accountTitle === entry.accountTitle);
+                                            {getSectionEntries("Purchases / Cost of Sales").map(({ key, current, comparison }) => {
+                                                const entry = current ?? comparison!;
                                                 return (
-                                                    <Fragment key={`cogs-${entry.glCode}-${idx}`}>
+                                                    <Fragment key={`cogs-${key}`}>
                                                         {renderSummaryRow({
                                                             label: entry.accountTitle, 
-                                                            currentValue: entry.amount, 
-                                                            priorValue: compEntry?.amount, 
-                                                            isIndented: true 
+                                                            currentValue: current?.amount ?? 0,
+                                                            priorValue: comparison?.amount ?? 0,
+                                                            isIndented: true,
+                                                            currentZeroActivity: !current,
+                                                            priorZeroActivity: !comparison,
                                                         })}
                                                     </Fragment>
                                                 );
@@ -362,15 +386,17 @@ export function InteractiveStatementTable() {
                                     })}
                                     {expandedSections.opex && (
                                         <>
-                                            {data.entries.filter((e: FinancialPerformanceEntry) => e.reportSection === "Operating Expenses").map((entry: FinancialPerformanceEntry, idx: number) => {
-                                                const compEntry = comparisonSummary?.entries.find((c: FinancialPerformanceEntry) => c.accountTitle === entry.accountTitle);
+                                            {getSectionEntries("Operating Expenses").map(({ key, current, comparison }) => {
+                                                const entry = current ?? comparison!;
                                                 return (
-                                                    <Fragment key={`opex-${entry.glCode}-${idx}`}>
+                                                    <Fragment key={`opex-${key}`}>
                                                         {renderSummaryRow({
                                                             label: entry.accountTitle, 
-                                                            currentValue: entry.amount, 
-                                                            priorValue: compEntry?.amount, 
-                                                            isIndented: true 
+                                                            currentValue: current?.amount ?? 0,
+                                                            priorValue: comparison?.amount ?? 0,
+                                                            isIndented: true,
+                                                            currentZeroActivity: !current,
+                                                            priorZeroActivity: !comparison,
                                                         })}
                                                     </Fragment>
                                                 );
@@ -390,15 +416,17 @@ export function InteractiveStatementTable() {
                                     })}
                                     {expandedSections.otherExp && (
                                         <>
-                                            {data.entries.filter((e: FinancialPerformanceEntry) => e.reportSection === "Other Expense").map((entry: FinancialPerformanceEntry, idx: number) => {
-                                                const compEntry = comparisonSummary?.entries.find((c: FinancialPerformanceEntry) => c.accountTitle === entry.accountTitle);
+                                            {getSectionEntries("Other Expense").map(({ key, current, comparison }) => {
+                                                const entry = current ?? comparison!;
                                                 return (
-                                                    <Fragment key={`oexp-${entry.glCode}-${idx}`}>
+                                                    <Fragment key={`oexp-${key}`}>
                                                         {renderSummaryRow({
                                                             label: entry.accountTitle, 
-                                                            currentValue: entry.amount, 
-                                                            priorValue: compEntry?.amount, 
-                                                            isIndented: true 
+                                                            currentValue: current?.amount ?? 0,
+                                                            priorValue: comparison?.amount ?? 0,
+                                                            isIndented: true,
+                                                            currentZeroActivity: !current,
+                                                            priorZeroActivity: !comparison,
                                                         })}
                                                     </Fragment>
                                                 );
@@ -416,15 +444,17 @@ export function InteractiveStatementTable() {
                                     })}
                                     {expandedSections.otherInc && (
                                         <>
-                                            {data.entries.filter((e: FinancialPerformanceEntry) => e.reportSection === "Other Income").map((entry: FinancialPerformanceEntry, idx: number) => {
-                                                const compEntry = comparisonSummary?.entries.find((c: FinancialPerformanceEntry) => c.accountTitle === entry.accountTitle);
+                                            {getSectionEntries("Other Income").map(({ key, current, comparison }) => {
+                                                const entry = current ?? comparison!;
                                                 return (
-                                                    <Fragment key={`oinc-${entry.glCode}-${idx}`}>
+                                                    <Fragment key={`oinc-${key}`}>
                                                         {renderSummaryRow({
                                                             label: entry.accountTitle, 
-                                                            currentValue: entry.amount, 
-                                                            priorValue: compEntry?.amount, 
-                                                            isIndented: true 
+                                                            currentValue: current?.amount ?? 0,
+                                                            priorValue: comparison?.amount ?? 0,
+                                                            isIndented: true,
+                                                            currentZeroActivity: !current,
+                                                            priorZeroActivity: !comparison,
                                                         })}
                                                     </Fragment>
                                                 );
@@ -441,23 +471,23 @@ export function InteractiveStatementTable() {
                                     
                                     {/* --- FINAL --- */}
                                     {renderSummaryRow({ label: "Income Before Tax", currentValue: summary.incomeBeforeTax, priorValue: comparisonSummary?.incomeBeforeTax, isBold: true, hasBorderTop: true })}
-                                    {renderSummaryRow({ label: `Tax (${appliedCriteria.taxRate}%)`, currentValue: summary.incomeTaxExpense, priorValue: comparisonSummary?.incomeTaxExpense, isIndented: true, isNegativeFormat: true, hasBorderBottom: true })}
+                                    {renderSummaryRow({ label: `Estimated income tax (${(summary.taxRateUsed * 100).toFixed(2)}% of positive pre-tax income)`, currentValue: summary.incomeTaxExpense, priorValue: comparisonSummary?.incomeTaxExpense, isIndented: true, isNegativeFormat: true, hasBorderBottom: true })}
                                     
                                     {/* Final output table row custom style */}
                                     <TableRow className="bg-zinc-950 hover:bg-zinc-900 border-0 shadow-lg group transition-colors">
-                                        <TableCell className="py-4 px-4 font-bold text-zinc-50 text-base">Net Income</TableCell>
+                                        <TableCell className="sticky left-0 z-10 bg-zinc-950 py-4 px-4 font-bold text-zinc-50 text-base shadow-[4px_0_8px_-6px_rgba(0,0,0,0.5)]">Net Income</TableCell>
                                         <TableCell className="py-4 px-4 text-right tabular-nums text-zinc-50 font-bold text-base">
                                             {formatAccAmount(summary.netIncome)}
                                         </TableCell>
                                         {includeComparison && (
                                             <>
                                                 <TableCell className="py-4 px-4 text-right tabular-nums text-zinc-400 font-bold">
-                                                    {formatAccAmount(comparisonSummary?.netIncome)}
+                                                    {comparisonState === "available"
+                                                        ? formatAccAmount(comparisonSummary?.netIncome)
+                                                        : comparisonState === "loading" ? "Loading comparison…" : "Comparison unavailable"}
                                                 </TableCell>
                                                 <TableCell className="py-4 px-4 text-right tabular-nums">
-                                                    {summary.netIncome !== undefined && comparisonSummary?.netIncome !== undefined ? 
-                                                        formatVarianceAmount(summary.netIncome - comparisonSummary.netIncome).elem : 
-                                                    "-"}
+                                                    {netIncomeChange !== undefined ? formatVarianceAmount(netIncomeChange) : "—"}
                                                 </TableCell>
                                             </>
                                         )}
@@ -468,11 +498,11 @@ export function InteractiveStatementTable() {
                     </Card>
                 </TabsContent>
 
-                <TabsContent value="detail" className="m-0 mt-0">
+                <TabsContent value="account-breakdown" className="m-0 mt-0">
                     <Card className="flex min-h-[600px] min-w-0 max-w-full flex-col overflow-hidden border-border bg-card shadow-sm">
                         <div className="flex min-w-0 flex-col justify-between gap-4 border-b border-border bg-card p-4 sm:flex-row sm:items-start sm:p-5">
                             <div>
-                                <h2 className="text-xl font-bold tracking-tight text-foreground">Detail View</h2>
+                                <h2 className="text-xl font-bold tracking-tight text-foreground">Account breakdown</h2>
                                 <p className="text-sm text-muted-foreground mt-1 font-medium">Grouped by section for review and validation</p>
                             </div>
                             <div className="w-full min-w-0 sm:max-w-xl">
@@ -498,26 +528,26 @@ export function InteractiveStatementTable() {
                         </div>
 
                         <div className="min-w-0 max-w-full flex-1 overflow-auto bg-card">
-                            <Table className="min-w-[1000px] w-full text-sm">
+                            <Table className="min-w-[1150px] w-full text-sm">
                                 <TableHeader className="bg-background sticky top-0 z-10 shadow-sm border-b border-border">
                                     <TableRow className="hover:bg-background border-0">
-                                        <TableHead className="py-4 px-4 font-bold text-muted-foreground w-[15%]">Section</TableHead>
-                                        <TableHead className="py-4 px-4 font-bold text-muted-foreground w-[35%]">Account</TableHead>
-                                        <TableHead className="py-4 px-4 font-bold text-muted-foreground w-[15%]">Division</TableHead>
-                                        <TableHead className="py-4 px-4 font-bold text-muted-foreground w-[15%]">Department</TableHead>
-                                        <TableHead className="py-4 px-4 font-bold text-foreground text-right w-[20%]">Amount</TableHead>
+                                        <TableHead className="sticky left-0 z-30 w-[160px] min-w-[160px] bg-background py-4 px-4 font-bold text-muted-foreground shadow-[4px_0_8px_-6px_rgba(0,0,0,0.25)]">Section</TableHead>
+                                        <TableHead className="sticky left-[160px] z-30 w-[280px] min-w-[280px] bg-background py-4 px-4 font-bold text-muted-foreground shadow-[4px_0_8px_-6px_rgba(0,0,0,0.35)]">Account</TableHead>
+                                        <TableHead className="py-4 px-4 font-bold text-muted-foreground w-[13%]">Division</TableHead>
+                                        <TableHead className="py-4 px-4 font-bold text-muted-foreground w-[13%]">Department</TableHead>
+                                        <TableHead className="py-4 px-4 font-bold text-foreground text-right w-[15%]">Amount</TableHead>
+                                        <TableHead className="py-4 px-4 font-bold text-foreground w-[16%]">Action</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody className="bg-card">
                                     {filteredDetailEntries.length === 0 && (
                                         <TableRow>
-                                            <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
+                                            <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
                                                 {normalizedSearchQuery ? "No account rows match this search." : "No account rows are available in this report."}
                                             </TableCell>
                                         </TableRow>
                                     )}
                                     {renderDetailGroup("Sales", "Sales")}
-                                    {renderDetailGroup("Contra Revenue", "Contra Revenue")}
                                     {renderDetailGroup("Purchases / Cost of Sales", "Purchases / Cost of Sales")}
                                     {renderDetailGroup("Operating Expenses", "Operating Expenses")}
                                     {renderDetailGroup("Other Income", "Other Income")}
@@ -532,6 +562,7 @@ export function InteractiveStatementTable() {
                                             <TableCell className="py-4 px-4 text-right tabular-nums text-zinc-50 font-bold text-base rounded-br-lg">
                                                 {formatAccAmount(data.netIncome)}
                                             </TableCell>
+                                            <TableCell />
                                         </TableRow>
                                     )}
                                 </TableBody>
@@ -540,6 +571,12 @@ export function InteractiveStatementTable() {
                     </Card>
                 </TabsContent>
             </Tabs>
+            <FinancialPerformanceTransactionsDialog
+                open={selectedTransactionAccount !== null}
+                onOpenChange={open => { if (!open) setSelectedTransactionAccount(null); }}
+                account={selectedTransactionAccount}
+                criteria={appliedCriteria}
+            />
         </div>
     );
 }

@@ -1,4 +1,12 @@
-import { FinancialPerformanceResponse, FinancialPerformanceResponseSchema } from "../types/financial-performance.schema";
+import {
+  FinancialPerformanceEntry,
+  FinancialPerformanceReportCriteria,
+  FinancialPerformanceResponse,
+  FinancialPerformanceResponseSchema,
+  FinancialPerformanceTransactionsResponse,
+  FinancialPerformanceTransactionsResponseSchema,
+} from "../types";
+import { FINANCIAL_PERFORMANCE_SOURCE_MODULES } from "../utils/report-coverage";
 
 export interface FinancialPerformanceDivisionOption {
   divisionId: number;
@@ -93,4 +101,61 @@ export async function getFinancialPerformance(
     console.error("Financial Performance Service Error:", error);
     throw error;
   }
+}
+
+export interface FetchFinancialPerformanceTransactionsParams {
+  account: FinancialPerformanceEntry;
+  criteria: FinancialPerformanceReportCriteria;
+  page: number;
+  pageSize: number;
+  signal?: AbortSignal;
+}
+
+export async function getFinancialPerformanceTransactions(
+  params: FetchFinancialPerformanceTransactionsParams
+): Promise<FinancialPerformanceTransactionsResponse> {
+  if (params.account.coaId == null) {
+    throw new Error("This account is missing its chart of accounts ID.");
+  }
+
+  const query = new URLSearchParams({
+    coaId: String(params.account.coaId),
+    startDate: params.criteria.startDate,
+    endDate: params.criteria.endDate,
+    status: params.criteria.status,
+    accountDivisionIsNull: String(params.account.division == null),
+    accountDepartmentIsNull: String(params.account.department == null),
+    page: String(params.page),
+    pageSize: String(params.pageSize),
+  });
+
+  if (params.account.division != null) query.set("accountDivision", params.account.division);
+  if (params.account.department != null) query.set("accountDepartment", params.account.department);
+  if (params.criteria.divisionName && params.criteria.divisionName !== "all") {
+    query.set("divisionName", params.criteria.divisionName);
+  }
+  if (params.criteria.departmentName && params.criteria.departmentName !== "all") {
+    query.set("departmentName", params.criteria.departmentName);
+  }
+  for (const sourceModule of FINANCIAL_PERFORMANCE_SOURCE_MODULES) {
+    query.append("sourceModule", sourceModule);
+  }
+
+  const response = await fetch(
+    `/api/fm/financial-statements/statement-of-financial-performance/transactions?${query.toString()}`,
+    { method: "GET", credentials: "include", cache: "no-store", signal: params.signal }
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string } | null;
+    throw new Error(body?.error || `Failed to load account transactions: ${response.statusText}`);
+  }
+
+  const data: unknown = await response.json();
+  const validated = FinancialPerformanceTransactionsResponseSchema.safeParse(data);
+  if (!validated.success) {
+    console.error("Income Statement transactions response validation failed:", validated.error);
+    throw new Error("The account transaction response was not in the expected format.");
+  }
+  return validated.data;
 }

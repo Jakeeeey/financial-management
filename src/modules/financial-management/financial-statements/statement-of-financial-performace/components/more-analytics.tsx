@@ -5,9 +5,10 @@ import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useFinancialPerformance } from "../hooks/useFinancialPerformance";
+import { formatFinancialPerformanceRatioChange, getFinancialPerformanceRatioChange } from "../utils/variances";
 
 export function MoreAnalytics() {
-  const { data, isInitialLoad } = useFinancialPerformance();
+  const { data, appliedCriteria, comparisonStatus, isInitialLoad } = useFinancialPerformance();
   const [isOpen, setIsOpen] = useState(false);
 
   const ratios = [
@@ -57,12 +58,10 @@ export function MoreAnalytics() {
       <div id="sfp-more-analytics-content" hidden={!isOpen} className="mt-3 min-w-0">
         <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {ratios.map(({ title, subtitle, value, priorValue }) => {
-            const current = value ?? 0;
-            const prior = priorValue ?? 0;
-            const variance = current - prior;
-            const isPositive = current > prior;
-            const isNegative = current < prior;
-            const isNeutral = current === prior;
+            const comparisonAvailable = appliedCriteria?.includeComparison === true
+              && comparisonStatus === "available"
+              && data?.comparisonData !== undefined;
+            const variance = getFinancialPerformanceRatioChange(value, priorValue);
 
             return (
               <div key={title} className="flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-card p-4 shadow-sm">
@@ -70,18 +69,18 @@ export function MoreAnalytics() {
                 <span className="text-[9px] font-medium uppercase tracking-wider text-muted-foreground">{subtitle}</span>
                 <div className="mt-2 flex min-w-0 items-center justify-between gap-2">
                   <span className="text-xl font-bold tracking-tight text-foreground">
-                    {isInitialLoad ? "—" : `${current.toFixed(1)}%`}
+                    {isInitialLoad || !data ? "—" : value == null ? "Not applicable" : `${value.toFixed(2)}%`}
                   </span>
-                  {!isInitialLoad && (priorValue !== undefined || variance !== 0) && (
-                    <span
-                      className={cn("shrink-0 rounded px-2 py-0.5 text-[11px] font-bold", {
-                        "bg-success/10 text-success": isPositive,
-                        "bg-destructive/10 text-destructive": isNegative,
-                        "bg-muted text-muted-foreground": isNeutral,
-                      })}
-                    >
-                      {isPositive ? "▲ " : isNegative ? "▼ " : ""}{variance > 0 ? "+" : ""}{variance.toFixed(1)}%
+                  {!isInitialLoad && comparisonAvailable && (
+                    <span className="min-w-0 rounded bg-muted px-2 py-0.5 text-right text-[11px] font-medium text-muted-foreground">
+                      {variance === undefined ? "Change not applicable" : formatFinancialPerformanceRatioChange(variance)}
                     </span>
+                  )}
+                  {!isInitialLoad && appliedCriteria?.includeComparison && comparisonStatus === "loading" && (
+                    <span className="text-[11px] font-medium text-muted-foreground">Loading comparison…</span>
+                  )}
+                  {!isInitialLoad && appliedCriteria?.includeComparison && comparisonStatus === "unavailable" && (
+                    <span className="shrink-0 text-[11px] font-medium text-muted-foreground">Comparison unavailable</span>
                   )}
                 </div>
               </div>
