@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Copy, Loader2, Plus, Save, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { v4 as generateUuid } from "uuid";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,7 +29,7 @@ function CurrencyInput({ className, ...props }: React.ComponentPropsWithoutRef<t
 }
 
 function line(data?: { coaId?: number | null; departmentId?: number | null; description?: string | null; debit?: number; credit?: number; originalDetailId?: number | null }): Line {
-  return { key: crypto.randomUUID(), coaId: data?.coaId ? String(data.coaId) : "", departmentId: data?.departmentId ? String(data.departmentId) : "", description: data?.description || "", debit: data?.debit ? String(data.debit) : "", credit: data?.credit ? String(data.credit) : "", originalDetailId: data?.originalDetailId ?? null };
+  return { key: generateUuid(), coaId: data?.coaId ? String(data.coaId) : "", departmentId: data?.departmentId ? String(data.departmentId) : "", description: data?.description || "", debit: data?.debit ? String(data.debit) : "", credit: data?.credit ? String(data.credit) : "", originalDetailId: data?.originalDetailId ?? null };
 }
 function cents(value: string) {
   if (!value.trim()) return 0;
@@ -59,7 +60,7 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
   const [entry, setEntry] = React.useState(initialEntry);
   const [form, setForm] = React.useState(() => initialForm(initialEntry, seed));
   const [savedSnapshot, setSavedSnapshot] = React.useState(() => serializeForm(initialForm(initialEntry, initialEntry ? undefined : null)));
-  const [requestKey] = React.useState(() => crypto.randomUUID());
+  const [requestKey] = React.useState(() => generateUuid());
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
   const [submitAttempted, setSubmitAttempted] = React.useState(false);
@@ -215,7 +216,7 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
       const index = current.details.findIndex(row => row.key === key);
       if (index < 0) return current;
       const source = current.details[index];
-      const duplicate = { ...source, key: crypto.randomUUID(), originalDetailId: null };
+      const duplicate = { ...source, key: generateUuid(), originalDetailId: null };
       return { ...current, details: [...current.details.slice(0, index + 1), duplicate, ...current.details.slice(index + 1)] };
     });
   }

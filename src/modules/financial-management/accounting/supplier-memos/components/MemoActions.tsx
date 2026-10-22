@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { v4 as generateUuid } from "uuid";
 import { Ban, History, MoreHorizontal, Pencil, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -95,7 +96,7 @@ function MemoDialog({ memo, api, mode, suppliers, accounts, onMode, onClose, onC
     if (!changeReason.trim()) { setError("Enter the reason for this " + (cancelling ? "cancellation." : "edit.")); return; }
     submitting.current = true;
     setSaving(true); setError("");
-    requestId.current ||= crypto.randomUUID();
+    requestId.current ||= generateUuid();
     try {
       const response = await fetch(endpoint + (cancelling ? "/cancel" : ""), {
         method: cancelling ? "POST" : "PATCH", headers: { "Content-Type": "application/json" },

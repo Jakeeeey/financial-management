@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useState } from "react";
+import { v4 as generateUuid } from "uuid";
 import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Copy, Loader2, Paperclip, Plus, Trash2, X } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -364,9 +365,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
     setNotice(null);
     setBusy(true);
     try {
-      const idempotencyKey = typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `wer-${planId}-${Date.now()}`;
+      const idempotencyKey = generateUuid();
       const submission = editingSubmissionId !== null
         ? await updatePayableSubmission(planId, editingSubmissionId, kind, selectedDepartmentId, validation.lines)
         : kind === "submit"
