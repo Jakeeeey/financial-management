@@ -15,7 +15,7 @@ import { AjePeriodDialog } from "./components/AjePeriodDialog";
 import { AjeEntryEditorSkeleton } from "./components/AjeEntryEditorSkeleton";
 import { formatDate, money, todayManila } from "./components/formatters";
 import { adjustingJournalEntriesApi as api, ajeReportUrl, fetchDepartmentOptions, fetchDivisionOptions } from "./services/adjusting-journal-entries.api";
-import type { AdjustingEntry, AdjustingEntryPayload, AdjustingEntryQuery, AdjustingEntrySummary, AdjustingEntrySummaryQuery, AjeAccess, AjeAccount, AjeAction, AjeAttachment, AjePeriod, AjeReversalPreview, DepartmentLookup, DivisionLookup } from "./types";
+import type { AdjustingEntry, AdjustingEntryPayload, AdjustingEntryQuery, AdjustingEntrySummary, AdjustingEntrySummaryQuery, AjeAccess, AjeAccount, AjeAction, AjeAttachment, AjeAuditEvent, AjePeriod, AjeReversalPreview, DepartmentLookup, DivisionLookup } from "./types";
 
 const AjeEntryEditor = React.lazy(() => import("./components/AjeEntryEditor").then(module => ({ default:module.AjeEntryEditor })));
 const AjeReviewDialog = React.lazy(() => import("./components/AjeReviewDialog").then(module => ({ default:module.AjeReviewDialog })));
@@ -42,6 +42,17 @@ function positiveId(value: string | null) {
 
 function pageNumber(value: string | null) {
   return value && /^\d+$/.test(value) ? Math.max(0, Number(value)) : 0;
+}
+
+async function loadEntryAuditEvents(entryId: number): Promise<AjeAuditEvent[]> {
+  const pageSize = 100;
+  const firstPage = await api.audit(new URLSearchParams({ entryId:String(entryId),page:"0",size:String(pageSize) }));
+  const events = [...firstPage.content];
+  for (let page = 1; page < firstPage.totalPages; page++) {
+    const result = await api.audit(new URLSearchParams({ entryId:String(entryId),page:String(page),size:String(pageSize) }));
+    events.push(...result.content);
+  }
+  return events.sort((a,b) => a.occurredAt.localeCompare(b.occurredAt) || a.id - b.id);
 }
 
 function parseListFilters(params: URLSearchParams) {
@@ -110,6 +121,9 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   const [reviewEntry, setReviewEntry] = React.useState<AdjustingEntry | null>(null);
   const [reviewDetails, setReviewDetails] = React.useState<AdjustingEntry | null>(null);
   const [reviewAttachments, setReviewAttachments] = React.useState<AjeAttachment[]>([]);
+  const [reviewAuditEvents, setReviewAuditEvents] = React.useState<AjeAuditEvent[]>([]);
+  const [reviewAuditLoading, setReviewAuditLoading] = React.useState(false);
+  const [reviewAuditError, setReviewAuditError] = React.useState("");
   const [reviewLoading, setReviewLoading] = React.useState(false);
   const [reviewAttachmentsLoading, setReviewAttachmentsLoading] = React.useState(false);
   const [reviewError, setReviewError] = React.useState("");
@@ -120,6 +134,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   const [bulkResult, setBulkResult] = React.useState<{ approved: number; failures: Array<{ jeNo: string; message: string }> } | null>(null);
   const commandLock = React.useRef(false);
   const reviewRequestGeneration = React.useRef(0);
+  const reviewAuditRequestGeneration = React.useRef(0);
   const editorDirtyRef = React.useRef(false);
   const handledIntent = React.useRef("");
   const searchCommitTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -358,6 +373,19 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
     setBulkResult(null);
     setBulkConfirmEntries(selected);
   }
+  async function refreshReviewAudit(entryId: number) {
+    const generation = ++reviewAuditRequestGeneration.current;
+    setReviewAuditLoading(true);
+    setReviewAuditError("");
+    try {
+      const events = await loadEntryAuditEvents(entryId);
+      if (generation === reviewAuditRequestGeneration.current) setReviewAuditEvents(events);
+    } catch (e) {
+      if (generation === reviewAuditRequestGeneration.current) setReviewAuditError(e instanceof Error ? e.message : "Unable to load the audit trail");
+    } finally {
+      if (generation === reviewAuditRequestGeneration.current) setReviewAuditLoading(false);
+    }
+  }
   async function runBulkApproval() {
     if (!bulkConfirmEntries?.length || commandLock.current) return;
     commandLock.current = true;
@@ -369,7 +397,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
         try {
           const updated = await api.command(entry.id, "approve", entry.version);
           approved.push(entry.id);
-          if (reviewEntry?.id === updated.id) { setReviewEntry(updated); setReviewDetails(updated); }
+          if (reviewEntry?.id === updated.id) { setReviewEntry(updated); setReviewDetails(updated); void refreshReviewAudit(updated.id); }
         } catch (e) {
           failures.push({ jeNo: entry.jeNo || `Entry #${entry.id}`, message: e instanceof Error ? e.message : "Approval failed" });
         }
@@ -392,6 +420,8 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   function openReview(entry: AdjustingEntry) {
     const generation = ++reviewRequestGeneration.current;
     setReviewEntry(entry); setReviewDetails(null); setReviewAttachments([]); setReviewLoading(true); setReviewAttachmentsLoading(true); setReviewError(""); setReviewAttachmentsError("");
+    setReviewAuditEvents([]); setReviewAuditError("");
+    void refreshReviewAudit(entry.id);
     void api.get(entry.id).then(details => {
       if (generation === reviewRequestGeneration.current) setReviewDetails(details);
     }).catch(error => {
@@ -409,7 +439,9 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   }
   function closeReview() {
     reviewRequestGeneration.current += 1;
+    reviewAuditRequestGeneration.current += 1;
     setReviewEntry(null); setReviewDetails(null); setReviewAttachments([]); setReviewLoading(false); setReviewAttachmentsLoading(false); setReviewError(""); setReviewAttachmentsError("");
+    setReviewAuditEvents([]); setReviewAuditLoading(false); setReviewAuditError("");
   }
   async function runAction(event: React.MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
@@ -419,7 +451,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
     try {
       const updated = await api.command(action.entry.id,action.action,action.entry.version,reason.trim() || undefined);
       setAction(null); refreshEntriesAndSummary(); toast.success(`${actionLabelForEntry(action.entry, action.action)} completed · ${updated.jeNo || `Entry #${updated.id}`}`);
-      if (reviewEntry?.id === updated.id) { setReviewEntry(updated); setReviewDetails(updated); }
+      if (reviewEntry?.id === updated.id) { setReviewEntry(updated); setReviewDetails(updated); void refreshReviewAudit(updated.id); }
       if (editorEntry?.id === updated.id || (initialView === "posting" && tab === "new")) { setEditorEntry(updated); setEditorSeed(null); setReadOnly(updated.status !== "Draft"); setEditorKey(k => k + 1); }
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "The action failed");
@@ -428,7 +460,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
         const latest = await api.get(action.entry.id);
         setAction(current => current ? { ...current, entry: latest,
           action: latest.status === "Failed" && ["post","retry"].includes(current.action) ? "retry" : current.action } : null);
-        if (reviewEntry?.id === latest.id) { setReviewEntry(latest); setReviewDetails(latest); }
+        if (reviewEntry?.id === latest.id) { setReviewEntry(latest); setReviewDetails(latest); void refreshReviewAudit(latest.id); }
         if (editorEntry?.id === latest.id || (initialView === "posting" && tab === "new")) {
           setEditorEntry(latest); setReadOnly(latest.status !== "Draft"); setEditorKey(k => k + 1);
         }
@@ -529,6 +561,6 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
         <p role="status" className="py-8 text-center text-sm text-muted-foreground">Loading review dialog…</p>
         <DialogFooter><Button type="button" variant="outline" onClick={closeReview}>Close</Button></DialogFooter>
       </DialogContent>
-    </Dialog>}><AjeReviewDialog open journalNumber={reviewEntry.jeNo || null} entry={reviewDetails} attachments={reviewAttachments} loading={reviewLoading} error={reviewError} attachmentsLoading={reviewAttachmentsLoading} attachmentsError={reviewAttachmentsError} canReview={tab === "posting" && Boolean(access)} userId={access?.userId} onAction={requestAction} onClose={closeReview} /></React.Suspense>}
+    </Dialog>}><AjeReviewDialog open journalNumber={reviewEntry.jeNo || null} entry={reviewDetails} attachments={reviewAttachments} loading={reviewLoading} error={reviewError} attachmentsLoading={reviewAttachmentsLoading} attachmentsError={reviewAttachmentsError} auditEvents={reviewAuditEvents} auditLoading={reviewAuditLoading} auditError={reviewAuditError} canReview={tab === "posting" && Boolean(access)} userId={access?.userId} onAction={requestAction} onClose={closeReview} /></React.Suspense>}
   </div>;
 }
