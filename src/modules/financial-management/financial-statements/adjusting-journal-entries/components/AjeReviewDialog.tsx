@@ -3,7 +3,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import type { AjeAction, AjeAttachment, AdjustingEntry } from "../types";
+import type { AjeAction, AjeAttachment, AjeAuditEvent, AdjustingEntry } from "../types";
 import { ajeAttachmentPreviewUrl, ajeAttachmentThumbnailUrl, ajeAttachmentUrl, ajeEntryPrintUrl } from "../services/adjusting-journal-entries.api";
 import { AjeAttachmentPreview, isPreviewableAjeImage } from "./AjeAttachmentPreview";
 import { formatDate, formatDateTime, money, statusBadgeClass } from "./formatters";
@@ -18,13 +18,37 @@ type Props = {
   error: string;
   attachmentsLoading: boolean;
   attachmentsError: string;
+  auditEvents: AjeAuditEvent[];
+  auditLoading: boolean;
+  auditError: string;
   canReview: boolean;
   userId?: number;
   onAction: (entry: AdjustingEntry, action: AjeAction) => void;
   onClose: () => void;
 };
 
-export function AjeReviewDialog({ open, journalNumber, entry, attachments, loading, error, attachmentsLoading, attachmentsError, canReview, userId, onAction, onClose }: Props) {
+function auditEventSummary(event: AjeAuditEvent) {
+  if (event.reason?.trim()) return event.reason.trim();
+  const summaries: Record<string, string> = {
+    Created:"Draft created",
+    Edited:"Journal details updated",
+    Submitted:"Submitted for approval",
+    Approved:"Approved for posting",
+    Rejected:"Returned for revision",
+    Withdrawn:"Withdrawn from approval",
+    "Revision Started":"Revision started",
+    Cancelled:"Entry cancelled",
+    Posted:"Posted to the General Ledger",
+    "Posting Failed":"Posting failed",
+    "Supporting Document Added":"Supporting document added",
+    "Supporting Document Removed":"Supporting document removed",
+  };
+  if (summaries[event.action]) return summaries[event.action];
+  const changedFields = event.changes.map(change => change.field).filter(Boolean);
+  return changedFields.length ? `Updated ${changedFields.join(", ")}` : "Audit event recorded";
+}
+
+export function AjeReviewDialog({ open, journalNumber, entry, attachments, loading, error, attachmentsLoading, attachmentsError, auditEvents, auditLoading, auditError, canReview, userId, onAction, onClose }: Props) {
   const reviewActions = entry ? availableActions(entry).filter(action => action === "approve" || action === "reject") : [];
   const selfReviewBlocked = Boolean(canReview && userId != null && entry && reviewActions.length && isSelfApproval(entry, userId));
   return <Dialog open={open} onOpenChange={value => { if (!value) onClose(); }}>
@@ -75,6 +99,23 @@ export function AjeReviewDialog({ open, journalNumber, entry, attachments, loadi
               statusText={file.state === "READY" ? undefined : "Upload incomplete"}
               metadata={`${file.uploadedByName} · ${formatDateTime(file.uploadedAt)}`} />;
           })}
+        </section>
+
+        <section aria-label="Audit trail" className="space-y-2 border-t pt-4">
+          <h3 className="font-semibold">Audit trail</h3>
+          {auditLoading && auditEvents.length === 0 && <p role="status" className="text-sm text-muted-foreground">Loading audit trail…</p>}
+          {auditLoading && auditEvents.length > 0 && <p role="status" className="text-xs text-muted-foreground">Updating audit trail…</p>}
+          {!auditLoading && auditError && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{auditError}</p>}
+          {!auditLoading && !auditError && auditEvents.length === 0 && <p className="text-sm text-muted-foreground">No audit events recorded.</p>}
+          {auditEvents.length > 0 && <ol aria-busy={auditLoading} className="divide-y rounded-md border px-3">
+            {auditEvents.map(event => <li key={event.id} className="grid gap-1 py-3 sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-4">
+              <time dateTime={event.occurredAt} className="text-xs text-muted-foreground">{formatDateTime(event.occurredAt)}</time>
+              <div className="space-y-1">
+                <p className="text-sm font-semibold">{event.action} by {event.actorName || "Name unavailable"}</p>
+                <p className="text-sm text-muted-foreground">{auditEventSummary(event)}</p>
+              </div>
+            </li>)}
+          </ol>}
         </section>
       </div>}
       {canReview && selfReviewBlocked && <p className="text-sm text-amber-700">Another user must review this entry because you created, prepared, or submitted it.</p>}
