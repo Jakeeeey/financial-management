@@ -13,7 +13,7 @@ import { AjeSearchableSelect } from "./AjeSearchableSelect";
 import { money, formatDate, formatDateTime, todayManila } from "./formatters";
 import { ajeAttachmentPreviewUrl, ajeAttachmentThumbnailUrl, ajeAttachmentUrl, ajeEntryPrintUrl, adjustingJournalEntriesApi as api } from "../services/adjusting-journal-entries.api";
 import { AjeAttachmentPreview, isPreviewableAjeImage } from "./AjeAttachmentPreview";
-import type { AdjustingEntry, AdjustingEntryPayload, AdjustingEntrySourceJournal, AdjustingEntrySourceJournalSummary, AjeAccess, AjeAccount, AjeAction, AjeAttachment, AjeReversalPreview, DepartmentLookup, DivisionLookup } from "../types";
+import type { AdjustingEntry, AdjustingEntryPayload, AdjustingEntryPostedAdjustmentHistory, AdjustingEntrySourceJournal, AdjustingEntrySourceJournalSummary, AjeAccess, AjeAccount, AjeAction, AjeAttachment, AjeReversalPreview, DepartmentLookup, DivisionLookup } from "../types";
 
 type Line = { key: string; coaId: string; departmentId: string; description: string; debit: string; credit: string; originalDetailId: number | null };
 type Form = { reference: string; transactionDate: string; description: string; divisionId: string; sourceJeNo: string; entryKind: "ADJUSTMENT" | "REVERSAL"; originalEntryId: number | null; reversalMode: "FULL" | "PARTIAL" | null; details: Line[] };
@@ -71,6 +71,9 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
   const [selectedSource, setSelectedSource] = React.useState<AdjustingEntrySourceJournal | null>(null);
   const [sourceLoadError, setSourceLoadError] = React.useState("");
   const [sourceBusy, setSourceBusy] = React.useState(false);
+  const [postedAdjustmentHistory, setPostedAdjustmentHistory] = React.useState<AdjustingEntryPostedAdjustmentHistory | null>(null);
+  const [postedAdjustmentHistoryLoading, setPostedAdjustmentHistoryLoading] = React.useState(false);
+  const [postedAdjustmentHistoryError, setPostedAdjustmentHistoryError] = React.useState("");
   const [attachments, setAttachments] = React.useState<AjeAttachment[]>([]);
   const [selectedFiles, setSelectedFiles] = React.useState<File[]>([]);
   const selectedFilePreviewUrls = React.useRef(new Map<File, string>());
@@ -84,6 +87,11 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
   const totals = form.details.reduce((sum, row) => ({ debit: sum.debit + (cents(row.debit) || 0), credit: sum.credit + (cents(row.credit) || 0) }), { debit: 0, credit: 0 });
   const balanced = totals.debit > 0 && totals.debit === totals.credit;
   const hasAmounts = totals.debit > 0 || totals.credit > 0;
+  const currentPostedAdjustmentHistory = postedAdjustmentHistory?.sourceJeNo === form.sourceJeNo ? postedAdjustmentHistory : null;
+  const sourceCapacityAvailable = currentPostedAdjustmentHistory !== null
+    && [currentPostedAdjustmentHistory.sourceTotalDebit, currentPostedAdjustmentHistory.netConsumedDebit, currentPostedAdjustmentHistory.remainingEligibleDebit].every(value => typeof value === "number" && Number.isFinite(value));
+  const sourceRemainingCents = sourceCapacityAvailable ? Math.round(currentPostedAdjustmentHistory.remainingEligibleDebit * 100) : null;
+  const sourceOverLimit = !frozen && !reversal && sourceRemainingCents !== null && totals.debit > sourceRemainingCents;
   const accountById = React.useMemo(() => new Map(accounts.map(a => [String(a.id), a])), [accounts]);
   const accountOptions = React.useMemo(() => {
     const all = accounts.map(a => ({ value: String(a.id), label: a.label }));
@@ -109,6 +117,7 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
     if (!form.reference.trim()) blockers.push({ message: "Enter a reference.", selector: "#aje-reference" });
     if (!form.transactionDate) blockers.push({ message: "Choose an accounting date.", selector: "#aje-date" });
     if (!form.description.trim()) blockers.push({ message: "Enter a description.", selector: "#aje-narration" });
+    if (sourceOverLimit) blockers.push({ message: `Linked adjustment debit exceeds the remaining eligible amount of ${money((sourceRemainingCents || 0) / 100)}.`, selector: "#aje-lines-heading" });
     if (form.details.length === 0) blockers.push({ message: "Add at least two journal lines.", selector: "#aje-lines-heading" });
     else if (form.details.length < 2) blockers.push({ message: "At least two journal lines are required.", selector: "#aje-lines-heading" });
     for (const [index, row] of form.details.entries()) {
@@ -173,6 +182,24 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
       .catch(e => { if (active) setSourceLoadError(e instanceof Error ? e.message : "Unable to load source journal details"); });
     return () => { active = false; };
   }, [form.sourceJeNo, selectedSource?.jeNo]);
+  React.useEffect(() => {
+    if (!form.sourceJeNo || reversal) {
+      setPostedAdjustmentHistory(null);
+      setPostedAdjustmentHistoryLoading(false);
+      setPostedAdjustmentHistoryError("");
+      return;
+    }
+    let active = true;
+    setPostedAdjustmentHistory(null);
+    setPostedAdjustmentHistoryLoading(true);
+    setPostedAdjustmentHistoryError("");
+    const excludeId = entry?.status === "Posted" ? null : entry?.id ?? null;
+    api.postedAdjustmentHistory(form.sourceJeNo, excludeId)
+      .then(history => { if (active) setPostedAdjustmentHistory(history); })
+      .catch(e => { if (active) setPostedAdjustmentHistoryError(e instanceof Error ? e.message : "Unable to load remaining source amount"); })
+      .finally(() => { if (active) setPostedAdjustmentHistoryLoading(false); });
+    return () => { active = false; };
+  }, [form.sourceJeNo, reversal, entry?.id, entry?.status]);
 
   function updateLine(key: string, field: keyof Line, value: string) {
     setForm(current => ({ ...current, details: current.details.map(row => {
@@ -401,6 +428,17 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
             <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-medium">Selected original journal</p>{selectedSource?.status && <Badge variant="outline">{selectedSource.status}</Badge>}</div>
             <div className="mt-2 grid gap-2 text-xs sm:grid-cols-3"><p><span className="text-muted-foreground">Reference</span><span className="mt-0.5 block font-medium">{selectedSource?.transactionRef || entry?.sourceTransactionRef || "—"}</span></p><p><span className="text-muted-foreground">Source module</span><span className="mt-0.5 block font-medium">{selectedSource?.sourceModule || entry?.sourceModule || "—"}</span></p><p><span className="text-muted-foreground">Accounting date</span><span className="mt-0.5 block font-medium">{formatDate(selectedSource?.transactionDate || entry?.sourceTransactionDate)}</span></p></div>
             {selectedSource?.description && <p className="mt-2 text-xs text-muted-foreground">{selectedSource.description}</p>}
+            {!reversal && <div className="mt-3 rounded-md border bg-background p-3 text-xs">
+              <p className="font-medium">Remaining eligible source amount</p>
+              {postedAdjustmentHistoryLoading ? <p className="mt-1 text-muted-foreground">Checking posted adjustments…</p>
+                : postedAdjustmentHistoryError ? <p role="alert" className="mt-1 text-destructive">{postedAdjustmentHistoryError}</p>
+                  : sourceCapacityAvailable ? <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                    <p><span className="text-muted-foreground">Source debit</span><span className="mt-0.5 block font-mono font-medium">{money(currentPostedAdjustmentHistory.sourceTotalDebit)}</span></p>
+                    <p><span className="text-muted-foreground">Net posted adjustments</span><span className="mt-0.5 block font-mono font-medium">{money(currentPostedAdjustmentHistory.netConsumedDebit)}</span></p>
+                    <p><span className="text-muted-foreground">Remaining eligible debit</span><span className="mt-0.5 block font-mono font-medium">{money(currentPostedAdjustmentHistory.remainingEligibleDebit)}</span></p>
+                  </div> : <p className="mt-1 text-muted-foreground">Remaining amount is unavailable.</p>}
+              {sourceOverLimit && <p role="alert" className="mt-2 font-medium text-destructive">This adjustment exceeds the remaining eligible source amount. Save as a draft or reduce the debit before submitting.</p>}
+            </div>}
           </div>}
         </div>
         <div className="space-y-1.5 md:col-span-3"><Label htmlFor="aje-narration">Description / Narration *</Label><Textarea id="aje-narration" value={form.description} disabled={frozen || busy} aria-invalid={submitAttempted && !form.description.trim()} className={submitAttempted && !form.description.trim() ? "border-destructive" : ""} onChange={e => setForm({ ...form, description: e.target.value })} /></div>

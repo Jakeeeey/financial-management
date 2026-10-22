@@ -133,6 +133,9 @@ export type AdjustingEntryPostedAdjustmentHistory = {
   totalDebit: number;
   totalCredit: number;
   variance: number;
+  sourceTotalDebit: number;
+  netConsumedDebit: number;
+  remainingEligibleDebit: number;
   entries: Array<{
     id: number;
     jeNo: string | null;
