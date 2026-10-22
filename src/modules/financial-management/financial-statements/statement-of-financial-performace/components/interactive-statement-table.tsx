@@ -4,6 +4,7 @@ import { Fragment, useState } from "react";
 import { useFinancialPerformance } from "../hooks/useFinancialPerformance";
 import { FinancialPerformanceEntry, FinancialPerformanceResponse } from "../types";
 import { Card } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import {
@@ -16,6 +17,7 @@ import {
 } from "@/components/ui/table";
 import { ChevronRight, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatFinancialPerformanceDateRange, getFinancialPerformanceComparisonLabel } from "../utils/periods";
 
 // Format helper
 const formatAccAmount = (amount?: number, isNegativeFormat: boolean = false) => {
@@ -63,9 +65,8 @@ const formatVarianceAmount = (variance: number) => {
 };
 
 export function InteractiveStatementTable() {
-    const { data, filters, isLoading, isInitialLoad } = useFinancialPerformance();
+    const { data, appliedCriteria, isLoading, isInitialLoad, filters, updateFilters } = useFinancialPerformance();
     const [activeTab, setActiveTab] = useState("summary");
-    const [searchQuery, setSearchQuery] = useState("");
 
     const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
         cogs: false,
@@ -78,7 +79,7 @@ export function InteractiveStatementTable() {
         setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
     };
 
-    if (isLoading) {
+    if (isLoading && !data) {
         return (
             <div className="space-y-4">
                 <div className="h-10 w-48 bg-muted rounded-full animate-pulse mx-auto sm:mx-0"></div>
@@ -89,7 +90,7 @@ export function InteractiveStatementTable() {
         );
     }
 
-    if (isInitialLoad) {
+    if (isInitialLoad || !data) {
         return (
             <div className="space-y-4">
                 <div className="h-10 w-48 bg-muted rounded-full mx-auto sm:mx-0 opacity-50"></div>
@@ -108,11 +109,23 @@ export function InteractiveStatementTable() {
         );
     }
 
-    if (!data) return null;
+    if (!appliedCriteria) return null;
 
     const summary = data;
     const comparisonSummary = data.comparisonData;
-    const includeComparison = filters.includeComparison && !!comparisonSummary;
+    const includeComparison = appliedCriteria.includeComparison && !!comparisonSummary;
+    const normalizedSearchQuery = filters.searchQuery.trim().toLowerCase();
+    const filteredDetailEntries = data.entries.filter((entry: FinancialPerformanceEntry) => {
+        if (!normalizedSearchQuery) return true;
+
+        return [
+            entry.glCode,
+            entry.accountTitle,
+            entry.reportSection,
+            entry.division,
+            entry.department,
+        ].some(value => (value ?? "").toLowerCase().includes(normalizedSearchQuery));
+    });
 
     // Helper to get total of a specific section in entries
     const getSectionTotal = (sourceData: FinancialPerformanceResponse | undefined, sectionName: string) => {
@@ -196,29 +209,12 @@ export function InteractiveStatementTable() {
     };
 
     const getComparisonLabel = () => {
-        if (!filters.includeComparison) return "";
-        if (filters.comparisonBasis === "monthly") return `Past FS (${new Date(filters.comparisonStartDate).toLocaleString('default', { month: 'long' })} ${filters.comparisonStartDate.split("-")[0]})`;
-        if (filters.comparisonBasis === "quarterly") {
-             const startMonth = parseInt(filters.comparisonStartDate.split("-")[1]);
-             const q = Math.ceil(startMonth / 3);
-             return `Past FS (Q${q} ${filters.comparisonStartDate.split("-")[0]})`;
-        }
-        return `Past FS (${filters.comparisonStartDate.split("-")[0]})`;
+        return getFinancialPerformanceComparisonLabel(appliedCriteria);
     };
 
     // ----- DETAIL VIEW RENDERER -----
     const renderDetailGroup = (typeLabel: string, typeKey: string) => {
-        const filteredEntries = data.entries.filter((e: FinancialPerformanceEntry) => {
-            if (e.reportSection !== typeKey) return false;
-            // Search filter
-            if (searchQuery) {
-                const q = searchQuery.toLowerCase();
-                return e.accountTitle.toLowerCase().includes(q) || 
-                       (e.division || "").toLowerCase().includes(q) || 
-                       (e.department || "").toLowerCase().includes(q);
-            }
-            return true;
-        });
+        const filteredEntries = filteredDetailEntries.filter(entry => entry.reportSection === typeKey);
 
         if (filteredEntries.length === 0) return null;
 
@@ -245,18 +241,16 @@ export function InteractiveStatementTable() {
     };
 
 
-    const getHeaderLabel = () => {
-         if (filters.dataBasis === "monthly") {
-             const m = new Date(filters.startDate).toLocaleString('default', { month: 'long' });
-             const y = filters.startDate.split("-")[0];
-             return `For the Month of ${m} ${y}`;
-         }
-         return `For the period ending ${filters.endDate}`;
-    };
-
     return (
-        <div className="space-y-4 animate-in fade-in duration-500">
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <div className="min-w-0 max-w-full space-y-4 animate-in fade-in duration-500">
+            <div aria-label="Generated report periods" className="rounded-xl border border-border bg-card p-4 text-sm space-y-1">
+                <p><span className="font-medium">Reporting period:</span> {formatFinancialPerformanceDateRange(appliedCriteria.startDate, appliedCriteria.endDate)}</p>
+                {includeComparison && (
+                    <p><span className="font-medium">Comparison period:</span> {formatFinancialPerformanceDateRange(appliedCriteria.comparisonStartDate, appliedCriteria.comparisonEndDate)}</p>
+                )}
+                {isLoading && <p role="status" aria-live="polite" className="text-xs text-muted-foreground">Generating report; showing the last successful results.</p>}
+            </div>
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full min-w-0">
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-muted p-1 rounded-full w-full sm:w-fit mb-6 shadow-inner">
                     <TabsList className="bg-transparent h-10 p-0 shadow-none border-0 w-full sm:w-auto">
                         <TabsTrigger 
@@ -275,13 +269,12 @@ export function InteractiveStatementTable() {
                 </div>
 
                 <TabsContent value="summary" className="m-0 mt-0">
-                    <Card className="shadow-sm border-border overflow-hidden bg-card">
+                    <Card className="min-w-0 max-w-full overflow-hidden border-border bg-card shadow-sm">
                         <div className="p-5 sm:p-6 lg:p-8 bg-card border-b border-border">
                             <h2 className="text-xl font-bold tracking-tight text-foreground">Statement of Financial Performance</h2>
-                            <p className="text-sm text-muted-foreground mt-1 font-medium">{getHeaderLabel()}</p>
                         </div>
                         
-                        <div className="overflow-x-auto w-full">
+                        <div className="w-full min-w-0 max-w-full overflow-x-auto">
                             <Table className="min-w-[800px] w-full text-sm">
                                 <TableHeader className="bg-background sticky top-0 z-10 border-b border-border shadow-sm">
                                     <TableRow className="hover:bg-background border-0">
@@ -448,7 +441,7 @@ export function InteractiveStatementTable() {
                                     
                                     {/* --- FINAL --- */}
                                     {renderSummaryRow({ label: "Income Before Tax", currentValue: summary.incomeBeforeTax, priorValue: comparisonSummary?.incomeBeforeTax, isBold: true, hasBorderTop: true })}
-                                    {renderSummaryRow({ label: `Tax (${filters.taxRate}%)`, currentValue: summary.incomeTaxExpense, priorValue: comparisonSummary?.incomeTaxExpense, isIndented: true, isNegativeFormat: true, hasBorderBottom: true })}
+                                    {renderSummaryRow({ label: `Tax (${appliedCriteria.taxRate}%)`, currentValue: summary.incomeTaxExpense, priorValue: comparisonSummary?.incomeTaxExpense, isIndented: true, isNegativeFormat: true, hasBorderBottom: true })}
                                     
                                     {/* Final output table row custom style */}
                                     <TableRow className="bg-zinc-950 hover:bg-zinc-900 border-0 shadow-lg group transition-colors">
@@ -476,23 +469,35 @@ export function InteractiveStatementTable() {
                 </TabsContent>
 
                 <TabsContent value="detail" className="m-0 mt-0">
-                    <Card className="shadow-sm border-border overflow-hidden bg-card flex flex-col min-h-[600px]">
-                        <div className="p-5 sm:p-6 lg:p-8 bg-card border-b border-border flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <Card className="flex min-h-[600px] min-w-0 max-w-full flex-col overflow-hidden border-border bg-card shadow-sm">
+                        <div className="flex min-w-0 flex-col justify-between gap-4 border-b border-border bg-card p-4 sm:flex-row sm:items-start sm:p-5">
                             <div>
                                 <h2 className="text-xl font-bold tracking-tight text-foreground">Detail View</h2>
                                 <p className="text-sm text-muted-foreground mt-1 font-medium">Grouped by section for review and validation</p>
                             </div>
-                            <div className="w-full md:w-[350px]">
-                                <Input 
-                                    placeholder="Search account, section, division, or department..."
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="h-10 text-sm border-input rounded-xl bg-card transition-all focus-visible:ring-1 w-full"
+                            <div className="w-full min-w-0 sm:max-w-xl">
+                                <Label htmlFor="sfp-detail-search" className="text-xs font-semibold">Find account or section</Label>
+                                <Input
+                                    id="sfp-detail-search"
+                                    type="search"
+                                    placeholder="Account code, title, section, division, or department"
+                                    value={filters.searchQuery}
+                                    onChange={event => updateFilters({ searchQuery: event.target.value })}
+                                    aria-describedby="sfp-detail-search-scope"
+                                    className="mt-1.5 h-10 w-full text-sm"
                                 />
+                                <p id="sfp-detail-search-scope" className="mt-1 text-xs text-muted-foreground">
+                                    <span role="status" aria-live="polite">
+                                        {normalizedSearchQuery
+                                            ? `${filteredDetailEntries.length} matching account ${filteredDetailEntries.length === 1 ? "row" : "rows"}. `
+                                            : `Showing all ${filteredDetailEntries.length} account ${filteredDetailEntries.length === 1 ? "row" : "rows"}. `}
+                                    </span>
+                                    Search only hides detail rows; summary totals, KPIs, Net Income, and exports use the full applied report.
+                                </p>
                             </div>
                         </div>
 
-                        <div className="flex-1 overflow-auto bg-card">
+                        <div className="min-w-0 max-w-full flex-1 overflow-auto bg-card">
                             <Table className="min-w-[1000px] w-full text-sm">
                                 <TableHeader className="bg-background sticky top-0 z-10 shadow-sm border-b border-border">
                                     <TableRow className="hover:bg-background border-0">
@@ -504,6 +509,13 @@ export function InteractiveStatementTable() {
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody className="bg-card">
+                                    {filteredDetailEntries.length === 0 && (
+                                        <TableRow>
+                                            <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
+                                                {normalizedSearchQuery ? "No account rows match this search." : "No account rows are available in this report."}
+                                            </TableCell>
+                                        </TableRow>
+                                    )}
                                     {renderDetailGroup("Sales", "Sales")}
                                     {renderDetailGroup("Contra Revenue", "Contra Revenue")}
                                     {renderDetailGroup("Purchases / Cost of Sales", "Purchases / Cost of Sales")}

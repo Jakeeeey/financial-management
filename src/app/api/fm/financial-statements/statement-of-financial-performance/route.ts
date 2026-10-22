@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { FINANCIAL_PERFORMANCE_SOURCE_MODULES } from "@/modules/financial-management/financial-statements/statement-of-financial-performace/utils/report-coverage";
 
 const API_BASE_URL = `${process.env.SPRING_API_BASE_URL}/api`;
 const COOKIE_NAME = "vos_access_token";
@@ -17,10 +18,9 @@ export async function GET(request: NextRequest) {
 
     // Default source modules if none are provided
     if (!searchParams.has("sourceModule")) {
-      searchParams.append("sourceModule", "Sales");
-      searchParams.append("sourceModule", "Sales Invoice");
-      searchParams.append("sourceModule", "Disbursement");
-      searchParams.append("sourceModule", "Collection");
+      for (const sourceModule of FINANCIAL_PERFORMANCE_SOURCE_MODULES) {
+        searchParams.append("sourceModule", sourceModule);
+      }
     }
 
     const status = searchParams.get("status");

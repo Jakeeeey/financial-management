@@ -1,5 +1,42 @@
 import { FinancialPerformanceResponse, FinancialPerformanceResponseSchema } from "../types/financial-performance.schema";
 
+export interface FinancialPerformanceDivisionOption {
+  divisionId: number;
+  divisionName: string;
+}
+
+export interface FinancialPerformanceDepartmentOption {
+  departmentId: number;
+  departmentName: string;
+  parentDivision: number | null;
+}
+
+async function getLookupOptions<T>(url: string): Promise<T[]> {
+  const response = await fetch(url, {
+    credentials: "include",
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch organizational options: ${response.statusText}`);
+  }
+
+  const data: unknown = await response.json();
+  if (!Array.isArray(data)) {
+    throw new Error("Organizational options response was not a list");
+  }
+
+  return data as T[];
+}
+
+export function getFinancialPerformanceDivisions(): Promise<FinancialPerformanceDivisionOption[]> {
+  return getLookupOptions<FinancialPerformanceDivisionOption>("/api/fm/setup/divisions");
+}
+
+export function getFinancialPerformanceDepartments(): Promise<FinancialPerformanceDepartmentOption[]> {
+  return getLookupOptions<FinancialPerformanceDepartmentOption>("/api/fm/setup/departments");
+}
+
 export interface FetchFinancialPerformanceParams {
   startDate: string;
   endDate: string;

@@ -38,6 +38,9 @@ export interface FinancialPerformanceResponse extends FinancialPerformanceRespon
 }
 
 // ─── Filter state managed by the provider ───
+export type FinancialPerformancePeriodBasis = "manual" | "monthly" | "quarterly" | "annually" | "yearToDate";
+export type FinancialPerformanceComparisonMode = "previousPeriod" | "samePeriodLastYear" | "custom";
+
 export interface FinancialPerformanceFilterState {
   searchQuery: string;
   startDate: string;
@@ -49,9 +52,11 @@ export interface FinancialPerformanceFilterState {
   departmentName: string;
   comparisonStartDate: string;
   comparisonEndDate: string;
-  dataBasis: "manual" | "monthly" | "quarterly" | "annually";
-  comparisonBasis: "monthly" | "quarterly" | "annually";
+  dataBasis: FinancialPerformancePeriodBasis;
+  comparisonMode: FinancialPerformanceComparisonMode;
 }
+
+export type FinancialPerformanceReportCriteria = Omit<FinancialPerformanceFilterState, "searchQuery">;
 
 export interface ValidationStatus {
   isValidated: boolean;
