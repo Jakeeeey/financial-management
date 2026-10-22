@@ -39,6 +39,7 @@ export type AdjustingEntry = {
   cancelledByName: string | null;
   cancelledAt: string | null;
   lastPostingError: string | null;
+  canCancelAfterReversalConflict: boolean;
   lastPostingAttemptAt: string | null;
   divisionId: number | null;
   divisionName: string | null;
@@ -96,6 +97,15 @@ export type AdjustingEntryPage = {
   last: boolean;
 };
 
+export type AjePrintReport = {
+  entries: AdjustingEntry[];
+  totalRecords: number;
+  totalDebit: string;
+  totalCredit: string;
+  generatedBy: AjeAccess;
+  generatedAt: string;
+};
+
 export type AdjustingEntrySummary = {
   draft: number;
   posted: number;
@@ -123,6 +133,9 @@ export type AdjustingEntryPostedAdjustmentHistory = {
   totalDebit: number;
   totalCredit: number;
   variance: number;
+  sourceTotalDebit: number;
+  netConsumedDebit: number;
+  remainingEligibleDebit: number;
   entries: Array<{
     id: number;
     jeNo: string | null;
@@ -156,6 +169,8 @@ export type AdjustingEntryQuery = {
   sort?: string;
   accountTypeId?: number | null;
 };
+
+export type AdjustingEntrySummaryQuery = Pick<AdjustingEntryQuery, "search" | "startDate" | "endDate" | "divisionId" | "departmentId" | "accountTypeId">;
 
 export type AdjustingEntrySourceJournal = {
   jeNo: string;
@@ -212,6 +227,6 @@ export type AjeAction = "submit" | "approve" | "reject" | "withdraw" | "revise" 
 export type AjeAccount = { id: number; label: string; accountTypeId: number | null; accountTypeName: string | null; departmentRequired: boolean };
 export type AjeAttachment = { id: number; entryId: number; fileId: string; filename: string; mimeType: string; fileSize: number; state: string; uploadedByName: string; uploadedAt: string };
 export type AjePeriod = { closedThroughDate: string | null; version: number; updatedByName: string | null; updatedAt: string | null };
-export type AjeAuditEvent = { id: number; entryId: number | null; journalNumber: string | null; actorUserId: number; actorName: string; action: string; status: string | null; occurredAt: string; reason: string | null; changes: Array<{ field: string; before: string | null; after: string | null }> };
-export type AjeAuditPage = { content: AjeAuditEvent[]; totalPages: number; totalElements: number; number: number; first: boolean; last: boolean };
+export type AjeAuditEvent = { id: number; entryId: number | null; journalNumber: string | null; actorUserId: number; actorName: string; action: string; status: string | null; occurredAt: string; reason: string | null; changes: Array<{ field: string; before: string | null; after: string | null; attachmentId?: number | null }>; currentTotalDebit: number | null; currentTotalCredit: number | null };
+export type AjeAuditPage = { content: AjeAuditEvent[]; totalPages: number; totalElements: number; number: number; first: boolean; last: boolean; dayCounts: Record<string, number> };
 export type AjeReversalPreview = { original: AdjustingEntry; canFullReverse: boolean; lines: Array<{ originalDetailId: number; coaId: number; accountNumber: string; accountTitle: string; departmentId: number | null; departmentName: string | null; description: string | null; originalDebit: number; originalCredit: number; reversedAmount: number; remainingAmount: number }> };

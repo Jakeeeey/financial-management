@@ -3,10 +3,11 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import type { AjeAttachment, AdjustingEntry } from "../types";
-import { ajeAttachmentPreviewUrl, ajeAttachmentUrl } from "../services/adjusting-journal-entries.api";
+import type { AjeAction, AjeAttachment, AjeAuditEvent, AdjustingEntry } from "../types";
+import { ajeAttachmentPreviewUrl, ajeAttachmentThumbnailUrl, ajeAttachmentUrl, ajeEntryPrintUrl } from "../services/adjusting-journal-entries.api";
 import { AjeAttachmentPreview, isPreviewableAjeImage } from "./AjeAttachmentPreview";
-import { formatDate, formatDateTime, money, statusBadgeClass } from "./formatters";
+import { auditEventSummary, formatDate, formatDateTime, money, statusBadgeClass } from "./formatters";
+import { availableActions, isSelfApproval } from "./AdjustingEntriesTable";
 
 type Props = {
   open: boolean;
@@ -15,16 +16,25 @@ type Props = {
   attachments: AjeAttachment[];
   loading: boolean;
   error: string;
+  attachmentsLoading: boolean;
   attachmentsError: string;
+  auditEvents: AjeAuditEvent[];
+  auditLoading: boolean;
+  auditError: string;
+  canReview: boolean;
+  userId?: number;
+  onAction: (entry: AdjustingEntry, action: AjeAction) => void;
   onClose: () => void;
 };
 
-export function AjeReviewDialog({ open, journalNumber, entry, attachments, loading, error, attachmentsError, onClose }: Props) {
+export function AjeReviewDialog({ open, journalNumber, entry, attachments, loading, error, attachmentsLoading, attachmentsError, auditEvents, auditLoading, auditError, canReview, userId, onAction, onClose }: Props) {
+  const reviewActions = entry ? availableActions(entry).filter(action => action === "approve" || action === "reject") : [];
+  const selfReviewBlocked = Boolean(canReview && userId != null && entry && reviewActions.length && isSelfApproval(entry, userId));
   return <Dialog open={open} onOpenChange={value => { if (!value) onClose(); }}>
     <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
       <DialogHeader>
         <DialogTitle>{entry?.jeNo || journalNumber || "Review adjusting entry"}</DialogTitle>
-        <DialogDescription>Read-only journal review. Use the queue row to approve, reject, post, or retry this entry.</DialogDescription>
+        <DialogDescription>{canReview ? "Review journal details, workflow history, and supporting documents before deciding." : "Read-only view of the journal details, workflow history, and supporting documents."}</DialogDescription>
       </DialogHeader>
       {loading && <p role="status" className="py-8 text-center text-sm text-muted-foreground">Loading journal details…</p>}
       {error && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</p>}
@@ -55,20 +65,40 @@ export function AjeReviewDialog({ open, journalNumber, entry, attachments, loadi
 
         <section aria-label="Supporting documents" className="space-y-2 rounded-md border p-3">
           <h3 className="font-semibold">Supporting documents</h3>
-          {attachmentsError && <p role="alert" className="text-sm text-amber-700">{attachmentsError}</p>}
-          {!attachmentsError && attachments.length === 0 && <p className="text-sm text-muted-foreground">No supporting documents attached.</p>}
-          {attachments.map(file => {
+          {attachmentsLoading && <p role="status" className="text-sm text-muted-foreground">Loading supporting documents…</p>}
+          {!attachmentsLoading && attachmentsError && <p role="alert" className="text-sm text-amber-700">{attachmentsError}</p>}
+          {!attachmentsLoading && !attachmentsError && attachments.length === 0 && <p className="text-sm text-muted-foreground">No supporting documents attached.</p>}
+          {!attachmentsLoading && !attachmentsError && attachments.map(file => {
             const previewable = file.state === "READY" && isPreviewableAjeImage(file.mimeType, file.filename);
             return <AjeAttachmentPreview key={file.id} fileName={file.filename}
               downloadUrl={file.state === "READY" ? ajeAttachmentUrl(file.entryId, file.id) : undefined}
               openDownloadInNewTab
+              thumbnailUrl={previewable ? ajeAttachmentThumbnailUrl(file.entryId, file.id) : undefined}
               previewUrl={previewable ? ajeAttachmentPreviewUrl(file.entryId, file.id) : undefined}
               statusText={file.state === "READY" ? undefined : "Upload incomplete"}
               metadata={`${file.uploadedByName} · ${formatDateTime(file.uploadedAt)}`} />;
           })}
         </section>
+
+        <section aria-label="Audit trail" className="space-y-2 border-t pt-4">
+          <h3 className="font-semibold">Audit trail</h3>
+          {auditLoading && auditEvents.length === 0 && <p role="status" className="text-sm text-muted-foreground">Loading audit trail…</p>}
+          {auditLoading && auditEvents.length > 0 && <p role="status" className="text-xs text-muted-foreground">Updating audit trail…</p>}
+          {!auditLoading && auditError && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{auditError}</p>}
+          {!auditLoading && !auditError && auditEvents.length === 0 && <p className="text-sm text-muted-foreground">No audit events recorded.</p>}
+          {auditEvents.length > 0 && <ol aria-busy={auditLoading} className="divide-y rounded-md border px-3">
+            {auditEvents.map(event => <li key={event.id} className="grid gap-1 py-3 sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-4">
+              <time dateTime={event.occurredAt} className="text-xs text-muted-foreground">{formatDateTime(event.occurredAt)}</time>
+              <div className="space-y-1">
+                <p className="text-sm font-semibold">{event.action} by {event.actorName || "Name unavailable"}</p>
+                <p className="text-sm text-muted-foreground">{auditEventSummary(event)}</p>
+              </div>
+            </li>)}
+          </ol>}
+        </section>
       </div>}
-      <DialogFooter><DialogClose asChild><Button type="button" variant="outline">Close</Button></DialogClose></DialogFooter>
+      {canReview && selfReviewBlocked && <p className="text-sm text-amber-700">Another user must review this entry because you created, prepared, or submitted it.</p>}
+      <DialogFooter className="flex-wrap">{!loading && entry && <Button type="button" variant="outline" asChild><a href={ajeEntryPrintUrl(entry.id,"pdf")} target="_blank" rel="noopener noreferrer">Print PDF</a></Button>}{canReview && entry && !selfReviewBlocked && reviewActions.includes("reject") && <Button type="button" variant="outline" onClick={() => onAction(entry, "reject")}>Reject</Button>}{canReview && entry && !selfReviewBlocked && reviewActions.includes("approve") && <Button type="button" onClick={() => onAction(entry, "approve")}>Approve</Button>}<DialogClose asChild><Button type="button" variant="outline">Close</Button></DialogClose></DialogFooter>
     </DialogContent>
   </Dialog>;
 }

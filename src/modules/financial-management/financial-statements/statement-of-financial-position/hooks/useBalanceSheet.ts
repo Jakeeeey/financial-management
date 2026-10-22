@@ -23,6 +23,7 @@ export function useBalanceSheet() {
 
     // State
     filters: context.filters,
+    appliedFilters: context.appliedFilters,
     setFilters: context.setFilters,
     isLoading: context.isLoading,
     isInitialLoad: context.isInitialLoad,

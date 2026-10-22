@@ -30,6 +30,7 @@ export interface ARRow {
   dispatchDate: string | null;
   paymentStatus: string;
   transactionStatus: string;
+  arStatus?: 'Due' | 'Overdue' | '—';
   grossAmount: number;
   discountAmount: number;
   netReceivable: number;
@@ -90,6 +91,8 @@ export interface ARFilterOptions {
   salesmen: string[];
   divisions: string[];
   operations: { value: string; label: string }[];
+  transactionStatuses: string[];
+  arStatuses: string[];
 }
 
 export interface ARFullPayload {
@@ -118,6 +121,8 @@ export interface ARTableFilters {
   operation?: string;
   agingRange?: string;
   search?: string;
+  arStatus?: string;
+  transactionStatus?: string;
 }
 
 export interface CustomerGroupRow {
@@ -235,10 +240,16 @@ export function computeDerivedStatus(
   lookups: StatusLookupData
 ): string {
   const dbStatus = (dbTransactionStatus || '').trim();
+  const upperStatus = dbStatus.toUpperCase();
   if (
     dbStatus === 'Cancellation Requested' ||
-    dbStatus === 'Cancelled' ||
-    dbStatus === 'CANCELLED'
+    upperStatus === 'CANCELLED' ||
+    upperStatus.startsWith('CANCELLED -') ||
+    upperStatus.includes('OLD INVOICE') ||
+    upperStatus === 'VOID' ||
+    upperStatus === 'VOIDED' ||
+    upperStatus === 'NOT FULFILLED' ||
+    upperStatus === 'NOT_FULFILLED'
   ) {
     return dbStatus;
   }
@@ -443,12 +454,17 @@ function deriveMetricsFromRows(
 }
 
 function buildFilterOptions(rows: ARRow[], operationData: OperationBreakdown[]): ARFilterOptions {
+  const transactionStatuses = Array.from(
+    new Set(rows.map(r => r.transactionStatus).filter(Boolean))
+  ).sort();
   return {
     customers: Array.from(new Set(rows.map(r => r.customerName))).sort(),
     clusters: Array.from(new Set(rows.map(r => r.cluster).filter(c => c && c !== 'Unassigned'))).sort(),
     salesmen: Array.from(new Set(rows.map(r => r.salesman).filter(s => s && s !== 'Unknown'))).sort(),
     divisions: Array.from(new Set(rows.map(r => r.division).filter(d => d && d !== '—'))).sort(),
     operations: operationData.map(op => ({ value: String(op.id), label: op.name })),
+    transactionStatuses,
+    arStatuses: ['Due', 'Overdue'],
   };
 }
 
@@ -472,6 +488,12 @@ export function applyARFilters(rows: ARRow[], filters: ARTableFilters): ARRow[] 
     if (filters.salesman && row.salesman !== filters.salesman) return false;
     if (filters.division && row.division !== filters.division) return false;
     if (filters.operation && String(row.salesType) !== String(filters.operation)) return false;
+    if (filters.arStatus) {
+      const isOverdue = row.daysOverdue !== null && row.daysOverdue >= 0 && row.outstandingBalance > 0;
+      const rowArStatus = row.arStatus ?? (isOverdue ? 'Overdue' : (row.dispatchDate ? 'Due' : '—'));
+      if (rowArStatus !== filters.arStatus) return false;
+    }
+    if (filters.transactionStatus && row.transactionStatus !== filters.transactionStatus) return false;
     if (filters.agingRange) {
       const overdueDays = row.daysOverdue;
       if (overdueDays === null || overdueDays < 0) return false;
@@ -543,9 +565,11 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
   ].join(',');
 
   const invoiceFilter =
-    `filter[payment_status][_nin]=Paid,Fully Paid` +
+    `filter[payment_status][_nin]=Paid,Fully Paid,Void,VOID,Cancelled,CANCELLED,Cancelled%20-%20Old%20Invoice,CANCELLED%20-%20OLD%20INVOICE` +
     `&filter[_or][0][isPosted][_null]=true` +
-    `&filter[_or][1][isPosted][_eq]=false`;
+    `&filter[_or][1][isPosted][_eq]=false` +
+    `&filter[_and][0][_or][0][transaction_status][_nin]=Cancelled,CANCELLED,Void,VOID,void,Not%20Fulfilled,NOT%20FULFILLED,Cancelled%20-%20Old%20Invoice,CANCELLED%20-%20OLD%20INVOICE,cancelled%20-%20old%20invoice` +
+    `&filter[_and][0][_or][1][transaction_status][_null]=true`;
 
   const collectionUrl = `${DIRECTUS_URL}/items/collection?limit=-1&fields=id,salesman_id,totalAmount&filter[isPosted][_neq]=true&filter[isCancelled][_neq]=true`;
 
@@ -559,7 +583,7 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
     return {
       rows: [], operationData: [], agingData: deriveAgingData([]),
       salesmanData: [], metrics: deriveMetricsFromRows([], emptyPool),
-      filterOptions: { customers: [], clusters: [], salesmen: [], divisions: [], operations: [] },
+      filterOptions: { customers: [], clusters: [], salesmen: [], divisions: [], operations: [], transactionStatuses: [], arStatuses: ['Due', 'Overdue'] },
       salesmanUnposted: {}, sourceInvoiceCount: 0, ...emptyPool,
     };
   }
@@ -661,7 +685,22 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
   const rows: ARRow[] = [];
   for (const inv of invoices) {
     if (parseBit(inv.isPosted)) continue;
-    if ((inv.transaction_status || '').trim().toUpperCase() === 'CANCELLED') continue;
+    const txStatus = (inv.transaction_status || '').trim().toUpperCase();
+    const payStatus = (inv.payment_status || '').trim().toUpperCase();
+    if (
+      txStatus === 'CANCELLED' ||
+      txStatus.startsWith('CANCELLED -') ||
+      txStatus.includes('OLD INVOICE') ||
+      txStatus === 'VOID' ||
+      txStatus === 'VOIDED' ||
+      txStatus === 'NOT FULFILLED' ||
+      txStatus === 'NOT_FULFILLED' ||
+      payStatus === 'VOID' ||
+      payStatus === 'VOIDED' ||
+      payStatus === 'CANCELLED' ||
+      payStatus.startsWith('CANCELLED -') ||
+      payStatus.includes('OLD INVOICE')
+    ) continue;
 
     const grossAmount = Number(inv.gross_amount) || 0;
     const discountAmount = Number(inv.discount_amount) || 0;
@@ -753,6 +792,9 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
       grossAmount, discountAmount, netReceivable, returnAmount, unfulfilledAmount,
       appliedCreditMemos: creditMemos, appliedDebitMemos: debitMemos, totalPaid, outstandingBalance,
       unpostedCollectionAmount: unpostedAgg.get(inv.invoice_id) || 0, daysOverdue,
+      arStatus: (daysOverdue !== null && daysOverdue >= 0 && outstandingBalance > 0)
+        ? 'Overdue'
+        : (inv.dispatch_date ? 'Due' : '—'),
       branch: inv.branch_id?.branch_name || 'Unknown',
       salesman: sm?.name || 'Unknown', salesmanCode: sm?.code || '—',
       supplierCode,
@@ -780,7 +822,7 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
   const operationData = Array.from(operationAgg.values()).sort((a, b) => b.totalOutstanding - a.totalOutstanding);
 
   const totalUnpostedPool = unpostedCollections.reduce((sum, c) => sum + (Number(c.totalAmount) || 0), 0);
-  const activeInvoiceIds = new Set(invoices.map(i => i.invoice_id));
+  const activeInvoiceIds = new Set(rows.map(r => r.invoiceId));
   let unpostedAllocationsActive = 0, unpostedAllocationsPaid = 0;
   for (const alloc of unpostedInvoiceAllocs) {
     if (activeInvoiceIds.has(alloc.invoice_id)) unpostedAllocationsActive += Number(alloc.amount) || 0;

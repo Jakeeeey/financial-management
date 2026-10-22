@@ -1,14 +1,7 @@
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { NavUser } from "@/components/shared/app-sidebar/nav-user";
+import { AjeRouteBreadcrumb } from "@/modules/financial-management/financial-statements/adjusting-journal-entries/components/AjeRouteBreadcrumb";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { COOKIE_NAME, decodeJwtPayload } from "@/lib/auth-utils";
@@ -59,23 +52,7 @@ export default async function AdjustingEntriesLayout({ children }: { children: R
           />
 
           <div className="min-w-0 overflow-hidden">
-            <Breadcrumb>
-              <BreadcrumbList className="min-w-0 overflow-hidden">
-                <BreadcrumbItem className="hidden shrink-0 md:block">
-                  <BreadcrumbLink href="#">FM</BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator className="hidden shrink-0 md:block" />
-                <BreadcrumbItem className="hidden shrink-0 md:block">
-                  <BreadcrumbLink href="#">Financial Statements</BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator className="hidden shrink-0 md:block" />
-                <BreadcrumbItem className="min-w-0 overflow-hidden">
-                  <BreadcrumbPage className="max-w-[56vw] truncate sm:max-w-[60vw] md:max-w-none">
-                    Adjusting Journal Entries
-                  </BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
+            <AjeRouteBreadcrumb />
           </div>
         </div>
 

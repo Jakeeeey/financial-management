@@ -10,9 +10,10 @@ import { formatPeso } from "../utils";
 interface Stats {
   total:          number;
   available:      number;
-  pendingSOA:     number;
   totalAvailable: number;
   totalAmount:    number;
+  cancelled: number;
+  cancelledAmount: number;
 }
 
 interface StatsCardsProps {
@@ -23,8 +24,8 @@ interface StatsCardsProps {
 export function StatsCards({ stats, loading }: StatsCardsProps) {
   if (loading) {
     return (
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 w-full">
-        {Array.from({ length: 3 }).map((_, i) => (
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 w-full">
+        {Array.from({ length: 4 }).map((_, i) => (
           <Skeleton key={i} className="h-28 w-full" />
         ))}
       </div>
@@ -34,12 +35,10 @@ export function StatsCards({ stats, loading }: StatsCardsProps) {
   const pctAvailable = stats.totalAmount
     ? ((stats.totalAvailable / stats.totalAmount) * 100).toFixed(1)
     : "0.0";
-  const pctUtilized = stats.totalAmount
-    ? (((stats.totalAmount - stats.totalAvailable) / stats.totalAmount) * 100).toFixed(1)
-    : "0.0";
+
 
   return (
-    <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 w-full">
+    <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 w-full">
 
       <Card className="shadow-none border-border">
         <CardContent className="p-5">
@@ -76,9 +75,15 @@ export function StatsCards({ stats, loading }: StatsCardsProps) {
           <p className="text-2xl font-bold tracking-tight">
             {formatPeso(stats.totalAmount)}
           </p>
-          <p className="text-xs text-muted-foreground mt-1">{pctUtilized}% utilized</p>
+          <p className="text-xs text-muted-foreground mt-1">Excludes cancelled memos</p>
         </CardContent>
       </Card>
+
+      <Card className="shadow-none border-border"><CardContent className="p-5">
+        <p className="text-sm text-muted-foreground mb-3">Cancelled Memos</p>
+        <p className="text-2xl font-bold">{stats.cancelled}</p>
+        <p className="text-xs text-muted-foreground mt-1">{formatPeso(stats.cancelledAmount)} original amount</p>
+      </CardContent></Card>
 
     </div>
   );

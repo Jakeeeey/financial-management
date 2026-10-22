@@ -33,7 +33,7 @@ export async function GET() {
 
     // 1. Fetch active division assignments AND hierarchy levels for current logged-in approver
     const approverRes = await fetch(
-      `${API_BASE_URL}/items/expense_approvers?filter[approver_id][_eq]=${userId}&filter[is_deleted][_eq]=false&fields=division_id,approver_hierarchy`,
+      `${API_BASE_URL}/items/expense_approvers?filter[approver_id][_eq]=${userId}&filter[is_deleted][_eq]=false&fields=division_id,approver_hierarchy&limit=-1`,
       {
         headers: AUTH_HEADERS,
         cache: "no-store",
@@ -95,7 +95,7 @@ export async function GET() {
     ].join(",");
 
     const divisionIdsParam = assignedDivisionIds.join(",");
-    const filterUrl = `${API_BASE_URL}/items/expense?fields=${fields}&filter[is_deleted][_eq]=false&filter[status][_eq]=Pending Approval&filter[division_id][_in]=${divisionIdsParam}&sort=-created_at`;
+    const filterUrl = `${API_BASE_URL}/items/expense?fields=${fields}&filter[is_deleted][_eq]=false&filter[status][_eq]=Pending Approval&filter[division_id][_in]=${divisionIdsParam}&sort=-created_at&limit=-1`;
 
     const res = await fetch(filterUrl, {
       headers: AUTH_HEADERS,

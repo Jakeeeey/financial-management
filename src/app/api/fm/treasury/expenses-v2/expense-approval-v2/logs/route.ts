@@ -31,7 +31,7 @@ export async function GET(req: Request) {
     ].join(",");
 
     const res = await fetch(
-      `${API_BASE_URL}/items/expense_logs?filter[expense_id][_eq]=${expenseId}&fields=${fields}&sort=-created_at`,
+      `${API_BASE_URL}/items/expense_logs?filter[expense_id][_eq]=${expenseId}&fields=${fields}&sort=-created_at&limit=-1`,
       {
         headers: AUTH_HEADERS,
         cache: "no-store",

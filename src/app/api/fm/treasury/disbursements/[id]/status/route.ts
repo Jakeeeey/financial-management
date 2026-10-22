@@ -216,6 +216,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                     ? []
                     : payables.map((line) => ({ referenceNo: line.reference_no, amount: line.amount })),
                 id,
+                status === "Submitted"
+                    && (currentDis.status === "Draft" || currentDis.status === "Returned for Revision"),
             )
             : null;
         if (memoCapError) {

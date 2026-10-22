@@ -16,11 +16,12 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Filter, CheckCircle2, AlertTriangle, Download, FileSpreadsheet, Lock } from "lucide-react";
+import { Filter, CheckCircle2, AlertTriangle, Download, FileSpreadsheet, Loader2, Lock } from "lucide-react";
 import { ValidationStatus, KeyRatios } from "../types";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { CertificationModal } from "./CertificationModal";
+import { exportBalanceSheetToExcel, exportBalanceSheetToPdf } from "../services/balance-sheet-export.service";
 
 interface Props {
     validation: ValidationStatus;
@@ -29,8 +30,53 @@ interface Props {
 
 export function ReportControlSection({ validation, ratios }: Props) {
     const isBalanced = validation.isBalanced;
-    const { refresh, resetFilters, isLoading, filters, setFilters } = useBalanceSheet();
+    const {
+        refresh,
+        resetFilters,
+        isLoading,
+        filters,
+        appliedFilters,
+        setFilters,
+        accounts,
+        summary,
+        comparisonSummary,
+        error,
+    } = useBalanceSheet();
     const [isCertifyModalOpen, setIsCertifyModalOpen] = useState(false);
+    const [exporting, setExporting] = useState<"pdf" | "excel" | null>(null);
+
+    const hasPendingFilters = appliedFilters !== null && (Object.keys(filters) as (keyof typeof filters)[])
+        .some(key => filters[key] !== appliedFilters[key]);
+    const canExport = Boolean(appliedFilters && summary) && !isLoading && !error && !hasPendingFilters;
+
+    const handleExport = async (format: "pdf" | "excel") => {
+        if (!canExport || !appliedFilters || !summary) return;
+
+        setExporting(format);
+        try {
+            await new Promise<void>(resolve => window.requestAnimationFrame(() => resolve()));
+            const exportData = { accounts, summary, comparisonSummary, ratios, filters: appliedFilters };
+            if (format === "pdf") {
+                exportBalanceSheetToPdf(exportData);
+            } else {
+                exportBalanceSheetToExcel(exportData);
+            }
+            toast.success(`${format === "pdf" ? "PDF" : "Excel"} report downloaded`);
+        } catch (exportError) {
+            const message = exportError instanceof Error ? exportError.message : "Unable to create the report.";
+            toast.error(message);
+        } finally {
+            setExporting(null);
+        }
+    };
+
+    const exportUnavailableMessage = isLoading
+        ? "Wait for the report to finish loading before exporting."
+        : hasPendingFilters
+            ? "Generate the report to apply filter changes before exporting."
+            : !appliedFilters
+                ? "Generate a report before exporting."
+                : null;
 
     const updateFilter = (updates: Partial<typeof filters>) => {
         setFilters(prev => ({ ...prev, ...updates }));
@@ -129,7 +175,7 @@ export function ReportControlSection({ validation, ratios }: Props) {
                             Dynamic balance sheet prototype with period selection, comparison view, validation checks, managerial certification, and account-level drill-down.
                         </p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <div className="flex flex-wrap items-center gap-2 shrink-0" aria-busy={exporting !== null}>
                         {false && (
                             <Badge variant="secondary" className="rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-wider">
                                 Validated
@@ -138,19 +184,26 @@ export function ReportControlSection({ validation, ratios }: Props) {
                         <Button 
                             variant="ghost" 
                             className="rounded-lg shadow-sm h-9 px-4 text-xs font-bold bg-zinc-950 text-zinc-50 hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
-                            onClick={() => toast.info("Feature is coming soon")}
+                            onClick={() => void handleExport("pdf")}
+                            disabled={!canExport || exporting !== null}
                         >
-                            <Download className="w-3.5 h-3.5 mr-2" />
-                            Export PDF
+                            {exporting === "pdf" ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-2" />}
+                            {exporting === "pdf" ? "Preparing PDF..." : "Export PDF"}
                         </Button>
                         <Button 
                             variant="ghost" 
                             className="rounded-lg shadow-sm h-9 px-4 text-xs font-bold bg-zinc-950 text-zinc-50 hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
-                            onClick={() => toast.info("Feature is coming soon")}
+                            onClick={() => void handleExport("excel")}
+                            disabled={!canExport || exporting !== null}
                         >
-                            <FileSpreadsheet className="w-3.5 h-3.5 mr-2" />
-                            Export Excel
+                            {exporting === "excel" ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5 mr-2" />}
+                            {exporting === "excel" ? "Preparing Excel..." : "Export Excel"}
                         </Button>
+                        {exportUnavailableMessage && (
+                            <span className="basis-full text-right text-xs text-muted-foreground" role="status">
+                                {exportUnavailableMessage}
+                            </span>
+                        )}
                         {false && (
                             <Button 
                                 variant="default" 

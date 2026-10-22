@@ -395,6 +395,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
                 payableSupplierId,
                 requestedPayables,
                 id,
+                currentDis.status === "Draft" || currentDis.status === "Returned for Revision",
             );
             if (memoCapError) {
                 return NextResponse.json({
