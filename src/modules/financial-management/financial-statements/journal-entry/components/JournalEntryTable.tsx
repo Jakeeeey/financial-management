@@ -198,10 +198,8 @@ export default function JournalEntryTable({
                 const statusLower = status.toLowerCase();
                 const statusClasses = getStatusClasses(statusLower);
                 const isKnown = ["draft", "approved", "posted", "for review", "dispatched", "voided", "cancelled"].includes(statusLower);
-                const sourceDebitTotal = group.entries.reduce((sum, entry) => sum + entry.debit, 0);
-                const sourceCreditTotal = group.entries.reduce((sum, entry) => sum + entry.credit, 0);
-                const totalDebit = group.adjustedTotalDebit ?? sourceDebitTotal;
-                const totalCredit = group.adjustedTotalCredit ?? sourceCreditTotal;
+                const totalDebit = group.totalDebit;
+                const totalCredit = group.totalCredit;
                 const distributionId = `journal-distribution-${group.jeGroupCounter}`;
 
                 return (
@@ -288,11 +286,9 @@ export default function JournalEntryTable({
                             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                               Accounting distribution · {group.jeNo}
                             </div>
-                            {group.hasPostedAdjustments && (
-                              <p className="mb-3 text-xs text-muted-foreground">
-                                Summary totals include posted adjustments. Open the journal details to review their lines.
-                              </p>
-                            )}
+                            <p className="mb-3 text-xs text-muted-foreground">
+                              Amounts belong to this journal. Posted adjustments appear as separate journals.
+                            </p>
                             {group.entries.length === 0 ? (
                               <p className="py-3 text-sm text-muted-foreground">No accounting lines are available.</p>
                             ) : (

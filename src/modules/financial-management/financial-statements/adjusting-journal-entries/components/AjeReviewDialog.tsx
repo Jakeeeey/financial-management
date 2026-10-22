@@ -6,7 +6,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, Di
 import type { AjeAction, AjeAttachment, AjeAuditEvent, AdjustingEntry } from "../types";
 import { ajeAttachmentPreviewUrl, ajeAttachmentThumbnailUrl, ajeAttachmentUrl, ajeEntryPrintUrl } from "../services/adjusting-journal-entries.api";
 import { AjeAttachmentPreview, isPreviewableAjeImage } from "./AjeAttachmentPreview";
-import { formatDate, formatDateTime, money, statusBadgeClass } from "./formatters";
+import { auditEventSummary, formatDate, formatDateTime, money, statusBadgeClass } from "./formatters";
 import { availableActions, isSelfApproval } from "./AdjustingEntriesTable";
 
 type Props = {
@@ -26,27 +26,6 @@ type Props = {
   onAction: (entry: AdjustingEntry, action: AjeAction) => void;
   onClose: () => void;
 };
-
-function auditEventSummary(event: AjeAuditEvent) {
-  if (event.reason?.trim()) return event.reason.trim();
-  const summaries: Record<string, string> = {
-    Created:"Draft created",
-    Edited:"Journal details updated",
-    Submitted:"Submitted for approval",
-    Approved:"Approved for posting",
-    Rejected:"Returned for revision",
-    Withdrawn:"Withdrawn from approval",
-    "Revision Started":"Revision started",
-    Cancelled:"Entry cancelled",
-    Posted:"Posted to the General Ledger",
-    "Posting Failed":"Posting failed",
-    "Supporting Document Added":"Supporting document added",
-    "Supporting Document Removed":"Supporting document removed",
-  };
-  if (summaries[event.action]) return summaries[event.action];
-  const changedFields = event.changes.map(change => change.field).filter(Boolean);
-  return changedFields.length ? `Updated ${changedFields.join(", ")}` : "Audit event recorded";
-}
 
 export function AjeReviewDialog({ open, journalNumber, entry, attachments, loading, error, attachmentsLoading, attachmentsError, auditEvents, auditLoading, auditError, canReview, userId, onAction, onClose }: Props) {
   const reviewActions = entry ? availableActions(entry).filter(action => action === "approve" || action === "reject") : [];

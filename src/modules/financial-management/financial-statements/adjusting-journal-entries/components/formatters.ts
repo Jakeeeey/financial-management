@@ -1,4 +1,27 @@
+import type { AjeAuditEvent } from "../types";
+
 export const balancedTolerance = 0.005;
+
+export function auditEventSummary(event: AjeAuditEvent) {
+  if (event.reason?.trim()) return event.reason.trim();
+  const summaries: Record<string, string> = {
+    Created:"Draft created",
+    Edited:"Journal details updated",
+    Submitted:"Submitted for approval",
+    Approved:"Approved for posting",
+    Rejected:"Returned for revision",
+    Withdrawn:"Withdrawn from approval",
+    "Revision Started":"Revision started",
+    Cancelled:"Entry cancelled",
+    Posted:"Posted to the General Ledger",
+    "Posting Failed":"Posting failed",
+    "Supporting Document Added":"Supporting document added",
+    "Supporting Document Removed":"Supporting document removed",
+  };
+  if (summaries[event.action]) return summaries[event.action];
+  const changedFields = event.changes.map(change => change.field).filter(Boolean);
+  return changedFields.length ? `Updated ${changedFields.join(", ")}` : "Audit event recorded";
+}
 
 export function money(value: number | null | undefined) {
   return new Intl.NumberFormat("en-PH", {

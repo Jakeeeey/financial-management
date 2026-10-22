@@ -169,10 +169,10 @@ function JournalEntryDashboard() {
       await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
 
       if (type === "Excel") {
-        exportJournalToExcel(allGroups, dateRangeText, "General_Journal_Export.xlsx", undefined, activeFilters);
+        exportJournalToExcel(allGroups, dateRangeText, "General_Journal_Export.xlsx", activeFilters);
         toast.success("Excel exported successfully!", { id: toastId });
       } else {
-        exportJournalToPdf(allGroups, dateRangeText, "General_Journal_Export.pdf", undefined, activeFilters);
+        exportJournalToPdf(allGroups, dateRangeText, "General_Journal_Export.pdf", activeFilters);
         toast.success("PDF exported successfully!", { id: toastId });
       }
     } catch (err) {
