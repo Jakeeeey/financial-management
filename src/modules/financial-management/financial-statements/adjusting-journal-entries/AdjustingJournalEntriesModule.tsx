@@ -23,13 +23,13 @@ const AjeAuditTrail = React.lazy(() => import("./components/AjeAuditTrail").then
 
 type Tab = "new" | "posting" | "audit" | "summary";
 type EntryListTab = Extract<Tab, "posting" | "summary">;
-type PostingQueue = "all" | "needs-action" | "submitted" | "approved" | "failed";
+type PostingQueue = "all" | "awaiting-my-review" | "ready-for-me-to-post" | "my-drafts";
 type CatalogLookups = { accounts: AjeAccount[]; departments: DepartmentLookup[]; divisions: DivisionLookup[] };
 const statuses = ["All","Draft","Submitted","Approved","Rejected","Posted","Cancelled","Failed","Voided"];
-const queueValues: PostingQueue[] = ["all","needs-action","submitted","approved","failed"];
+const queueValues: PostingQueue[] = ["all","awaiting-my-review","ready-for-me-to-post","my-drafts"];
 const pageSizes = [10,20,50,100];
 const sortValues = ["lastActivity,desc","transactionDate,desc","transactionDate,asc","id,desc","jeNo,asc","status,asc"];
-const emptySummary: AdjustingEntrySummary = { draft:0, submitted:0, approved:0, posted:0, rejected:0, cancelled:0, failed:0, voided:0, imbalanced:0, totalRecords:0, postedDebit:0, postedCredit:0 };
+const emptySummary: AdjustingEntrySummary = { draft:0, submitted:0, approved:0, posted:0, rejected:0, cancelled:0, failed:0, voided:0, imbalanced:0, totalRecords:0, postedDebit:0, postedCredit:0, awaitingMyReview:0, readyForMeToPost:0, myDrafts:0 };
 const reasonRequired = new Set<AjeAction>(["reject","cancel"]);
 
 function validDate(value: string | null) {
@@ -116,10 +116,12 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   const [action, setAction] = React.useState<{ entry: AdjustingEntry; action: AjeAction } | null>(null);
   const [reason, setReason] = React.useState("");
   const [actionError, setActionError] = React.useState("");
+  const [reviewApprovalError, setReviewApprovalError] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [reversal, setReversal] = React.useState<AjeReversalPreview | null>(null);
   const [reviewEntry, setReviewEntry] = React.useState<AdjustingEntry | null>(null);
   const [reviewDetails, setReviewDetails] = React.useState<AdjustingEntry | null>(null);
+  const [reviewConfirmingApproval, setReviewConfirmingApproval] = React.useState(false);
   const [reviewAttachments, setReviewAttachments] = React.useState<AjeAttachment[]>([]);
   const [reviewAuditEvents, setReviewAuditEvents] = React.useState<AjeAuditEvent[]>([]);
   const [reviewAuditLoading, setReviewAuditLoading] = React.useState(false);
@@ -135,13 +137,15 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   const commandLock = React.useRef(false);
   const reviewRequestGeneration = React.useRef(0);
   const reviewAuditRequestGeneration = React.useRef(0);
+  const reviewInvokerRef = React.useRef<HTMLElement | null>(null);
+  const pageHeadingRef = React.useRef<HTMLHeadingElement | null>(null);
   const editorDirtyRef = React.useRef(false);
   const handledIntent = React.useRef("");
   const searchCommitTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const search = listFilters.search;
   const normalizedSearch = search.trim();
   const [searchDraft, setSearchDraft] = React.useState(search);
-  const postingQueue = listFilters.queue || (initialView === "posting" && listFilters.status !== "All" ? "all" : savedPostingQueue || "needs-action");
+  const postingQueue = listFilters.queue || (initialView === "posting" && listFilters.status !== "All" ? "all" : savedPostingQueue || "all");
   const status = initialView === "posting" && postingQueue !== "all" ? "All" : listFilters.status;
   const startDate = listFilters.startDate;
   const endDate = listFilters.endDate;
@@ -157,10 +161,9 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   const query = React.useMemo<AdjustingEntryQuery>(() => ({ page,pageSize,search:normalizedSearch || undefined,status,startDate,endDate,divisionId,departmentId,accountTypeId,sort }), [page,pageSize,normalizedSearch,status,startDate,endDate,divisionId,departmentId,accountTypeId,sort]);
   const summaryQuery = React.useMemo<AdjustingEntrySummaryQuery>(() => ({ search:normalizedSearch || undefined,startDate,endDate,divisionId,departmentId,accountTypeId }), [normalizedSearch,startDate,endDate,divisionId,departmentId,accountTypeId]);
   const listQuery = React.useMemo<AdjustingEntryQuery>(() => {
-    if (initialView !== "posting" || postingQueue === "all") return query;
-    const queueStatus = postingQueue === "needs-action" ? "Needs action" : postingQueue === "submitted" ? "Submitted" : postingQueue === "approved" ? "Approved" : "Failed";
-    return { ...query, status:queueStatus };
-  }, [initialView,postingQueue,query]);
+    if (initialView !== "posting") return query;
+    return { ...query, status:postingQueue === "all" ? status : undefined, queue:postingQueue };
+  }, [initialView,postingQueue,query,status]);
   const hasEntryList = initialView === "posting" || initialView === "summary";
   const listViewActive = hasEntryList && tab === initialView;
 
@@ -359,7 +362,19 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
     setEditorSeed(null);
     setReadOnly(false);
   }
-  function requestAction(entry: AdjustingEntry, name: AjeAction) { if (commandLock.current || bulkBusy) return; setAction({ entry,action:name }); setReason(""); setActionError(""); }
+  function closeAction() {
+    setAction(null);
+  }
+  function requestAction(entry: AdjustingEntry, name: AjeAction, trigger?: HTMLElement) {
+    if (commandLock.current || bulkBusy) return;
+    if (name === "approve") {
+      openReview(entry,true,trigger);
+      return;
+    }
+    setAction({ entry,action:name });
+    setReason("");
+    setActionError("");
+  }
   function toggleApprovalSelection(entryId: number, selected: boolean) {
     setSelectedApprovalIds(current => { const next = new Set(current); if (selected) next.add(entryId); else next.delete(entryId); return next; });
     setBulkResult(null);
@@ -417,8 +432,11 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
     try { const details = await api.get(entry.id); setEditorEntry(details); setEditorSeed(null); setEditorReturnTab(tab === "posting" || tab === "summary" ? tab : null); setReadOnly(!edit || details.status !== "Draft" || details.entryOrigin !== "MANUAL" || details.creatorId !== access?.userId); setEditorKey(k => k + 1); setTab("new"); }
     catch (e) { setError(e instanceof Error ? e.message : "Unable to open this entry"); }
   }
-  function openReview(entry: AdjustingEntry) {
+  function openReview(entry: AdjustingEntry, confirmApproval = false, trigger?: HTMLElement) {
+    if (trigger) reviewInvokerRef.current = trigger;
     const generation = ++reviewRequestGeneration.current;
+    setReviewConfirmingApproval(confirmApproval);
+    setReviewApprovalError("");
     setReviewEntry(entry); setReviewDetails(null); setReviewAttachments([]); setReviewLoading(true); setReviewAttachmentsLoading(true); setReviewError(""); setReviewAttachmentsError("");
     setReviewAuditEvents([]); setReviewAuditError("");
     void refreshReviewAudit(entry.id);
@@ -440,26 +458,40 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   function closeReview() {
     reviewRequestGeneration.current += 1;
     reviewAuditRequestGeneration.current += 1;
+    setReviewConfirmingApproval(false);
+    setReviewApprovalError("");
     setReviewEntry(null); setReviewDetails(null); setReviewAttachments([]); setReviewLoading(false); setReviewAttachmentsLoading(false); setReviewError(""); setReviewAttachmentsError("");
     setReviewAuditEvents([]); setReviewAuditLoading(false); setReviewAuditError("");
   }
-  async function runAction(event: React.MouseEvent<HTMLButtonElement>) {
+  function restoreReviewFocus(event: { preventDefault: () => void }) {
     event.preventDefault();
-    if (!action || commandLock.current) return;
-    if (reasonRequired.has(action.action) && !reason.trim()) { setActionError("A reason is required."); return; }
-    commandLock.current = true; setBusy(true); setActionError("");
+    const invoker = reviewInvokerRef.current;
+    if (invoker?.isConnected) invoker.focus({ preventScroll:true });
+    else pageHeadingRef.current?.focus({ preventScroll:true });
+  }
+  async function executeAction(entry: AdjustingEntry, name: AjeAction) {
+    if (commandLock.current) return;
+    if (reasonRequired.has(name) && !reason.trim()) { setActionError("A reason is required."); return; }
+    commandLock.current = true;
+    setBusy(true);
+    if (name === "approve") setReviewApprovalError("");
+    else setActionError("");
     try {
-      const updated = await api.command(action.entry.id,action.action,action.entry.version,reason.trim() || undefined);
-      setAction(null); refreshEntriesAndSummary(); toast.success(`${actionLabelForEntry(action.entry, action.action)} completed · ${updated.jeNo || `Entry #${updated.id}`}`);
+      const updated = await api.command(entry.id,name,entry.version,reason.trim() || undefined);
+      if (name === "approve") { setReviewConfirmingApproval(false); setReviewApprovalError(""); }
+      else closeAction();
+      refreshEntriesAndSummary(); toast.success(`${actionLabelForEntry(entry, name)} completed - ${updated.jeNo || `Entry #${updated.id}`}`);
       if (reviewEntry?.id === updated.id) { setReviewEntry(updated); setReviewDetails(updated); void refreshReviewAudit(updated.id); }
       if (editorEntry?.id === updated.id || (initialView === "posting" && tab === "new")) { setEditorEntry(updated); setEditorSeed(null); setReadOnly(updated.status !== "Draft"); setEditorKey(k => k + 1); }
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : "The action failed");
+      const message = e instanceof Error ? e.message : "The action failed";
+      if (name === "approve") setReviewApprovalError(message);
+      else setActionError(message);
       refreshEntriesAndSummary();
       try {
-        const latest = await api.get(action.entry.id);
-        setAction(current => current ? { ...current, entry: latest,
-          action: latest.status === "Failed" && ["post","retry"].includes(current.action) ? "retry" : current.action } : null);
+        const latest = await api.get(entry.id);
+        setAction(current => current && current.entry.id === latest.id ? { ...current, entry: latest,
+          action: latest.status === "Failed" && ["post","retry"].includes(current.action) ? "retry" : current.action } : current);
         if (reviewEntry?.id === latest.id) { setReviewEntry(latest); setReviewDetails(latest); void refreshReviewAudit(latest.id); }
         if (editorEntry?.id === latest.id || (initialView === "posting" && tab === "new")) {
           setEditorEntry(latest); setReadOnly(latest.status !== "Draft"); setEditorKey(k => k + 1);
@@ -467,6 +499,21 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
       } catch { /* Keep the original error if the service is unavailable. */ }
     }
     finally { commandLock.current = false; setBusy(false); }
+  }
+  function runAction(event: React.MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    if (action) void executeAction(action.entry,action.action);
+  }
+  function requestReviewApproval() {
+    setReviewApprovalError("");
+    setReviewConfirmingApproval(true);
+  }
+  function cancelReviewApproval() {
+    setReviewApprovalError("");
+    setReviewConfirmingApproval(false);
+  }
+  function retryReviewDetails() {
+    if (reviewEntry) openReview(reviewEntry,reviewConfirmingApproval);
   }
   async function previewReversal(entry: AdjustingEntry) {
     try { setReversal(await api.reversalPreview(entry.id)); }
@@ -497,7 +544,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   const editorTitle = editorEntry ? (readOnly ? "View Adjusting Entry" : "Editing Adjusting Entry") : editorSeed?.entryKind === "REVERSAL" ? "New Reversal" : "New Adjusting Entry";
   const summaryPrintDisabled = listLoading || Boolean(listError) || searchDraft.trim() !== normalizedSearch;
   const pageHeader = <div className="flex flex-wrap items-start justify-between gap-3"><div>
-    <h1 className="text-xl font-semibold">{tab === "posting" ? "Posting of Entries" : tab === "new" ? editorTitle : tab === "audit" ? "Audit Trail" : "Summary"}</h1>
+    <h1 ref={pageHeadingRef} tabIndex={-1} className="text-xl font-semibold">{tab === "posting" ? "Posting of Entries" : tab === "new" ? editorTitle : tab === "audit" ? "Audit Trail" : "Summary"}</h1>
     <p className="text-sm text-muted-foreground">{tab === "posting" ? "Review adjusting entries and process approvals and postings." : tab === "new" ? editorEntry ? (readOnly ? "Review this adjusting entry." : "Update this existing draft adjusting entry.") : "Prepare a balanced adjustment and submit it for review." : tab === "audit" ? "Chronological journal actions, revisions, supporting files, and period controls." : "Review adjusting entry workflow totals and journal activity."}</p>
     {(tab === "posting" || tab === "new") && <p className="mt-1 text-xs text-muted-foreground">Closed through: {periodLoading ? "Loading cutoff…" : periodError ? "Unavailable" : period?.closedThroughDate ? formatDate(period.closedThroughDate) : "No cutoff set"}</p>}
   </div><div className="flex flex-wrap gap-2">
@@ -522,11 +569,10 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
       {tab === "summary" && <p className="text-xs text-muted-foreground">Accounting dates: {summaryDateScope}. Counts and posted amounts also reflect the search, division, department, and account-type filters. Status filters narrow the journal list only.</p>}
       {tab === "posting" && <div className="flex flex-wrap items-center gap-2" aria-label="Posting queue view">
         {([
-          ["all", "All statuses", summary.totalRecords],
-          ["needs-action", "Needs action", summary.submitted + summary.approved + summary.failed],
-          ["submitted", "Awaiting review", summary.submitted],
-          ["approved", "Ready to post", summary.approved],
-          ["failed", "Posting failed", summary.failed],
+          ["all", "All entries", summary.totalRecords],
+          ["awaiting-my-review", "Awaiting my review", summary.awaitingMyReview],
+          ["ready-for-me-to-post", "Ready for me to post", summary.readyForMeToPost],
+          ["my-drafts", "My drafts", summary.myDrafts],
         ] as const).map(([value, label, count]) => <Button key={value} type="button" size="sm" aria-pressed={postingQueue === value && (value !== "all" || status === "All")} variant={postingQueue === value && (value !== "all" || status === "All") ? "default" : "outline"} onClick={() => selectPostingQueue(value)}>{label}<span className="ml-1 rounded-full bg-background/20 px-1.5 text-xs">{count}</span></Button>)}
       </div>}
       <AdjustingEntriesFilters search={searchDraft} startDate={startDate} endDate={endDate} status={status} pageSize={pageSize} filterDivisionId={division} filterDepartmentId={department} statusOptions={statuses} pageSizes={[10,20,50,100]}
@@ -537,16 +583,21 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
         <div className="space-y-1.5"><Label htmlFor="aje-account-type" className="text-xs font-medium text-muted-foreground">Account type</Label><select id="aje-account-type" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={accountType} onChange={e => updateFilters({ accountTypeId:e.target.value || null })}><option value="">All account types</option>{accountTypes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
         <div className="space-y-1.5"><Label htmlFor="aje-sort" className="text-xs font-medium text-muted-foreground">Sort</Label><select id="aje-sort" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={sort} onChange={e => updateFilters({ sort:e.target.value === "lastActivity,desc" ? null : e.target.value })}><option value="lastActivity,desc">Last activity: newest</option><option value="transactionDate,desc">Accounting date: newest</option><option value="transactionDate,asc">Accounting date: oldest</option><option value="id,desc">Newest created</option><option value="jeNo,asc">Journal number</option><option value="status,asc">Status</option></select></div>
       </AdjustingEntriesFilters>
-      <AdjustingEntriesTable entries={entries} loading={listLoading || busy || bulkBusy} userId={access?.userId} readOnly={tab === "summary" || !access} onView={(entry,edit) => { if ((initialView === "posting" || initialView === "summary") && !edit) void openReview(entry); else void view(entry,edit); }} onAction={requestAction} onReverse={entry => void previewReversal(entry)} bulkActionsEnabled={tab === "posting" && Boolean(access)} selectedEntryIds={selectedApprovalIds} onToggleEntrySelection={toggleApprovalSelection} onTogglePageSelection={togglePageApprovalSelection} onBulkApprove={requestBulkApproval} bulkBusy={bulkBusy} />
+      <AdjustingEntriesTable entries={entries} loading={listLoading || busy || bulkBusy} emptyMessage={postingQueue === "awaiting-my-review" ? "No entries are awaiting your review." : postingQueue === "ready-for-me-to-post" ? "No approved or retryable entries are ready for you to post." : postingQueue === "my-drafts" ? "You have no draft entries." : undefined} userId={access?.userId} readOnly={tab === "summary" || !access} onView={(entry,edit,trigger) => { if ((initialView === "posting" || initialView === "summary") && !edit) void openReview(entry,false,trigger); else void view(entry,edit); }} onAction={requestAction} onReverse={entry => void previewReversal(entry)} bulkActionsEnabled={tab === "posting" && Boolean(access)} selectedEntryIds={selectedApprovalIds} onToggleEntrySelection={toggleApprovalSelection} onTogglePageSelection={togglePageApprovalSelection} onBulkApprove={requestBulkApproval} bulkBusy={bulkBusy} />
       {bulkResult && <div role="status" className="space-y-2 rounded-md border bg-muted/20 p-3 text-sm"><p>{bulkResult.approved} approved · {bulkResult.failures.length} failed</p>{bulkResult.failures.length > 0 && <ul className="list-inside list-disc text-destructive">{bulkResult.failures.map(failure => <li key={failure.jeNo}><span className="font-medium">{failure.jeNo}:</span> {failure.message}</li>)}</ul>}</div>}
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>{totalElements > 0 ? `Showing ${page * pageSize + 1}–${Math.min((page + 1) * pageSize, totalElements)} of ${totalElements} entries · Page ${page + 1} of ${Math.max(totalPages, 1)}` : "0 entries"}</span><div className="flex gap-2"><Button variant="outline" size="icon-sm" aria-label="Go to first page" disabled={page === 0 || listLoading} onClick={() => updateListQuery({ page:"0" })}><ChevronsLeft className="h-4 w-4" /></Button><Button variant="outline" size="sm" disabled={page === 0 || listLoading} onClick={() => updateListQuery({ page:String(page - 1) })}>Previous</Button><Button variant="outline" size="sm" disabled={listLoading || page + 1 >= totalPages} onClick={() => updateListQuery({ page:String(page + 1) })}>Next</Button><Button variant="outline" size="icon-sm" aria-label="Go to last page" disabled={listLoading || page + 1 >= totalPages} onClick={() => updateListQuery({ page:String(Math.max(0, totalPages - 1)) })}><ChevronsRight className="h-4 w-4" /></Button></div></div>
     </>}
     {periodOpen && period && <AjePeriodDialog period={period} onClose={() => setPeriodOpen(false)} onSaved={value => setPeriod(value)} />}
-    <AlertDialog open={action !== null} onOpenChange={open => { if (!open && !busy) setAction(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{action ? `${actionLabelForEntry(action.entry, action.action)} ${action.entry.jeNo}?` : "Confirm action"}</AlertDialogTitle><AlertDialogDescription>{action?.action === "cancel" && action.entry.canCancelAfterReversalConflict ? "This cancels the failed full reversal and preserves the AJE and its audit history. It will not be permanently deleted." : action?.action === "post" || action?.action === "retry" ? "This commits the approved entry to the General Ledger. Posted entries are read-only." : "This action updates the journal workflow and records an audit event."}</AlertDialogDescription></AlertDialogHeader>
-      {action && <div className="text-sm">Debit {money(action.entry.totalDebit)} · Credit {money(action.entry.totalCredit)}</div>}
+    <AlertDialog open={action !== null} onOpenChange={open => { if (!open && !busy) closeAction(); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{action ? `${actionLabelForEntry(action.entry, action.action)} ${action.entry.jeNo}?` : "Confirm action"}</AlertDialogTitle><AlertDialogDescription>{action?.action === "cancel" && action.entry.canCancelAfterReversalConflict ? "This cancels the failed full reversal and preserves the AJE and its audit history. It will not be permanently deleted." : action?.action === "post" || action?.action === "retry" ? "This commits the approved entry to the General Ledger. Posted entries are read-only." : "This action updates the journal workflow and records an audit event."}</AlertDialogDescription></AlertDialogHeader>
+      {action && ["post", "retry"].includes(action.action) ? <dl className="grid gap-3 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-2">
+        <div><dt className="text-muted-foreground">Reference</dt><dd className="break-words font-medium">{action.entry.reference || "No reference"}</dd></div>
+        <div><dt className="text-muted-foreground">Accounting date</dt><dd className="font-medium">{formatDate(action.entry.transactionDate)}</dd></div>
+        <div><dt className="text-muted-foreground">Debit total</dt><dd className="font-medium">{money(action.entry.totalDebit)}</dd></div>
+        <div><dt className="text-muted-foreground">Credit total</dt><dd className="font-medium">{money(action.entry.totalCredit)}</dd></div>
+      </dl> : action && <div className="text-sm">Debit {money(action.entry.totalDebit)} | Credit {money(action.entry.totalCredit)}</div>}
       {action && reasonRequired.has(action.action) && <div className="space-y-1"><Label htmlFor="aje-action-reason">Reason *</Label><Textarea id="aje-action-reason" maxLength={4000} value={reason} disabled={busy} onChange={e => setReason(e.target.value)} /></div>}
       {actionError && <p role="alert" className="text-sm text-destructive">{actionError}</p>}
-      <AlertDialogFooter><AlertDialogCancel disabled={busy}>{action?.action === "cancel" && action.entry.canCancelAfterReversalConflict ? "Keep AJE" : "Cancel"}</AlertDialogCancel><AlertDialogAction disabled={busy} onClick={event => void runAction(event)}>{busy ? "Working…" : action ? actionLabelForEntry(action.entry, action.action) : "Confirm"}</AlertDialogAction></AlertDialogFooter>
+      <AlertDialogFooter><AlertDialogCancel disabled={busy}>{action?.action === "cancel" && action.entry.canCancelAfterReversalConflict ? "Keep AJE" : "Cancel"}</AlertDialogCancel><AlertDialogAction disabled={busy} onClick={event => runAction(event)}>{busy ? "Working…" : action ? actionLabelForEntry(action.entry, action.action) : "Confirm"}</AlertDialogAction></AlertDialogFooter>
     </AlertDialogContent></AlertDialog>
     <AlertDialog open={bulkConfirmEntries !== null} onOpenChange={open => { if (!open && !bulkBusy) setBulkConfirmEntries(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Approve {bulkConfirmEntries?.length || 0} selected entries?</AlertDialogTitle><AlertDialogDescription>Each entry will be approved separately using its current version. Entries that fail will remain selected so you can review and retry them.</AlertDialogDescription></AlertDialogHeader>
       {bulkConfirmEntries && <div className="max-h-48 overflow-y-auto rounded-md border p-3 text-sm"><ul className="list-inside list-disc">{bulkConfirmEntries.map(entry => <li key={entry.id}>{entry.jeNo} · {money(entry.totalDebit)} debit / {money(entry.totalCredit)} credit</li>)}</ul></div>}
@@ -557,10 +608,10 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
       <DialogFooter><Button variant="outline" onClick={() => setReversal(null)}>Cancel</Button><Button variant="outline" disabled={!reversal?.lines.some(d => d.remainingAmount > 0)} onClick={() => createReversal("PARTIAL")}>Partial / remaining reversal</Button><Button disabled={!reversal?.canFullReverse} onClick={() => createReversal("FULL")}>Full reversal</Button></DialogFooter>
     </DialogContent></Dialog>
     {(initialView === "posting" || initialView === "summary") && reviewEntry !== null && <React.Suspense fallback={<Dialog open onOpenChange={open => { if (!open) closeReview(); }}>
-      <DialogContent className="sm:max-w-5xl"><DialogHeader><DialogTitle>{reviewEntry.jeNo || "Review adjusting entry"}</DialogTitle></DialogHeader>
+      <DialogContent className="sm:max-w-5xl" onCloseAutoFocus={restoreReviewFocus}><DialogHeader><DialogTitle>{reviewEntry.jeNo || "Review adjusting entry"}</DialogTitle></DialogHeader>
         <p role="status" className="py-8 text-center text-sm text-muted-foreground">Loading review dialog…</p>
         <DialogFooter><Button type="button" variant="outline" onClick={closeReview}>Close</Button></DialogFooter>
       </DialogContent>
-    </Dialog>}><AjeReviewDialog open journalNumber={reviewEntry.jeNo || null} entry={reviewDetails} attachments={reviewAttachments} loading={reviewLoading} error={reviewError} attachmentsLoading={reviewAttachmentsLoading} attachmentsError={reviewAttachmentsError} auditEvents={reviewAuditEvents} auditLoading={reviewAuditLoading} auditError={reviewAuditError} canReview={tab === "posting" && Boolean(access)} userId={access?.userId} onAction={requestAction} onClose={closeReview} /></React.Suspense>}
+    </Dialog>}><AjeReviewDialog open journalNumber={reviewEntry.jeNo || null} entry={reviewDetails} attachments={reviewAttachments} loading={reviewLoading} error={reviewError} attachmentsLoading={reviewAttachmentsLoading} attachmentsError={reviewAttachmentsError} auditEvents={reviewAuditEvents} auditLoading={reviewAuditLoading} auditError={reviewAuditError} canReview={tab === "posting" && Boolean(access)} userId={access?.userId} confirmingApproval={reviewConfirmingApproval} approvalBusy={busy} approvalError={reviewApprovalError} onAction={requestAction} onRequestApproval={requestReviewApproval} onCancelApproval={cancelReviewApproval} onConfirmApproval={entry => void executeAction(entry,"approve")} onRetryDetails={retryReviewDetails} onClose={closeReview} onCloseAutoFocus={restoreReviewFocus} /></React.Suspense>}
   </div>;
 }

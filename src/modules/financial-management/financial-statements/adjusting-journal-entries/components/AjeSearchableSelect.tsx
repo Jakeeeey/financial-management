@@ -30,6 +30,7 @@ type AjeSearchableSelectProps = {
   className?: string;
   ariaInvalid?: boolean;
   ariaLabel?: string;
+  ariaDescribedBy?: string;
 };
 
 export function AjeSearchableSelect({
@@ -41,6 +42,7 @@ export function AjeSearchableSelect({
   className,
   ariaInvalid,
   ariaLabel,
+  ariaDescribedBy,
 }: AjeSearchableSelectProps) {
   const [open, setOpen] = React.useState(false);
   const selectedLabel = React.useMemo(
@@ -57,6 +59,7 @@ export function AjeSearchableSelect({
           aria-expanded={open}
           aria-invalid={ariaInvalid}
           aria-label={ariaLabel}
+          aria-describedby={ariaDescribedBy}
           className={cn("w-full justify-between", !value && "text-muted-foreground", className)}
           disabled={disabled}
         >

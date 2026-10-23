@@ -24,20 +24,31 @@ type Props = {
   canReview: boolean;
   userId?: number;
   onAction: (entry: AdjustingEntry, action: AjeAction) => void;
+  confirmingApproval: boolean;
+  approvalBusy: boolean;
+  approvalError: string;
+  onRequestApproval: () => void;
+  onCancelApproval: () => void;
+  onConfirmApproval: (entry: AdjustingEntry) => void;
+  onRetryDetails: () => void;
   onClose: () => void;
+  onCloseAutoFocus: (event: { preventDefault: () => void }) => void;
 };
 
-export function AjeReviewDialog({ open, journalNumber, entry, attachments, loading, error, attachmentsLoading, attachmentsError, auditEvents, auditLoading, auditError, canReview, userId, onAction, onClose }: Props) {
+export function AjeReviewDialog({ open, journalNumber, entry, attachments, loading, error, attachmentsLoading, attachmentsError, auditEvents, auditLoading, auditError, canReview, userId, onAction, confirmingApproval, approvalBusy, approvalError, onRequestApproval, onCancelApproval, onConfirmApproval, onRetryDetails, onClose, onCloseAutoFocus }: Props) {
   const reviewActions = entry ? availableActions(entry).filter(action => action === "approve" || action === "reject") : [];
   const selfReviewBlocked = Boolean(canReview && userId != null && entry && reviewActions.length && isSelfApproval(entry, userId));
+  const approvalReady = Boolean(entry && !loading && !error && !attachmentsLoading && !auditLoading);
   return <Dialog open={open} onOpenChange={value => { if (!value) onClose(); }}>
-    <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
-      <DialogHeader>
+    <DialogContent className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl" onCloseAutoFocus={onCloseAutoFocus}>
+      <DialogHeader className="shrink-0 px-6 pt-6 pb-4 pr-12">
         <DialogTitle>{entry?.jeNo || journalNumber || "Review adjusting entry"}</DialogTitle>
         <DialogDescription>{canReview ? "Review journal details, workflow history, and supporting documents before deciding." : "Read-only view of the journal details, workflow history, and supporting documents."}</DialogDescription>
       </DialogHeader>
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 pb-4">
       {loading && <p role="status" className="py-8 text-center text-sm text-muted-foreground">Loading journal details…</p>}
-      {error && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</p>}
+      {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"><span>{error}</span><Button type="button" variant="outline" size="sm" onClick={onRetryDetails}>Retry details</Button></div>}
+      {confirmingApproval && approvalError && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{approvalError}</p>}
       {!loading && entry && <div className="space-y-4">
         <div className="grid gap-3 rounded-md border p-3 sm:grid-cols-2 lg:grid-cols-4">
           <div><p className="text-xs text-muted-foreground">Status</p><Badge variant="outline" className={statusBadgeClass(entry.status)}>{entry.status}</Badge></div>
@@ -98,7 +109,18 @@ export function AjeReviewDialog({ open, journalNumber, entry, attachments, loadi
         </section>
       </div>}
       {canReview && selfReviewBlocked && <p className="text-sm text-amber-700">Another user must review this entry because you created, prepared, or submitted it.</p>}
-      <DialogFooter className="flex-wrap">{!loading && entry && <Button type="button" variant="outline" asChild><a href={ajeEntryPrintUrl(entry.id,"pdf")} target="_blank" rel="noopener noreferrer">Print PDF</a></Button>}{canReview && entry && !selfReviewBlocked && reviewActions.includes("reject") && <Button type="button" variant="outline" onClick={() => onAction(entry, "reject")}>Reject</Button>}{canReview && entry && !selfReviewBlocked && reviewActions.includes("approve") && <Button type="button" onClick={() => onAction(entry, "approve")}>Approve</Button>}<DialogClose asChild><Button type="button" variant="outline">Close</Button></DialogClose></DialogFooter>
+      </div>
+      <DialogFooter className="shrink-0 flex-wrap border-t bg-background px-6 py-4">
+        {!loading && entry && <Button type="button" variant="outline" asChild><a href={ajeEntryPrintUrl(entry.id,"pdf")} target="_blank" rel="noopener noreferrer">Print PDF</a></Button>}
+        {confirmingApproval ? <>
+          <Button type="button" variant="outline" disabled={approvalBusy} onClick={onCancelApproval}>Cancel</Button>
+          <Button type="button" disabled={approvalBusy || !approvalReady || selfReviewBlocked || !reviewActions.includes("approve")} onClick={() => { if (entry) onConfirmApproval(entry); }}>{approvalBusy ? "Approving..." : "Confirm approval"}</Button>
+        </> : <>
+          {canReview && entry && !selfReviewBlocked && reviewActions.includes("reject") && <Button type="button" variant="outline" onClick={() => onAction(entry, "reject")}>Reject</Button>}
+          {canReview && entry && !selfReviewBlocked && reviewActions.includes("approve") && <Button type="button" onClick={onRequestApproval}>Approve</Button>}
+        </>}
+        <DialogClose asChild><Button type="button" variant="outline">Close</Button></DialogClose>
+      </DialogFooter>
     </DialogContent>
   </Dialog>;
 }
