@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { AjeSearchableSelect } from "./AjeSearchableSelect";
+import { AjeDataFreshness, AjeRetryAlert } from "./AjeDataFreshness";
 import { money, formatDate, formatDateTime, todayManila } from "./formatters";
 import { ajeAttachmentPreviewUrl, ajeAttachmentThumbnailUrl, ajeAttachmentUrl, ajeEntryPrintUrl, adjustingJournalEntriesApi as api } from "../services/adjusting-journal-entries.api";
 import { AjeAttachmentPreview, isPreviewableAjeImage } from "./AjeAttachmentPreview";
@@ -83,6 +84,10 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
   const [postedAdjustmentHistoryLoading, setPostedAdjustmentHistoryLoading] = React.useState(false);
   const [postedAdjustmentHistoryError, setPostedAdjustmentHistoryError] = React.useState("");
   const [attachments, setAttachments] = React.useState<AjeAttachment[]>([]);
+  const [attachmentsLoading, setAttachmentsLoading] = React.useState(Boolean(initialEntry?.id));
+  const [attachmentsError, setAttachmentsError] = React.useState("");
+  const [attachmentsUpdatedAt, setAttachmentsUpdatedAt] = React.useState<number | null>(null);
+  const [attachmentsRevision, setAttachmentsRevision] = React.useState(0);
   const [selectedFiles, setSelectedFiles] = React.useState<File[]>([]);
   const selectedFilePreviewUrls = React.useRef(new Map<File, string>());
   const [preview, setPreview] = React.useState<AjeReversalPreview | null>(null);
@@ -190,10 +195,13 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
   React.useEffect(() => {
     if (!entry?.id) return;
     let active = true;
-    api.attachments(entry.id).then(data => { if (active) setAttachments(data); })
-      .catch(e => { if (active) setError(e instanceof Error ? e.message : "Unable to load supporting documents"); });
+    setAttachmentsLoading(true);
+    api.attachments(entry.id).then(data => {
+      if (active) { setAttachments(data); setAttachmentsError(""); setAttachmentsUpdatedAt(Date.now()); }
+    }).catch(e => { if (active) setAttachmentsError(e instanceof Error ? e.message : "Unable to load supporting documents"); })
+      .finally(() => { if (active) setAttachmentsLoading(false); });
     return () => { active = false; };
-  }, [entry?.id]);
+  }, [entry?.id,attachmentsRevision]);
   React.useEffect(() => () => {
     for (const url of selectedFilePreviewUrls.current.values()) URL.revokeObjectURL(url);
     selectedFilePreviewUrls.current.clear();
@@ -389,7 +397,7 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
         }
         saveCompleted = true;
       } finally {
-        setAttachments(await api.attachments(saved.id));
+        setAttachmentsRevision(value => value + 1);
         onSaved(saveCompleted);
       }
       setSavedSnapshot(serializeForm(form));
@@ -403,7 +411,7 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
   async function removeAttachment(file: AjeAttachment) {
     if (!entry || inFlight.current) return;
     inFlight.current = true; setBusy(true); setError("");
-    try { await api.removeAttachment(entry.id, file.id); setAttachments(await api.attachments(entry.id)); }
+    try { await api.removeAttachment(entry.id, file.id); setAttachments(current => current.filter(attachment => attachment.id !== file.id)); setAttachmentsRevision(value => value + 1); }
     catch (e) { setError(e instanceof Error ? e.message : "Unable to remove supporting document"); }
     finally { inFlight.current = false; setBusy(false); }
   }
@@ -529,7 +537,9 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
     </section>
 
     <section className="space-y-3 rounded-md border p-3 sm:p-4" aria-labelledby="aje-documents-heading">
-      <div><h3 id="aje-documents-heading" className="font-semibold">Supporting documents <span className="text-sm font-normal text-muted-foreground">(optional)</span></h3><p className="text-xs text-muted-foreground">Images, PDF, Word, Excel, CSV, or text · up to 10 MB per file. Files become read-only after submission.</p></div>
+      <div><h3 id="aje-documents-heading" className="font-semibold">Supporting documents <span className="text-sm font-normal text-muted-foreground">(optional)</span></h3><p className="text-xs text-muted-foreground">Images, PDF, Word, Excel, CSV, or text · up to 10 MB per file. Files become read-only after submission.</p><AjeDataFreshness label="Documents" updatedAt={attachmentsUpdatedAt} loading={attachmentsLoading} stale={Boolean(attachmentsError)} /></div>
+      {attachmentsError && <AjeRetryAlert message={attachmentsError} retrying={attachmentsLoading} retryLabel="Retry documents" onRetry={() => setAttachmentsRevision(value => value + 1)} />}
+      {attachmentsLoading && <p role="status" className="text-xs text-muted-foreground">Loading supporting documents…</p>}
       {!frozen && <Input aria-label="Supporting documents" type="file" multiple accept=".png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt" disabled={busy} onChange={e => { selectFiles(Array.from(e.target.files || [])); e.target.value = ""; }} />}
       {attachments.map(file => {
         const previewable = file.state === "READY" && isPreviewableAjeImage(file.mimeType, file.filename);

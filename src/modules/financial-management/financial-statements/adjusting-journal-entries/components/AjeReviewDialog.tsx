@@ -6,6 +6,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, Di
 import type { AjeAction, AjeAttachment, AjeAuditEvent, AdjustingEntry } from "../types";
 import { ajeAttachmentPreviewUrl, ajeAttachmentThumbnailUrl, ajeAttachmentUrl, ajeEntryPrintUrl } from "../services/adjusting-journal-entries.api";
 import { AjeAttachmentPreview, isPreviewableAjeImage } from "./AjeAttachmentPreview";
+import { AjeDataFreshness, AjeRetryAlert } from "./AjeDataFreshness";
 import { auditEventSummary, formatDate, formatDateTime, money, statusBadgeClass } from "./formatters";
 import { availableActions, isSelfApproval } from "./AdjustingEntriesTable";
 
@@ -18,9 +19,12 @@ type Props = {
   error: string;
   attachmentsLoading: boolean;
   attachmentsError: string;
+  detailsUpdatedAt: number | null;
+  attachmentsUpdatedAt: number | null;
   auditEvents: AjeAuditEvent[];
   auditLoading: boolean;
   auditError: string;
+  auditUpdatedAt: number | null;
   canReview: boolean;
   userId?: number;
   onAction: (entry: AdjustingEntry, action: AjeAction) => void;
@@ -31,11 +35,13 @@ type Props = {
   onCancelApproval: () => void;
   onConfirmApproval: (entry: AdjustingEntry) => void;
   onRetryDetails: () => void;
+  onRetryAttachments: () => void;
+  onRetryAudit: () => void;
   onClose: () => void;
   onCloseAutoFocus: (event: { preventDefault: () => void }) => void;
 };
 
-export function AjeReviewDialog({ open, journalNumber, entry, attachments, loading, error, attachmentsLoading, attachmentsError, auditEvents, auditLoading, auditError, canReview, userId, onAction, confirmingApproval, approvalBusy, approvalError, onRequestApproval, onCancelApproval, onConfirmApproval, onRetryDetails, onClose, onCloseAutoFocus }: Props) {
+export function AjeReviewDialog({ open, journalNumber, entry, attachments, loading, error, attachmentsLoading, attachmentsError, detailsUpdatedAt, attachmentsUpdatedAt, auditEvents, auditLoading, auditError, auditUpdatedAt, canReview, userId, onAction, confirmingApproval, approvalBusy, approvalError, onRequestApproval, onCancelApproval, onConfirmApproval, onRetryDetails, onRetryAttachments, onRetryAudit, onClose, onCloseAutoFocus }: Props) {
   const reviewActions = entry ? availableActions(entry).filter(action => action === "approve" || action === "reject") : [];
   const selfReviewBlocked = Boolean(canReview && userId != null && entry && reviewActions.length && isSelfApproval(entry, userId));
   const approvalReady = Boolean(entry && !loading && !error && !attachmentsLoading && !auditLoading);
@@ -44,10 +50,11 @@ export function AjeReviewDialog({ open, journalNumber, entry, attachments, loadi
       <DialogHeader className="shrink-0 px-6 pt-6 pb-4 pr-12">
         <DialogTitle>{entry?.jeNo || journalNumber || "Review adjusting entry"}</DialogTitle>
         <DialogDescription>{canReview ? "Review journal details, workflow history, and supporting documents before deciding." : "Read-only view of the journal details, workflow history, and supporting documents."}</DialogDescription>
+        <AjeDataFreshness label="Journal details" updatedAt={detailsUpdatedAt} loading={loading} stale={Boolean(error)} />
       </DialogHeader>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 pb-4">
       {loading && <p role="status" className="py-8 text-center text-sm text-muted-foreground">Loading journal details…</p>}
-      {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"><span>{error}</span><Button type="button" variant="outline" size="sm" onClick={onRetryDetails}>Retry details</Button></div>}
+      {error && <AjeRetryAlert message={error} retrying={loading} retryLabel="Retry details" onRetry={onRetryDetails} />}
       {confirmingApproval && approvalError && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{approvalError}</p>}
       {!loading && entry && <div className="space-y-4">
         <div className="grid gap-3 rounded-md border p-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -75,9 +82,9 @@ export function AjeReviewDialog({ open, journalNumber, entry, attachments, loadi
         </section>
 
         <section aria-label="Supporting documents" className="space-y-2 rounded-md border p-3">
-          <h3 className="font-semibold">Supporting documents</h3>
+          <div><h3 className="font-semibold">Supporting documents</h3><AjeDataFreshness label="Documents" updatedAt={attachmentsUpdatedAt} loading={attachmentsLoading} stale={Boolean(attachmentsError)} /></div>
           {attachmentsLoading && <p role="status" className="text-sm text-muted-foreground">Loading supporting documents…</p>}
-          {!attachmentsLoading && attachmentsError && <p role="alert" className="text-sm text-amber-700">{attachmentsError}</p>}
+          {attachmentsError && <AjeRetryAlert message={attachmentsError} retrying={attachmentsLoading} retryLabel="Retry documents" onRetry={onRetryAttachments} />}
           {!attachmentsLoading && !attachmentsError && attachments.length === 0 && <p className="text-sm text-muted-foreground">No supporting documents attached.</p>}
           {!attachmentsLoading && !attachmentsError && attachments.map(file => {
             const previewable = file.state === "READY" && isPreviewableAjeImage(file.mimeType, file.filename);
@@ -92,10 +99,10 @@ export function AjeReviewDialog({ open, journalNumber, entry, attachments, loadi
         </section>
 
         <section aria-label="Audit trail" className="space-y-2 border-t pt-4">
-          <h3 className="font-semibold">Audit trail</h3>
+          <div><h3 className="font-semibold">Audit trail</h3><AjeDataFreshness label="Audit events" updatedAt={auditUpdatedAt} loading={auditLoading} stale={Boolean(auditError)} /></div>
           {auditLoading && auditEvents.length === 0 && <p role="status" className="text-sm text-muted-foreground">Loading audit trail…</p>}
           {auditLoading && auditEvents.length > 0 && <p role="status" className="text-xs text-muted-foreground">Updating audit trail…</p>}
-          {!auditLoading && auditError && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{auditError}</p>}
+          {auditError && <AjeRetryAlert message={auditError} retrying={auditLoading} retryLabel="Retry audit events" onRetry={onRetryAudit} />}
           {!auditLoading && !auditError && auditEvents.length === 0 && <p className="text-sm text-muted-foreground">No audit events recorded.</p>}
           {auditEvents.length > 0 && <ol aria-busy={auditLoading} className="divide-y rounded-md border px-3">
             {auditEvents.map(event => <li key={event.id} className="grid gap-1 py-3 sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-4">

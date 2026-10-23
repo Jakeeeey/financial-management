@@ -68,8 +68,8 @@ export function AdjustingEntriesFilters({
 }: AdjustingEntriesFiltersProps) {
   return (
     <div className="space-y-3 rounded-md border bg-background p-3 shadow-sm">
-      <div className="grid gap-3 lg:grid-cols-12">
-      <div className="space-y-1.5 lg:col-span-5">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-12">
+      <div className="col-span-2 space-y-1.5 lg:col-span-5">
         <Label htmlFor="aje-search-filter" className="text-xs font-medium text-muted-foreground">Search</Label>
         <div className="relative min-w-0">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -82,7 +82,7 @@ export function AdjustingEntriesFilters({
           />
         </div>
       </div>
-      <div className="space-y-1.5 lg:col-span-2">
+      <div className="min-w-0 space-y-1.5 lg:col-span-2">
         <Label htmlFor="aje-start-date-filter" className="text-xs font-medium text-muted-foreground">Start Date</Label>
         <Input
           id="aje-start-date-filter"
@@ -92,7 +92,7 @@ export function AdjustingEntriesFilters({
           aria-label="Start date"
         />
       </div>
-      <div className="space-y-1.5 lg:col-span-2">
+      <div className="min-w-0 space-y-1.5 lg:col-span-2">
         <Label htmlFor="aje-end-date-filter" className="text-xs font-medium text-muted-foreground">End Date</Label>
         <Input
           id="aje-end-date-filter"
@@ -102,7 +102,7 @@ export function AdjustingEntriesFilters({
           aria-label="End date"
         />
       </div>
-      <div className="space-y-1.5 lg:col-span-3">
+      <div className="col-span-2 space-y-1.5 lg:col-span-3">
         <Label className="text-xs font-medium text-muted-foreground">Status</Label>
         <Select value={status} onValueChange={onStatusChange}>
           <SelectTrigger className="w-full">

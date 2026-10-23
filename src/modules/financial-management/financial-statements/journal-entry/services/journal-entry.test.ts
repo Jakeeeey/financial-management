@@ -91,7 +91,8 @@ test("empty exports preserve zero totals", () => {
 
 function auditEvent(id: number, overrides: Partial<AjeAuditEvent> = {}): AjeAuditEvent {
   return {
-    id, entryId: 2, journalNumber: "AJE-002", actorUserId: 1, actorName: "Reviewer", action: "Created", status: "Posted",
+    id, entryId: 2, journalNumber: "AJE-002", currentEntryAvailable: true, currentReference: "REF-002", originalJournalNumber: null, originalReference: null,
+    actorUserId: 1, actorName: "Reviewer", action: "Created", status: "Posted",
     occurredAt: "2026-10-20T13:48:00", reason: null, changes: [], currentTotalDebit: 20, currentTotalCredit: 20,
     ...overrides,
   };
