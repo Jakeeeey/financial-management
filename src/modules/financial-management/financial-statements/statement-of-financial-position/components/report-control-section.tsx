@@ -16,20 +16,14 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Filter, CheckCircle2, AlertTriangle, Download, FileSpreadsheet, Loader2, Lock } from "lucide-react";
-import { ValidationStatus, KeyRatios } from "../types";
+import { Filter, ChevronDown, Download, FileSpreadsheet, Loader2, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { CertificationModal } from "./CertificationModal";
 import { exportBalanceSheetToExcel, exportBalanceSheetToPdf } from "../services/balance-sheet-export.service";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
-interface Props {
-    validation: ValidationStatus;
-    ratios: KeyRatios;
-}
-
-export function ReportControlSection({ validation, ratios }: Props) {
-    const isBalanced = validation.isBalanced;
+export function ReportControlSection() {
     const {
         refresh,
         resetFilters,
@@ -40,10 +34,14 @@ export function ReportControlSection({ validation, ratios }: Props) {
         accounts,
         summary,
         comparisonSummary,
+        comparisonStatus,
+        ratios,
+        reportStatus,
         error,
     } = useBalanceSheet();
     const [isCertifyModalOpen, setIsCertifyModalOpen] = useState(false);
     const [exporting, setExporting] = useState<"pdf" | "excel" | null>(null);
+    const [isMoreFiltersOpen, setIsMoreFiltersOpen] = useState(false);
 
     const hasPendingFilters = appliedFilters !== null && (Object.keys(filters) as (keyof typeof filters)[])
         .some(key => filters[key] !== appliedFilters[key]);
@@ -55,7 +53,7 @@ export function ReportControlSection({ validation, ratios }: Props) {
         setExporting(format);
         try {
             await new Promise<void>(resolve => window.requestAnimationFrame(() => resolve()));
-            const exportData = { accounts, summary, comparisonSummary, ratios, filters: appliedFilters };
+            const exportData = { accounts, summary, comparisonSummary, comparisonStatus, ratios, filters: appliedFilters };
             if (format === "pdf") {
                 exportBalanceSheetToPdf(exportData);
             } else {
@@ -133,36 +131,6 @@ export function ReportControlSection({ validation, ratios }: Props) {
         updateFilter(updates);
     };
 
-    const formatVariance = (variance: number) => {
-        if (variance > 0) return `+${variance.toFixed(2)}`;
-        return variance.toFixed(2);
-    };
-
-    const renderRatioItem = ({ title, subtitle, value, priorValue, variance }: { title: string; subtitle: string; value: number; priorValue: number; variance: number }) => {
-        const isPositive = variance > 0;
-        const isNegative = variance < 0;
-        const isNeutral = variance === 0;
-
-        return (
-            <div className="flex flex-col gap-1">
-                <span className="text-sm font-bold tracking-tight">{title}</span>
-                <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider">{subtitle}</span>
-                <span className="text-2xl font-bold tracking-tight text-primary mt-1">
-                    {value.toFixed(2)}x
-                </span>
-                <span
-                    className={cn("text-xs font-bold flex items-center gap-1 transition-colors", {
-                        "text-success": isPositive,
-                        "text-destructive": isNegative,
-                        "text-muted-foreground": isNeutral,
-                    })}
-                >
-                    {isPositive ? "↑" : isNegative ? "↓" : "→"} vs prior {priorValue.toFixed(2)}x ({formatVariance(variance)}x)
-                </span>
-            </div>
-        );
-    };
-
     return (
         <Card className="shadow-none border border-border overflow-hidden bg-card">
             <CardContent className="p-0">
@@ -219,18 +187,18 @@ export function ReportControlSection({ validation, ratios }: Props) {
 
                 <Separator />
 
-                {/* ─── ROW 2: Two-column Grid (lg and up) ─── */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-border">
+                <div className="min-w-0 space-y-3 bg-card p-4 sm:p-5">
 
-                    {/* ── LEFT: Filters ── */}
-                    <div className="p-5 sm:p-6 lg:px-8 flex flex-col justify-between gap-8 bg-card">
-                        <div>
-                            <div className="text-xs font-bold flex items-center gap-2 mb-6 uppercase tracking-wider text-muted-foreground">
+                    <div className="min-w-0 space-y-3">
+                        <div className="space-y-3">
+                            <div className="text-xs font-bold flex items-center gap-2 uppercase tracking-wider text-muted-foreground">
                                 <Filter className="w-3.5 h-3.5" />
                                 Report Initialization
                             </div>
 
-                            <div className="space-y-6">
+                            <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                                <div className="min-w-0 flex-1">
+                            <div className="space-y-4">
                                 {/* Date Selection */}
                                 <div className="space-y-4">
                                     <div className="space-y-2">
@@ -401,6 +369,27 @@ export function ReportControlSection({ validation, ratios }: Props) {
                                     </div>
                                 </div>
 
+                                </div>
+                                </div>
+                                <div className="flex shrink-0 flex-wrap gap-2">
+                                    <Button variant="default" className="rounded-lg px-5 h-9 text-xs font-bold shadow-sm transition-all focus-visible:ring-primary/50" onClick={() => refresh()} disabled={isLoading}>
+                                        {isLoading ? (reportStatus === "refreshing" ? "Refreshing..." : "Loading...") : "Generate report"}
+                                    </Button>
+                                    <Button variant="outline" className="rounded-lg px-4 h-9 text-xs font-bold border-input text-foreground hover:bg-accent transition-all" onClick={() => resetFilters()} disabled={isLoading}>
+                                        Reset
+                                    </Button>
+                                </div>
+                            </div>
+                            <Collapsible open={isMoreFiltersOpen} onOpenChange={setIsMoreFiltersOpen} className="min-w-0">
+                                <CollapsibleTrigger asChild>
+                                    <Button type="button" variant="outline" aria-expanded={isMoreFiltersOpen} className="h-10 w-full justify-between gap-3 px-3 text-left focus-visible:ring-2 focus-visible:ring-ring">
+                                        <span className="text-sm font-semibold">More filters</span>
+                                        <ChevronDown aria-hidden="true" className={cn("h-4 w-4 shrink-0 transition-transform", isMoreFiltersOpen && "rotate-180")} />
+                                    </Button>
+                                </CollapsibleTrigger>
+                                <CollapsibleContent className="pt-3">
+                                    <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+
                                 {/* Division */}
                                 <div className="space-y-2">
                                     <Label className="text-xs font-bold text-foreground">Division</Label>
@@ -507,76 +496,9 @@ export function ReportControlSection({ validation, ratios }: Props) {
                                         Comparison is disabled. The report will show current-period balances only.
                                     </p>
                                 )}
-                            </div>
-                        </div>
-
-                        {/* Buttons */}
-                        <div className="flex items-center gap-3 pt-6 border-t border-border mt-2 mt-auto">
-                            <Button variant="default" className="rounded-lg px-8 h-9 text-xs font-bold shadow-sm transition-all focus-visible:ring-primary/50" onClick={() => refresh()} disabled={isLoading}>
-                                {isLoading ? "Loading..." : "Generate Report"}
-                            </Button>
-                            <Button variant="outline" className="rounded-lg px-8 h-9 text-xs font-bold border-input text-foreground hover:bg-accent transition-all" onClick={() => resetFilters()} disabled={isLoading}>
-                                Clear Filters
-                            </Button>
-                        </div>
-                    </div>
-
-                    {/* ── RIGHT: Vertical Stack — Top: Equation | Bottom: Ratios ── */}
-                    <div className="flex flex-col bg-card divide-y divide-border">
-                        {/* Accounting Equation Check */}
-                        <div className={cn("p-5 sm:p-6 lg:px-8 flex-none transition-colors", isBalanced ? "bg-success/5" : "bg-destructive/10")}>
-                            <div className="flex gap-4 items-start">
-                                {isBalanced ? (
-                                    <CheckCircle2 className="w-5 h-5 text-success shrink-0 mt-0.5" />
-                                ) : (
-                                    <AlertTriangle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
-                                )}
-                                <div>
-                                    <h4 className="font-bold text-sm tracking-tight text-foreground">Accounting Equation Check</h4>
-                                    <p className="text-xs text-muted-foreground mt-1 mb-2 font-medium">
-                                        Total Assets &ndash; (Total Liabilities + Equity) = {validation.variance < 0 ? "-" : ""}
-                                        &#8369;{Math.abs(validation.variance).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    </p>
-                                    <p className={cn("text-xs font-bold uppercase tracking-wider", isBalanced ? "text-success" : "text-destructive")}>
-                                        {isBalanced ? "Report is balanced and ready for review." : "The Financial Statement Generated is not Balanced."}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Key Ratios */}
-                        <div className="p-5 sm:p-6 lg:px-8 flex-1 flex flex-col bg-card">
-                            <h4 className="font-bold mb-8 text-xs uppercase tracking-widest text-muted-foreground">Key Ratios</h4>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-12 gap-y-12">
-                                {renderRatioItem({
-                                    title: "Current Ratio",
-                                    subtitle: "Current Assets / Current Liabilities",
-                                    value: ratios.currentRatio.current,
-                                    priorValue: ratios.currentRatio.prior,
-                                    variance: ratios.currentRatio.variance
-                                })}
-                                {renderRatioItem({
-                                    title: "Debt to Equity",
-                                    subtitle: "Total Liabilities / Total Equity",
-                                    value: ratios.debtToEquity.current,
-                                    priorValue: ratios.debtToEquity.prior,
-                                    variance: ratios.debtToEquity.variance
-                                })}
-                                {renderRatioItem({
-                                    title: "Quick Ratio",
-                                    subtitle: "(CA - Inventory) / CL",
-                                    value: ratios.quickRatio.current,
-                                    priorValue: ratios.quickRatio.prior,
-                                    variance: ratios.quickRatio.variance
-                                })}
-                                {renderRatioItem({
-                                    title: "Debt Ratio",
-                                    subtitle: "Total Liabilities / Total Assets",
-                                    value: ratios.debtRatio.current,
-                                    priorValue: ratios.debtRatio.prior,
-                                    variance: ratios.debtRatio.variance
-                                })}
-                            </div>
+                                    </div>
+                                </CollapsibleContent>
+                            </Collapsible>
                         </div>
                     </div>
                 </div>

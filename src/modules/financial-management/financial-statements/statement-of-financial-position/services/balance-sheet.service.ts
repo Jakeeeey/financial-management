@@ -1,5 +1,9 @@
-import { BalanceSheetResponse, BalanceSheetResponseSchema, DrillDownEntry, DrillDownEntrySchema } from "../types/balance-sheet.schema";
-import { z } from "zod";
+import {
+  BalanceSheetDrillDownResponse,
+  BalanceSheetDrillDownResponseSchema,
+  BalanceSheetResponse,
+  BalanceSheetResponseSchema,
+} from "../types/balance-sheet.schema";
 
 /**
  * Server-side service for fetching balance sheet data from the external backend API.
@@ -87,20 +91,26 @@ export async function getBalanceSheet(
 }
 
 interface FetchDrillDownParams {
-  glCode: string;
+  coaId: number;
   startDate: string;
   endDate: string;
+  status?: string;
+  divisionName?: string;
+  departmentName?: string;
 }
 
 export async function getBalanceSheetDrillDown(
   params: FetchDrillDownParams,
   token?: string
-): Promise<DrillDownEntry[]> {
+): Promise<BalanceSheetDrillDownResponse> {
   const API_BASE = `${process.env.SPRING_API_BASE_URL}/api/balance-sheet/drill-down`;
   const query = new URLSearchParams();
-  query.set("glCode", params.glCode);
+  query.set("coaId", String(params.coaId));
   query.set("startDate", params.startDate);
   query.set("endDate", params.endDate);
+  if (params.status) query.set("status", params.status);
+  if (params.divisionName) query.set("divisionName", params.divisionName);
+  if (params.departmentName) query.set("departmentName", params.departmentName);
 
   const url = `${API_BASE}?${query.toString()}`;
 
@@ -125,15 +135,11 @@ export async function getBalanceSheetDrillDown(
 
     const data = await response.json();
 
-    // The API returns an object like { data: [...] } based on standard patterns or just an array.
-    // Based on User prompt, it has "data": [...]
-    const drillDownData = data.data || data;
-
-    const validated = z.array(DrillDownEntrySchema).safeParse(drillDownData);
+    const validated = BalanceSheetDrillDownResponseSchema.safeParse(data);
 
     if (!validated.success) {
       console.error("Drill-Down data validation failed:", validated.error);
-      return drillDownData as DrillDownEntry[];
+      throw new Error("The balance sheet inspection response was incomplete.");
     }
 
     return validated.data;
