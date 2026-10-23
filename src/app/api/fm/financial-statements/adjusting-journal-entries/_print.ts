@@ -116,20 +116,26 @@ export async function entryPdf(entry: AdjustingEntry, actor: AjeAccess, generate
 export async function summaryPdf(report: AjePrintReport, params: URLSearchParams, profile: Company): Promise<ArrayBuffer> {
   const title = "Adjusting Journal Entries Summary";
   const { doc, y } = document(true, profile, title);
+  const startDate = params.get("startDate");
+  const endDate = params.get("endDate");
+  const dateScope = !startDate && !endDate ? "All dates"
+    : (startDate ? date(startDate) : "From beginning") + " to " + (endDate ? date(endDate) : "Present");
   const filters = [
-    "Search: " + (params.get("search") || "All"), "Status / queue: " + (params.get("status") || "All"),
-    "Accounting dates: " + date(params.get("startDate")) + " to " + date(params.get("endDate")),
+    "Search: " + (params.get("search") || "All"), "Status: " + (params.get("status") || "All statuses"),
+    "Queue: " + (params.get("queue") || "all"), "Unbalanced entries only: " + (params.get("unbalancedOnly") === "true" ? "Yes" : "No"),
+    "Accounting dates: " + dateScope,
     "Division: " + (params.get("divisionId") ? "#" + params.get("divisionId") : "All"),
     "Department: " + (params.get("departmentId") ? "#" + params.get("departmentId") : "All"),
     "Account type: " + (params.get("accountTypeId") ? "#" + params.get("accountTypeId") : "All"),
     ...(params.get("sourceJeNo") ? ["Original journal: " + params.get("sourceJeNo")] : []),
-    "Sort: " + params.get("sort"), "Records: " + report.totalRecords,
+    "Sort: " + params.get("sort"), "Currency: PHP", "Records: " + report.totalRecords + " (all matching pages)",
+    "Generated at (PHT): " + formatDateTime(report.generatedAt),
   ];
   doc.setFont("helvetica", "normal").setFontSize(8);
   const filterLines = doc.splitTextToSize(filters.join(" | "), 273);
   doc.text(filterLines, 12, y);
   const tableY = y + filterLines.length * 4 + 10;
-  doc.text("Filtered totals reflect every entry and status listed below.", 12, tableY - 4);
+  doc.text("Export scope: every entry matching the filters above across all pages. Summary cards count all workflow statuses.", 12, tableY - 4);
   table(doc, title, { startY: tableY,
     head: [["Journal / reference", "Accounting date", "Narration / original", "Division", "Status / type", "Debit", "Credit", "Created / submitted / approved / posted"]],
     body: report.entries.length ? report.entries.map(entry => [
@@ -140,7 +146,7 @@ export async function summaryPdf(report: AjePrintReport, params: URLSearchParams
         "Approved: " + (entry.approvedByName || "—"), "Posted: " + (entry.postedByName || "—"),
         ...(entry.datePosted ? ["Posted at: " + formatDateTime(entry.datePosted)] : [])].join("\n"),
     ]) : [[{ content: "No adjusting entries match these filters.", colSpan: 8, styles: { halign: "center" } }]],
-    foot: [[{ content: "Filtered totals (all listed statuses)", colSpan: 5 }, pdfMoney(report.totalDebit), pdfMoney(report.totalCredit), ""]],
+    foot: [[{ content: "Filtered totals (all matching entries)", colSpan: 5 }, pdfMoney(report.totalDebit), pdfMoney(report.totalCredit), ""]],
     showFoot: "lastPage", styles: { font: "helvetica", fontSize: 7, cellPadding: 1.8, textColor: 30, overflow: "linebreak" },
     columnStyles: { 0: { cellWidth: 30 }, 1: { cellWidth: 21 }, 2: { cellWidth: 57 }, 3: { cellWidth: 25 },
       4: { cellWidth: 25 }, 5: { cellWidth: 27, halign: "right" }, 6: { cellWidth: 27, halign: "right" }, 7: { cellWidth: 61 } } });

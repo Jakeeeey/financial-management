@@ -151,6 +151,7 @@ export const adjustingJournalEntriesApi = {
     appendOptional(params, "sourceJeNo", query.sourceJeNo?.trim());
     appendOptional(params, "sort", query.sort);
     appendOptional(params, "accountTypeId", query.accountTypeId);
+    appendOptional(params, "unbalancedOnly", query.unbalancedOnly);
     appendOptional(params, "queue", query.queue);
 
     const res = await fetchWithAuthRetry(`${BASE}?${params.toString()}`, { cache: "no-store", signal });

@@ -79,12 +79,15 @@ function canReverse(entry: AdjustingEntry) {
   return entry.status === "Posted" && entry.entryOrigin === "MANUAL" && entry.entryKind === "ADJUSTMENT" && entry.totalDebit > 0 && entry.variance === 0;
 }
 
-function EntryActions({ entry, userId, readOnly, onView, onAction, onReverse }: {
+function EntryActions({ entry, userId, readOnly, onView, onAction, onReverse, compactSummary = false, actionsDisabled = false }: {
   entry: AdjustingEntry; userId?: number; readOnly: boolean;
   onView: (entry: AdjustingEntry, edit: boolean, trigger?: HTMLElement) => void;
   onAction: (entry: AdjustingEntry, action: AjeAction, trigger?: HTMLElement) => void;
   onReverse: (entry: AdjustingEntry) => void;
+  compactSummary?: boolean;
+  actionsDisabled?: boolean;
 }) {
+  if (compactSummary) return <Button size="sm" variant="outline" disabled={actionsDisabled} onClick={event => onView(entry, false, event.currentTarget)}>View</Button>;
   const actions = readOnly ? [] : availableActionsForUser(entry, userId);
   const mainAction = actions.includes(primaryAction(entry) as AjeAction) ? primaryAction(entry) : null;
   const secondaryActions = actions.filter(action => action !== mainAction);
@@ -99,21 +102,21 @@ function EntryActions({ entry, userId, readOnly, onView, onAction, onReverse }: 
     : ["post", "retry"].includes(mainAction || "") && !isEntryApprover(entry, userId) ? postingActionTitle : undefined;
 
   return <div className="flex flex-wrap items-center gap-1.5">
-    <Button size="sm" variant="outline" onClick={event => onView(entry, false, event.currentTarget)}>View</Button>
-    {mainAction && <Button size="sm" variant={mainAction === "cancel" && entry.canCancelAfterReversalConflict ? "destructive" : ["post", "retry", "approve", "submit"].includes(mainAction) ? "default" : "outline"} disabled={mainActionDisabled} title={mainActionTitle} onClick={event => onAction(entry, mainAction, event.currentTarget)}>{actionLabelForEntry(entry, mainAction)}</Button>}
+    <Button size="sm" variant="outline" disabled={actionsDisabled} onClick={event => onView(entry, false, event.currentTarget)}>View</Button>
+    {mainAction && <Button size="sm" variant={mainAction === "cancel" && entry.canCancelAfterReversalConflict ? "destructive" : ["post", "retry", "approve", "submit"].includes(mainAction) ? "default" : "outline"} disabled={actionsDisabled || mainActionDisabled} title={mainActionTitle} onClick={event => onAction(entry, mainAction, event.currentTarget)}>{actionLabelForEntry(entry, mainAction)}</Button>}
     {!readOnly && selfReviewBlocked && <p className="basis-full text-xs text-amber-700">You created, prepared, or submitted this entry. Another user must review it.</p>}
     {postingActionBlocked && <p className="basis-full text-xs text-amber-700">{postingActionTitle}</p>}
     <DropdownMenu>
-      <DropdownMenuTrigger asChild><Button size="sm" variant="outline" aria-label={`More actions for ${entry.jeNo}`}><MoreHorizontal className="size-4 sm:mr-1" /><span className="hidden sm:inline">More</span></Button></DropdownMenuTrigger>
+      <DropdownMenuTrigger asChild><Button size="sm" variant="outline" disabled={actionsDisabled} aria-label={`More actions for ${entry.jeNo}`}><MoreHorizontal className="size-4 sm:mr-1" /><span className="hidden sm:inline">More</span></Button></DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel>More actions</DropdownMenuLabel>
         {canEdit && <DropdownMenuItem onSelect={() => onView(entry, true)}>Edit</DropdownMenuItem>}
         {secondaryActions.map(action => {
           const blockedBySelfApproval = ["approve", "reject"].includes(action) && isSelfApproval(entry, userId);
           const blockedByPostingApprover = ["post", "retry"].includes(action) && !isEntryApprover(entry, userId);
-          return <DropdownMenuItem key={action} disabled={blockedBySelfApproval || blockedByPostingApprover} title={blockedByPostingApprover ? postingActionTitle : undefined} onSelect={event => onAction(entry, action, event.currentTarget as HTMLElement)}>{actionLabelForEntry(entry, action)}</DropdownMenuItem>;
+          return <DropdownMenuItem key={action} disabled={actionsDisabled || blockedBySelfApproval || blockedByPostingApprover} title={blockedByPostingApprover ? postingActionTitle : undefined} onSelect={event => onAction(entry, action, event.currentTarget as HTMLElement)}>{actionLabelForEntry(entry, action)}</DropdownMenuItem>;
         })}
-        {!readOnly && canReverse(entry) && <DropdownMenuItem onSelect={() => onReverse(entry)}>Reverse</DropdownMenuItem>}
+        {!readOnly && canReverse(entry) && <DropdownMenuItem disabled={actionsDisabled} onSelect={() => onReverse(entry)}>Reverse</DropdownMenuItem>}
         {selfReviewBlocked && <><DropdownMenuSeparator /><div className="px-2 py-1.5 text-xs text-amber-700">A different user must approve or reject this entry.</div></>}
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild><a href={ajeEntryPrintUrl(entry.id,"pdf")} target="_blank" rel="noopener noreferrer"><Printer className="size-4" /> Print PDF</a></DropdownMenuItem>
@@ -122,12 +125,12 @@ function EntryActions({ entry, userId, readOnly, onView, onAction, onReverse }: 
   </div>;
 }
 
-function EntryDescription({ entry }: { entry: AdjustingEntry }) {
+function EntryDescription({ entry, compactSummary = false }: { entry: AdjustingEntry; compactSummary?: boolean }) {
   return <>
-    <p className="line-clamp-2">{entry.description}</p>
+    <p className={compactSummary ? "line-clamp-1" : "line-clamp-2"}>{entry.description}</p>
     {entry.sourceJeNo && <p className="mt-1 text-xs text-muted-foreground">Original: {entry.sourceJeNo}{entry.sourceTransactionRef ? ` / ${entry.sourceTransactionRef}` : ""}</p>}
-    {entry.status === "Posted" && entry.variance !== 0 && <p className="mt-1 text-xs text-destructive">Historical imbalance: {money(entry.variance)}</p>}
-    {entry.lastPostingError && <p className="mt-1 text-xs text-destructive">{entry.lastPostingError}</p>}
+    {!compactSummary && entry.status === "Posted" && entry.variance !== 0 && <p className="mt-1 text-xs text-destructive">Historical imbalance: {money(entry.variance)}</p>}
+    {!compactSummary && entry.lastPostingError && <p className="mt-1 text-xs text-destructive">{entry.lastPostingError}</p>}
   </>;
 }
 
@@ -153,17 +156,19 @@ function EntriesSkeleton() {
   </div>;
 }
 
-export function AdjustingEntriesTable({ entries, loading, emptyMessage, userId, readOnly, onView, onAction, onReverse, bulkActionsEnabled = false, selectedEntryIds, onToggleEntrySelection, onTogglePageSelection, onBulkApprove, bulkBusy = false }: {
-  entries: AdjustingEntry[]; loading: boolean; emptyMessage?: string; userId?: number; readOnly: boolean;
+export function AdjustingEntriesTable({ entries, presentation = "posting", loading, emptyMessage, userId, readOnly, onView, onAction, onReverse, bulkActionsEnabled = false, selectedEntryIds, onToggleEntrySelection, onTogglePageSelection, onBulkApprove, bulkBusy = false, actionsDisabled = false }: {
+  entries: AdjustingEntry[]; presentation?: "posting" | "summary"; loading: boolean; emptyMessage?: string; userId?: number; readOnly: boolean;
   onView: (entry: AdjustingEntry, edit: boolean, trigger?: HTMLElement) => void; onAction: (entry: AdjustingEntry, action: AjeAction, trigger?: HTMLElement) => void; onReverse: (entry: AdjustingEntry) => void;
   bulkActionsEnabled?: boolean; selectedEntryIds: ReadonlySet<number>; onToggleEntrySelection: (entryId: number, selected: boolean) => void;
   onTogglePageSelection: (entryIds: number[], selected: boolean) => void; onBulkApprove: (entries: AdjustingEntry[]) => void; bulkBusy?: boolean;
+  actionsDisabled?: boolean;
 }) {
+  const compactSummary = presentation === "summary";
   if (loading && entries.length === 0) return <EntriesSkeleton />;
   if (entries.length === 0) return <div className="rounded-md border bg-background p-8 text-center text-sm text-muted-foreground">{emptyMessage || "No entries match these filters."}</div>;
 
   const eligibleForBulkApproval = bulkActionsEnabled && userId != null ? entries.filter(entry => entry.entryOrigin === "MANUAL" && availableActions(entry).includes("approve") && !isSelfApproval(entry, userId)) : [];
-  const showBulkSelection = bulkActionsEnabled && eligibleForBulkApproval.length > 0;
+  const showBulkSelection = bulkActionsEnabled && !actionsDisabled && eligibleForBulkApproval.length > 0;
   const selectedForBulkApproval = eligibleForBulkApproval.filter(entry => selectedEntryIds.has(entry.id));
   const allEligibleSelected = eligibleForBulkApproval.length > 0 && selectedForBulkApproval.length === eligibleForBulkApproval.length;
 
@@ -175,25 +180,25 @@ export function AdjustingEntriesTable({ entries, loading, emptyMessage, userId, 
     {loading && <p role="status" aria-live="polite" className="mb-2 text-xs font-medium text-muted-foreground">Updating…</p>}
     <div aria-busy={loading} className={loading ? "pointer-events-none opacity-60 transition-opacity" : "transition-opacity"}>
     <div className="hidden overflow-x-auto rounded-md border bg-background xl:block">
-      <table className="w-full min-w-[1100px] text-sm"><thead className="bg-muted/30"><tr>{showBulkSelection && <th className="w-10 p-3"><span className="sr-only">Select</span></th>}<th className="p-3 text-left">Journal / Reference</th><th className="p-3 text-left">Accounting date</th><th className="p-3 text-left">Description / Original</th><th className="p-3 text-left">Status</th><th className="p-3 text-right">Debit</th><th className="p-3 text-right">Credit</th><th className="p-3 text-right">Actions</th></tr></thead><tbody>
-        {entries.map(entry => <tr key={entry.id} className="border-t align-top">{showBulkSelection && <td className="p-3">{eligibleForBulkApproval.some(candidate => candidate.id === entry.id) && <Checkbox checked={selectedEntryIds.has(entry.id)} disabled={bulkBusy || loading} onCheckedChange={checked => onToggleEntrySelection(entry.id, checked === true)} aria-label={`Select ${entry.jeNo} for approval`} />}</td>}<td className="max-w-48 p-3"><p className="font-medium">{entry.jeNo}</p><p className="break-words text-xs text-muted-foreground">{entry.reference}</p><p className="mt-1 text-xs text-muted-foreground">{entry.entryOrigin === "SYSTEM" ? "System journal" : entry.entryKind === "REVERSAL" ? "Reversal" : "Adjustment"}</p></td>
-          <td className="whitespace-nowrap p-3">{formatDate(entry.transactionDate)}</td><td className="max-w-64 p-3"><EntryDescription entry={entry} /></td>
-          <td className="p-3"><Badge variant="outline" className={statusBadgeClass(entry.status)}>{entry.status}</Badge>{queueAge(entry) && <p className={`mt-1 whitespace-normal text-xs ${queueAge(entry)?.tone}`}>{queueAge(entry)?.label}</p>}{queueTimestamp(entry) && <p className="mt-0.5 whitespace-nowrap text-xs text-muted-foreground">{entry.status === "Submitted" ? "Submitted" : entry.status === "Approved" ? "Approved" : "Last failed"}: {formatDateTime(queueTimestamp(entry))}</p>}</td><td className="p-3 text-right font-mono">{money(entry.totalDebit)}</td><td className="p-3 text-right font-mono">{money(entry.totalCredit)}</td>
-          <td className="max-w-64 p-3"><EntryActions entry={entry} userId={userId} readOnly={readOnly} onView={onView} onAction={onAction} onReverse={onReverse} /></td></tr>)}
+      <table className={`w-full ${compactSummary ? "min-w-[900px]" : "min-w-[1100px]"} text-sm`}><thead className="bg-muted/30"><tr>{showBulkSelection && <th className="w-10 p-3"><span className="sr-only">Select</span></th>}<th className="p-3 text-left">Journal / Reference</th><th className="p-3 text-left">Accounting date</th><th className="p-3 text-left">Description / Original</th><th className="p-3 text-left">Status</th><th className="p-3 text-right">Debit</th><th className="p-3 text-right">Credit</th><th className="p-3 text-right">Actions</th></tr></thead><tbody>
+        {entries.map(entry => <tr key={entry.id} className="border-t align-top">{showBulkSelection && <td className="p-3">{eligibleForBulkApproval.some(candidate => candidate.id === entry.id) && <Checkbox checked={selectedEntryIds.has(entry.id)} disabled={actionsDisabled || bulkBusy || loading} onCheckedChange={checked => onToggleEntrySelection(entry.id, checked === true)} aria-label={`Select ${entry.jeNo} for approval`} />}</td>}<td className="max-w-48 p-3"><p className="font-medium">{entry.jeNo}</p><p className="break-words text-xs text-muted-foreground">{entry.reference}</p>{!compactSummary && <p className="mt-1 text-xs text-muted-foreground">{entry.entryOrigin === "SYSTEM" ? "System journal" : entry.entryKind === "REVERSAL" ? "Reversal" : "Adjustment"}</p>}</td>
+          <td className="whitespace-nowrap p-3">{formatDate(entry.transactionDate)}</td><td className="max-w-64 p-3"><EntryDescription entry={entry} compactSummary={compactSummary} /></td>
+          <td className="p-3"><Badge variant="outline" className={statusBadgeClass(entry.status)}>{entry.status}</Badge>{!compactSummary && queueAge(entry) && <p className={`mt-1 whitespace-normal text-xs ${queueAge(entry)?.tone}`}>{queueAge(entry)?.label}</p>}{!compactSummary && queueTimestamp(entry) && <p className="mt-0.5 whitespace-nowrap text-xs text-muted-foreground">{entry.status === "Submitted" ? "Submitted" : entry.status === "Approved" ? "Approved" : "Last failed"}: {formatDateTime(queueTimestamp(entry))}</p>}</td><td className="p-3 text-right font-mono">{money(entry.totalDebit)}</td><td className="p-3 text-right font-mono">{money(entry.totalCredit)}</td>
+          <td className="max-w-64 p-3"><EntryActions entry={entry} userId={userId} readOnly={readOnly} onView={onView} onAction={onAction} onReverse={onReverse} compactSummary={compactSummary} actionsDisabled={actionsDisabled} /></td></tr>)}
       </tbody></table>
     </div>
 
     <div className="space-y-3 xl:hidden">
       {entries.map(entry => <article key={entry.id} className="space-y-3 rounded-md border bg-background p-3 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="flex min-w-0 items-start gap-2">{showBulkSelection && eligibleForBulkApproval.some(candidate => candidate.id === entry.id) && <Checkbox checked={selectedEntryIds.has(entry.id)} disabled={bulkBusy || loading} onCheckedChange={checked => onToggleEntrySelection(entry.id, checked === true)} aria-label={`Select ${entry.jeNo} for approval`} className="mt-1" />}<div className="min-w-0"><h3 className="font-semibold">{entry.jeNo}</h3><p className="break-words text-xs text-muted-foreground">{entry.reference || "No reference"}</p></div></div>
+          <div className="flex min-w-0 items-start gap-2">{showBulkSelection && eligibleForBulkApproval.some(candidate => candidate.id === entry.id) && <Checkbox checked={selectedEntryIds.has(entry.id)} disabled={actionsDisabled || bulkBusy || loading} onCheckedChange={checked => onToggleEntrySelection(entry.id, checked === true)} aria-label={`Select ${entry.jeNo} for approval`} className="mt-1" />}<div className="min-w-0"><h3 className="font-semibold">{entry.jeNo}</h3><p className="break-words text-xs text-muted-foreground">{entry.reference || "No reference"}</p></div></div>
           <Badge variant="outline" className={statusBadgeClass(entry.status)}>{entry.status}</Badge>
         </div>
-        <div className="grid grid-cols-2 gap-2 text-sm"><div><p className="text-xs text-muted-foreground">Accounting date</p><p>{formatDate(entry.transactionDate)}</p></div><div><p className="text-xs text-muted-foreground">Entry type</p><p>{entry.entryOrigin === "SYSTEM" ? "System journal" : entry.entryKind === "REVERSAL" ? "Reversal" : "Adjustment"}</p></div></div>
-        <div className="text-sm"><EntryDescription entry={entry} /></div>
+        {compactSummary ? <p className="text-xs text-muted-foreground">Accounting date: {formatDate(entry.transactionDate)}</p> : <div className="grid grid-cols-2 gap-2 text-sm"><div><p className="text-xs text-muted-foreground">Accounting date</p><p>{formatDate(entry.transactionDate)}</p></div><div><p className="text-xs text-muted-foreground">Entry type</p><p>{entry.entryOrigin === "SYSTEM" ? "System journal" : entry.entryKind === "REVERSAL" ? "Reversal" : "Adjustment"}</p></div></div>}
+        <div className="text-sm"><EntryDescription entry={entry} compactSummary={compactSummary} /></div>
         <div className="grid grid-cols-2 gap-2 rounded-md bg-muted/30 p-2 text-sm"><div><p className="text-xs text-muted-foreground">Debit</p><p className="font-mono">{money(entry.totalDebit)}</p></div><div><p className="text-xs text-muted-foreground">Credit</p><p className="font-mono">{money(entry.totalCredit)}</p></div></div>
-        {queueAge(entry) && <div className={`rounded-md border p-2 text-xs ${queueAge(entry)?.containerTone}`}><p className="font-medium">{queueAge(entry)?.label}</p>{queueTimestamp(entry) && <p className="mt-0.5 text-muted-foreground">{entry.status === "Submitted" ? "Submitted" : entry.status === "Approved" ? "Approved" : "Last failed"}: {formatDateTime(queueTimestamp(entry))}</p>}</div>}
-        <div className="border-t pt-3"><EntryActions entry={entry} userId={userId} readOnly={readOnly} onView={onView} onAction={onAction} onReverse={onReverse} /></div>
+        {!compactSummary && queueAge(entry) && <div className={`rounded-md border p-2 text-xs ${queueAge(entry)?.containerTone}`}><p className="font-medium">{queueAge(entry)?.label}</p>{queueTimestamp(entry) && <p className="mt-0.5 text-muted-foreground">{entry.status === "Submitted" ? "Submitted" : entry.status === "Approved" ? "Approved" : "Last failed"}: {formatDateTime(queueTimestamp(entry))}</p>}</div>}
+        <div className="border-t pt-3"><EntryActions entry={entry} userId={userId} readOnly={readOnly} onView={onView} onAction={onAction} onReverse={onReverse} compactSummary={compactSummary} actionsDisabled={actionsDisabled} /></div>
       </article>)}
     </div>
     </div>

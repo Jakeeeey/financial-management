@@ -13,11 +13,11 @@ const json = (data: unknown, status = 200, extra: Record<string, string> = {}) =
   new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json", ...extra } });
 const mockReport = (value: unknown): SpringReader => async () => json(value);
 
-test("report query keeps effective filters including workflow queue while removing pagination", () => {
-  const params = reportPrintParams(new URLSearchParams("format=pdf&page=3&pageSize=10&size=10&queue=awaiting-my-review&search=test&status=Needs+action&startDate=2026-10-01&endDate=2026-10-20&divisionId=2&departmentId=3&accountTypeId=4&sourceJeNo=JE-1&sort=jeNo,asc"));
+test("report query keeps effective filters including imbalance and workflow queue while removing pagination", () => {
+  const params = reportPrintParams(new URLSearchParams("format=pdf&page=3&pageSize=10&size=10&queue=awaiting-my-review&search=test&status=Needs+action&startDate=2026-10-01&endDate=2026-10-20&divisionId=2&departmentId=3&accountTypeId=4&sourceJeNo=JE-1&sort=jeNo,asc&unbalancedOnly=true"));
   assert.deepEqual(Object.fromEntries(params), { format: "json", search: "test", status: "Needs action", queue: "awaiting-my-review",
     startDate: "2026-10-01", endDate: "2026-10-20", divisionId: "2", departmentId: "3",
-    accountTypeId: "4", sourceJeNo: "JE-1", sort: "jeNo,asc" });
+    accountTypeId: "4", sourceJeNo: "JE-1", sort: "jeNo,asc", unbalancedOnly: "true" });
   assert.equal(reportPrintParams(new URLSearchParams("status=All")).get("sort"), "lastActivity,desc");
 });
 test("new PDF URLs preserve legacy printing and omit list pagination", () => {
