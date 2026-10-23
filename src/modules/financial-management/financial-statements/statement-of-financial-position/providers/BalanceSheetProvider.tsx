@@ -5,9 +5,19 @@ import {
   BalanceSheetEntry,
   BalanceSheetSummary,
   BalanceSheetFilterState,
+  BalanceSheetEntrySchema,
+  BalanceSheetSummarySchema,
 } from "../types/balance-sheet.schema";
-import { FinancialAccount, ValidationStatus, KeyRatios } from "../types";
-import { toast } from "sonner";
+import { BalanceSheetComparisonStatus, FinancialAccount, ValidationStatus, KeyRatios } from "../types";
+
+export type BalanceSheetReportStatus =
+  | "not-generated"
+  | "loading-initial"
+  | "refreshing"
+  | "success"
+  | "empty"
+  | "initial-error"
+  | "refresh-error";
 
 interface BalanceSheetContextType {
   // Raw API data
@@ -15,6 +25,7 @@ interface BalanceSheetContextType {
   comparisonEntries: BalanceSheetEntry[];
   summary: BalanceSheetSummary | null;
   comparisonSummary: BalanceSheetSummary | null;
+  comparisonStatus: BalanceSheetComparisonStatus;
 
   // Derived data for the UI components
   accounts: FinancialAccount[];
@@ -26,7 +37,8 @@ interface BalanceSheetContextType {
   appliedFilters: BalanceSheetFilterState | null;
   setFilters: React.Dispatch<React.SetStateAction<BalanceSheetFilterState>>;
   isLoading: boolean;
-  isInitialLoad: boolean;
+  reportStatus: BalanceSheetReportStatus;
+  lastUpdated: Date | null;
   error: string | null;
 
   // Actions
@@ -45,17 +57,6 @@ const DEFAULT_FILTERS: BalanceSheetFilterState = {
   comparisonEndDate: "2025-12-31",
   dataBasis: "annually",
   comparisonBasis: "match",
-};
-
-const EMPTY_SUMMARY: BalanceSheetSummary = {
-  totalAssets: 0,
-  totalLiabilities: 0,
-  totalEquity: 0,
-  balanceVariance: 0,
-  currentRatio: 0,
-  quickRatio: 0,
-  debtToEquityRatio: 0,
-  debtRatio: 0,
 };
 
 const EMPTY_VALIDATION: ValidationStatus = {
@@ -80,8 +81,10 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
   const [comparisonEntries, setComparisonEntries] = React.useState<BalanceSheetEntry[]>([]);
   const [summary, setSummary] = React.useState<BalanceSheetSummary | null>(null);
   const [comparisonSummary, setComparisonSummary] = React.useState<BalanceSheetSummary | null>(null);
+  const [comparisonStatus, setComparisonStatus] = React.useState<BalanceSheetComparisonStatus>("disabled");
   const [isLoading, setIsLoading] = React.useState(false);
-  const [isInitialLoad, setIsInitialLoad] = React.useState(true);
+  const [reportStatus, setReportStatus] = React.useState<BalanceSheetReportStatus>("not-generated");
+  const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [filters, setFilters] = React.useState<BalanceSheetFilterState>(DEFAULT_FILTERS);
   const [appliedFilters, setAppliedFilters] = React.useState<BalanceSheetFilterState | null>(null);
@@ -93,8 +96,9 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
 
   const fetchData = React.useCallback(async (overrideFilters?: BalanceSheetFilterState) => {
     const currentFilters = overrideFilters || filtersRef.current;
+    const hasPreviousReport = appliedFilters !== null;
     setIsLoading(true);
-    setIsInitialLoad(false);
+    setReportStatus(hasPreviousReport ? "refreshing" : "loading-initial");
     setError(null);
 
     try {
@@ -135,8 +139,14 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
 
       const safeNumber = (num: unknown) => (typeof num === "number" && Number.isFinite(num) ? num : 0);
 
-      const normalizeEntries = (entries: Record<string, unknown>[]) =>
-        entries.map(e => ({ ...e, amount: safeNumber(e.amount) } as unknown as BalanceSheetEntry));
+      const hasUniqueAccountIds = (items: BalanceSheetEntry[]) => {
+        const ids = new Set<number>();
+        return items.every(item => {
+          if (!Number.isInteger(item.coaId) || ids.has(item.coaId)) return false;
+          ids.add(item.coaId);
+          return true;
+        });
+      };
 
       const normalizeSummary = (s: Record<string, unknown> | null) => {
         if (!s) return null;
@@ -158,20 +168,44 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
         } as unknown as BalanceSheetSummary;
       };
 
-      setEntries(Array.isArray(data.entries) ? normalizeEntries(data.entries) : []);
-      setComparisonEntries(Array.isArray(data.comparisonEntries) ? normalizeEntries(data.comparisonEntries) : []);
+      const currentEntriesResult = BalanceSheetEntrySchema.array().safeParse(data.entries);
+      if (!currentEntriesResult.success) {
+        throw new Error("The balance sheet response did not include valid account entries.");
+      }
+
+      const normalizedEntries = currentEntriesResult.data;
+      if (!hasUniqueAccountIds(normalizedEntries)) {
+        throw new Error("The balance sheet response contains missing or duplicate account identifiers.");
+      }
+      const comparisonEntriesResult = BalanceSheetEntrySchema.array().safeParse(data.comparisonEntries);
+      const normalizedComparisonSummary = normalizeSummary(data.comparisonSummary);
+      const hasValidComparisonSummary = BalanceSheetSummarySchema.safeParse(data.comparisonSummary).success;
+      const hasAvailableComparison = currentFilters.includeComparison
+        && comparisonEntriesResult.success
+        && normalizedComparisonSummary !== null
+        && hasValidComparisonSummary
+        && hasUniqueAccountIds(comparisonEntriesResult.data);
+      const normalizedComparisonEntries = comparisonEntriesResult.success ? comparisonEntriesResult.data : [];
+
+      setEntries(normalizedEntries);
+      setComparisonEntries(hasAvailableComparison ? normalizedComparisonEntries : []);
       setSummary(normalizeSummary(data.summary));
-      setComparisonSummary(normalizeSummary(data.comparisonSummary));
+      setComparisonSummary(hasAvailableComparison ? normalizedComparisonSummary : null);
+      setComparisonStatus(currentFilters.includeComparison
+        ? hasAvailableComparison ? "available" : "unavailable"
+        : "disabled");
       setAppliedFilters({ ...currentFilters });
+      setLastUpdated(new Date());
+      setReportStatus(normalizedEntries.length > 0 || (hasAvailableComparison && normalizedComparisonEntries.length > 0) ? "success" : "empty");
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Unknown error";
       console.error("Balance Sheet Fetch Error:", e);
       setError(message);
-      toast.error(`Database Error: ${message}`);
+      setReportStatus(hasPreviousReport ? "refresh-error" : "initial-error");
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [appliedFilters]);
 
   /* 
   React.useEffect(() => {
@@ -180,34 +214,56 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
   }, []);
   */
 
-  // ─── Derived: Map entries → FinancialAccount[] for the interactive table ───
+  // ─── Derived: Union current and comparison accounts by stable coa_id ───
   const accounts: FinancialAccount[] = React.useMemo(() => {
-    // Build a lookup of comparison amounts by glCode
-    const comparisonMap = new Map<string, number>();
+    const currentMap = new Map<number, BalanceSheetEntry>();
+    for (const entry of entries) currentMap.set(entry.coaId, entry);
+
+    const comparisonMap = new Map<number, BalanceSheetEntry>();
     for (const ce of comparisonEntries) {
-      comparisonMap.set(ce.glCode, ce.amount);
+      comparisonMap.set(ce.coaId, ce);
     }
 
-    return entries.map((entry, index) => {
-      const priorAmount = comparisonMap.get(entry.glCode) ?? 0;
-      const variance = entry.amount - priorAmount;
-      const variancePercentage = priorAmount !== 0
-        ? ((variance / Math.abs(priorAmount)) * 100)
-        : (entry.amount !== 0 ? 100 : 0);
+    const accountIds = [...currentMap.keys()];
+    if (comparisonStatus === "available") {
+      for (const id of comparisonMap.keys()) {
+        if (!currentMap.has(id)) accountIds.push(id);
+      }
+    }
+
+    return accountIds.map(id => {
+      const currentEntry = currentMap.get(id);
+      const comparisonEntry = comparisonMap.get(id);
+      const entry = currentEntry ?? comparisonEntry!;
+      const currentAmount = currentEntry?.amount ?? 0;
+      const priorAmount = comparisonStatus === "available" ? comparisonEntry?.amount ?? 0 : null;
+      const variance = priorAmount === null ? null : currentAmount - priorAmount;
+      const variancePercentage = priorAmount === null
+        ? null
+        : priorAmount !== 0
+          ? (variance! / Math.abs(priorAmount)) * 100
+          : (currentAmount !== 0 ? 100 : 0);
 
       return {
-        id: String(index + 1),
+        id: String(id),
+        coaId: id,
         account: entry.accountTitle,
         code: entry.glCode,
-        currentPeriod: entry.amount,
+        currentPeriod: currentAmount,
+        currentBalanceStatus: currentEntry ? "reported" : "zero",
         priorPeriod: priorAmount,
+        comparisonBalanceStatus: comparisonStatus === "unavailable"
+          ? "unavailable"
+          : comparisonStatus === "disabled"
+            ? "disabled"
+            : comparisonEntry ? "reported" : "zero",
         variance,
-        variancePercentage: Math.round(variancePercentage * 10) / 10,
+        variancePercentage: variancePercentage === null ? null : Math.round(variancePercentage * 10) / 10,
         type: entry.majorClassification as FinancialAccount["type"],
         group: entry.subClassification as FinancialAccount["group"],
       };
     });
-  }, [entries, comparisonEntries]);
+  }, [entries, comparisonEntries, comparisonStatus]);
 
   // ─── Derived: ValidationStatus from summary ───
   const validation: ValidationStatus = React.useMemo(() => {
@@ -226,31 +282,31 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
   const ratios: KeyRatios = React.useMemo(() => {
     if (!summary) return EMPTY_RATIOS;
 
-    const prior = comparisonSummary || EMPTY_SUMMARY;
+    const prior = comparisonStatus === "available" ? comparisonSummary : null;
 
     return {
       currentRatio: {
         current: summary.currentRatio,
-        prior: prior.currentRatio,
-        variance: Math.round((summary.currentRatio - prior.currentRatio) * 100) / 100,
+        prior: prior?.currentRatio ?? null,
+        variance: prior ? Math.round((summary.currentRatio - prior.currentRatio) * 100) / 100 : null,
       },
       quickRatio: {
         current: summary.quickRatio,
-        prior: prior.quickRatio,
-        variance: Math.round((summary.quickRatio - prior.quickRatio) * 100) / 100,
+        prior: prior?.quickRatio ?? null,
+        variance: prior ? Math.round((summary.quickRatio - prior.quickRatio) * 100) / 100 : null,
       },
       debtToEquity: {
         current: summary.debtToEquityRatio,
-        prior: prior.debtToEquityRatio,
-        variance: Math.round((summary.debtToEquityRatio - prior.debtToEquityRatio) * 100) / 100,
+        prior: prior?.debtToEquityRatio ?? null,
+        variance: prior ? Math.round((summary.debtToEquityRatio - prior.debtToEquityRatio) * 100) / 100 : null,
       },
       debtRatio: {
         current: summary.debtRatio,
-        prior: prior.debtRatio,
-        variance: Math.round((summary.debtRatio - prior.debtRatio) * 100) / 100,
+        prior: prior?.debtRatio ?? null,
+        variance: prior ? Math.round((summary.debtRatio - prior.debtRatio) * 100) / 100 : null,
       },
     };
-  }, [summary, comparisonSummary]);
+  }, [summary, comparisonSummary, comparisonStatus]);
 
   const resetFilters = () => {
     setFilters(DEFAULT_FILTERS);
@@ -258,8 +314,11 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
     setComparisonEntries([]);
     setSummary(null);
     setComparisonSummary(null);
+    setComparisonStatus("disabled");
     setAppliedFilters(null);
-    setIsInitialLoad(true);
+    setReportStatus("not-generated");
+    setLastUpdated(null);
+    setError(null);
   };
 
   const value: BalanceSheetContextType = {
@@ -267,6 +326,7 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
     comparisonEntries,
     summary,
     comparisonSummary,
+    comparisonStatus,
     accounts,
     validation,
     ratios,
@@ -274,7 +334,8 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
     appliedFilters,
     setFilters,
     isLoading,
-    isInitialLoad,
+    reportStatus,
+    lastUpdated,
     error,
     refresh: fetchData,
     resetFilters,

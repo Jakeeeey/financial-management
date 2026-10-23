@@ -10,10 +10,18 @@ import { DrillDownModal } from "./DrillDownModal";
 
 import { useBalanceSheet } from "../hooks/useBalanceSheet";
 
+const formatReportDate = (value: string) => new Intl.DateTimeFormat("en-PH", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+}).format(new Date(`${value}T00:00:00Z`));
+
 export function InteractiveStatementTable() {
-    const { accounts, isLoading, isInitialLoad } = useBalanceSheet();
+    const { accounts, reportStatus, appliedFilters, comparisonStatus } = useBalanceSheet();
     const [selectedAccount, setSelectedAccount] = useState<FinancialAccount | null>(null);
     const [isDrillDownOpen, setIsDrillDownOpen] = useState(false);
+    const comparisonEnabled = appliedFilters?.includeComparison === true;
 
     const handleDrillDown = (account: FinancialAccount) => {
         setSelectedAccount(account);
@@ -64,80 +72,97 @@ export function InteractiveStatementTable() {
         },
         {
             accessorKey: "currentPeriod",
-            header: () => <div className="text-right">Current Period</div>,
+            header: () => <div className="text-right">As of {appliedFilters ? formatReportDate(appliedFilters.endDate) : "date unavailable"}</div>,
             cell: ({ row }) => (
-                <div className="text-right font-medium">
-                    {formatCurrency(row.original.currentPeriod)}
+                <div className="flex flex-col items-end font-medium">
+                    <span>{formatCurrency(row.original.currentPeriod)}</span>
+                    {row.original.currentBalanceStatus === "zero" && (
+                        <span className="text-xs font-normal text-muted-foreground">Zero balance</span>
+                    )}
                 </div>
             )
         },
-        {
-            accessorKey: "priorPeriod",
-            header: () => <div className="text-right">Prior Period</div>,
-            cell: ({ row }) => (
-                <div className="text-right text-muted-foreground font-medium">
-                    {formatCurrency(row.original.priorPeriod)}
-                </div>
-            )
-        },
-        {
-            accessorKey: "variance",
-            header: () => <div className="text-right">Variance</div>,
-            cell: ({ row }) => {
-                return (
-                    <div className="text-right">
-                        {formatVariance(row.original.variance, row.original.variancePercentage)}
-                    </div>
-                );
-            }
-        },
-        {
-            id: "actions",
-            header: () => <div className="text-right">Action</div>,
-            cell: ({ row }) => (
-                <div className="text-right">
-                    <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="h-8 rounded-full text-xs font-normal"
-                        onClick={() => handleDrillDown(row.original)}
-                    >
-                        Drill Down
-                    </Button>
-                </div>
-            )
-        }
     ];
 
-    if (isLoading) {
+    if (comparisonEnabled) {
+        columns.push(
+            {
+                accessorKey: "priorPeriod",
+                header: () => <div className="text-right">As of {formatReportDate(appliedFilters!.comparisonEndDate)}</div>,
+                cell: ({ row }) => (
+                    <div className="flex flex-col items-end text-muted-foreground font-medium">
+                        {row.original.comparisonBalanceStatus === "unavailable" ? (
+                            <span className="text-sm">Comparison unavailable</span>
+                        ) : (
+                            <span>{formatCurrency(row.original.priorPeriod ?? 0)}</span>
+                        )}
+                        {row.original.comparisonBalanceStatus === "zero" && (
+                            <span className="text-xs font-normal">Zero balance</span>
+                        )}
+                    </div>
+                )
+            },
+            {
+                accessorKey: "variance",
+                header: () => <div className="text-right">Variance</div>,
+                cell: ({ row }) => row.original.variance === null || row.original.variancePercentage === null
+                    ? <div className="text-right text-sm text-muted-foreground">Comparison unavailable</div>
+                    : <div className="text-right">{formatVariance(row.original.variance, row.original.variancePercentage)}</div>
+            }
+        );
+    }
+
+    columns.push({
+        id: "actions",
+        header: () => <div className="text-right">Action</div>,
+        cell: ({ row }) => (
+            <div className="text-right">
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 rounded-full text-xs font-normal"
+                    onClick={() => handleDrillDown(row.original)}
+                >
+                    Drill Down
+                </Button>
+            </div>
+        )
+    });
+
+    if (reportStatus === "loading-initial") {
         return (
-            <Card className="shadow-none border mt-4 h-[400px] flex items-center justify-center">
-                <div className="flex flex-col items-center gap-2">
-                    <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-                    <p className="text-sm text-muted-foreground font-medium animate-pulse">Loading statement data...</p>
-                </div>
+            <Card className="min-w-0 overflow-hidden shadow-none border" aria-busy="true">
+                <CardHeader className="pb-3 border-b border-border/50">
+                    <div className="space-y-2">
+                        <div className="h-5 w-48 animate-pulse rounded bg-muted" />
+                        <div className="h-4 w-64 max-w-full animate-pulse rounded bg-muted" />
+                    </div>
+                </CardHeader>
+                <CardContent className="min-w-0 overflow-hidden p-4 pt-6">
+                    <div className="overflow-x-auto">
+                        <div className="min-w-[720px] space-y-3">
+                            <div className="grid grid-cols-[2fr_1fr_1.2fr_1.2fr_1fr_0.8fr] gap-4 border-b pb-3">
+                                {Array.from({ length: 6 }, (_, index) => <div key={index} className="h-4 animate-pulse rounded bg-muted" />)}
+                            </div>
+                            {Array.from({ length: 6 }, (_, rowIndex) => (
+                                <div key={rowIndex} className="grid grid-cols-[2fr_1fr_1.2fr_1.2fr_1fr_0.8fr] gap-4 border-b py-3">
+                                    {Array.from({ length: 6 }, (_, columnIndex) => (
+                                        <div key={columnIndex} className="h-4 animate-pulse rounded bg-muted" />
+                                    ))}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </CardContent>
             </Card>
         );
     }
 
-    if (isInitialLoad) {
-        return (
-            <Card className="shadow-none border border-dashed mt-4 h-[400px] flex flex-col items-center justify-center bg-muted/20">
-                <div className="bg-muted p-4 rounded-full mb-4">
-                    <svg className="w-8 h-8 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                </div>
-                <h3 className="text-lg font-bold text-foreground mb-1">No Statement Generated</h3>
-                <p className="text-muted-foreground text-sm max-w-xs text-center">
-                    Please adjust the filters above and click &quot;Generate Report&quot; to view the Statement of Financial Position.
-                </p>
-            </Card>
-        );
+    if (reportStatus === "not-generated" || reportStatus === "initial-error") {
+        return null;
     }
-
     return (
-        <Card className="shadow-none border mt-4">
+        <Card className="min-w-0 overflow-hidden shadow-none border" aria-busy={reportStatus === "refreshing"}>
             <CardHeader className="pb-3 border-b border-border/50">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
@@ -146,12 +171,16 @@ export function InteractiveStatementTable() {
                             <Badge variant="secondary" className="font-normal border">Sorted by Variance</Badge>
                         </div>
                         <p className="text-sm text-muted-foreground">
-                            As of 2026-03-31 &middot; Comparison: Linked to current date selection
+                            As of {appliedFilters ? formatReportDate(appliedFilters.endDate) : "date unavailable"}
+                            {comparisonEnabled && (
+                                <> &middot; Comparison as of {formatReportDate(appliedFilters!.comparisonEndDate)}
+                                    {comparisonStatus === "unavailable" && <> &middot; Comparison unavailable</>}</>
+                            )}
                         </p>
                     </div>
                 </div>
             </CardHeader>
-            <CardContent className="p-4 pt-6">
+            <CardContent className="min-w-0 overflow-hidden p-4 pt-6">
                 <DataTable 
                     columns={columns} 
                     data={accounts} 

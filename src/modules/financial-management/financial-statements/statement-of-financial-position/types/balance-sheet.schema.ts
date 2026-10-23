@@ -3,6 +3,7 @@ import { z } from "zod";
 // ─── Zod Schemas ─── matches the external API response exactly
 
 export const BalanceSheetEntrySchema = z.object({
+  coaId: z.number().int(),
   glCode: z.string(),
   accountTitle: z.string(),
   accountType: z.string(),
@@ -25,8 +26,8 @@ export const BalanceSheetSummarySchema = z.object({
 export const BalanceSheetResponseSchema = z.object({
   entries: z.array(BalanceSheetEntrySchema),
   summary: BalanceSheetSummarySchema,
-  comparisonEntries: z.array(BalanceSheetEntrySchema).optional(),
-  comparisonSummary: BalanceSheetSummarySchema.optional(),
+  comparisonEntries: z.array(BalanceSheetEntrySchema).nullable().optional(),
+  comparisonSummary: BalanceSheetSummarySchema.nullable().optional(),
 });
 
 export const DrillDownEntrySchema = z.object({
@@ -37,11 +38,20 @@ export const DrillDownEntrySchema = z.object({
   amount: z.number(),
 });
 
+export const BalanceSheetDrillDownResponseSchema = z.object({
+  openingBalance: z.number(),
+  periodMovement: z.number(),
+  closingBalance: z.number(),
+  reconciliationDifference: z.number(),
+  transactions: z.array(DrillDownEntrySchema),
+});
+
 // ─── Inferred TypeScript types ───
 export type BalanceSheetEntry = z.infer<typeof BalanceSheetEntrySchema>;
 export type BalanceSheetSummary = z.infer<typeof BalanceSheetSummarySchema>;
 export type BalanceSheetResponse = z.infer<typeof BalanceSheetResponseSchema>;
 export type DrillDownEntry = z.infer<typeof DrillDownEntrySchema>;
+export type BalanceSheetDrillDownResponse = z.infer<typeof BalanceSheetDrillDownResponseSchema>;
 
 // ─── Filter state managed by the provider ───
 export interface BalanceSheetFilterState {

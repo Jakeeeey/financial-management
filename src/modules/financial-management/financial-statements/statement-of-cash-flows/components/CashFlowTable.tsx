@@ -483,7 +483,7 @@ export function CashFlowTable({
         }}
       >
         <DialogContent
-          className="max-h-[90vh] overflow-y-auto sm:max-w-xl"
+          className="max-h-[90vh] min-w-0 overflow-y-auto sm:max-w-3xl"
           onCloseAutoFocus={event => {
             event.preventDefault();
             viewButtonRef.current?.focus();
@@ -494,7 +494,7 @@ export function CashFlowTable({
           <DialogDescription>Review the report transaction and the journal lines linked to its source record.</DialogDescription>
           </DialogHeader>
           {selectedEntry && (
-            <div className="space-y-4">
+            <div className="min-w-0 space-y-4">
               <div className="space-y-2 rounded-md border bg-muted/20 p-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Full reference</p>
                 <p className="select-all break-all font-mono text-sm" aria-label="Full transaction reference">
@@ -584,23 +584,23 @@ export function CashFlowTable({
                       <span>Total debit: <strong>{formatCashFlowAmount(journalDetails.totalDebit)}</strong></span>
                       <span>Total credit: <strong>{formatCashFlowAmount(journalDetails.totalCredit)}</strong></span>
                     </div>
-                    <div className="max-h-64 overflow-auto rounded-md border">
-                      <table className="w-full min-w-[620px] text-sm">
+                    <div className="hidden max-h-64 overflow-y-auto rounded-md border lg:block">
+                      <table className="w-full table-fixed text-sm">
                         <caption className="sr-only">Account lines for journal {journalDetails.journalEntryId}</caption>
                         <thead className="sticky top-0 bg-muted">
                           <tr>
-                            <th scope="col" className="px-3 py-2 text-left">Account</th>
-                            <th scope="col" className="px-3 py-2 text-left">Description</th>
-                            <th scope="col" className="px-3 py-2 text-right">Debit</th>
-                            <th scope="col" className="px-3 py-2 text-right">Credit</th>
+                            <th scope="col" className="w-[25%] px-3 py-2 text-left">Account</th>
+                            <th scope="col" className="w-[31%] px-3 py-2 text-left">Description</th>
+                            <th scope="col" className="w-[22%] px-3 py-2 text-right">Debit</th>
+                            <th scope="col" className="w-[22%] px-3 py-2 text-right">Credit</th>
                           </tr>
                         </thead>
                         <tbody>
                           {journalDetails.lines.map((line, index) => (
                             <tr key={`${line.accountNumber ?? "account"}-${index}`} className="border-t">
                               <td className="px-3 py-2 align-top">
-                                <span className="block font-mono text-xs text-muted-foreground">{line.accountNumber || "Code unavailable"}</span>
-                                <span className="block whitespace-normal">{line.accountTitle || "Account title unavailable"}</span>
+                                <span className="block break-all font-mono text-xs text-muted-foreground">{line.accountNumber || "Code unavailable"}</span>
+                                <span className="block whitespace-normal break-words">{line.accountTitle || "Account title unavailable"}</span>
                               </td>
                               <td className="max-w-[220px] whitespace-normal break-words px-3 py-2 align-top">{line.description || "—"}</td>
                               <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{formatCashFlowAmount(line.debit)}</td>
@@ -609,6 +609,31 @@ export function CashFlowTable({
                           ))}
                         </tbody>
                       </table>
+                    </div>
+                    <div className="space-y-2 lg:hidden" role="list" aria-label="Journal account lines">
+                      {journalDetails.lines.map((line, index) => (
+                        <article key={`${line.accountNumber ?? "account"}-${index}`} className="min-w-0 rounded-md border p-3" role="listitem">
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Account</p>
+                            <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{line.accountNumber || "Code unavailable"}</p>
+                            <p className="break-words text-sm">{line.accountTitle || "Account title unavailable"}</p>
+                          </div>
+                          <div className="mt-3 min-w-0">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Description</p>
+                            <p className="mt-1 break-words text-sm">{line.description || "—"}</p>
+                          </div>
+                          <dl className="mt-3 grid min-w-0 grid-cols-2 gap-3 text-sm">
+                            <div className="min-w-0 rounded-md bg-muted/30 p-2">
+                              <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Debit</dt>
+                              <dd className="mt-1 break-words tabular-nums">{formatCashFlowAmount(line.debit)}</dd>
+                            </div>
+                            <div className="min-w-0 rounded-md bg-muted/30 p-2">
+                              <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Credit</dt>
+                              <dd className="mt-1 break-words tabular-nums">{formatCashFlowAmount(line.credit)}</dd>
+                            </div>
+                          </dl>
+                        </article>
+                      ))}
                     </div>
                   </>
                 ) : null}
