@@ -119,6 +119,9 @@ export type AdjustingEntrySummary = {
   failed: number;
   postedDebit: number;
   postedCredit: number;
+  awaitingMyReview: number;
+  readyForMeToPost: number;
+  myDrafts: number;
 };
 
 export type AdjustingEntrySourceTotals = {
@@ -168,6 +171,7 @@ export type AdjustingEntryQuery = {
   sourceJeNo?: string | null;
   sort?: string;
   accountTypeId?: number | null;
+  queue?: "all" | "awaiting-my-review" | "ready-for-me-to-post" | "my-drafts";
 };
 
 export type AdjustingEntrySummaryQuery = Pick<AdjustingEntryQuery, "search" | "startDate" | "endDate" | "divisionId" | "departmentId" | "accountTypeId">;

@@ -2,6 +2,25 @@ import type { AjeAuditEvent } from "../types";
 
 export const balancedTolerance = 0.005;
 
+function pluralUnit(value: number, unit: string) {
+  return `${value} ${unit}${value === 1 ? "" : "s"}`;
+}
+
+export function formatQueueAgeLabel(status: "Submitted" | "Approved" | "Failed", elapsedMilliseconds: number, canRetry = true) {
+  const totalMinutes = Math.max(0, Math.floor(elapsedMilliseconds / 60_000));
+  const days = Math.floor(totalMinutes / 1_440);
+  const hours = Math.floor((totalMinutes % 1_440) / 60);
+  const minutes = totalMinutes % 60;
+  const duration = totalMinutes === 0 ? "less than a minute ago"
+    : days ? `${pluralUnit(days, "day")}${hours ? ` ${pluralUnit(hours, "hour")}` : ""} ago`
+    : hours ? `${pluralUnit(hours, "hour")}${minutes ? ` ${pluralUnit(minutes, "minute")}` : ""} ago`
+    : `${pluralUnit(minutes, "minute")} ago`;
+
+  if (status === "Submitted") return `Awaiting review · Submitted ${duration}`;
+  if (status === "Approved") return `Awaiting posting · Approved ${duration}`;
+  return canRetry ? `Retry posting · Last attempt ${duration}` : `Posting failed · Last attempt ${duration}`;
+}
+
 export function auditEventSummary(event: AjeAuditEvent) {
   if (event.reason?.trim()) return event.reason.trim();
   const summaries: Record<string, string> = {

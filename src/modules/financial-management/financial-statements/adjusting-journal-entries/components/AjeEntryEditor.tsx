@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Copy, Loader2, Plus, Save, Send, Trash2 } from "lucide-react";
+import { ChevronDown, Copy, Loader2, Plus, Save, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { v4 as generateUuid } from "uuid";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { AjeSearchableSelect } from "./AjeSearchableSelect";
 import { money, formatDate, formatDateTime, todayManila } from "./formatters";
@@ -63,8 +64,14 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
   const [requestKey] = React.useState(() => generateUuid());
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
-  const [submitAttempted, setSubmitAttempted] = React.useState(false);
+  const [validationMode, setValidationMode] = React.useState<"draft" | "submit" | null>(null);
+  const [summaryFocusRequest, setSummaryFocusRequest] = React.useState(0);
   const [checklistOpen, setChecklistOpen] = React.useState(false);
+  const [sourcePickerOpen, setSourcePickerOpen] = React.useState(false);
+  const sourceSearchRef = React.useRef<HTMLInputElement>(null);
+  const sourcePickerTriggerRef = React.useRef<HTMLButtonElement>(null);
+  const sourceResultTriggerRef = React.useRef<HTMLButtonElement | null>(null);
+  const sourceRequestInFlight = React.useRef(false);
   const [sourceSearch, setSourceSearch] = React.useState("");
   const [sources, setSources] = React.useState<AdjustingEntrySourceJournalSummary[]>([]);
   const [sourceSearched, setSourceSearched] = React.useState(false);
@@ -102,35 +109,57 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
   const departmentOptions = [{ value: "none", label: "None" }, ...departments.filter(d => !form.divisionId || !d.parentDivision || String(d.parentDivision) === form.divisionId).map(d => ({ value: String(d.id), label: d.name }))];
   const pendingSourceTotals = pendingSource?.details.reduce((sum, row) => ({ debit: sum.debit + row.debit, credit: sum.credit + row.credit }), { debit: 0, credit: 0 });
 
-  function lineError(row: Line) {
+  function lineError(row: Line, forSubmission = true) {
     const debit = cents(row.debit), credit = cents(row.credit);
     if (!row.coaId) return "Select an account.";
     if (!Number.isFinite(debit) || !Number.isFinite(credit) || debit < 0 || credit < 0) return "Use non-negative amounts with up to two decimal places.";
     if ((debit > 0) === (credit > 0)) return "Enter one positive debit or credit.";
-    if (accountById.get(row.coaId)?.departmentRequired && !row.departmentId) return "Department is required for this account.";
+    if (accountById.get(row.coaId)?.departmentRequired && !row.departmentId) return forSubmission ? "Department is required for this account." : "";
     const source = preview?.lines.find(d => d.originalDetailId === row.originalDetailId);
     if (source && debit + credit > Math.round(source.remainingAmount * 100)) return "Amount exceeds the remaining reversal balance.";
     return "";
   }
 
-  const submitBlockers: SubmitBlocker[] = (() => {
+  function collectBlockers(submit: boolean): SubmitBlocker[] {
     const blockers: SubmitBlocker[] = [];
     if (!form.reference.trim()) blockers.push({ message: "Enter a reference.", selector: "#aje-reference" });
     if (!form.transactionDate) blockers.push({ message: "Choose an accounting date.", selector: "#aje-date" });
     if (!form.description.trim()) blockers.push({ message: "Enter a description.", selector: "#aje-narration" });
-    if (sourceOverLimit) blockers.push({ message: `Linked adjustment debit exceeds the remaining eligible amount of ${money((sourceRemainingCents || 0) / 100)}.`, selector: "#aje-lines-heading" });
-    if (form.details.length === 0) blockers.push({ message: "Add at least two journal lines.", selector: "#aje-lines-heading" });
-    else if (form.details.length < 2) blockers.push({ message: "At least two journal lines are required.", selector: "#aje-lines-heading" });
+    if (submit && sourceOverLimit) blockers.push({ message: `Linked adjustment debit exceeds the remaining eligible amount of ${money((sourceRemainingCents || 0) / 100)}.`, selector: "#aje-lines-heading" });
+    if (form.details.length === 0) blockers.push({ message: submit ? "Add at least two journal lines." : "Add at least one journal line.", selector: "#aje-lines-heading" });
+    else if (submit && form.details.length < 2) blockers.push({ message: "At least two journal lines are required.", selector: "#aje-lines-heading" });
     for (const [index, row] of form.details.entries()) {
-      const issue = lineError(row);
+      const issue = lineError(row, submit);
       if (issue) {
         const control = issue === "Select an account." ? "account" : issue === "Department is required for this account." ? "department" : row.credit.trim() ? "credit" : "debit";
         blockers.push({ message: `Line ${index + 1}: ${issue}`, selector: `[aria-label="Line ${index + 1} ${control}"]` });
       }
     }
-    if (!balanced) blockers.push({ message: "Debit and credit totals must be equal and greater than zero.", selector: "#aje-balance-indicator" });
+    if (submit && !balanced) blockers.push({ message: "Debit and credit totals must be equal and greater than zero.", selector: "#aje-balance-indicator" });
     return blockers;
-  })();
+  }
+
+  const submitBlockers = collectBlockers(true);
+  const showValidation = validationMode !== null && !frozen;
+  const validationBlockers = showValidation ? collectBlockers(validationMode === "submit") : [];
+  const validationFailed = validationBlockers.length > 0;
+  const summaryBlockers = validationFailed ? validationBlockers : checklistOpen && !frozen ? submitBlockers : [];
+  const referenceError = showValidation && !form.reference.trim() ? "Enter a reference." : "";
+  const dateError = showValidation && !form.transactionDate ? "Choose an accounting date." : "";
+  const narrationError = showValidation && !form.description.trim() ? "Enter a description." : "";
+  const balanceError = validationBlockers.find(blocker => blocker.selector === "#aje-balance-indicator")?.message;
+  const linesError = validationBlockers.filter(blocker => blocker.selector === "#aje-lines-heading").map(blocker => blocker.message).join(" ");
+
+  React.useEffect(() => {
+    if (summaryFocusRequest > 0) focusBlocker("#aje-submit-checklist");
+  }, [summaryFocusRequest]);
+
+  React.useEffect(() => {
+    if (sourcePickerOpen) {
+      sourceSearchRef.current?.scrollIntoView({ block: "center" });
+      sourceSearchRef.current?.focus({ preventScroll: true });
+    }
+  }, [sourcePickerOpen]);
 
   React.useEffect(() => {
     dirtyRef.current = hasUnsavedChanges;
@@ -290,10 +319,18 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
     toast.success(`Pasted ${rows.length} journal ${rows.length === 1 ? "line" : "lines"}.`);
   }
   async function searchSources() {
+    const query = sourceSearch.trim();
+    if (frozen || reversal || busy || sourceRequestInFlight.current || query.length < 2) return;
+    sourceRequestInFlight.current = true;
+    setSources([]); setSourceSearched(false);
     setSourceBusy(true); setError(""); setSourceLoadError("");
-    try { setSources(await api.searchSourceJournalEntries(sourceSearch)); setSourceSearched(true); }
+    try { setSources(await api.searchSourceJournalEntries(query)); setSourceSearched(true); }
     catch (e) { setError(e instanceof Error ? e.message : "Unable to search original journals"); }
-    finally { setSourceBusy(false); }
+    finally { sourceRequestInFlight.current = false; setSourceBusy(false); }
+  }
+  function closeSourcePicker() {
+    setSourcePickerOpen(false);
+    requestAnimationFrame(() => sourcePickerTriggerRef.current?.focus());
   }
   function applySource(source: AdjustingEntrySourceJournal) {
     setSelectedSource(source);
@@ -302,36 +339,37 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
       details: source.details.map(d => line({ ...d, departmentId: d.departmentId ?? null })) }));
     setPendingSource(null);
     setSources([]); setSourceSearch(""); setSourceSearched(false);
+    closeSourcePicker();
   }
-  async function requestSourceSelection(jeNo: string) {
+  async function requestSourceSelection(jeNo: string, trigger: HTMLButtonElement) {
+    if (frozen || reversal || busy || sourceRequestInFlight.current) return;
+    sourceRequestInFlight.current = true;
+    sourceResultTriggerRef.current = trigger;
     setSourceBusy(true); setError(""); setSourceLoadError("");
     try {
       const source = await api.sourceJournalEntry(jeNo);
       if (source.jeNo === form.sourceJeNo) {
         setSelectedSource(source);
         setSources([]); setSourceSearch(""); setSourceSearched(false);
+        closeSourcePicker();
       } else if (hasSourceReplacementContent(form)) setPendingSource(source);
       else applySource(source);
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to load original journal"); }
-    finally { setSourceBusy(false); }
+    finally { sourceRequestInFlight.current = false; setSourceBusy(false); }
   }
   function clearSource() {
     setSelectedSource(null); setSourceLoadError(""); setSources([]); setSourceSearch(""); setSourceSearched(false);
     setForm(current => ({ ...current, sourceJeNo: "" }));
+    closeSourcePicker();
   }
   async function save(submit: boolean) {
     if (inFlight.current) return;
     setError("");
-    if (submit) {
-      setSubmitAttempted(true);
-      if (submitBlockers.length) return;
-    } else {
-      if (!form.reference.trim() || !form.transactionDate || !form.description.trim()) { setError("Complete the reference, accounting date, and description."); return; }
-      if (form.details.length === 0) { setError("Add at least one journal line."); return; }
-      for (const [index, row] of form.details.entries()) {
-        const detailError = lineError(row);
-        if (detailError && detailError !== "Department is required for this account.") { setError(`Line ${index + 1}: ${detailError}`); return; }
-      }
+    setValidationMode(submit ? "submit" : "draft");
+    setChecklistOpen(false);
+    if (collectBlockers(submit).length) {
+      setSummaryFocusRequest(request => request + 1);
+      return;
     }
     inFlight.current = true; setBusy(true);
     try {
@@ -355,6 +393,8 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
         onSaved(saveCompleted);
       }
       setSavedSnapshot(serializeForm(form));
+      setValidationMode(null);
+      setChecklistOpen(false);
       toast.success(`${saved.jeNo || `Entry #${saved.id}`} saved as draft`);
       if (submit) onAction(saved, "submit");
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to save this draft"); }
@@ -398,13 +438,14 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
   return <div className="space-y-5 rounded-lg border bg-background p-4 sm:p-6">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div>{(!hideTitle || entry?.jeNo || reversal) && <h2 className="text-lg font-semibold">{entry?.jeNo || (reversal ? "New Reversal" : "New Adjusting Entry")}</h2>}<div className="flex flex-wrap items-center gap-2"><p className="text-sm text-muted-foreground">{entry?.status || "Draft"}{entry?.entryOrigin === "SYSTEM" ? " · Managed by its originating module" : ""}</p>{hasUnsavedChanges && <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-800">Unsaved changes</Badge>}</div></div>
-      <div id="aje-balance-indicator" tabIndex={-1} className={`text-sm font-medium ${balanced ? "text-emerald-700" : hasAmounts ? "text-destructive" : "text-muted-foreground"}`} aria-live="polite">{balanced ? "Balanced" : hasAmounts ? <>Unbalanced · Difference {money((totals.debit - totals.credit) / 100)}</> : "No amounts entered yet · Add a debit and a credit line."}</div>
+      <div id="aje-balance-indicator" tabIndex={-1} aria-describedby={balanceError ? "aje-balance-error" : undefined} className={`text-sm font-medium ${balanced ? "text-emerald-700" : balanceError ? "text-destructive" : "text-muted-foreground"}`} aria-live="polite">{balanced ? "Balanced" : hasAmounts ? <>Unbalanced · Difference {money((totals.debit - totals.credit) / 100)}</> : "No amounts entered yet · Add a debit and a credit line."}{balanceError && <p id="aje-balance-error" className="mt-1 text-xs">{balanceError}</p>}</div>
     </div>
     {error && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
     {creatorEditBlocked && <div role="status" className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-800">Only the AJE creator can edit or submit this draft.</div>}
-    {(submitAttempted || checklistOpen) && submitBlockers.length > 0 && <div id="aje-submit-checklist" role="alert" className="space-y-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
-      <p className="font-medium">Resolve these items before submitting:</p>
-      <ul className="list-inside list-disc space-y-1">{submitBlockers.map((blocker, index) => <li key={`${blocker.message}-${index}`}><button type="button" className="text-left text-destructive underline-offset-2 hover:underline" onClick={() => focusBlocker(blocker.selector)}>{blocker.message}</button></li>)}</ul>
+    {summaryBlockers.length > 0 && <div id="aje-submit-checklist" tabIndex={-1} role={validationFailed ? "alert" : undefined} aria-labelledby="aje-checklist-heading" className={`space-y-2 rounded-md border p-3 text-sm focus-visible:outline-2 focus-visible:outline-ring ${validationFailed ? "border-destructive/30 bg-destructive/5" : "bg-muted/20"}`}>
+      <h3 id="aje-checklist-heading" className="font-medium">{validationFailed ? "There is a problem" : "Before submitting"}</h3>
+      <p>{validationFailed ? `Resolve these items before ${validationMode === "draft" ? "saving the draft" : "submitting"}:` : "Complete these requirements when you are ready to submit:"}</p>
+      <ul className="list-inside list-disc space-y-1">{summaryBlockers.map((blocker, index) => <li key={`${blocker.message}-${index}`}><button type="button" className={`text-left underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring ${validationFailed ? "text-destructive" : "text-foreground"}`} onClick={() => focusBlocker(blocker.selector)}>{blocker.message}</button></li>)}</ul>
     </div>}
     {entry && <a className="inline-block text-sm text-primary underline" href={ajeEntryPrintUrl(entry.id)} target="_blank" rel="noreferrer">Print journal</a>}
     {entry?.lastPostingError && <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm">Posting failed: {entry.lastPostingError}</div>}
@@ -412,18 +453,25 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
     <section className="space-y-3 rounded-md border p-3 sm:p-4" aria-labelledby="aje-details-heading">
       <div><h3 id="aje-details-heading" className="font-semibold">Journal details</h3><p className="text-xs text-muted-foreground">Enter the accounting period, reference, and narration for this adjustment.</p></div>
       <div className="grid gap-4 md:grid-cols-3">
-        <div className="space-y-1.5"><Label htmlFor="aje-reference">Reference *</Label><Input id="aje-reference" maxLength={255} value={form.reference} disabled={frozen || busy} aria-invalid={submitAttempted && !form.reference.trim()} className={submitAttempted && !form.reference.trim() ? "border-destructive" : ""} onChange={e => setForm({ ...form, reference: e.target.value })} /></div>
-        <div className="space-y-1.5"><Label htmlFor="aje-date">{reversal ? "Reversal date" : "Period end date"} *</Label><Input id="aje-date" type="date" value={form.transactionDate} disabled={frozen || busy} aria-invalid={submitAttempted && !form.transactionDate} className={submitAttempted && !form.transactionDate ? "border-destructive" : ""} onChange={e => setForm({ ...form, transactionDate: e.target.value })} /></div>
+        <div className="space-y-1.5"><Label htmlFor="aje-reference">Reference *</Label><Input id="aje-reference" maxLength={255} value={form.reference} disabled={frozen || busy} aria-invalid={Boolean(referenceError)} aria-describedby={referenceError ? "aje-reference-error" : undefined} className={referenceError ? "border-destructive" : ""} onChange={e => setForm({ ...form, reference: e.target.value })} />{referenceError && <p id="aje-reference-error" className="text-xs text-destructive">{referenceError}</p>}</div>
+        <div className="space-y-1.5"><Label htmlFor="aje-date">{reversal ? "Reversal date" : "Period end date"} *</Label><Input id="aje-date" type="date" value={form.transactionDate} disabled={frozen || busy} aria-invalid={Boolean(dateError)} aria-describedby={dateError ? "aje-date-error" : undefined} className={dateError ? "border-destructive" : ""} onChange={e => setForm({ ...form, transactionDate: e.target.value })} />{dateError && <p id="aje-date-error" className="text-xs text-destructive">{dateError}</p>}</div>
         <div className="space-y-1.5"><Label>Created By</Label><div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">{entry?.creatorName || access.userName}</div></div>
         <div className="space-y-1.5"><Label>Division</Label><AjeSearchableSelect value={form.divisionId || "none"} onValueChange={value => setForm({ ...form, divisionId: value === "none" ? "" : value })} options={[{ value: "none", label: "None" }, ...divisions.map(d => ({ value: String(d.id), label: d.name }))]} disabled={frozen || busy || reversal} placeholder="None" /></div>
-        <div className="space-y-1.5 md:col-span-2"><Label>Original journal (optional)</Label>
-          <div className="flex flex-wrap items-center gap-2">{form.sourceJeNo ? <Badge variant="outline">{form.sourceJeNo}</Badge> : <span className="text-sm text-muted-foreground">None selected</span>}{!frozen && !reversal && form.sourceJeNo && <Button type="button" variant="ghost" size="sm" disabled={busy || sourceBusy} onClick={clearSource}>Clear source</Button>}</div>
-          {!frozen && !reversal && <>
-            <p className="text-xs text-muted-foreground">Search for a posted journal to use as the original source. The source details will be shown here before you continue.</p>
-            <div className="flex gap-2"><Input aria-label="Search original journal" value={sourceSearch} onChange={e => {setSourceSearch(e.target.value);setSources([]);setSourceSearched(false);}} placeholder="Journal number or reference" disabled={busy || sourceBusy} /><Button type="button" variant="outline" className="shrink-0" disabled={busy || sourceBusy || sourceSearch.trim().length < 2} onClick={() => void searchSources()}>{sourceBusy ? <Loader2 className="size-4 animate-spin" /> : "Search"}</Button></div>
-          </>}
-          {sources.length > 0 && <div className="max-h-52 overflow-auto rounded-md border" role="listbox" aria-label="Source journal results">{sources.map(source => <button type="button" key={source.jeNo} className="block w-full border-b p-2 text-left text-sm last:border-b-0 hover:bg-muted" disabled={sourceBusy} onClick={() => void requestSourceSelection(source.jeNo)}><span className="flex flex-wrap items-center gap-2"><strong>{source.jeNo}</strong>{source.status && <Badge variant="outline">{source.status}</Badge>}<span className="text-xs text-muted-foreground">{source.sourceModule || "Journal"} · {formatDate(source.transactionDate)}</span></span><span className="mt-1 block text-xs text-muted-foreground">{source.transactionRef || "No reference"}{source.description ? ` · ${source.description}` : ""}</span></button>)}</div>}
-          {sourceSearched && sources.length === 0 && <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">No eligible source journals matched that search. Try a journal number or reference.</p>}
+        <div className="min-w-0 space-y-1.5 md:col-span-2"><Label>Original journal (optional)</Label>
+          {!frozen && !reversal ? <Collapsible open={sourcePickerOpen} onOpenChange={setSourcePickerOpen} className="min-w-0 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {form.sourceJeNo && <Badge variant="outline">{form.sourceJeNo}</Badge>}
+              <CollapsibleTrigger asChild><Button ref={sourcePickerTriggerRef} type="button" variant="outline" size="sm" disabled={busy || sourceBusy}>{form.sourceJeNo ? "Change original journal" : "Link original journal"}<ChevronDown aria-hidden="true" className={`ml-2 size-4 transition-transform ${sourcePickerOpen ? "rotate-180" : ""}`} /></Button></CollapsibleTrigger>
+              {form.sourceJeNo && <Button type="button" variant="ghost" size="sm" disabled={busy || sourceBusy} onClick={clearSource}>Clear source</Button>}
+            </div>
+            <CollapsibleContent className="min-w-0 space-y-2">
+              <p id="aje-source-search-hint" className="text-xs text-muted-foreground">Enter at least 2 characters of a journal number or reference.</p>
+              <div className="flex min-w-0 flex-wrap gap-2"><Input ref={sourceSearchRef} aria-label="Search original journal" aria-describedby="aje-source-search-hint" className="min-w-0 flex-1 basis-48" value={sourceSearch} onChange={e => {setSourceSearch(e.target.value);setSources([]);setSourceSearched(false);}} onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); void searchSources(); } }} placeholder="Journal number or reference" disabled={busy || sourceBusy} /><Button type="button" variant="outline" className="shrink-0" disabled={busy || sourceBusy || sourceSearch.trim().length < 2} onClick={() => void searchSources()}>{sourceBusy && <Loader2 aria-hidden="true" className="mr-2 size-4 animate-spin" />}Search</Button></div>
+              {sourceBusy && <p role="status" className="text-xs text-muted-foreground">Loading original journals…</p>}
+              {sources.length > 0 && <div className="max-h-52 overflow-auto rounded-md border" role="listbox" aria-label="Source journal results">{sources.map(source => <button type="button" key={source.jeNo} className="block w-full border-b p-2 text-left text-sm last:border-b-0 hover:bg-muted" disabled={sourceBusy} onClick={e => void requestSourceSelection(source.jeNo, e.currentTarget)}><span className="flex flex-wrap items-center gap-2"><strong>{source.jeNo}</strong>{source.status && <Badge variant="outline">{source.status}</Badge>}<span className="text-xs text-muted-foreground">{source.sourceModule || "Journal"} · {formatDate(source.transactionDate)}</span></span><span className="mt-1 block text-xs text-muted-foreground">{source.transactionRef || "No reference"}{source.description ? ` · ${source.description}` : ""}</span></button>)}</div>}
+              {sourceSearched && sources.length === 0 && <p role="status" className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">No eligible source journals matched that search. Try a journal number or reference.</p>}
+            </CollapsibleContent>
+          </Collapsible> : <div className="flex flex-wrap items-center gap-2">{form.sourceJeNo ? <Badge variant="outline">{form.sourceJeNo}</Badge> : <span className="text-sm text-muted-foreground">None selected</span>}</div>}
           {sourceLoadError && <p role="alert" className="text-xs text-destructive">{sourceLoadError}</p>}
           {form.sourceJeNo && <div className="rounded-md bg-muted/30 p-3 text-sm">
             <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-medium">Selected original journal</p>{selectedSource?.status && <Badge variant="outline">{selectedSource.status}</Badge>}</div>
@@ -438,29 +486,29 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
                     <p><span className="text-muted-foreground">Net posted adjustments</span><span className="mt-0.5 block font-mono font-medium">{money(currentPostedAdjustmentHistory.netConsumedDebit)}</span></p>
                     <p><span className="text-muted-foreground">Remaining eligible debit</span><span className="mt-0.5 block font-mono font-medium">{money(currentPostedAdjustmentHistory.remainingEligibleDebit)}</span></p>
                   </div> : <p className="mt-1 text-muted-foreground">Remaining amount is unavailable.</p>}
-              {sourceOverLimit && <p role="alert" className="mt-2 font-medium text-destructive">This adjustment exceeds the remaining eligible source amount. Save as a draft or reduce the debit before submitting.</p>}
+              {showValidation && validationMode === "submit" && sourceOverLimit && <p className="mt-2 font-medium text-destructive">Save as a draft or reduce the debit before submitting.</p>}
             </div>}
           </div>}
         </div>
-        <div className="space-y-1.5 md:col-span-3"><Label htmlFor="aje-narration">Description / Narration *</Label><Textarea id="aje-narration" value={form.description} disabled={frozen || busy} aria-invalid={submitAttempted && !form.description.trim()} className={submitAttempted && !form.description.trim() ? "border-destructive" : ""} onChange={e => setForm({ ...form, description: e.target.value })} /></div>
+        <div className="space-y-1.5 md:col-span-3"><Label htmlFor="aje-narration">Description / Narration *</Label><Textarea id="aje-narration" value={form.description} disabled={frozen || busy} aria-invalid={Boolean(narrationError)} aria-describedby={narrationError ? "aje-narration-error" : undefined} className={narrationError ? "border-destructive" : ""} onChange={e => setForm({ ...form, description: e.target.value })} />{narrationError && <p id="aje-narration-error" className="text-xs text-destructive">{narrationError}</p>}</div>
       </div>
     </section>
 
     {reversal && <div className="space-y-2 rounded-md border bg-muted/20 p-3 text-sm"><p>Reversal of {form.sourceJeNo}. Accounts and departments remain linked to the original lines.</p>{!frozen && <label className="flex items-center gap-2">Reversal mode <select className="rounded border bg-background px-2 py-1" value={form.reversalMode || "PARTIAL"} disabled={busy} onChange={e => changeReversalMode(e.target.value as "FULL" | "PARTIAL")}><option value="FULL" disabled={preview ? !preview.canFullReverse : true}>Full</option><option value="PARTIAL">Partial / remaining</option></select></label>}</div>}
 
     <section className="space-y-3" aria-labelledby="aje-lines-heading" onPaste={handleLinePaste}>
-      <div className="flex flex-wrap items-start justify-between gap-2"><div><h3 id="aje-lines-heading" tabIndex={-1} className="font-semibold">Journal lines</h3><p className="text-xs text-muted-foreground">Each line needs one debit or credit. Totals must balance before submission.</p></div>{!frozen && !reversal && <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => setForm({ ...form, details: [...form.details, line()] })}><Plus className="mr-2 size-4" />Add line</Button>}</div>
+      <div className="flex flex-wrap items-start justify-between gap-2"><div><h3 id="aje-lines-heading" tabIndex={-1} aria-describedby={linesError ? "aje-lines-error" : undefined} className="font-semibold">Journal lines</h3><p className="text-xs text-muted-foreground">Each line needs one debit or credit. Totals must balance before submission.</p>{linesError && <p id="aje-lines-error" className="mt-1 text-xs text-destructive">{linesError}</p>}</div>{!frozen && !reversal && <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => setForm({ ...form, details: [...form.details, line()] })}><Plus className="mr-2 size-4" />Add line</Button>}</div>
       {!frozen && !reversal && <p className="text-xs text-muted-foreground">Duplicate a line or paste tab-separated rows into any line field. Paste columns follow Account, Department, Description, Debit, Credit.</p>}
       <div className="space-y-3 md:hidden">
         {form.details.map((row, index) => {
-          const issue = lineError(row); const accountIssue = issue === "Select an account."; const departmentIssue = issue === "Department is required for this account."; const amountIssue = Boolean(issue && !accountIssue && !departmentIssue); const remaining = preview?.lines.find(d => d.originalDetailId === row.originalDetailId)?.remainingAmount;
+          const issue = showValidation ? lineError(row, validationMode === "submit") : ""; const accountIssue = issue === "Select an account."; const departmentIssue = issue === "Department is required for this account."; const amountIssue = Boolean(issue && !accountIssue && !departmentIssue); const errorId = `aje-line-${row.key}-mobile-error`; const remaining = preview?.lines.find(d => d.originalDetailId === row.originalDetailId)?.remainingAmount;
           return <article key={row.key} className="space-y-3 rounded-md border p-3">
             <div className="flex items-center justify-between"><h4 className="font-medium">Line {index + 1}</h4><div className="flex items-center">{!frozen && !reversal && <Button type="button" size="icon" variant="ghost" aria-label={`Duplicate line ${index + 1}`} disabled={busy} onClick={() => duplicateLine(row.key)}><Copy className="size-4" /></Button>}{!frozen && !isFull && <Button type="button" size="icon" variant="ghost" aria-label={`Remove line ${index + 1}`} disabled={busy} onClick={() => setForm({ ...form, details: form.details.filter(d => d.key !== row.key) })}><Trash2 className="size-4" /></Button>}</div></div>
-            <div className="space-y-1"><Label>Account *</Label><AjeSearchableSelect options={accountOptions} value={row.coaId} onValueChange={v => updateLine(row.key, "coaId", v)} disabled={frozen || busy || reversal} placeholder="Select account" ariaLabel={`Line ${index + 1} account`} ariaInvalid={accountIssue} className={accountIssue ? "border-destructive" : ""} /></div>
-            <div className="space-y-1"><Label>Department{accountById.get(row.coaId)?.departmentRequired ? " *" : ""}</Label><AjeSearchableSelect options={departmentOptions} value={row.departmentId || "none"} onValueChange={v => updateLine(row.key, "departmentId", v === "none" ? "" : v)} disabled={frozen || busy || reversal} placeholder="None" ariaLabel={`Line ${index + 1} department`} ariaInvalid={departmentIssue} className={departmentIssue ? "border-destructive" : ""} /></div>
+            <div className="space-y-1"><Label>Account *</Label><AjeSearchableSelect options={accountOptions} value={row.coaId} onValueChange={v => updateLine(row.key, "coaId", v)} disabled={frozen || busy || reversal} placeholder="Select account" ariaLabel={`Line ${index + 1} account`} ariaInvalid={accountIssue} ariaDescribedBy={accountIssue ? errorId : undefined} className={accountIssue ? "border-destructive" : ""} /></div>
+            <div className="space-y-1"><Label>Department{accountById.get(row.coaId)?.departmentRequired ? " *" : ""}</Label><AjeSearchableSelect options={departmentOptions} value={row.departmentId || "none"} onValueChange={v => updateLine(row.key, "departmentId", v === "none" ? "" : v)} disabled={frozen || busy || reversal} placeholder="None" ariaLabel={`Line ${index + 1} department`} ariaInvalid={departmentIssue} ariaDescribedBy={departmentIssue ? errorId : undefined} className={departmentIssue ? "border-destructive" : ""} /></div>
             <div className="space-y-1"><Label htmlFor={`aje-line-desc-mobile-${index}`}>Line description</Label><Input id={`aje-line-desc-mobile-${index}`} aria-label={`Line ${index + 1} description`} value={row.description} maxLength={1000} disabled={frozen || busy} onChange={e => updateLine(row.key, "description", e.target.value)} /></div>
-            <div className="grid grid-cols-2 gap-2"><div className="space-y-1"><Label htmlFor={`aje-line-debit-mobile-${index}`}>Debit</Label><CurrencyInput id={`aje-line-debit-mobile-${index}`} aria-label={`Line ${index + 1} debit`} aria-invalid={amountIssue} className={`text-right font-mono ${amountIssue ? "border-destructive" : ""}`} type="number" min="0" step="0.01" value={row.debit} disabled={frozen || busy || isFull} onChange={e => updateLine(row.key, "debit", e.target.value)} onKeyDown={e => { if (e.key !== "Enter" || index !== form.details.length - 1) return; e.preventDefault(); if (row.coaId || row.departmentId || row.description.trim() || row.debit.trim() || row.credit.trim()) addLineAndFocus(); }} /></div><div className="space-y-1"><Label htmlFor={`aje-line-credit-mobile-${index}`}>Credit</Label><CurrencyInput id={`aje-line-credit-mobile-${index}`} aria-label={`Line ${index + 1} credit`} aria-invalid={amountIssue} className={`text-right font-mono ${amountIssue ? "border-destructive" : ""}`} type="number" min="0" step="0.01" value={row.credit} disabled={frozen || busy || isFull} onChange={e => updateLine(row.key, "credit", e.target.value)} onKeyDown={e => { if (e.key !== "Enter" || index !== form.details.length - 1) return; e.preventDefault(); if (row.coaId || row.departmentId || row.description.trim() || row.debit.trim() || row.credit.trim()) addLineAndFocus(); }} /></div></div>
-            {issue && <p className="text-xs text-destructive">{issue}</p>}{remaining !== undefined && <p className="text-xs text-muted-foreground">Remaining reversal amount: {money(remaining)}</p>}
+            <div className="grid grid-cols-2 gap-2"><div className="space-y-1"><Label htmlFor={`aje-line-debit-mobile-${index}`}>Debit</Label><CurrencyInput id={`aje-line-debit-mobile-${index}`} aria-label={`Line ${index + 1} debit`} aria-invalid={amountIssue} aria-describedby={amountIssue ? errorId : undefined} className={`text-right font-mono ${amountIssue ? "border-destructive" : ""}`} type="number" min="0" step="0.01" value={row.debit} disabled={frozen || busy || isFull} onChange={e => updateLine(row.key, "debit", e.target.value)} onKeyDown={e => { if (e.key !== "Enter" || index !== form.details.length - 1) return; e.preventDefault(); if (row.coaId || row.departmentId || row.description.trim() || row.debit.trim() || row.credit.trim()) addLineAndFocus(); }} /></div><div className="space-y-1"><Label htmlFor={`aje-line-credit-mobile-${index}`}>Credit</Label><CurrencyInput id={`aje-line-credit-mobile-${index}`} aria-label={`Line ${index + 1} credit`} aria-invalid={amountIssue} aria-describedby={amountIssue ? errorId : undefined} className={`text-right font-mono ${amountIssue ? "border-destructive" : ""}`} type="number" min="0" step="0.01" value={row.credit} disabled={frozen || busy || isFull} onChange={e => updateLine(row.key, "credit", e.target.value)} onKeyDown={e => { if (e.key !== "Enter" || index !== form.details.length - 1) return; e.preventDefault(); if (row.coaId || row.departmentId || row.description.trim() || row.debit.trim() || row.credit.trim()) addLineAndFocus(); }} /></div></div>
+            {issue && <p id={errorId} className="text-xs text-destructive">Line {index + 1}: {issue}</p>}{remaining !== undefined && <p className="text-xs text-muted-foreground">Remaining reversal amount: {money(remaining)}</p>}
           </article>;
         })}
         <div className="grid grid-cols-2 gap-2 rounded-md bg-muted/30 p-3 text-sm"><div><p className="text-xs text-muted-foreground">Total debit</p><p className="font-mono">{money(totals.debit / 100)}</p></div><div><p className="text-xs text-muted-foreground">Total credit</p><p className="font-mono">{money(totals.credit / 100)}</p></div></div>
@@ -468,12 +516,12 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
       <div className="hidden overflow-x-auto rounded-md border md:block">
         <table className="w-full min-w-[1000px] text-sm"><thead className="bg-muted/30"><tr><th className="p-2 text-left">Account</th><th className="p-2 text-left">Department</th><th className="p-2 text-left">Line description</th><th className="p-2 text-right">Debit</th><th className="p-2 text-right">Credit</th><th /></tr></thead><tbody>
           {form.details.map((row, index) => {
-            const issue = lineError(row); const accountIssue = issue === "Select an account."; const departmentIssue = issue === "Department is required for this account."; const amountIssue = Boolean(issue && !accountIssue && !departmentIssue); const remaining = preview?.lines.find(d => d.originalDetailId === row.originalDetailId)?.remainingAmount;
-            return <tr key={row.key} className="border-t"><td className="min-w-64 p-2 align-top"><AjeSearchableSelect options={accountOptions} value={row.coaId} onValueChange={v => updateLine(row.key, "coaId", v)} disabled={frozen || busy || reversal} placeholder="Select account" ariaLabel={`Line ${index + 1} account`} ariaInvalid={accountIssue} className={accountIssue ? "border-destructive" : ""} />{issue && <p className="mt-1 text-xs text-destructive">Line {index + 1}: {issue}</p>}{remaining !== undefined && <p className="mt-1 text-xs text-muted-foreground">Remaining: {money(remaining)}</p>}</td>
-              <td className="min-w-48 p-2 align-top"><AjeSearchableSelect options={departmentOptions} value={row.departmentId || "none"} onValueChange={v => updateLine(row.key, "departmentId", v === "none" ? "" : v)} disabled={frozen || busy || reversal} placeholder="None" ariaLabel={`Line ${index + 1} department`} ariaInvalid={departmentIssue} className={departmentIssue ? "border-destructive" : ""} />{accountById.get(row.coaId)?.departmentRequired && <span className="text-xs text-muted-foreground">Required</span>}</td>
+            const issue = showValidation ? lineError(row, validationMode === "submit") : ""; const accountIssue = issue === "Select an account."; const departmentIssue = issue === "Department is required for this account."; const amountIssue = Boolean(issue && !accountIssue && !departmentIssue); const errorId = `aje-line-${row.key}-desktop-error`; const remaining = preview?.lines.find(d => d.originalDetailId === row.originalDetailId)?.remainingAmount;
+            return <tr key={row.key} className="border-t"><td className="min-w-64 p-2 align-top"><AjeSearchableSelect options={accountOptions} value={row.coaId} onValueChange={v => updateLine(row.key, "coaId", v)} disabled={frozen || busy || reversal} placeholder="Select account" ariaLabel={`Line ${index + 1} account`} ariaInvalid={accountIssue} ariaDescribedBy={accountIssue ? errorId : undefined} className={accountIssue ? "border-destructive" : ""} />{accountIssue && <p id={errorId} className="mt-1 text-xs text-destructive">Line {index + 1}: {issue}</p>}{remaining !== undefined && <p className="mt-1 text-xs text-muted-foreground">Remaining: {money(remaining)}</p>}</td>
+              <td className="min-w-48 p-2 align-top"><AjeSearchableSelect options={departmentOptions} value={row.departmentId || "none"} onValueChange={v => updateLine(row.key, "departmentId", v === "none" ? "" : v)} disabled={frozen || busy || reversal} placeholder="None" ariaLabel={`Line ${index + 1} department`} ariaInvalid={departmentIssue} ariaDescribedBy={departmentIssue ? errorId : undefined} className={departmentIssue ? "border-destructive" : ""} />{departmentIssue && <p id={errorId} className="mt-1 text-xs text-destructive">Line {index + 1}: {issue}</p>}{accountById.get(row.coaId)?.departmentRequired && <span className="text-xs text-muted-foreground">Required</span>}</td>
               <td className="min-w-44 p-2 align-top"><Input aria-label={`Line ${index + 1} description`} value={row.description} maxLength={1000} disabled={frozen || busy} onChange={e => updateLine(row.key, "description", e.target.value)} /></td>
-              <td className="w-36 p-2 align-top"><CurrencyInput aria-label={`Line ${index + 1} debit`} aria-invalid={amountIssue} className={`text-right font-mono ${amountIssue ? "border-destructive" : ""}`} type="number" min="0" step="0.01" value={row.debit} disabled={frozen || busy || isFull} onChange={e => updateLine(row.key, "debit", e.target.value)} onKeyDown={e => { if (e.key !== "Enter" || index !== form.details.length - 1) return; e.preventDefault(); if (row.coaId || row.departmentId || row.description.trim() || row.debit.trim() || row.credit.trim()) addLineAndFocus(); }} /></td>
-              <td className="w-36 p-2 align-top"><CurrencyInput aria-label={`Line ${index + 1} credit`} aria-invalid={amountIssue} className={`text-right font-mono ${amountIssue ? "border-destructive" : ""}`} type="number" min="0" step="0.01" value={row.credit} disabled={frozen || busy || isFull} onChange={e => updateLine(row.key, "credit", e.target.value)} onKeyDown={e => { if (e.key !== "Enter" || index !== form.details.length - 1) return; e.preventDefault(); if (row.coaId || row.departmentId || row.description.trim() || row.debit.trim() || row.credit.trim()) addLineAndFocus(); }} /></td>
+              <td className="w-36 p-2 align-top"><CurrencyInput aria-label={`Line ${index + 1} debit`} aria-invalid={amountIssue} aria-describedby={amountIssue ? errorId : undefined} className={`text-right font-mono ${amountIssue ? "border-destructive" : ""}`} type="number" min="0" step="0.01" value={row.debit} disabled={frozen || busy || isFull} onChange={e => updateLine(row.key, "debit", e.target.value)} onKeyDown={e => { if (e.key !== "Enter" || index !== form.details.length - 1) return; e.preventDefault(); if (row.coaId || row.departmentId || row.description.trim() || row.debit.trim() || row.credit.trim()) addLineAndFocus(); }} />{amountIssue && !row.credit.trim() && <p id={errorId} className="mt-1 text-xs text-destructive">Line {index + 1}: {issue}</p>}</td>
+              <td className="w-36 p-2 align-top"><CurrencyInput aria-label={`Line ${index + 1} credit`} aria-invalid={amountIssue} aria-describedby={amountIssue ? errorId : undefined} className={`text-right font-mono ${amountIssue ? "border-destructive" : ""}`} type="number" min="0" step="0.01" value={row.credit} disabled={frozen || busy || isFull} onChange={e => updateLine(row.key, "credit", e.target.value)} onKeyDown={e => { if (e.key !== "Enter" || index !== form.details.length - 1) return; e.preventDefault(); if (row.coaId || row.departmentId || row.description.trim() || row.debit.trim() || row.credit.trim()) addLineAndFocus(); }} />{amountIssue && row.credit.trim() && <p id={errorId} className="mt-1 text-xs text-destructive">Line {index + 1}: {issue}</p>}</td>
               <td className="p-2 align-top"><div className="flex">{!frozen && !reversal && <Button type="button" size="icon" variant="ghost" aria-label={`Duplicate line ${index + 1}`} disabled={busy} onClick={() => duplicateLine(row.key)}><Copy className="size-4" /></Button>}{!frozen && !isFull && <Button type="button" size="icon" variant="ghost" aria-label={`Remove line ${index + 1}`} disabled={busy} onClick={() => setForm({ ...form, details: form.details.filter(d => d.key !== row.key) })}><Trash2 className="size-4" /></Button>}</div></td></tr>;
           })}
         </tbody><tfoot className="border-t bg-muted/20"><tr><td className="p-3 font-semibold" colSpan={3}>Totals</td><td className="p-3 text-right font-mono">{money(totals.debit / 100)}</td><td className="p-3 text-right font-mono">{money(totals.credit / 100)}</td><td /></tr></tfoot></table>
@@ -502,12 +550,13 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
 
     {!frozen && <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex flex-col gap-3 border-t bg-background/95 p-4 shadow-[0_-8px_20px_-16px_rgba(0,0,0,0.45)] backdrop-blur sm:-mx-6 sm:-mb-6 sm:flex-row sm:items-center sm:justify-between sm:p-4">
       <div className="min-w-0 text-sm" aria-live="polite">
-        <p className={`font-medium ${balanced ? "text-emerald-700" : hasAmounts ? "text-destructive" : "text-muted-foreground"}`}>{balanced ? <>Balanced · Debit {money(totals.debit / 100)} · Credit {money(totals.credit / 100)}</> : hasAmounts ? <>Out of balance · Debit {money(totals.debit / 100)} · Credit {money(totals.credit / 100)}</> : "Enter debit and credit lines to balance this entry."}</p>
-        {submitBlockers.length > 0 ? <p className="mt-1 text-xs text-muted-foreground">{submitBlockers.length} {submitBlockers.length === 1 ? "item needs" : "items need"} attention before submission.{" "}{(submitAttempted || checklistOpen) ? "Use the checklist above to jump to each item." : <button type="button" className="underline underline-offset-2 hover:text-foreground" onClick={() => { setChecklistOpen(true); focusBlocker(submitBlockers[0].selector); }}>Show checklist</button>}</p> : <p className="mt-1 text-xs text-muted-foreground">Ready for review after saving.</p>}
+        <p className={`font-medium ${balanced ? "text-emerald-700" : balanceError ? "text-destructive" : "text-muted-foreground"}`}>{balanced ? <>Balanced · Debit {money(totals.debit / 100)} · Credit {money(totals.credit / 100)}</> : hasAmounts ? <>Out of balance · Debit {money(totals.debit / 100)} · Credit {money(totals.credit / 100)}</> : "Enter debit and credit lines to balance this entry."}</p>
+        {validationFailed ? <p className="mt-1 text-xs text-muted-foreground">{validationBlockers.length} {validationBlockers.length === 1 ? "item needs" : "items need"} attention before {validationMode === "draft" ? "saving the draft" : "submission"}. <button type="button" className="underline underline-offset-2 hover:text-foreground" onClick={() => setSummaryFocusRequest(request => request + 1)}>Review errors</button></p>
+          : submitBlockers.length > 0 ? <p className="mt-1 text-xs text-muted-foreground">Check the requirements when you are ready. <button type="button" className="underline underline-offset-2 hover:text-foreground" onClick={() => { setChecklistOpen(true); setSummaryFocusRequest(request => request + 1); }}>Show checklist</button></p> : <p className="mt-1 text-xs text-muted-foreground">Ready for review after saving.</p>}
       </div>
       <div className="flex shrink-0 justify-end gap-2"><Button type="button" variant="outline" disabled={busy || sourceBusy} onClick={() => void save(false)}>{busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Save className="mr-2 size-4" />}Save Draft</Button><Button type="button" disabled={busy || sourceBusy} onClick={() => void save(true)}><Send className="mr-2 size-4" />Save & Submit</Button></div>
     </div>}
-    <AlertDialog open={pendingSource !== null} onOpenChange={open => { if (!open) setPendingSource(null); }}><AlertDialogContent>
+    <AlertDialog open={pendingSource !== null} onOpenChange={open => { if (!open) setPendingSource(null); }}><AlertDialogContent onCloseAutoFocus={event => { event.preventDefault(); if (sourcePickerOpen) sourceResultTriggerRef.current?.focus(); else sourcePickerTriggerRef.current?.focus(); }}>
       <AlertDialogHeader><AlertDialogTitle>Replace the current entry details?</AlertDialogTitle><AlertDialogDescription>Selecting this original journal will replace the reference, narration, and journal lines. The accounting date, division, and supporting documents will stay unchanged.</AlertDialogDescription></AlertDialogHeader>
       {pendingSource && <div className="grid gap-2 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-2"><p><span className="text-muted-foreground">Original journal</span><span className="mt-0.5 block font-medium">{pendingSource.jeNo}</span></p><p><span className="text-muted-foreground">Date / reference</span><span className="mt-0.5 block">{formatDate(pendingSource.transactionDate)} · {pendingSource.transactionRef || "No reference"}</span></p><p><span className="text-muted-foreground">Lines to load</span><span className="mt-0.5 block">{pendingSource.details.length}</span></p><p><span className="text-muted-foreground">Source totals</span><span className="mt-0.5 block font-mono">Debit {money(pendingSourceTotals?.debit)} · Credit {money(pendingSourceTotals?.credit)}</span></p></div>}
       <AlertDialogFooter><AlertDialogCancel>Keep current details</AlertDialogCancel><AlertDialogAction onClick={() => { if (pendingSource) applySource(pendingSource); }}>Replace details</AlertDialogAction></AlertDialogFooter>

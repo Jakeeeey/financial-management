@@ -151,6 +151,7 @@ export const adjustingJournalEntriesApi = {
     appendOptional(params, "sourceJeNo", query.sourceJeNo?.trim());
     appendOptional(params, "sort", query.sort);
     appendOptional(params, "accountTypeId", query.accountTypeId);
+    appendOptional(params, "queue", query.queue);
 
     const res = await fetchWithAuthRetry(`${BASE}?${params.toString()}`, { cache: "no-store", signal });
     const data = await parseResponse<AdjustingEntryPage & { page?: Partial<AdjustingEntryPage> }>(res, "Failed to load adjusting journal entries");
