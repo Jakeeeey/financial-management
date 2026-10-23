@@ -24,24 +24,31 @@ interface AIAnalysisRequest {
   };
 }
 
-interface AIInsight {
+interface AIInsightContent {
   summary: string;
   healthStatus: "healthy" | "caution" | "critical";
+  healthRationale: string;
   keyFindings: string[];
   risks: string[];
   recommendations: string[];
-  trends: {
+  periodObservations: {
     operating: string;
     investing: string;
     financing: string;
   };
 }
 
+interface AIInsight extends AIInsightContent {
+  analysisSource: "ai" | "rules-based";
+  analyzedPeriod: AIAnalysisRequest["period"];
+  generatedAt: string;
+}
+
 /**
  * POST /api/fm/financial-statements/statement-of-cash-flow/ai-insights
  *
  * Analyzes cash flow statement data using AI and returns structured insights.
- * Currently uses a rules-based analysis engine as a fallback.
+ * Uses a rules-based analysis engine when AI is not configured or fails.
  * Can be upgraded to use OpenAI, Anthropic, or any LLM provider.
  */
 export async function POST(request: Request) {
@@ -81,7 +88,10 @@ export async function POST(request: Request) {
     if (aiProvider && process.env.AI_API_KEY) {
       try {
         const aiInsights = await callExternalAI(body);
-        return NextResponse.json({ success: true, data: aiInsights });
+        return NextResponse.json({
+          success: true,
+          data: withAnalysisContext(aiInsights, body.period, "ai"),
+        });
       } catch (aiError) {
         console.error("External AI analysis failed, falling back to rules engine:", aiError);
         // Fall through to rules-based engine
@@ -91,7 +101,10 @@ export async function POST(request: Request) {
     // Rules-based analysis engine (works without any API key)
     const insights = generateRulesBasedInsights(body);
 
-    return NextResponse.json({ success: true, data: insights });
+    return NextResponse.json({
+      success: true,
+      data: withAnalysisContext(insights, body.period, "rules-based"),
+    });
   } catch (error) {
     console.error("AI Insights Error:", error);
     return NextResponse.json(
@@ -108,7 +121,7 @@ export async function POST(request: Request) {
  * Rules-based analysis engine that evaluates cash flow health
  * without requiring any external AI API.
  */
-function generateRulesBasedInsights(data: AIAnalysisRequest): AIInsight {
+function generateRulesBasedInsights(data: AIAnalysisRequest): AIInsightContent {
   const { summary, period } = data;
   const { operatingActivities, investingActivities, financingActivities, netIncreaseInCash } = summary;
 
@@ -117,12 +130,12 @@ function generateRulesBasedInsights(data: AIAnalysisRequest): AIInsight {
   const recommendations: string[] = [];
 
   // === Operating Activities Analysis ===
-  const operatingTrend =
+  const operatingObservation =
     operatingActivities > 0
-      ? "Positive operating cash flow indicates core business operations are generating sufficient cash."
+      ? "Operating activities generated a net cash inflow during this period."
       : operatingActivities < 0
-        ? "Negative operating cash flow suggests the core business is not generating enough cash from operations."
-        : "Operating cash flow is neutral, with no significant net movement.";
+        ? "Operating activities used net cash during this period."
+        : "Operating activities had no net cash movement during this period.";
 
   keyFindings.push(
     `Operating activities: ${formatCurrency(operatingActivities)} — ${
@@ -137,12 +150,12 @@ function generateRulesBasedInsights(data: AIAnalysisRequest): AIInsight {
   }
 
   // === Investing Activities Analysis ===
-  const investingTrend =
+  const investingObservation =
     investingActivities < 0
-      ? "Negative investing cash flow typically indicates the company is investing in long-term assets for future growth."
+      ? "Investing activities used net cash during this period; this may include purchases of long-term assets."
       : investingActivities > 0
-        ? "Positive investing cash flow may indicate the company is selling off assets, which could be a liquidity strategy or a sign of divestment."
-        : "No significant investing activity during the period.";
+        ? "Investing activities generated a net cash inflow during this period."
+        : "Investing activities had no net cash movement during this period.";
 
   keyFindings.push(
     `Investing activities: ${formatCurrency(investingActivities)} — ${
@@ -157,12 +170,12 @@ function generateRulesBasedInsights(data: AIAnalysisRequest): AIInsight {
   }
 
   // === Financing Activities Analysis ===
-  const financingTrend =
+  const financingObservation =
     financingActivities > 0
-      ? "Positive financing cash flow suggests the company is raising capital through debt or equity."
+      ? "Financing activities generated a net cash inflow during this period."
       : financingActivities < 0
-        ? "Negative financing cash flow indicates debt repayment, share buybacks, or dividend distributions."
-        : "No significant financing activity during the period.";
+        ? "Financing activities used net cash during this period."
+        : "Financing activities had no net cash movement during this period.";
 
   keyFindings.push(
     `Financing activities: ${formatCurrency(financingActivities)} — ${
@@ -179,19 +192,24 @@ function generateRulesBasedInsights(data: AIAnalysisRequest): AIInsight {
   // === Overall Health Assessment ===
   let healthStatus: "healthy" | "caution" | "critical";
   let summaryText: string;
+  let healthRationale: string;
 
   if (operatingActivities > 0 && netIncreaseInCash > 0) {
     healthStatus = "healthy";
-    summaryText = `Your cash flow from ${period.startDate} to ${period.endDate} shows a healthy position. Operating activities generated ${formatCurrency(operatingActivities)} in cash, and overall cash increased by ${formatCurrency(netIncreaseInCash)}. The business is generating sufficient cash from its core operations.`;
+    healthRationale = `Operating cash flow of ${formatCurrency(operatingActivities)} and net cash movement of ${formatCurrency(netIncreaseInCash)} are both positive for this period.`;
+    summaryText = `For ${period.startDate} to ${period.endDate}, operating activities generated ${formatCurrency(operatingActivities)} and net cash increased by ${formatCurrency(netIncreaseInCash)}. Both cash-flow measures were positive in this report period.`;
   } else if (operatingActivities > 0 && netIncreaseInCash <= 0) {
     healthStatus = "caution";
-    summaryText = `While core operations generated ${formatCurrency(operatingActivities)} in positive cash flow, overall cash decreased by ${formatCurrency(Math.abs(netIncreaseInCash))}. This suggests significant cash outflows from investing or financing activities are offsetting operational gains.`;
+    healthRationale = `Operating cash flow is positive at ${formatCurrency(operatingActivities)}, but net cash movement is ${formatCurrency(netIncreaseInCash)} for this period.`;
+    summaryText = `Operating activities generated ${formatCurrency(operatingActivities)}, while net cash movement was ${formatCurrency(netIncreaseInCash)}. Investing, financing, or other cash movements offset the operating inflow.`;
   } else if (operatingActivities <= 0 && netIncreaseInCash > 0) {
     healthStatus = "caution";
-    summaryText = `Cash increased by ${formatCurrency(netIncreaseInCash)}, but operating activities consumed ${formatCurrency(Math.abs(operatingActivities))}. The company appears to be relying on external financing or asset sales to maintain liquidity.`;
+    healthRationale = `Net cash movement is positive at ${formatCurrency(netIncreaseInCash)}, but operating cash flow is ${formatCurrency(operatingActivities)} for this period.`;
+    summaryText = `Net cash increased by ${formatCurrency(netIncreaseInCash)}, while operating cash flow was ${formatCurrency(operatingActivities)}. Non-operating movements contributed to the increase.`;
   } else {
     healthStatus = "critical";
-    summaryText = `Critical cash position: Operating activities consumed ${formatCurrency(Math.abs(operatingActivities))}, and total cash decreased by ${formatCurrency(Math.abs(netIncreaseInCash))}. Immediate attention is needed to improve operational cash generation and preserve liquidity.`;
+    healthRationale = `Operating cash flow of ${formatCurrency(operatingActivities)} and net cash movement of ${formatCurrency(netIncreaseInCash)} are both zero or negative for this period.`;
+    summaryText = `For ${period.startDate} to ${period.endDate}, operating cash flow was ${formatCurrency(operatingActivities)} and net cash movement was ${formatCurrency(netIncreaseInCash)}. Both cash-flow measures were non-positive in this report period.`;
   }
 
   // === Recommendations ===
@@ -230,14 +248,28 @@ function generateRulesBasedInsights(data: AIAnalysisRequest): AIInsight {
   return {
     summary: summaryText,
     healthStatus,
+    healthRationale,
     keyFindings,
     risks: risks.length > 0 ? risks : ["No significant risks identified in this period."],
     recommendations,
-    trends: {
-      operating: operatingTrend,
-      investing: investingTrend,
-      financing: financingTrend,
+    periodObservations: {
+      operating: operatingObservation,
+      investing: investingObservation,
+      financing: financingObservation,
     },
+  };
+}
+
+function withAnalysisContext(
+  insight: AIInsightContent,
+  period: AIAnalysisRequest["period"],
+  analysisSource: AIInsight["analysisSource"]
+): AIInsight {
+  return {
+    ...insight,
+    analysisSource,
+    analyzedPeriod: period,
+    generatedAt: new Date().toISOString(),
   };
 }
 
@@ -247,7 +279,7 @@ function generateRulesBasedInsights(data: AIAnalysisRequest): AIInsight {
  */
 async function callExternalAI(
   data: AIAnalysisRequest
-): Promise<AIInsight> {
+): Promise<AIInsightContent> {
   const apiKey = process.env.AI_API_KEY;
   const apiUrl = process.env.AI_API_URL || "https://api.openai.com/v1/chat/completions";
   const model = process.env.AI_MODEL || "gpt-4o-mini";
@@ -271,15 +303,17 @@ async function callExternalAI(
             "{\n" +
             '  "summary": "A comprehensive 2-3 sentence summary of the cash flow health",\n' +
             '  "healthStatus": "healthy" | "caution" | "critical",\n' +
+            '  "healthRationale": "A concise explanation of the period values that support the selected health status",\n' +
             '  "keyFindings": ["Finding 1", "Finding 2", ...],\n' +
             '  "risks": ["Risk 1", "Risk 2", ...],\n' +
             '  "recommendations": ["Recommendation 1", "Recommendation 2", ...],\n' +
-            '  "trends": {\n' +
-            '    "operating": "Trend description for operating activities",\n' +
-            '    "investing": "Trend description for investing activities",\n' +
-            '    "financing": "Trend description for financing activities"\n' +
+            '  "periodObservations": {\n' +
+            '    "operating": "Observation about operating activity in this period",\n' +
+            '    "investing": "Observation about investing activity in this period",\n' +
+            '    "financing": "Observation about financing activity in this period"\n' +
             "  }\n" +
             "}\n" +
+            "Use only the supplied single-period data. Do not claim comparisons or trends over time. Explain that healthStatus is a cash-flow indicator, not a complete assessment of the business.\n" +
             "Respond ONLY with valid JSON, no other text.",
         },
         { role: "user", content: prompt },
@@ -303,16 +337,44 @@ async function callExternalAI(
 
   // Parse the JSON response
   try {
-    // Try direct parse
-    return JSON.parse(content) as AIInsight;
+    return parseExternalAIInsight(JSON.parse(content));
   } catch {
     // Try extracting JSON from markdown code blocks
     const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
     if (jsonMatch) {
-      return JSON.parse(jsonMatch[1]) as AIInsight;
+      return parseExternalAIInsight(JSON.parse(jsonMatch[1]));
     }
     throw new Error("Failed to parse AI response as JSON");
   }
+}
+
+function parseExternalAIInsight(value: unknown): AIInsightContent {
+  if (!value || typeof value !== "object") {
+    throw new Error("AI response is not an object");
+  }
+
+  const insight = value as Record<string, unknown>;
+  const observations = insight.periodObservations;
+  const isStringArray = (candidate: unknown) =>
+    Array.isArray(candidate) && candidate.every((item) => typeof item === "string");
+
+  if (
+    typeof insight.summary !== "string" ||
+    !["healthy", "caution", "critical"].includes(String(insight.healthStatus)) ||
+    typeof insight.healthRationale !== "string" ||
+    !isStringArray(insight.keyFindings) ||
+    !isStringArray(insight.risks) ||
+    !isStringArray(insight.recommendations) ||
+    !observations ||
+    typeof observations !== "object" ||
+    typeof (observations as Record<string, unknown>).operating !== "string" ||
+    typeof (observations as Record<string, unknown>).investing !== "string" ||
+    typeof (observations as Record<string, unknown>).financing !== "string"
+  ) {
+    throw new Error("AI response is missing required analysis details");
+  }
+
+  return insight as unknown as AIInsightContent;
 }
 
 function buildAIPrompt(data: AIAnalysisRequest): string {
