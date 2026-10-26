@@ -47,7 +47,7 @@ test("flat filtering includes posted AJEs and preserves regular journal statuses
     line(),
     line({ jeNo: "AJE-002", sourceModule: "Adjusting Entry" }),
     line({ jeNo: "SI-003", status: "Unposted" }),
-    ...["Draft", "Submitted", "Approved", "Rejected", "Failed", "Cancelled", "Voided"].map(status =>
+    ...["Draft", "For Revision", "Submitted", "Approved", "Rejected", "Failed", "Cancelled", "Voided"].map(status =>
       line({ jeNo: `AJE-${status}`, sourceModule: "Adjusting Entry", status })),
   ];
   assert.deepEqual(filterJournalEntries(rows, filters).map(row => row.jeNo), ["SI-001", "AJE-002", "SI-003"]);
@@ -127,7 +127,7 @@ test("audit failures do not return partial history or an empty success", async t
 });
 
 test("audit summaries match Posting and preserve recorded reasons", () => {
-  assert.equal(auditEventSummary(auditEvent(1)), "Draft created");
+  assert.equal(auditEventSummary(auditEvent(1)), "Adjusting entry created");
   assert.equal(auditEventSummary(auditEvent(2, { action: "Posted" })), "Posted to the General Ledger");
   assert.equal(auditEventSummary(auditEvent(3, { action: "Edited", reason: "Corrected reference" })), "Corrected reference");
 });

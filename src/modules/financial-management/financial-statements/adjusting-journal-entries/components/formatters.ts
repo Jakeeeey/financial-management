@@ -16,7 +16,7 @@ export function formatQueueAgeLabel(status: "Submitted" | "Approved" | "Failed",
     : hours ? `${pluralUnit(hours, "hour")}${minutes ? ` ${pluralUnit(minutes, "minute")}` : ""} ago`
     : `${pluralUnit(minutes, "minute")} ago`;
 
-  if (status === "Submitted") return `Awaiting review · Submitted ${duration}`;
+  if (status === "Submitted") return `Awaiting posting · Submitted ${duration}`;
   if (status === "Approved") return `Awaiting posting · Approved ${duration}`;
   return canRetry ? `Retry posting · Last attempt ${duration}` : `Posting failed · Last attempt ${duration}`;
 }
@@ -24,12 +24,14 @@ export function formatQueueAgeLabel(status: "Submitted" | "Approved" | "Failed",
 export function auditEventSummary(event: AjeAuditEvent) {
   if (event.reason?.trim()) return event.reason.trim();
   const summaries: Record<string, string> = {
-    Created:"Draft created",
+    Created:"Adjusting entry created",
     Edited:"Journal details updated",
-    Submitted:"Submitted for approval",
+    Submitted:"Entry submitted",
     Approved:"Approved for posting",
     Rejected:"Returned for revision",
-    Withdrawn:"Withdrawn from approval",
+    "Returned for Revision":"Returned for revision",
+    "Workflow Migrated":"Workflow status updated",
+    Withdrawn:"Withdrawn for revision",
     "Revision Started":"Revision started",
     Cancelled:"Entry cancelled",
     Posted:"Posted to the General Ledger",
@@ -74,6 +76,8 @@ export function statusBadgeClass(status: string) {
     case "Cancelled":
     case "Failed":
       return "border-red-500/30 bg-red-500/10 text-red-700";
+    case "For Revision":
+      return "border-amber-500/30 bg-amber-500/10 text-amber-800";
     case "Draft":
     case "Voided":
     default:

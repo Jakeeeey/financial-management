@@ -21,7 +21,7 @@ import type { AdjustingEntry, AdjustingEntryPayload, AdjustingEntryPostedAdjustm
 type Line = { key: string; coaId: string; departmentId: string; description: string; debit: string; credit: string; originalDetailId: number | null };
 type Form = { reference: string; transactionDate: string; description: string; divisionId: string; sourceJeNo: string; entryKind: "ADJUSTMENT" | "REVERSAL"; originalEntryId: number | null; reversalMode: "FULL" | "PARTIAL" | null; details: Line[] };
 type SubmitBlocker = { message: string; selector: string };
-type Props = { initialEntry: AdjustingEntry | null; seed?: AdjustingEntryPayload | null; readOnly: boolean; hideTitle?: boolean; dirtyRef: React.MutableRefObject<boolean>; access: AjeAccess; accounts: AjeAccount[]; departments: DepartmentLookup[]; divisions: DivisionLookup[]; onSaved: (saveCompleted: boolean) => void; onAction: (entry: AdjustingEntry, action: AjeAction) => void };
+type Props = { initialEntry: AdjustingEntry | null; seed?: AdjustingEntryPayload | null; readOnly: boolean; hideTitle?: boolean; dirtyRef: React.MutableRefObject<boolean>; access: AjeAccess; accounts: AjeAccount[]; departments: DepartmentLookup[]; divisions: DivisionLookup[]; onSaved: (saveCompleted: boolean, entry: AdjustingEntry, submitting: boolean) => void; onAction: (entry: AdjustingEntry, action: AjeAction) => void };
 
 function CurrencyInput({ className, ...props }: React.ComponentPropsWithoutRef<typeof Input>) {
   return <div className="relative">
@@ -92,8 +92,8 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
   const selectedFilePreviewUrls = React.useRef(new Map<File, string>());
   const [preview, setPreview] = React.useState<AjeReversalPreview | null>(null);
   const inFlight = React.useRef(false);
-  const creatorEditBlocked = Boolean(entry && entry.status === "Draft" && entry.entryOrigin === "MANUAL" && entry.creatorId !== access.userId);
-  const frozen = readOnly || Boolean(entry && (entry.status !== "Draft" || entry.entryOrigin !== "MANUAL" || entry.creatorId !== access.userId));
+  const creatorEditBlocked = Boolean(entry && ["Draft", "For Revision"].includes(entry.status) && entry.entryOrigin === "MANUAL" && entry.creatorId !== access.userId);
+  const frozen = readOnly || Boolean(entry && (!["Draft", "For Revision"].includes(entry.status) || entry.entryOrigin !== "MANUAL" || entry.creatorId !== access.userId));
   const reversal = form.entryKind === "REVERSAL";
   const isFull = reversal && form.reversalMode === "FULL";
   const hasUnsavedChanges = !frozen && (serializeForm(form) !== savedSnapshot || selectedFiles.length > 0);
@@ -398,12 +398,12 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
         saveCompleted = true;
       } finally {
         setAttachmentsRevision(value => value + 1);
-        onSaved(saveCompleted);
+        onSaved(saveCompleted, saved, submit);
       }
       setSavedSnapshot(serializeForm(form));
       setValidationMode(null);
       setChecklistOpen(false);
-      toast.success(`${saved.jeNo || `Entry #${saved.id}`} saved as draft`);
+      toast.success(`${saved.jeNo || `Entry #${saved.id}`} saved as ${saved.status}`);
       if (submit) onAction(saved, "submit");
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to save this draft"); }
     finally { inFlight.current = false; setBusy(false); }
@@ -445,7 +445,7 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
 
   return <div className="space-y-5 rounded-lg border bg-background p-4 sm:p-6">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div>{(!hideTitle || entry?.jeNo || reversal) && <h2 className="text-lg font-semibold">{entry?.jeNo || (reversal ? "New Reversal" : "New Adjusting Entry")}</h2>}<div className="flex flex-wrap items-center gap-2"><p className="text-sm text-muted-foreground">{entry?.status || "Draft"}{entry?.entryOrigin === "SYSTEM" ? " · Managed by its originating module" : ""}</p>{hasUnsavedChanges && <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-800">Unsaved changes</Badge>}</div></div>
+      <div>{(!hideTitle || entry?.jeNo || reversal) && <h2 className="text-lg font-semibold">{entry?.jeNo || (reversal ? "New Reversal" : "New Adjusting Entry")}</h2>}<div className="flex flex-wrap items-center gap-2"><p className="text-sm text-muted-foreground">{entry?.status || (reversal ? "For Revision (not saved)" : "Draft (not saved)")}{entry?.entryOrigin === "SYSTEM" ? " · Managed by its originating module" : ""}</p>{hasUnsavedChanges && <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-800">Unsaved changes</Badge>}</div></div>
       <div id="aje-balance-indicator" tabIndex={-1} aria-describedby={balanceError ? "aje-balance-error" : undefined} className={`text-sm font-medium ${balanced ? "text-emerald-700" : balanceError ? "text-destructive" : "text-muted-foreground"}`} aria-live="polite">{balanced ? "Balanced" : hasAmounts ? <>Unbalanced · Difference {money((totals.debit - totals.credit) / 100)}</> : "No amounts entered yet · Add a debit and a credit line."}{balanceError && <p id="aje-balance-error" className="mt-1 text-xs">{balanceError}</p>}</div>
     </div>
     {error && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
@@ -556,13 +556,13 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
         previewUrl={isPreviewableAjeImage(file.type, file.name, true) ? selectedFilePreviewUrls.current.get(file) : undefined}
         statusText="Pending save" onRemove={() => removeSelectedFile(file)} removeDisabled={busy} />)}
     </section>
-    {entry && <div className="grid gap-2 rounded-md bg-muted/30 p-3 text-xs text-muted-foreground sm:grid-cols-2"><p>Created: {entry.creatorName} · {formatDateTime(entry.dateCreated)}</p><p>Submitted: {entry.submittedByName || "—"} · {formatDateTime(entry.submittedAt)}</p><p>Approved: {entry.approvedByName || "—"} · {formatDateTime(entry.approvedAt)}</p><p>Posted: {entry.postedByName || "—"} · {formatDateTime(entry.datePosted)}</p><p>Accounting date: {formatDate(entry.transactionDate)}</p></div>}
+    {entry && <div className="grid gap-2 rounded-md bg-muted/30 p-3 text-xs text-muted-foreground sm:grid-cols-2"><p>Created: {entry.creatorName} · {formatDateTime(entry.dateCreated)}</p><p>Submitted: {entry.submittedByName || "—"} · {formatDateTime(entry.submittedAt)}</p>{(entry.approvedByName || entry.approvedAt) && <p>Historical approval: {entry.approvedByName || "—"} · {formatDateTime(entry.approvedAt)}</p>}<p>Posted: {entry.postedByName || "—"} · {formatDateTime(entry.datePosted)}</p><p>Accounting date: {formatDate(entry.transactionDate)}</p></div>}
 
     {!frozen && <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex flex-col gap-3 border-t bg-background/95 p-4 shadow-[0_-8px_20px_-16px_rgba(0,0,0,0.45)] backdrop-blur sm:-mx-6 sm:-mb-6 sm:flex-row sm:items-center sm:justify-between sm:p-4">
       <div className="min-w-0 text-sm" aria-live="polite">
         <p className={`font-medium ${balanced ? "text-emerald-700" : balanceError ? "text-destructive" : "text-muted-foreground"}`}>{balanced ? <>Balanced · Debit {money(totals.debit / 100)} · Credit {money(totals.credit / 100)}</> : hasAmounts ? <>Out of balance · Debit {money(totals.debit / 100)} · Credit {money(totals.credit / 100)}</> : "Enter debit and credit lines to balance this entry."}</p>
         {validationFailed ? <p className="mt-1 text-xs text-muted-foreground">{validationBlockers.length} {validationBlockers.length === 1 ? "item needs" : "items need"} attention before {validationMode === "draft" ? "saving the draft" : "submission"}. <button type="button" className="underline underline-offset-2 hover:text-foreground" onClick={() => setSummaryFocusRequest(request => request + 1)}>Review errors</button></p>
-          : submitBlockers.length > 0 ? <p className="mt-1 text-xs text-muted-foreground">Check the requirements when you are ready. <button type="button" className="underline underline-offset-2 hover:text-foreground" onClick={() => { setChecklistOpen(true); setSummaryFocusRequest(request => request + 1); }}>Show checklist</button></p> : <p className="mt-1 text-xs text-muted-foreground">Ready for review after saving.</p>}
+          : submitBlockers.length > 0 ? <p className="mt-1 text-xs text-muted-foreground">Check the requirements when you are ready. <button type="button" className="underline underline-offset-2 hover:text-foreground" onClick={() => { setChecklistOpen(true); setSummaryFocusRequest(request => request + 1); }}>Show checklist</button></p> : <p className="mt-1 text-xs text-muted-foreground">Ready to submit for posting.</p>}
       </div>
       <div className="flex shrink-0 justify-end gap-2"><Button type="button" variant="outline" disabled={busy || sourceBusy} onClick={() => void save(false)}>{busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Save className="mr-2 size-4" />}Save Draft</Button><Button type="button" disabled={busy || sourceBusy} onClick={() => void save(true)}><Send className="mr-2 size-4" />Save & Submit</Button></div>
     </div>}

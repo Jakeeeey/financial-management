@@ -21,11 +21,10 @@ function toCentavos(value: number) {
 
 export function AdjustingEntriesSummaryCards({ summary, selectedStatus = "All", onStatusSelect, showPostedAmounts = false, loading = false, onShowPosted, onInvestigatePosted, onShowUnbalancedDrafts, actionsDisabled = false }: Props) {
   const statuses: readonly StatusTotal[] = [
-    ["Awaiting review", summary.submitted, "Submitted"],
-    ["Approved", summary.approved, "Approved"],
+    ["Awaiting posting", summary.submitted, "Submitted"],
+    ["For Revision", summary.forRevision, "For Revision"],
     ["Posting failed", summary.failed, "Failed"],
     ["Draft", summary.draft, "Draft"],
-    ["Rejected", summary.rejected, "Rejected"],
     ["Cancelled", summary.cancelled, "Cancelled"],
     ["Voided", summary.voided, "Voided"],
   ];
@@ -86,8 +85,8 @@ export function AdjustingEntriesSummaryCards({ summary, selectedStatus = "All", 
         <p className="text-xs text-muted-foreground">Select a status count to filter the register. Status and review counts cover the report scope.</p>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{statusCards}</div>
         {summary.imbalanced > 0 && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm">
-          <p className="text-amber-800">{summary.imbalanced} unbalanced draft{summary.imbalanced === 1 ? "" : "s"} cannot be submitted.</p>
-          {onShowUnbalancedDrafts && <button type="button" className="font-semibold text-amber-800 underline underline-offset-2 hover:text-amber-900" onClick={onShowUnbalancedDrafts}>Show unbalanced drafts</button>}
+          <p className="text-amber-800">{summary.imbalanced} unbalanced draft or revision{summary.imbalanced === 1 ? "" : "s"} cannot be submitted.</p>
+          {onShowUnbalancedDrafts && <button type="button" className="font-semibold text-amber-800 underline underline-offset-2 hover:text-amber-900" onClick={onShowUnbalancedDrafts}>Show unbalanced draft or revisions</button>}
         </div>}
         {showPostedAmounts && summary.postedImbalanced > 0 && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2 text-sm">
           <p className="text-red-700">{summary.postedImbalanced} posted journal{summary.postedImbalanced === 1 ? " is" : "s are"} individually out of balance.</p>

@@ -151,6 +151,7 @@ export const adjustingJournalEntriesApi = {
     appendOptional(params, "sourceJeNo", query.sourceJeNo?.trim());
     appendOptional(params, "sort", query.sort);
     appendOptional(params, "accountTypeId", query.accountTypeId);
+    appendOptional(params, "workspace", query.workspace);
     appendOptional(params, "unbalancedOnly", query.unbalancedOnly);
     appendOptional(params, "queue", query.queue);
 
@@ -167,6 +168,7 @@ export const adjustingJournalEntriesApi = {
     appendOptional(params, "divisionId", query.divisionId);
     appendOptional(params, "departmentId", query.departmentId);
     appendOptional(params, "accountTypeId", query.accountTypeId);
+    appendOptional(params, "workspace", query.workspace);
 
     const res = await fetchWithAuthRetry(`${BASE}/summary?${params.toString()}`, { cache: "no-store", signal });
     return parseResponse<AdjustingEntrySummary>(res, "Failed to load adjusting entry summary");

@@ -1,4 +1,4 @@
-export type AdjustingEntryStatus = "Draft" | "Submitted" | "Approved" | "Rejected" | "Posted" | "Cancelled" | "Failed" | "Voided";
+export type AdjustingEntryStatus = "Draft" | "For Revision" | "Submitted" | "Approved" | "Rejected" | "Posted" | "Cancelled" | "Failed" | "Voided";
 
 export type AdjustingEntryDetail = {
   id: number | null;
@@ -108,6 +108,7 @@ export type AjePrintReport = {
 
 export type AdjustingEntrySummary = {
   draft: number;
+  forRevision: number;
   posted: number;
   voided: number;
   imbalanced: number;
@@ -173,10 +174,11 @@ export type AdjustingEntryQuery = {
   sort?: string;
   accountTypeId?: number | null;
   unbalancedOnly?: boolean;
+  workspace?: "creation" | "posting";
   queue?: "all" | "awaiting-my-review" | "ready-for-me-to-post" | "my-drafts";
 };
 
-export type AdjustingEntrySummaryQuery = Pick<AdjustingEntryQuery, "search" | "startDate" | "endDate" | "divisionId" | "departmentId" | "accountTypeId">;
+export type AdjustingEntrySummaryQuery = Pick<AdjustingEntryQuery, "search" | "startDate" | "endDate" | "divisionId" | "departmentId" | "accountTypeId" | "workspace">;
 
 export type AdjustingEntrySourceJournal = {
   jeNo: string;
@@ -229,7 +231,7 @@ export type DepartmentLookup = {
 };
 
 export type AjeAccess = { userId: number; userName: string };
-export type AjeAction = "submit" | "approve" | "reject" | "withdraw" | "revise" | "cancel" | "post" | "retry";
+export type AjeAction = "submit" | "reject" | "withdraw" | "revise" | "cancel" | "post" | "retry";
 export type AjeAccount = { id: number; label: string; accountTypeId: number | null; accountTypeName: string | null; departmentRequired: boolean };
 export type AjeAttachment = { id: number; entryId: number; fileId: string; filename: string; mimeType: string; fileSize: number; state: string; uploadedByName: string; uploadedAt: string };
 export type AjePeriod = { closedThroughDate: string | null; version: number; updatedByName: string | null; updatedAt: string | null };
