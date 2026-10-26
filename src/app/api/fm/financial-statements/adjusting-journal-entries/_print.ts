@@ -103,7 +103,7 @@ export async function entryPdf(entry: AdjustingEntry, actor: AjeAccess, generate
       3: { cellWidth: 23, halign: "right", fontSize: 7 }, 4: { cellWidth: 23, halign: "right", fontSize: 7 } } });
   const workflow = [
     ["Created", entry.creatorName, entry.dateCreated], ["Submitted", entry.submittedByName, entry.submittedAt],
-    ["Approved", entry.approvedByName, entry.approvedAt], ["Posted", entry.postedByName, entry.datePosted],
+    ["Historical approval", entry.approvedByName, entry.approvedAt], ["Posted", entry.postedByName, entry.datePosted],
     ["Rejected", entry.rejectedByName, entry.rejectedAt], ["Cancelled", entry.cancelledByName, entry.cancelledAt],
   ].filter(([, name, timestamp]) => name || timestamp);
   if (workflow.length) table(doc, title, { startY: nextY, head: [["Workflow", "User", "Recorded at (PHT)"]],
@@ -122,6 +122,7 @@ export async function summaryPdf(report: AjePrintReport, params: URLSearchParams
     : (startDate ? date(startDate) : "From beginning") + " to " + (endDate ? date(endDate) : "Present");
   const filters = [
     "Search: " + (params.get("search") || "All"), "Status: " + (params.get("status") || "All statuses"),
+    "Workspace: " + (params.get("workspace") || "All entries"),
     "Queue: " + (params.get("queue") || "all"), "Unbalanced entries only: " + (params.get("unbalancedOnly") === "true" ? "Yes" : "No"),
     "Accounting dates: " + dateScope,
     "Division: " + (params.get("divisionId") ? "#" + params.get("divisionId") : "All"),
@@ -137,13 +138,13 @@ export async function summaryPdf(report: AjePrintReport, params: URLSearchParams
   const tableY = y + filterLines.length * 4 + 10;
   doc.text("Export scope: every entry matching the filters above across all pages. Summary cards count all workflow statuses.", 12, tableY - 4);
   table(doc, title, { startY: tableY,
-    head: [["Journal / reference", "Accounting date", "Narration / original", "Division", "Status / type", "Debit", "Credit", "Created / submitted / approved / posted"]],
+    head: [["Journal / reference", "Accounting date", "Narration / original", "Division", "Status / type", "Debit", "Credit", "Created / submitted / historical approval / posted"]],
     body: report.entries.length ? report.entries.map(entry => [
       entryNumber(entry) + (entry.reference ? "\n" + entry.reference : ""), date(entry.transactionDate),
       (entry.description || "—") + (entry.sourceJeNo ? "\nOriginal: " + [entry.sourceJeNo, entry.sourceTransactionRef].filter(Boolean).join(" / ") : ""),
       entry.divisionName || "—", entry.status + "\n" + entryType(entry), pdfMoney(entry.totalDebit), pdfMoney(entry.totalCredit),
       ["Created: " + (entry.creatorName || "—"), "Submitted: " + (entry.submittedByName || "—"),
-        "Approved: " + (entry.approvedByName || "—"), "Posted: " + (entry.postedByName || "—"),
+        "Historical approval: " + (entry.approvedByName || "—"), "Posted: " + (entry.postedByName || "—"),
         ...(entry.datePosted ? ["Posted at: " + formatDateTime(entry.datePosted)] : [])].join("\n"),
     ]) : [[{ content: "No adjusting entries match these filters.", colSpan: 8, styles: { halign: "center" } }]],
     foot: [[{ content: "Filtered totals (all matching entries)", colSpan: 5 }, pdfMoney(report.totalDebit), pdfMoney(report.totalCredit), ""]],

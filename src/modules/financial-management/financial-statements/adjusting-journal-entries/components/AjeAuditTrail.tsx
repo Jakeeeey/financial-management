@@ -14,8 +14,8 @@ import { AjeAttachmentPreview, isPreviewableAjeImage } from "./AjeAttachmentPrev
 import { AjeDataFreshness, AjeRetryAlert } from "./AjeDataFreshness";
 import { auditEventSummary, formatDate, formatDateTime, money, statusBadgeClass, todayManila } from "./formatters";
 
-const actions = ["Created","Edited","Submitted","Approved","Rejected","Withdrawn","Revision Started","Cancelled","Posted","Posting Failed","Period Closed","Period Reopened","Supporting Document Added","Supporting Document Removed"];
-const statuses = ["Draft","Submitted","Approved","Rejected","Posted","Cancelled","Failed","Voided"];
+const actions = ["Created","Edited","Submitted","Approved","Rejected","Returned for Revision","Workflow Migrated","Withdrawn","Revision Started","Cancelled","Posted","Posting Failed","Period Closed","Period Reopened","Supporting Document Added","Supporting Document Removed"];
+const statuses = ["Draft","For Revision","Submitted","Posted","Cancelled","Failed","Voided"];
 type AuditFilters = { search: string; userId: string; action: string; status: string; fromDate: string; toDate: string };
 const auditPageSizes = [20, 50, 100] as const;
 type AuditFilterKey = keyof AuditFilters;

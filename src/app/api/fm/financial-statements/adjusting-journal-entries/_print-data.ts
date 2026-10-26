@@ -10,7 +10,7 @@ export class AjePrintError extends Error {
 }
 
 export function reportPrintParams(query: URLSearchParams) {
-  const allowed = ["search", "status", "queue", "startDate", "endDate", "divisionId", "departmentId", "accountTypeId", "sourceJeNo", "sort", "unbalancedOnly"];
+  const allowed = ["search", "status", "queue", "workspace", "startDate", "endDate", "divisionId", "departmentId", "accountTypeId", "sourceJeNo", "sort", "unbalancedOnly"];
   const result = new URLSearchParams({ format: "json" });
   for (const key of allowed) {
     const value = query.get(key);

@@ -28,12 +28,12 @@ type Props = {
   canReview: boolean;
   userId?: number;
   onAction: (entry: AdjustingEntry, action: AjeAction) => void;
-  confirmingApproval: boolean;
-  approvalBusy: boolean;
-  approvalError: string;
-  onRequestApproval: () => void;
-  onCancelApproval: () => void;
-  onConfirmApproval: (entry: AdjustingEntry) => void;
+  confirmingPosting: boolean;
+  postingBusy: boolean;
+  postingError: string;
+  onRequestPosting: () => void;
+  onCancelPosting: () => void;
+  onConfirmPosting: (entry: AdjustingEntry) => void;
   onRetryDetails: () => void;
   onRetryAttachments: () => void;
   onRetryAudit: () => void;
@@ -41,21 +41,21 @@ type Props = {
   onCloseAutoFocus: (event: { preventDefault: () => void }) => void;
 };
 
-export function AjeReviewDialog({ open, journalNumber, entry, attachments, loading, error, attachmentsLoading, attachmentsError, detailsUpdatedAt, attachmentsUpdatedAt, auditEvents, auditLoading, auditError, auditUpdatedAt, canReview, userId, onAction, confirmingApproval, approvalBusy, approvalError, onRequestApproval, onCancelApproval, onConfirmApproval, onRetryDetails, onRetryAttachments, onRetryAudit, onClose, onCloseAutoFocus }: Props) {
-  const reviewActions = entry ? availableActions(entry).filter(action => action === "approve" || action === "reject") : [];
+export function AjeReviewDialog({ open, journalNumber, entry, attachments, loading, error, attachmentsLoading, attachmentsError, detailsUpdatedAt, attachmentsUpdatedAt, auditEvents, auditLoading, auditError, auditUpdatedAt, canReview, userId, onAction, confirmingPosting, postingBusy, postingError, onRequestPosting, onCancelPosting, onConfirmPosting, onRetryDetails, onRetryAttachments, onRetryAudit, onClose, onCloseAutoFocus }: Props) {
+  const reviewActions = entry ? availableActions(entry).filter(action => action === "post" || action === "retry" || action === "reject") : [];
   const selfReviewBlocked = Boolean(canReview && userId != null && entry && reviewActions.length && isSelfApproval(entry, userId));
-  const approvalReady = Boolean(entry && !loading && !error && !attachmentsLoading && !auditLoading);
-  return <Dialog open={open} onOpenChange={value => { if (!value) onClose(); }}>
+  const postingReady = Boolean(entry && !loading && !error && !attachmentsLoading && !attachmentsError && !auditLoading && !auditError);
+  return <Dialog open={open} onOpenChange={value => { if (!value && !postingBusy) onClose(); }}>
     <DialogContent className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl" onCloseAutoFocus={onCloseAutoFocus}>
       <DialogHeader className="shrink-0 px-6 pt-6 pb-4 pr-12">
         <DialogTitle>{entry?.jeNo || journalNumber || "Review adjusting entry"}</DialogTitle>
-        <DialogDescription>{canReview ? "Review journal details, workflow history, and supporting documents before deciding." : "Read-only view of the journal details, workflow history, and supporting documents."}</DialogDescription>
+        <DialogDescription>{canReview ? "Review the complete journal before posting or returning it for revision. Posting commits it to the General Ledger." : "Read-only view of the journal details, workflow history, and supporting documents."}</DialogDescription>
         <AjeDataFreshness label="Journal details" updatedAt={detailsUpdatedAt} loading={loading} stale={Boolean(error)} />
       </DialogHeader>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 pb-4">
       {loading && <p role="status" className="py-8 text-center text-sm text-muted-foreground">Loading journal details…</p>}
       {error && <AjeRetryAlert message={error} retrying={loading} retryLabel="Retry details" onRetry={onRetryDetails} />}
-      {confirmingApproval && approvalError && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{approvalError}</p>}
+      {confirmingPosting && postingError && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{postingError}</p>}
       {!loading && entry && <div className="space-y-4">
         <div className="grid gap-3 rounded-md border p-3 sm:grid-cols-2 lg:grid-cols-4">
           <div><p className="text-xs text-muted-foreground">Status</p><Badge variant="outline" className={statusBadgeClass(entry.status)}>{entry.status}</Badge></div>
@@ -64,7 +64,7 @@ export function AjeReviewDialog({ open, journalNumber, entry, attachments, loadi
           <div><p className="text-xs text-muted-foreground">Entry type</p><p className="text-sm">{entry.entryOrigin === "SYSTEM" ? "System journal" : entry.entryKind === "REVERSAL" ? "Reversal" : "Adjustment"}</p></div>
           <div><p className="text-xs text-muted-foreground">Created by</p><p className="text-sm">{entry.creatorName || "—"}</p></div>
           <div><p className="text-xs text-muted-foreground">Submitted by</p><p className="text-sm">{entry.submittedByName || "—"}{entry.submittedAt ? ` · ${formatDateTime(entry.submittedAt)}` : ""}</p></div>
-          <div><p className="text-xs text-muted-foreground">Approved by</p><p className="text-sm">{entry.approvedByName || "—"}{entry.approvedAt ? ` · ${formatDateTime(entry.approvedAt)}` : ""}</p></div>
+          {(entry.approvedByName || entry.approvedAt) && <div><p className="text-xs text-muted-foreground">Historical approval</p><p className="text-sm">{entry.approvedByName || "—"}{entry.approvedAt ? ` · ${formatDateTime(entry.approvedAt)}` : ""}</p></div>}
           <div><p className="text-xs text-muted-foreground">Posted by</p><p className="text-sm">{entry.postedByName || "—"}{entry.datePosted ? ` · ${formatDateTime(entry.datePosted)}` : ""}</p></div>
           {entry.sourceJeNo && <div className="sm:col-span-2"><p className="text-xs text-muted-foreground">Original journal</p><p className="text-sm">{entry.sourceJeNo}{entry.sourceTransactionRef ? ` · ${entry.sourceTransactionRef}` : ""}</p></div>}
           <div className="sm:col-span-2 lg:col-span-4"><p className="text-xs text-muted-foreground">Description / narration</p><p className="whitespace-pre-wrap break-words text-sm">{entry.description || "—"}</p></div>
@@ -119,14 +119,14 @@ export function AjeReviewDialog({ open, journalNumber, entry, attachments, loadi
       </div>
       <DialogFooter className="shrink-0 flex-wrap border-t bg-background px-6 py-4">
         {!loading && entry && <Button type="button" variant="outline" asChild><a href={ajeEntryPrintUrl(entry.id,"pdf")} target="_blank" rel="noopener noreferrer">Print PDF</a></Button>}
-        {confirmingApproval ? <>
-          <Button type="button" variant="outline" disabled={approvalBusy} onClick={onCancelApproval}>Cancel</Button>
-          <Button type="button" disabled={approvalBusy || !approvalReady || selfReviewBlocked || !reviewActions.includes("approve")} onClick={() => { if (entry) onConfirmApproval(entry); }}>{approvalBusy ? "Approving..." : "Confirm approval"}</Button>
+        {confirmingPosting ? <>
+          <Button type="button" variant="outline" disabled={postingBusy} onClick={onCancelPosting}>Cancel</Button>
+          <Button type="button" disabled={postingBusy || !postingReady || selfReviewBlocked || !reviewActions.some(action => action === "post" || action === "retry")} onClick={() => { if (entry) onConfirmPosting(entry); }}>{postingBusy ? "Posting..." : "Confirm posting"}</Button>
         </> : <>
-          {canReview && entry && !selfReviewBlocked && reviewActions.includes("reject") && <Button type="button" variant="outline" onClick={() => onAction(entry, "reject")}>Reject</Button>}
-          {canReview && entry && !selfReviewBlocked && reviewActions.includes("approve") && <Button type="button" onClick={onRequestApproval}>Approve</Button>}
+          {canReview && entry && !selfReviewBlocked && reviewActions.includes("reject") && <Button type="button" variant="outline" onClick={() => onAction(entry, "reject")}>Return for revision</Button>}
+          {canReview && entry && !selfReviewBlocked && reviewActions.some(action => action === "post" || action === "retry") && <Button type="button" onClick={onRequestPosting}>{entry.status === "Failed" ? "Retry posting" : "Post"}</Button>}
         </>}
-        <DialogClose asChild><Button type="button" variant="outline">Close</Button></DialogClose>
+        <DialogClose asChild><Button type="button" variant="outline" disabled={postingBusy}>Close</Button></DialogClose>
       </DialogFooter>
     </DialogContent>
   </Dialog>;

@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/breadcrumb";
 
 const routeLabels: Record<string, string> = {
-  new: "New Adjusting Entry",
+  new: "Creation",
   posting: "Posting of Entries",
   "audit-trail": "Audit Trail",
   summary: "Summary",
