@@ -68,10 +68,10 @@ const EMPTY_VALIDATION: ValidationStatus = {
 };
 
 const EMPTY_RATIOS: KeyRatios = {
-  currentRatio: { current: 0, prior: 0, variance: 0 },
-  quickRatio: { current: 0, prior: 0, variance: 0 },
-  debtToEquity: { current: 0, prior: 0, variance: 0 },
-  debtRatio: { current: 0, prior: 0, variance: 0 },
+  currentRatio: { current: null, prior: null, variance: null },
+  quickRatio: { current: null, prior: null, variance: null },
+  debtToEquity: { current: null, prior: null, variance: null },
+  debtRatio: { current: null, prior: null, variance: null },
 };
 
 const BalanceSheetContext = React.createContext<BalanceSheetContextType | undefined>(undefined);
@@ -238,11 +238,9 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
       const currentAmount = currentEntry?.amount ?? 0;
       const priorAmount = comparisonStatus === "available" ? comparisonEntry?.amount ?? 0 : null;
       const variance = priorAmount === null ? null : currentAmount - priorAmount;
-      const variancePercentage = priorAmount === null
+      const variancePercentage = priorAmount === null || priorAmount === 0
         ? null
-        : priorAmount !== 0
-          ? (variance! / Math.abs(priorAmount)) * 100
-          : (currentAmount !== 0 ? 100 : 0);
+        : (variance! / Math.abs(priorAmount)) * 100;
 
       return {
         id: String(id),
@@ -283,28 +281,19 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
     if (!summary) return EMPTY_RATIOS;
 
     const prior = comparisonStatus === "available" ? comparisonSummary : null;
+    const toRatioValue = (current: number | null, previous: number | null) => ({
+      current,
+      prior: previous,
+      variance: current !== null && previous !== null
+        ? Math.round((current - previous) * 100) / 100
+        : null,
+    });
 
     return {
-      currentRatio: {
-        current: summary.currentRatio,
-        prior: prior?.currentRatio ?? null,
-        variance: prior ? Math.round((summary.currentRatio - prior.currentRatio) * 100) / 100 : null,
-      },
-      quickRatio: {
-        current: summary.quickRatio,
-        prior: prior?.quickRatio ?? null,
-        variance: prior ? Math.round((summary.quickRatio - prior.quickRatio) * 100) / 100 : null,
-      },
-      debtToEquity: {
-        current: summary.debtToEquityRatio,
-        prior: prior?.debtToEquityRatio ?? null,
-        variance: prior ? Math.round((summary.debtToEquityRatio - prior.debtToEquityRatio) * 100) / 100 : null,
-      },
-      debtRatio: {
-        current: summary.debtRatio,
-        prior: prior?.debtRatio ?? null,
-        variance: prior ? Math.round((summary.debtRatio - prior.debtRatio) * 100) / 100 : null,
-      },
+      currentRatio: toRatioValue(summary.currentRatio, prior?.currentRatio ?? null),
+      quickRatio: toRatioValue(summary.quickRatio, prior?.quickRatio ?? null),
+      debtToEquity: toRatioValue(summary.debtToEquityRatio, prior?.debtToEquityRatio ?? null),
+      debtRatio: toRatioValue(summary.debtRatio, prior?.debtRatio ?? null),
     };
   }, [summary, comparisonSummary, comparisonStatus]);
 

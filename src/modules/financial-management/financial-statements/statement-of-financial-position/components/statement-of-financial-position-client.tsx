@@ -3,10 +3,12 @@
 import { ReportControlSection } from "./report-control-section";
 import { SummaryCards } from "./summary-cards";
 import { InteractiveStatementTable } from "./interactive-statement-table";
+import { BalanceSheetStatementView } from "./BalanceSheetStatementView";
 import { BalanceSheetMoreAnalytics } from "./more-analytics";
 import { BalanceSheetProvider } from "../providers/BalanceSheetProvider";
 import { useBalanceSheet } from "../hooks/useBalanceSheet";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const lastUpdatedFormatter = new Intl.DateTimeFormat("en-PH", {
     dateStyle: "medium",
@@ -75,10 +77,23 @@ function StatementContent() {
 
             <SummaryCards validation={validation} />
 
-            {(hasSuccessfulReport || reportStatus === "loading-initial") && <InteractiveStatementTable />}
+            {(hasSuccessfulReport || reportStatus === "loading-initial") && (
+                <Tabs defaultValue="statement" className="min-w-0 gap-3">
+                    <TabsList aria-label="Balance sheet views" className="w-full justify-start sm:w-fit">
+                        <TabsTrigger value="statement">Statement</TabsTrigger>
+                        <TabsTrigger value="account-breakdown">Account breakdown</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="statement" className="m-0 min-w-0">
+                        <BalanceSheetStatementView />
+                    </TabsContent>
+                    <TabsContent value="account-breakdown" className="m-0 min-w-0">
+                        <InteractiveStatementTable />
+                    </TabsContent>
+                </Tabs>
+            )}
 
             {hasSuccessfulReport && hasAccountRows && summary !== null && (
-                <BalanceSheetMoreAnalytics validation={validation} ratios={ratios} comparisonStatus={comparisonStatus} />
+                <BalanceSheetMoreAnalytics ratios={ratios} comparisonStatus={comparisonStatus} />
             )}
         </div>
     );

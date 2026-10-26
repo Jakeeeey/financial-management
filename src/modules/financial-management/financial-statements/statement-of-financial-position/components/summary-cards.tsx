@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { BalanceSheetComparisonStatus, ValidationStatus } from "../types";
 import { BarChart3, ShieldCheck, FileText, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useBalanceSheet } from "../hooks/useBalanceSheet";
+import { describePesoChange } from "../utils/presentation";
 
 interface Props {
     validation: ValidationStatus;
@@ -31,11 +32,10 @@ function SummaryCardItem({
     comparisonBasis: string;
 }) {
     const [isExpanded, setIsExpanded] = useState(false);
+    const breakdownId = useId();
     
     // Calculate the variance between Current and Prior (Current - Prior)
     const varianceAmount = priorValue === null ? null : currentValue - priorValue;
-    const isIncrease = varianceAmount !== null && varianceAmount > 0;
-    const isDecrease = varianceAmount !== null && varianceAmount < 0;
 
     const formatCurrency = (value: number | undefined) => {
         if (value === undefined) return "₱0.00";
@@ -59,19 +59,28 @@ function SummaryCardItem({
             </div>
             
             <div className="mt-4">
-                <button 
+                <button
+                    type="button"
+                    aria-expanded={isExpanded}
+                    aria-controls={breakdownId}
                     onClick={() => setIsExpanded(!isExpanded)}
                     className={cn(
-                        "text-xs hover:underline flex items-center gap-1 font-medium transition-colors",
+                        "flex items-center gap-1 text-xs font-medium transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                         isAlertCard && !isBalanced ? "text-destructive" : "text-primary"
                     )}
                 >
-                    View breakdown {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                    {isExpanded ? "Hide breakdown" : "View breakdown"}
+                    {isExpanded
+                        ? <ChevronUp aria-hidden="true" className="w-3 h-3" />
+                        : <ChevronDown aria-hidden="true" className="w-3 h-3" />}
                 </button>
             </div>
 
-            {isExpanded && (
-                <div className="mt-4 pt-4 border-t border-border animate-in slide-in-from-top-2 fade-in duration-200">
+            <div
+                id={breakdownId}
+                hidden={!isExpanded}
+                className="mt-4 border-t border-border pt-4 animate-in slide-in-from-top-2 fade-in duration-200"
+            >
                     <div className="flex flex-col gap-2 text-xs">
                         <div className="flex justify-between items-center">
                             <span className="text-muted-foreground">Current Period</span>
@@ -85,11 +94,8 @@ function SummaryCardItem({
                                 </div>
                                 <div className="flex justify-between items-center pt-1 mt-1 border-t border-border/50">
                                     <span className="text-muted-foreground">Variance</span>
-                                    <span className={cn(
-                                        "font-bold",
-                                        isIncrease ? "text-success" : (isDecrease ? "text-destructive" : "")
-                                    )}>
-                                        {isIncrease ? "+" : ""}{formatCurrency(varianceAmount ?? 0)}
+                                    <span className="text-right font-medium">
+                                        {describePesoChange(varianceAmount ?? 0)}
                                     </span>
                                 </div>
                             </>
@@ -103,8 +109,7 @@ function SummaryCardItem({
                             </div>
                         )}
                     </div>
-                </div>
-            )}
+            </div>
         </Card>
     );
 }

@@ -50,7 +50,7 @@ export interface ValidationStatus {
 }
 
 export interface RatioValue {
-    current: number;
+    current: number | null;
     prior: number | null;
     variance: number | null;
 }

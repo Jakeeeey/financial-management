@@ -12,9 +12,10 @@ interface Props {
     account: FinancialAccount | null;
     isOpen: boolean;
     onOpenChange: (open: boolean) => void;
+    invokingElementRef: { current: HTMLButtonElement | null };
 }
 
-export function DrillDownModal({ account, isOpen, onOpenChange }: Props) {
+export function DrillDownModal({ account, isOpen, onOpenChange, invokingElementRef }: Props) {
     const { appliedFilters } = useBalanceSheet();
     const [data, setData] = useState<BalanceSheetDrillDownResponse | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -123,7 +124,15 @@ export function DrillDownModal({ account, isOpen, onOpenChange }: Props) {
     return (
         <Dialog open={isOpen} onOpenChange={onOpenChange}>
             {/* 1. Modal constrained to viewport (`max-h-[90vh]`), uses `flex flex-col` to control internal layout instead of grid */}
-            <DialogContent className="!max-w-[1200px] w-[95vw] sm:max-w-[1200px] p-6 gap-4 bg-card border shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+            <DialogContent
+                onCloseAutoFocus={(event) => {
+                    event.preventDefault();
+                    if (invokingElementRef.current?.isConnected) {
+                        invokingElementRef.current.focus();
+                    }
+                }}
+                className="!max-w-[1200px] w-[95vw] sm:max-w-[1200px] p-6 gap-4 bg-card border shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
+            >
                 <DialogHeader className="flex flex-row items-center justify-between space-y-0 pb-0 shrink-0">
                     <DialogTitle className="text-3xl font-bold tracking-tight">
                         {account?.account || "Account Details"}

@@ -1,48 +1,64 @@
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { AlertTriangle, CheckCircle2, ChevronDown } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { BalanceSheetComparisonStatus, KeyRatios, ValidationStatus } from "../types";
+import { ChevronDown } from "lucide-react";
+import { BalanceSheetComparisonStatus, KeyRatios } from "../types";
+import { useBalanceSheet } from "../hooks/useBalanceSheet";
+import { balanceSheetRatioDefinitions, describeRatioChange, formatRatio } from "../utils/presentation";
 
 interface Props {
-  validation: ValidationStatus;
   ratios: KeyRatios;
   comparisonStatus: BalanceSheetComparisonStatus;
 }
 
-const formatVariance = (variance: number) => variance > 0 ? `+${variance.toFixed(2)}` : variance.toFixed(2);
-
-function RatioItem({ title, subtitle, value, priorValue, variance, comparisonStatus }: {
+function RatioItem({ title, formula, value, priorValue, variance, comparisonStatus, currentAsOf, comparisonAsOf }: {
   title: string;
-  subtitle: string;
-  value: number;
+  formula: string;
+  value: number | null;
   priorValue: number | null;
   variance: number | null;
   comparisonStatus: BalanceSheetComparisonStatus;
+  currentAsOf: string;
+  comparisonAsOf: string | null;
 }) {
-  const isPositive = variance !== null && variance > 0;
-  const isNegative = variance !== null && variance < 0;
-
   return (
     <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-card p-4">
       <span className="text-sm font-bold tracking-tight">{title}</span>
-      <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{subtitle}</span>
-      <span className="mt-1 text-2xl font-bold tracking-tight text-primary">{value.toFixed(2)}x</span>
-      {comparisonStatus === "available" && priorValue !== null && variance !== null ? (
-        <span className={cn("text-xs font-bold", isPositive ? "text-success" : isNegative ? "text-destructive" : "text-muted-foreground")}>
-          vs prior {priorValue.toFixed(2)}x ({formatVariance(variance)}x)
-        </span>
+      <span className="text-xs text-muted-foreground">Formula: {formula}</span>
+      <span className="mt-2 text-xs font-medium text-muted-foreground">Current · As of {currentAsOf}</span>
+      <span className="text-2xl font-bold tracking-tight text-primary">{formatRatio(value)}</span>
+      {value === null && <span className="text-xs text-muted-foreground">Not applicable because the denominator is zero.</span>}
+      {comparisonStatus === "available" ? (
+        <>
+          <span className="mt-2 text-xs font-medium text-muted-foreground">Comparison · As of {comparisonAsOf}</span>
+          <span className="text-base font-semibold">{formatRatio(priorValue)}</span>
+          {priorValue === null && <span className="text-xs text-muted-foreground">Not applicable because the denominator is zero.</span>}
+          <span className="mt-1 text-sm font-medium">
+            {variance === null ? "Change not applicable for this ratio." : describeRatioChange(variance)}
+          </span>
+        </>
       ) : (
         <span className="text-xs font-medium text-muted-foreground">
-          {comparisonStatus === "unavailable" ? "Comparison unavailable" : "Comparison disabled"}
+          {comparisonStatus === "unavailable"
+            ? `Comparison unavailable${comparisonAsOf ? ` · requested as of ${comparisonAsOf}` : ""}`
+            : "Comparison disabled"}
         </span>
       )}
     </div>
   );
 }
 
-export function BalanceSheetMoreAnalytics({ validation, ratios, comparisonStatus }: Props) {
-  const isBalanced = validation.isBalanced;
+export function BalanceSheetMoreAnalytics({ ratios, comparisonStatus }: Props) {
+  const { appliedFilters } = useBalanceSheet();
+  const formatReportDate = (value: string) => new Intl.DateTimeFormat("en-PH", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${value}T00:00:00Z`));
+  const currentAsOf = appliedFilters ? formatReportDate(appliedFilters.endDate) : "date unavailable";
+  const comparisonAsOf = appliedFilters?.includeComparison
+    ? formatReportDate(appliedFilters.comparisonEndDate)
+    : null;
 
   return (
     <Collapsible defaultOpen={false} className="min-w-0">
@@ -50,31 +66,30 @@ export function BalanceSheetMoreAnalytics({ validation, ratios, comparisonStatus
         <Button type="button" variant="outline" className="group h-auto min-h-12 w-full justify-between gap-3 px-4 py-3 text-left focus-visible:ring-2 focus-visible:ring-ring">
           <span className="min-w-0">
             <span className="block text-sm font-semibold">More analytics</span>
-            <span className="block text-xs font-normal text-muted-foreground">Accounting equation check and key ratios</span>
+            <span className="block text-xs font-normal text-muted-foreground">Key financial ratios</span>
           </span>
           <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
         </Button>
       </CollapsibleTrigger>
       <CollapsibleContent className="mt-3 space-y-3">
-        <section className={cn("rounded-lg border p-4", isBalanced ? "border-success/20 bg-success/5" : "border-destructive/20 bg-destructive/5")}>
-          <div className="flex items-start gap-3">
-            {isBalanced ? <CheckCircle2 aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-success" /> : <AlertTriangle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />}
-            <div className="min-w-0">
-              <h3 className="text-sm font-bold">Accounting Equation Check</h3>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Total Assets − (Total Liabilities + Equity) = {validation.variance < 0 ? "−" : ""}₱{Math.abs(validation.variance).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </p>
-              <p className={cn("mt-2 text-xs font-bold", isBalanced ? "text-success" : "text-destructive")}>
-                {isBalanced ? "Report is balanced and ready for review." : "The Financial Statement Generated is not Balanced."}
-              </p>
-            </div>
-          </div>
-        </section>
+        <p className="text-sm text-muted-foreground">
+          Ratios are expressed as multiples (×), not percentages. Dates reflect the applied report: as of {currentAsOf}
+          {comparisonAsOf ? ` and compared with as of ${comparisonAsOf}` : ""}.
+        </p>
         <section aria-label="Key ratios" className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <RatioItem title="Current Ratio" subtitle="Current Assets / Current Liabilities" value={ratios.currentRatio.current} priorValue={ratios.currentRatio.prior} variance={ratios.currentRatio.variance} comparisonStatus={comparisonStatus} />
-          <RatioItem title="Debt to Equity" subtitle="Total Liabilities / Total Equity" value={ratios.debtToEquity.current} priorValue={ratios.debtToEquity.prior} variance={ratios.debtToEquity.variance} comparisonStatus={comparisonStatus} />
-          <RatioItem title="Quick Ratio" subtitle="(CA - Inventory) / CL" value={ratios.quickRatio.current} priorValue={ratios.quickRatio.prior} variance={ratios.quickRatio.variance} comparisonStatus={comparisonStatus} />
-          <RatioItem title="Debt Ratio" subtitle="Total Liabilities / Total Assets" value={ratios.debtRatio.current} priorValue={ratios.debtRatio.prior} variance={ratios.debtRatio.variance} comparisonStatus={comparisonStatus} />
+          {balanceSheetRatioDefinitions.map(({ key, label, formula }) => (
+            <RatioItem
+              key={key}
+              title={label}
+              formula={formula}
+              value={ratios[key].current}
+              priorValue={ratios[key].prior}
+              variance={ratios[key].variance}
+              comparisonStatus={comparisonStatus}
+              currentAsOf={currentAsOf}
+              comparisonAsOf={comparisonAsOf}
+            />
+          ))}
         </section>
       </CollapsibleContent>
     </Collapsible>
