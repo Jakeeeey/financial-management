@@ -10,7 +10,8 @@ import {
 } from "../types/balance-sheet.schema";
 import { BalanceSheetComparisonStatus, FinancialAccount, ValidationStatus, KeyRatios } from "../types";
 import {
-  DEFAULT_BALANCE_SHEET_FILTERS,
+  createDefaultBalanceSheetFilters,
+  getBalanceSheetTodayDate,
   hasPendingBalanceSheetChanges,
   parseBalanceSheetUrl,
   removeBalanceSheetFilterChip,
@@ -73,7 +74,11 @@ const EMPTY_RATIOS: KeyRatios = {
 
 const BalanceSheetContext = React.createContext<BalanceSheetContextType | undefined>(undefined);
 
-export function BalanceSheetProvider({ children }: { children: React.ReactNode }) {
+export function BalanceSheetProvider({ children, initialAsOfDate }: { children: React.ReactNode; initialAsOfDate: string }) {
+  const defaultFilters = React.useMemo(
+    () => createDefaultBalanceSheetFilters(initialAsOfDate),
+    [initialAsOfDate],
+  );
   const [entries, setEntries] = React.useState<BalanceSheetEntry[]>([]);
   const [comparisonEntries, setComparisonEntries] = React.useState<BalanceSheetEntry[]>([]);
   const [summary, setSummary] = React.useState<BalanceSheetSummary | null>(null);
@@ -83,7 +88,7 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
   const [reportStatus, setReportStatus] = React.useState<BalanceSheetReportStatus>("not-generated");
   const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null);
   const [error, setError] = React.useState<string | null>(null);
-  const [filters, setFilters] = React.useState<BalanceSheetFilterState>({ ...DEFAULT_BALANCE_SHEET_FILTERS });
+  const [filters, setFilters] = React.useState<BalanceSheetFilterState>({ ...defaultFilters });
   const [appliedFilters, setAppliedFilters] = React.useState<BalanceSheetFilterState | null>(null);
 
   const filtersRef = React.useRef(filters);
@@ -248,7 +253,7 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
       if (observedSearchRef.current === currentSearch) return;
       observedSearchRef.current = currentSearch;
 
-      const parsed = parseBalanceSheetUrl(new URLSearchParams(currentSearch));
+      const parsed = parseBalanceSheetUrl(new URLSearchParams(currentSearch), defaultFilters);
       filtersRef.current = parsed.filters;
       setFilters(parsed.filters);
 
@@ -262,7 +267,7 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
     loadLocationReport();
     window.addEventListener("popstate", loadLocationReport);
     return () => window.removeEventListener("popstate", loadLocationReport);
-  }, [clearReport, fetchData]);
+  }, [clearReport, defaultFilters, fetchData]);
 
   /* 
   React.useEffect(() => {
@@ -355,11 +360,12 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
   }, [summary, comparisonSummary, comparisonStatus]);
 
   const resetFilters = () => {
-    setFilters({ ...DEFAULT_BALANCE_SHEET_FILTERS });
+    setFilters(createDefaultBalanceSheetFilters(getBalanceSheetTodayDate()));
   };
 
   const removeAppliedFilter = (key: BalanceSheetFilterChipKey) => {
-    setFilters(current => removeBalanceSheetFilterChip(current, key));
+    const currentDefaults = createDefaultBalanceSheetFilters(getBalanceSheetTodayDate());
+    setFilters(current => removeBalanceSheetFilterChip(current, key, currentDefaults));
   };
 
   const hasPendingChanges = hasPendingBalanceSheetChanges(filters, appliedFilters);

@@ -63,6 +63,6 @@ export interface BalanceSheetFilterState {
   departmentName: string;
   comparisonStartDate: string;
   comparisonEndDate: string;
-  dataBasis: "as-of" | "manual" | "monthly" | "quarterly" | "annually";
+  dataBasis: "today" | "as-of" | "manual" | "monthly" | "quarterly" | "annually";
   comparisonBasis: "match" | "as-of" | "manual" | "monthly" | "quarterly" | "annually";
 }

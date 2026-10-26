@@ -131,9 +131,9 @@ function StatementContent() {
     );
 }
 
-export function StatementOfFinancialPositionClient() {
+export function StatementOfFinancialPositionClient({ initialAsOfDate }: { initialAsOfDate: string }) {
     return (
-        <BalanceSheetProvider>
+        <BalanceSheetProvider initialAsOfDate={initialAsOfDate}>
             <div className="flex min-w-0 flex-col gap-4 w-full max-w-[1600px] mx-auto pb-10">
                 <StatementContent />
             </div>

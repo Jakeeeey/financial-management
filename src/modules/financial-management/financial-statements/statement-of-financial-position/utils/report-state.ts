@@ -1,17 +1,54 @@
 import type { BalanceSheetFilterState } from "../types/balance-sheet.schema";
 
-export const DEFAULT_BALANCE_SHEET_FILTERS: BalanceSheetFilterState = {
-  startDate: "2026-01-01",
-  endDate: "2026-12-31",
-  status: "Posted",
-  includeComparison: true,
-  divisionName: "",
-  departmentName: "",
-  comparisonStartDate: "2025-01-01",
-  comparisonEndDate: "2025-12-31",
-  dataBasis: "annually",
-  comparisonBasis: "match",
-};
+const REPORTING_TIME_ZONE = "Asia/Manila";
+
+export function getBalanceSheetTodayDate(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: REPORTING_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(item => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+export function getBalanceSheetPreviousYearDate(value: string): string {
+  const [year, month, day] = value.split("-").map(Number);
+  const previousYear = year - 1;
+  const lastDayOfMonth = new Date(Date.UTC(previousYear, month, 0)).getUTCDate();
+  return `${previousYear}-${String(month).padStart(2, "0")}-${String(Math.min(day, lastDayOfMonth)).padStart(2, "0")}`;
+}
+
+export function getBalanceSheetMonthEnd(year: number, month: number): string {
+  const day = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+export function getBalanceSheetYearOptions(selectedYear: number, now = new Date()): number[] {
+  const currentYear = Number(getBalanceSheetTodayDate(now).slice(0, 4));
+  const years = Array.from({ length: 12 }, (_, index) => currentYear + 1 - index);
+  return Array.from(new Set([...years, selectedYear])).sort((a, b) => b - a);
+}
+
+export function createDefaultBalanceSheetFilters(asOfDate = getBalanceSheetTodayDate()): BalanceSheetFilterState {
+  const [year] = asOfDate.split("-");
+  const comparisonEndDate = getBalanceSheetPreviousYearDate(asOfDate);
+  const [comparisonYear] = comparisonEndDate.split("-");
+
+  return {
+    startDate: `${year}-01-01`,
+    endDate: asOfDate,
+    status: "Posted",
+    includeComparison: true,
+    divisionName: "",
+    departmentName: "",
+    comparisonStartDate: `${comparisonYear}-01-01`,
+    comparisonEndDate,
+    dataBasis: "today",
+    comparisonBasis: "match",
+  };
+}
 
 const REPORT_QUERY_KEYS = [
   "startDate",
@@ -66,10 +103,13 @@ function formatReportDate(value: string) {
   }).format(new Date(`${value}T00:00:00Z`));
 }
 
-export function parseBalanceSheetUrl(params: URLSearchParams): ParsedBalanceSheetUrl {
+export function parseBalanceSheetUrl(
+  params: URLSearchParams,
+  defaultFilters: BalanceSheetFilterState,
+): ParsedBalanceSheetUrl {
   const hasReportCriteria = REPORT_QUERY_KEYS.some(key => params.has(key));
   if (!hasReportCriteria) {
-    return { filters: { ...DEFAULT_BALANCE_SHEET_FILTERS }, hasReportCriteria: false };
+    return { filters: { ...defaultFilters }, hasReportCriteria: false };
   }
 
   const dataBasis = params.get("dataBasis");
@@ -79,28 +119,34 @@ export function parseBalanceSheetUrl(params: URLSearchParams): ParsedBalanceShee
   return {
     hasReportCriteria: true,
     filters: {
-      startDate: isDate(params.get("startDate")) ? params.get("startDate")! : DEFAULT_BALANCE_SHEET_FILTERS.startDate,
-      endDate: isDate(params.get("endDate")) ? params.get("endDate")! : DEFAULT_BALANCE_SHEET_FILTERS.endDate,
-      status: params.get("status") ?? DEFAULT_BALANCE_SHEET_FILTERS.status,
+      startDate: isDate(params.get("startDate")) ? params.get("startDate")! : defaultFilters.startDate,
+      endDate: isDate(params.get("endDate")) ? params.get("endDate")! : defaultFilters.endDate,
+      status: params.get("status") ?? defaultFilters.status,
       includeComparison: includeComparisonValue === "false"
         ? false
         : includeComparisonValue === "true"
           ? true
-          : DEFAULT_BALANCE_SHEET_FILTERS.includeComparison,
+          : defaultFilters.includeComparison,
       divisionName: (params.get("divisionName") ?? "").toLowerCase() === "all" ? "" : params.get("divisionName") ?? "",
       departmentName: (params.get("departmentName") ?? "").toLowerCase() === "all" ? "" : params.get("departmentName") ?? "",
       comparisonStartDate: isDate(params.get("comparisonStartDate"))
         ? params.get("comparisonStartDate")!
-        : DEFAULT_BALANCE_SHEET_FILTERS.comparisonStartDate,
+        : defaultFilters.comparisonStartDate,
       comparisonEndDate: isDate(params.get("comparisonEndDate"))
         ? params.get("comparisonEndDate")!
-        : DEFAULT_BALANCE_SHEET_FILTERS.comparisonEndDate,
-      dataBasis: dataBasis === "as-of" || dataBasis === "manual" || dataBasis === "monthly" || dataBasis === "quarterly" || dataBasis === "annually"
-        ? dataBasis
-        : DEFAULT_BALANCE_SHEET_FILTERS.dataBasis,
-      comparisonBasis: comparisonBasis === "match" || comparisonBasis === "as-of" || comparisonBasis === "manual"
-        ? comparisonBasis
-        : DEFAULT_BALANCE_SHEET_FILTERS.comparisonBasis,
+        : defaultFilters.comparisonEndDate,
+      dataBasis: dataBasis === "today"
+        ? "today"
+        : dataBasis === "monthly" || dataBasis === "quarterly" || dataBasis === "annually"
+          ? dataBasis
+          : dataBasis === "as-of" || dataBasis === "manual"
+            ? "manual"
+            : defaultFilters.dataBasis,
+      comparisonBasis: comparisonBasis === "match"
+        ? "match"
+        : comparisonBasis === "as-of" || comparisonBasis === "manual"
+          ? "as-of"
+          : defaultFilters.comparisonBasis,
     },
   };
 }
@@ -136,27 +182,16 @@ export function getBalanceSheetAppliedFilterChips(
 ): BalanceSheetFilterChip[] {
   const chips: BalanceSheetFilterChip[] = [];
 
-  if (filters.startDate !== DEFAULT_BALANCE_SHEET_FILTERS.startDate
-    || filters.endDate !== DEFAULT_BALANCE_SHEET_FILTERS.endDate) {
-    chips.push({
-      key: "period",
-      label: `Period: ${formatReportDate(filters.startDate)} – ${formatReportDate(filters.endDate)}`,
-    });
-  }
+  chips.push({ key: "period", label: `As of ${formatReportDate(filters.endDate)}` });
 
   if (filters.includeComparison) {
-    const comparisonLabel = filters.comparisonBasis === "match"
-      ? "Prior year"
-      : filters.comparisonBasis === "as-of"
-        ? "As of date"
-        : "Custom comparison";
     chips.push({
       key: "comparison",
-      label: `Comparison: ${comparisonLabel} · ${formatReportDate(filters.comparisonStartDate)} – ${formatReportDate(filters.comparisonEndDate)}`,
+      label: `Comparison as of ${formatReportDate(filters.comparisonEndDate)}`,
     });
   }
 
-  if (filters.status !== DEFAULT_BALANCE_SHEET_FILTERS.status) {
+  if (filters.status !== "Posted") {
     chips.push({ key: "status", label: `Status: ${filters.status || "All"}` });
   }
   if (filters.divisionName) chips.push({ key: "divisionName", label: `Division: ${filters.divisionName}` });
@@ -168,23 +203,24 @@ export function getBalanceSheetAppliedFilterChips(
 export function removeBalanceSheetFilterChip(
   filters: BalanceSheetFilterState,
   key: BalanceSheetFilterChipKey,
+  defaultFilters: BalanceSheetFilterState,
 ): BalanceSheetFilterState {
   switch (key) {
     case "period":
       return {
         ...filters,
-        startDate: DEFAULT_BALANCE_SHEET_FILTERS.startDate,
-        endDate: DEFAULT_BALANCE_SHEET_FILTERS.endDate,
-        dataBasis: DEFAULT_BALANCE_SHEET_FILTERS.dataBasis,
+        startDate: defaultFilters.startDate,
+        endDate: defaultFilters.endDate,
+        dataBasis: defaultFilters.dataBasis,
         ...(filters.comparisonBasis === "match" && {
-          comparisonStartDate: DEFAULT_BALANCE_SHEET_FILTERS.comparisonStartDate,
-          comparisonEndDate: DEFAULT_BALANCE_SHEET_FILTERS.comparisonEndDate,
+          comparisonStartDate: defaultFilters.comparisonStartDate,
+          comparisonEndDate: defaultFilters.comparisonEndDate,
         }),
       };
     case "comparison":
       return { ...filters, includeComparison: false };
     case "status":
-      return { ...filters, status: DEFAULT_BALANCE_SHEET_FILTERS.status };
+      return { ...filters, status: defaultFilters.status };
     case "divisionName":
       return { ...filters, divisionName: "" };
     case "departmentName":
