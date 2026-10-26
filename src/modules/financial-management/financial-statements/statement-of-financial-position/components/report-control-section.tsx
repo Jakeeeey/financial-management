@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useBalanceSheet } from "../hooks/useBalanceSheet";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,20 +16,30 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Filter, ChevronDown, Download, FileSpreadsheet, Loader2, Lock } from "lucide-react";
+import { Filter, ChevronDown, Download, FileSpreadsheet, Loader2, Lock, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { CertificationModal } from "./CertificationModal";
+import { BalanceSheetSearchableSelect } from "./BalanceSheetSearchableSelect";
 import { exportBalanceSheetToExcel, exportBalanceSheetToPdf } from "../services/balance-sheet-export.service";
+import {
+    getBalanceSheetDepartments,
+    getBalanceSheetDivisions,
+    type BalanceSheetDepartmentOption,
+    type BalanceSheetDivisionOption,
+} from "../services/balance-sheet.service";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { getBalanceSheetAppliedFilterChips } from "../utils/report-state";
 
 export function ReportControlSection() {
     const {
         refresh,
         resetFilters,
+        removeAppliedFilter,
         isLoading,
         filters,
         appliedFilters,
+        hasPendingChanges,
         setFilters,
         accounts,
         summary,
@@ -42,10 +52,43 @@ export function ReportControlSection() {
     const [isCertifyModalOpen, setIsCertifyModalOpen] = useState(false);
     const [exporting, setExporting] = useState<"pdf" | "excel" | null>(null);
     const [isMoreFiltersOpen, setIsMoreFiltersOpen] = useState(false);
+    const [divisions, setDivisions] = useState<BalanceSheetDivisionOption[]>([]);
+    const [departments, setDepartments] = useState<BalanceSheetDepartmentOption[]>([]);
+    const [divisionLoading, setDivisionLoading] = useState(true);
+    const [departmentLoading, setDepartmentLoading] = useState(true);
+    const [divisionLoadError, setDivisionLoadError] = useState(false);
+    const [departmentLoadError, setDepartmentLoadError] = useState(false);
+    const [divisionRetry, setDivisionRetry] = useState(0);
+    const [departmentRetry, setDepartmentRetry] = useState(0);
 
-    const hasPendingFilters = appliedFilters !== null && (Object.keys(filters) as (keyof typeof filters)[])
-        .some(key => filters[key] !== appliedFilters[key]);
-    const canExport = Boolean(appliedFilters && summary) && !isLoading && !error && !hasPendingFilters;
+    useEffect(() => {
+        let active = true;
+        void getBalanceSheetDivisions()
+            .then(options => { if (active) setDivisions(options); })
+            .catch(() => { if (active) setDivisionLoadError(true); })
+            .finally(() => { if (active) setDivisionLoading(false); });
+        return () => { active = false; };
+    }, [divisionRetry]);
+
+    useEffect(() => {
+        let active = true;
+        void getBalanceSheetDepartments()
+            .then(options => { if (active) setDepartments(options); })
+            .catch(() => { if (active) setDepartmentLoadError(true); })
+            .finally(() => { if (active) setDepartmentLoading(false); });
+        return () => { active = false; };
+    }, [departmentRetry]);
+
+    const divisionNames = [...new Set(divisions
+        .map(option => option.divisionName)
+        .filter(name => typeof name === "string" && name.trim().length > 0))];
+    const departmentNames = [...new Set(departments
+        .map(option => option.departmentName)
+        .filter(name => typeof name === "string" && name.trim().length > 0))];
+
+    const appliedFilterChips = appliedFilters ? getBalanceSheetAppliedFilterChips(appliedFilters) : [];
+    const draftFilterChips = getBalanceSheetAppliedFilterChips(filters);
+    const canExport = Boolean(appliedFilters && summary) && !isLoading && !error && !hasPendingChanges;
 
     const handleExport = async (format: "pdf" | "excel") => {
         if (!canExport || !appliedFilters || !summary) return;
@@ -70,7 +113,7 @@ export function ReportControlSection() {
 
     const exportUnavailableMessage = isLoading
         ? "Wait for the report to finish loading before exporting."
-        : hasPendingFilters
+        : hasPendingChanges
             ? "Generate the report to apply filter changes before exporting."
             : !appliedFilters
                 ? "Generate a report before exporting."
@@ -78,6 +121,18 @@ export function ReportControlSection() {
 
     const updateFilter = (updates: Partial<typeof filters>) => {
         setFilters(prev => ({ ...prev, ...updates }));
+    };
+
+    const retryDivisionLookup = () => {
+        setDivisionLoading(true);
+        setDivisionLoadError(false);
+        setDivisionRetry(value => value + 1);
+    };
+
+    const retryDepartmentLookup = () => {
+        setDepartmentLoading(true);
+        setDepartmentLoadError(false);
+        setDepartmentRetry(value => value + 1);
     };
 
     const handleBasisChange = (basis: typeof filters.dataBasis) => {
@@ -134,8 +189,8 @@ export function ReportControlSection() {
     return (
         <Card className="shadow-none border border-border overflow-hidden bg-card">
             <CardContent className="p-0">
-                {/* ─── ROW 1: Module Name + Action Buttons (full width) ─── */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 sm:p-6 lg:px-8 bg-card transition-colors">
+                {/* ─── Module heading and report actions occupy separate rows ─── */}
+                <div className="flex flex-col gap-4 p-5 sm:p-6 lg:px-8 bg-card transition-colors">
                     <div>
                         <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1 font-bold">Business Analytics / Financial Management</p>
                         <h2 className="text-2xl font-bold tracking-tight text-foreground">Statement of Financial Position</h2>
@@ -143,39 +198,80 @@ export function ReportControlSection() {
                             Dynamic balance sheet prototype with period selection, comparison view, validation checks, managerial certification, and account-level drill-down.
                         </p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 shrink-0" aria-busy={exporting !== null}>
-                        {false && (
-                            <Badge variant="secondary" className="rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-wider">
-                                Validated
-                            </Badge>
-                        )}
-                        <Button 
-                            variant="ghost" 
-                            className="rounded-lg shadow-sm h-9 px-4 text-xs font-bold bg-zinc-950 text-zinc-50 hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
-                            onClick={() => void handleExport("pdf")}
-                            disabled={!canExport || exporting !== null}
-                        >
-                            {exporting === "pdf" ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-2" />}
-                            {exporting === "pdf" ? "Preparing PDF..." : "Export full report (PDF)"}
-                        </Button>
-                        <Button 
-                            variant="ghost" 
-                            className="rounded-lg shadow-sm h-9 px-4 text-xs font-bold bg-zinc-950 text-zinc-50 hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
-                            onClick={() => void handleExport("excel")}
-                            disabled={!canExport || exporting !== null}
-                        >
-                            {exporting === "excel" ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5 mr-2" />}
-                            {exporting === "excel" ? "Preparing Excel..." : "Export full report (Excel)"}
-                        </Button>
+                    <div className="w-full space-y-3" aria-busy={exporting !== null}>
+                        <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
+                            {false && (
+                                <Badge variant="secondary" className="rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-wider">
+                                    Validated
+                                </Badge>
+                            )}
+                            <Button
+                                variant="ghost"
+                                className="rounded-lg shadow-sm h-9 px-4 text-xs font-bold bg-zinc-950 text-zinc-50 hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
+                                onClick={() => void handleExport("pdf")}
+                                disabled={!canExport || exporting !== null}
+                            >
+                                {exporting === "pdf" ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-2" />}
+                                {exporting === "pdf" ? "Preparing PDF..." : "Export full report (PDF)"}
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                className="rounded-lg shadow-sm h-9 px-4 text-xs font-bold bg-zinc-950 text-zinc-50 hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
+                                onClick={() => void handleExport("excel")}
+                                disabled={!canExport || exporting !== null}
+                            >
+                                {exporting === "excel" ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5 mr-2" />}
+                                {exporting === "excel" ? "Preparing Excel..." : "Export full report (Excel)"}
+                            </Button>
+                        </div>
                         {appliedFilters && (
-                            <span className="basis-full max-w-[460px] text-right text-xs text-muted-foreground">
+                            <p className="text-right text-xs text-muted-foreground">
                                 Exports include all {accounts.length} applied report accounts; Account breakdown search does not narrow exports.
-                            </span>
+                            </p>
                         )}
                         {exportUnavailableMessage && (
-                            <span className="basis-full text-right text-xs text-muted-foreground" role="status">
+                            <p className="text-right text-xs text-muted-foreground" role="status">
                                 {exportUnavailableMessage}
-                            </span>
+                            </p>
+                        )}
+                        {hasPendingChanges && (
+                            <p role="status" aria-live="polite" className="text-sm font-medium text-amber-700 dark:text-amber-400">
+                                Changes pending — Generate report to apply. The displayed report still uses its applied criteria.
+                            </p>
+                        )}
+                        {appliedFilters && (
+                            <section aria-label="Applied report filters" className="flex min-w-0 flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
+                                <span className="mr-1 text-xs font-medium text-muted-foreground">Applied filters:</span>
+                                {appliedFilterChips.length > 0 ? appliedFilterChips.map(chip => {
+                                    const draftChip = draftFilterChips.find(candidate => candidate.key === chip.key);
+                                    const pendingRemoval = !draftChip;
+                                    const pendingUpdate = Boolean(draftChip && draftChip.label !== chip.label);
+
+                                    return (
+                                        <button
+                                            key={chip.key}
+                                            type="button"
+                                            onClick={() => removeAppliedFilter(chip.key)}
+                                            disabled={pendingRemoval}
+                                            aria-label={pendingRemoval
+                                                ? `${chip.label} pending removal on next report`
+                                                : `Remove ${chip.label} from the next report`}
+                                            className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-background px-2.5 py-1 text-left text-xs hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-70"
+                                        >
+                                            <span className="min-w-0 [overflow-wrap:anywhere]">{chip.label}</span>
+                                            {pendingRemoval ? (
+                                                <span className="shrink-0 text-[10px] text-amber-700 dark:text-amber-400">Pending removal</span>
+                                            ) : pendingUpdate ? (
+                                                <span className="shrink-0 text-[10px] text-amber-700 dark:text-amber-400">Pending change</span>
+                                            ) : (
+                                                <X aria-hidden="true" className="h-3 w-3 shrink-0" />
+                                            )}
+                                        </button>
+                                    );
+                                }) : (
+                                    <span className="text-xs text-muted-foreground">Default report criteria</span>
+                                )}
+                            </section>
                         )}
                         {false && (
                             <Button 
@@ -419,31 +515,45 @@ export function ReportControlSection() {
                                 {/* Division */}
                                 <div className="space-y-2">
                                     <Label htmlFor="balance-sheet-division" className="text-xs font-bold text-foreground">Division</Label>
-                                    <Select value={filters.divisionName || "all"} onValueChange={(val) => updateFilter({ divisionName: val === "all" ? "" : val })}>
-                                        <SelectTrigger id="balance-sheet-division" className="w-full sm:w-[220px] h-9 text-xs font-medium border-input">
-                                            <SelectValue placeholder="All Divisions" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="all">All Divisions</SelectItem>
-                                            <SelectItem value="Main Office">Main Office</SelectItem>
-                                            <SelectItem value="Branch A">Branch A</SelectItem>
-                                        </SelectContent>
-                                    </Select>
+                                    <BalanceSheetSearchableSelect
+                                        id="balance-sheet-division"
+                                        value={filters.divisionName}
+                                        options={divisionNames.map(name => ({ value: name, label: name }))}
+                                        onValueChange={divisionName => updateFilter({ divisionName })}
+                                        placeholder="All Divisions"
+                                        disabled={divisionLoading}
+                                        className="sm:w-[220px]"
+                                    />
+                                    {divisionLoading && <span role="status" className="text-xs text-muted-foreground">Loading divisions...</span>}
+                                    {!divisionLoading && !divisionLoadError && divisionNames.length === 0 && <span role="status" className="text-xs text-muted-foreground">No divisions available.</span>}
+                                    {divisionLoadError && (
+                                        <div className="flex items-center gap-2 text-xs text-destructive" role="alert">
+                                            <span>Division options could not be loaded.</span>
+                                            <Button type="button" variant="link" className="h-auto p-0 text-xs" onClick={retryDivisionLookup}>Retry</Button>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Department */}
                                 <div className="space-y-2">
                                     <Label htmlFor="balance-sheet-department" className="text-xs font-bold text-foreground">Department</Label>
-                                    <Select value={filters.departmentName || "all"} onValueChange={(val) => updateFilter({ departmentName: val === "all" ? "" : val })}>
-                                        <SelectTrigger id="balance-sheet-department" className="w-full sm:w-[150px] h-9 text-xs font-medium border-input">
-                                            <SelectValue placeholder="All Departments" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="all">All Departments</SelectItem>
-                                            <SelectItem value="Finance">Finance</SelectItem>
-                                            <SelectItem value="Operations">Operations</SelectItem>
-                                        </SelectContent>
-                                    </Select>
+                                    <BalanceSheetSearchableSelect
+                                        id="balance-sheet-department"
+                                        value={filters.departmentName}
+                                        options={departmentNames.map(name => ({ value: name, label: name }))}
+                                        onValueChange={departmentName => updateFilter({ departmentName })}
+                                        placeholder="All Departments"
+                                        disabled={departmentLoading}
+                                        className="sm:w-[150px]"
+                                    />
+                                    {departmentLoading && <span role="status" className="text-xs text-muted-foreground">Loading departments...</span>}
+                                    {!departmentLoading && !departmentLoadError && departmentNames.length === 0 && <span role="status" className="text-xs text-muted-foreground">No departments available.</span>}
+                                    {departmentLoadError && (
+                                        <div className="flex items-center gap-2 text-xs text-destructive" role="alert">
+                                            <span>Department options could not be loaded.</span>
+                                            <Button type="button" variant="link" className="h-auto p-0 text-xs" onClick={retryDepartmentLookup}>Retry</Button>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Comparison Toggle */}

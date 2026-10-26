@@ -125,7 +125,7 @@ function CardSkeleton() {
 }
 
 export function SummaryCards({ validation }: Props) {
-    const { summary, comparisonSummary, accounts, filters, appliedFilters, comparisonStatus, reportStatus } = useBalanceSheet();
+    const { summary, comparisonSummary, accounts, appliedFilters, comparisonStatus, reportStatus } = useBalanceSheet();
     const isComparisonEnabled = appliedFilters?.includeComparison === true;
 
     if (reportStatus === "loading-initial") {
@@ -154,7 +154,7 @@ export function SummaryCards({ validation }: Props) {
                 isBalanced={validation.isBalanced}
                 isComparisonEnabled={isComparisonEnabled}
                 comparisonStatus={comparisonStatus}
-                comparisonBasis={appliedFilters?.comparisonBasis ?? filters.comparisonBasis}
+                comparisonBasis={appliedFilters?.comparisonBasis ?? "match"}
             />
             
             <SummaryCardItem
@@ -166,7 +166,7 @@ export function SummaryCards({ validation }: Props) {
                 isBalanced={validation.isBalanced}
                 isComparisonEnabled={isComparisonEnabled}
                 comparisonStatus={comparisonStatus}
-                comparisonBasis={appliedFilters?.comparisonBasis ?? filters.comparisonBasis}
+                comparisonBasis={appliedFilters?.comparisonBasis ?? "match"}
             />
             
             <SummaryCardItem
@@ -178,7 +178,7 @@ export function SummaryCards({ validation }: Props) {
                 isBalanced={validation.isBalanced}
                 isComparisonEnabled={isComparisonEnabled}
                 comparisonStatus={comparisonStatus}
-                comparisonBasis={appliedFilters?.comparisonBasis ?? filters.comparisonBasis}
+                comparisonBasis={appliedFilters?.comparisonBasis ?? "match"}
             />
             
             <SummaryCardItem
@@ -190,7 +190,7 @@ export function SummaryCards({ validation }: Props) {
                 isBalanced={validation.isBalanced}
                 isComparisonEnabled={isComparisonEnabled}
                 comparisonStatus={comparisonStatus}
-                comparisonBasis={appliedFilters?.comparisonBasis ?? filters.comparisonBasis}
+                comparisonBasis={appliedFilters?.comparisonBasis ?? "match"}
             />
         </div>
     );

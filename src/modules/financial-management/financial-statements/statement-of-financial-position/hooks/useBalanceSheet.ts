@@ -25,6 +25,7 @@ export function useBalanceSheet() {
     // State
     filters: context.filters,
     appliedFilters: context.appliedFilters,
+    hasPendingChanges: context.hasPendingChanges,
     setFilters: context.setFilters,
     isLoading: context.isLoading,
     reportStatus: context.reportStatus,
@@ -34,5 +35,6 @@ export function useBalanceSheet() {
     // Actions
     refresh: context.refresh,
     resetFilters: context.resetFilters,
+    removeAppliedFilter: context.removeAppliedFilter,
   };
 }
