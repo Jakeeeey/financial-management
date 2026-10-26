@@ -16,15 +16,47 @@ const lastUpdatedFormatter = new Intl.DateTimeFormat("en-PH", {
     timeZone: "Asia/Manila",
 });
 
+const reportDateFormatter = new Intl.DateTimeFormat("en-PH", {
+    dateStyle: "medium",
+    timeZone: "UTC",
+});
+
+function formatReportDate(value: string) {
+    return reportDateFormatter.format(new Date(`${value}T00:00:00Z`));
+}
+
 function StatementContent() {
     const { validation, ratios, summary, error, reportStatus, lastUpdated, appliedFilters, accounts, comparisonStatus, isLoading, refresh } = useBalanceSheet();
     const hasSuccessfulReport = appliedFilters !== null;
     const hasAccountRows = accounts.length > 0;
     const lastUpdatedText = lastUpdated ? `${lastUpdatedFormatter.format(lastUpdated)} PHT` : null;
+    const appliedStatus = appliedFilters?.status.trim() ?? "";
+    const statusIsPosted = appliedStatus.toLowerCase() === "posted";
+    const statusLabel = !appliedStatus || appliedStatus.toLowerCase() === "all" ? "All statuses" : appliedStatus;
 
     return (
         <div className="flex min-w-0 flex-col gap-3 sm:gap-4 animate-in fade-in duration-500">
             <ReportControlSection />
+
+            {appliedFilters && (
+                <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-border bg-muted/20 px-3 py-2 text-sm" aria-label="Applied report coverage">
+                    <span className="font-semibold text-foreground">Report coverage</span>
+                    <span className="text-muted-foreground">As of {formatReportDate(appliedFilters.endDate)}</span>
+                    <span className="text-muted-foreground">Status: {statusIsPosted ? "Posted ledger activity" : statusLabel}</span>
+                    <span className="text-muted-foreground">Division: {appliedFilters.divisionName || "All divisions"}</span>
+                    <span className="text-muted-foreground">Department: {appliedFilters.departmentName || "All departments"}</span>
+                    {statusIsPosted && (
+                        <span className="basis-full text-xs text-muted-foreground">
+                            Includes Sales Invoice entries recorded with Dispatched status.
+                        </span>
+                    )}
+                    {!statusIsPosted && (
+                        <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-300">
+                            Provisional — may include unposted activity
+                        </span>
+                    )}
+                </div>
+            )}
 
             {reportStatus === "not-generated" && (
                 <div role="status" className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">

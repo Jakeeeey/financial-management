@@ -5,6 +5,43 @@ import {
   BalanceSheetResponseSchema,
 } from "../types/balance-sheet.schema";
 
+export interface BalanceSheetDivisionOption {
+  divisionId: number;
+  divisionName: string;
+}
+
+export interface BalanceSheetDepartmentOption {
+  departmentId: number;
+  departmentName: string;
+  parentDivision: number | null;
+}
+
+async function getOrganizationalOptions<T>(url: string): Promise<T[]> {
+  const response = await fetch(url, {
+    credentials: "include",
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch organizational options: ${response.statusText}`);
+  }
+
+  const data: unknown = await response.json();
+  if (!Array.isArray(data)) {
+    throw new Error("Organizational options response was not a list");
+  }
+
+  return data as T[];
+}
+
+export function getBalanceSheetDivisions(): Promise<BalanceSheetDivisionOption[]> {
+  return getOrganizationalOptions<BalanceSheetDivisionOption>("/api/fm/setup/divisions");
+}
+
+export function getBalanceSheetDepartments(): Promise<BalanceSheetDepartmentOption[]> {
+  return getOrganizationalOptions<BalanceSheetDepartmentOption>("/api/fm/setup/departments");
+}
+
 /**
  * Server-side service for fetching balance sheet data from the external backend API.
  * Follows the same pattern as trial-balance.service.ts.
