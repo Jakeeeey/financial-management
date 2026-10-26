@@ -156,7 +156,7 @@ export function ReportControlSection() {
                             disabled={!canExport || exporting !== null}
                         >
                             {exporting === "pdf" ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-2" />}
-                            {exporting === "pdf" ? "Preparing PDF..." : "Export PDF"}
+                            {exporting === "pdf" ? "Preparing PDF..." : "Export full report (PDF)"}
                         </Button>
                         <Button 
                             variant="ghost" 
@@ -165,8 +165,13 @@ export function ReportControlSection() {
                             disabled={!canExport || exporting !== null}
                         >
                             {exporting === "excel" ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5 mr-2" />}
-                            {exporting === "excel" ? "Preparing Excel..." : "Export Excel"}
+                            {exporting === "excel" ? "Preparing Excel..." : "Export full report (Excel)"}
                         </Button>
+                        {appliedFilters && (
+                            <span className="basis-full max-w-[460px] text-right text-xs text-muted-foreground">
+                                Exports include all {accounts.length} applied report accounts; Account breakdown search does not narrow exports.
+                            </span>
+                        )}
                         {exportUnavailableMessage && (
                             <span className="basis-full text-right text-xs text-muted-foreground" role="status">
                                 {exportUnavailableMessage}
@@ -202,9 +207,9 @@ export function ReportControlSection() {
                                 {/* Date Selection */}
                                 <div className="space-y-4">
                                     <div className="space-y-2">
-                                        <Label className="text-xs font-bold text-foreground">Date Selection</Label>
+                                        <Label htmlFor="balance-sheet-date-basis" className="text-xs font-bold text-foreground">Date Selection</Label>
                                         <Select value={filters.dataBasis} onValueChange={handleBasisChange}>
-                                            <SelectTrigger className="w-full sm:w-[280px] h-9 text-xs font-bold border-input bg-card">
+                                            <SelectTrigger id="balance-sheet-date-basis" className="w-full sm:w-[280px] h-9 text-xs font-bold border-input bg-card">
                                                 <SelectValue placeholder="Select basis..." />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -221,16 +226,20 @@ export function ReportControlSection() {
                                     <div className="flex flex-wrap gap-2 pt-1">
                                         {filters.dataBasis === "manual" && (
                                             <>
-                                                <div className="relative w-full sm:w-[150px]">
+                                                <div className="w-full space-y-1 sm:w-[150px]">
+                                                    <Label htmlFor="balance-sheet-start-date" className="text-xs">Start date</Label>
                                                     <Input 
+                                                        id="balance-sheet-start-date"
                                                         type="date"
                                                         value={filters.startDate} 
                                                         onChange={(e) => updateFilter({ startDate: e.target.value })}
                                                         className="h-9 text-xs font-medium border-input bg-card" 
                                                     />
                                                 </div>
-                                                <div className="relative w-full sm:w-[150px]">
+                                                <div className="w-full space-y-1 sm:w-[150px]">
+                                                    <Label htmlFor="balance-sheet-end-date" className="text-xs">End date</Label>
                                                     <Input 
+                                                        id="balance-sheet-end-date"
                                                         type="date"
                                                         value={filters.endDate} 
                                                         onChange={(e) => updateFilter({ endDate: e.target.value })}
@@ -241,8 +250,10 @@ export function ReportControlSection() {
                                         )}
 
                                         {filters.dataBasis === "as-of" && (
-                                            <div className="relative w-full sm:w-[220px]">
+                                            <div className="w-full space-y-1 sm:w-[220px]">
+                                                <Label htmlFor="balance-sheet-end-date" className="text-xs">As-of date</Label>
                                                 <Input 
+                                                    id="balance-sheet-end-date"
                                                     type="date"
                                                     value={filters.endDate} 
                                                     onChange={(e) => updateFilter({ endDate: e.target.value })}
@@ -253,6 +264,8 @@ export function ReportControlSection() {
 
                                         {filters.dataBasis === "monthly" && (
                                             <>
+                                                <div className="space-y-1">
+                                                <Label htmlFor="balance-sheet-month" className="text-xs">Month</Label>
                                                 <Select 
                                                     value={filters.endDate.split("-")[1]} 
                                                     onValueChange={(val) => {
@@ -264,7 +277,7 @@ export function ReportControlSection() {
                                                         });
                                                     }}
                                                 >
-                                                    <SelectTrigger className="w-[120px] h-9 text-xs font-medium border-input bg-card">
+                                                    <SelectTrigger id="balance-sheet-month" className="w-[120px] h-9 text-xs font-medium border-input bg-card">
                                                         <SelectValue placeholder="Month" />
                                                     </SelectTrigger>
                                                     <SelectContent>
@@ -275,6 +288,9 @@ export function ReportControlSection() {
                                                         ))}
                                                     </SelectContent>
                                                 </Select>
+                                                </div>
+                                                <div className="space-y-1">
+                                                <Label htmlFor="balance-sheet-month-year" className="text-xs">Year</Label>
                                                 <Select 
                                                     value={filters.endDate.split("-")[0]} 
                                                     onValueChange={(val) => {
@@ -286,7 +302,7 @@ export function ReportControlSection() {
                                                         });
                                                     }}
                                                 >
-                                                    <SelectTrigger className="w-[100px] h-9 text-xs font-medium border-input bg-card">
+                                                    <SelectTrigger id="balance-sheet-month-year" className="w-[100px] h-9 text-xs font-medium border-input bg-card">
                                                         <SelectValue placeholder="Year" />
                                                     </SelectTrigger>
                                                     <SelectContent>
@@ -295,11 +311,14 @@ export function ReportControlSection() {
                                                         ))}
                                                     </SelectContent>
                                                 </Select>
+                                                </div>
                                             </>
                                         )}
 
                                         {filters.dataBasis === "quarterly" && (
                                             <>
+                                                <div className="space-y-1">
+                                                <Label htmlFor="balance-sheet-quarter" className="text-xs">Quarter</Label>
                                                 <Select 
                                                     value={`q${Math.ceil(parseInt(filters.endDate.split("-")[1])/3)}`}
                                                     onValueChange={(val) => {
@@ -314,7 +333,7 @@ export function ReportControlSection() {
                                                         });
                                                     }}
                                                 >
-                                                    <SelectTrigger className="w-[140px] h-9 text-xs font-medium border-input bg-card">
+                                                    <SelectTrigger id="balance-sheet-quarter" className="w-[140px] h-9 text-xs font-medium border-input bg-card">
                                                         <SelectValue placeholder="Quarter" />
                                                     </SelectTrigger>
                                                     <SelectContent>
@@ -324,6 +343,9 @@ export function ReportControlSection() {
                                                         <SelectItem value="q4">4th Quarter</SelectItem>
                                                     </SelectContent>
                                                 </Select>
+                                                </div>
+                                                <div className="space-y-1">
+                                                <Label htmlFor="balance-sheet-quarter-year" className="text-xs">Year</Label>
                                                 <Select 
                                                     value={filters.endDate.split("-")[0]}
                                                     onValueChange={(val) => {
@@ -336,7 +358,7 @@ export function ReportControlSection() {
                                                         });
                                                     }}
                                                 >
-                                                    <SelectTrigger className="w-[100px] h-9 text-xs font-medium border-input bg-card">
+                                                    <SelectTrigger id="balance-sheet-quarter-year" className="w-[100px] h-9 text-xs font-medium border-input bg-card">
                                                         <SelectValue placeholder="Year" />
                                                     </SelectTrigger>
                                                     <SelectContent>
@@ -345,10 +367,13 @@ export function ReportControlSection() {
                                                         ))}
                                                     </SelectContent>
                                                 </Select>
+                                                </div>
                                             </>
                                         )}
 
                                         {filters.dataBasis === "annually" && (
+                                            <div className="space-y-1">
+                                            <Label htmlFor="balance-sheet-year" className="text-xs">Year</Label>
                                             <Select 
                                                 value={filters.endDate.split("-")[0]}
                                                 onValueChange={(val) => updateFilter({ 
@@ -356,7 +381,7 @@ export function ReportControlSection() {
                                                     endDate: `${val}-12-31` 
                                                 })}
                                             >
-                                                <SelectTrigger className="w-[120px] h-9 text-xs font-medium border-input bg-card">
+                                                <SelectTrigger id="balance-sheet-year" className="w-[120px] h-9 text-xs font-medium border-input bg-card">
                                                     <SelectValue placeholder="Year" />
                                                 </SelectTrigger>
                                                 <SelectContent>
@@ -365,6 +390,7 @@ export function ReportControlSection() {
                                                     ))}
                                                 </SelectContent>
                                             </Select>
+                                            </div>
                                         )}
                                     </div>
                                 </div>
@@ -392,9 +418,9 @@ export function ReportControlSection() {
 
                                 {/* Division */}
                                 <div className="space-y-2">
-                                    <Label className="text-xs font-bold text-foreground">Division</Label>
+                                    <Label htmlFor="balance-sheet-division" className="text-xs font-bold text-foreground">Division</Label>
                                     <Select value={filters.divisionName || "all"} onValueChange={(val) => updateFilter({ divisionName: val === "all" ? "" : val })}>
-                                        <SelectTrigger className="w-full sm:w-[220px] h-9 text-xs font-medium border-input">
+                                        <SelectTrigger id="balance-sheet-division" className="w-full sm:w-[220px] h-9 text-xs font-medium border-input">
                                             <SelectValue placeholder="All Divisions" />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -407,9 +433,9 @@ export function ReportControlSection() {
 
                                 {/* Department */}
                                 <div className="space-y-2">
-                                    <Label className="text-xs font-bold text-foreground">Department</Label>
+                                    <Label htmlFor="balance-sheet-department" className="text-xs font-bold text-foreground">Department</Label>
                                     <Select value={filters.departmentName || "all"} onValueChange={(val) => updateFilter({ departmentName: val === "all" ? "" : val })}>
-                                        <SelectTrigger className="w-full sm:w-[150px] h-9 text-xs font-medium border-input">
+                                        <SelectTrigger id="balance-sheet-department" className="w-full sm:w-[150px] h-9 text-xs font-medium border-input">
                                             <SelectValue placeholder="All Departments" />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -443,9 +469,9 @@ export function ReportControlSection() {
                                     <div className="space-y-4 p-4 bg-muted/20 border border-border rounded-lg animate-in fade-in slide-in-from-top-2 duration-300">
                                         {/* Comparison Period Basis Selector */}
                                         <div className="space-y-2">
-                                            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Comparison Period</Label>
+                                            <Label htmlFor="balance-sheet-comparison-basis" className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Comparison Period</Label>
                                             <Select value={filters.comparisonBasis} onValueChange={handleComparisonBasisChange}>
-                                                <SelectTrigger className="w-full sm:w-[280px] h-9 text-xs font-bold border-input bg-card">
+                                                <SelectTrigger id="balance-sheet-comparison-basis" className="w-full sm:w-[280px] h-9 text-xs font-bold border-input bg-card">
                                                     <SelectValue placeholder="Select basis..." />
                                                 </SelectTrigger>
                                                 <SelectContent>
@@ -460,16 +486,20 @@ export function ReportControlSection() {
                                         <div className="flex flex-wrap gap-2 pt-1">
                                             {filters.comparisonBasis === "manual" && (
                                                 <>
-                                                    <div className="relative w-full sm:w-[150px]">
+                                                    <div className="w-full space-y-1 sm:w-[150px]">
+                                                        <Label htmlFor="balance-sheet-comparison-start-date" className="text-xs">Comparison start date</Label>
                                                         <Input 
+                                                            id="balance-sheet-comparison-start-date"
                                                             type="date"
                                                             value={filters.comparisonStartDate} 
                                                             onChange={(e) => updateFilter({ comparisonStartDate: e.target.value })}
                                                             className="h-9 text-xs font-medium border-input bg-card" 
                                                         />
                                                     </div>
-                                                    <div className="relative w-full sm:w-[150px]">
+                                                    <div className="w-full space-y-1 sm:w-[150px]">
+                                                        <Label htmlFor="balance-sheet-comparison-end-date" className="text-xs">Comparison end date</Label>
                                                         <Input 
+                                                            id="balance-sheet-comparison-end-date"
                                                             type="date"
                                                             value={filters.comparisonEndDate} 
                                                             onChange={(e) => updateFilter({ comparisonEndDate: e.target.value })}
@@ -480,8 +510,10 @@ export function ReportControlSection() {
                                             )}
 
                                             {filters.comparisonBasis === "as-of" && (
-                                                <div className="relative w-full sm:w-[220px]">
+                                                <div className="w-full space-y-1 sm:w-[220px]">
+                                                    <Label htmlFor="balance-sheet-comparison-end-date" className="text-xs">Comparison as-of date</Label>
                                                     <Input 
+                                                        id="balance-sheet-comparison-end-date"
                                                         type="date"
                                                         value={filters.comparisonEndDate} 
                                                         onChange={(e) => updateFilter({ comparisonEndDate: e.target.value })}

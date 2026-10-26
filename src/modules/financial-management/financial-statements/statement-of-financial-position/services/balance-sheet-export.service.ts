@@ -6,6 +6,7 @@ import {
   BalanceSheetSummary,
 } from "../types/balance-sheet.schema";
 import { BalanceSheetComparisonStatus, FinancialAccount, KeyRatios } from "../types";
+import { balanceSheetRatioDefinitions, describePesoChange, describeRatioChange } from "../utils/presentation";
 
 const COMPANY_NAME = process.env.NEXT_PUBLIC_COMPANY_NAME || "MEN2 MARKETING AND DISTRIBUTION ENTERPRISE CORPORATION";
 const REPORT_TITLE = "STATEMENT OF FINANCIAL POSITION";
@@ -40,11 +41,18 @@ const formatPhp = (value: number) => {
   return value < 0 ? `-PHP ${amount}` : `PHP ${amount}`;
 };
 
-const getMetadataRows = (filters: BalanceSheetFilterState, comparisonStatus: BalanceSheetComparisonStatus, generatedAt: Date): string[][] => [
+const getMetadataRows = (
+  filters: BalanceSheetFilterState,
+  comparisonStatus: BalanceSheetComparisonStatus,
+  generatedAt: Date,
+  accountCount: number,
+): string[][] => [
   ["As of date", formatDate(filters.endDate)],
   ["Status", filters.status || "All statuses"],
   ["Division", filters.divisionName || "All divisions"],
   ["Department", filters.departmentName || "All departments"],
+  ["Report account count", String(accountCount)],
+  ["Export scope", "Full applied report; includes all report accounts regardless of Account breakdown search."],
   [
     "Comparison as of",
     filters.includeComparison
@@ -52,6 +60,8 @@ const getMetadataRows = (filters: BalanceSheetFilterState, comparisonStatus: Bal
       : "Disabled",
   ],
   ...(filters.includeComparison ? [["Comparison data", comparisonStatus === "available" ? "Available" : "Comparison unavailable"]] : []),
+  ["Change interpretation", "Increase/decrease describes direction only; it does not indicate favorability."],
+  ["Ratio interpretation", "Ratios are multiples (×), not percentages. Not applicable means the denominator is zero."],
   ["Currency", "Philippine peso (PHP)"],
   ["Generated at", `${generatedAtFormatter.format(generatedAt)} PHT`],
 ];
@@ -75,22 +85,18 @@ const getSummaryRows = (data: BalanceSheetExportData, includeComparison: boolean
   });
 };
 
-const getRatioRows = (data: BalanceSheetExportData, includeComparison: boolean): (string | number)[][] => {
-  const ratios = [
-    ["Current ratio", data.ratios.currentRatio],
-    ["Quick ratio", data.ratios.quickRatio],
-    ["Debt to equity", data.ratios.debtToEquity],
-    ["Debt ratio", data.ratios.debtRatio],
-  ] as const;
+const getRatioRows = (data: BalanceSheetExportData, includeComparison: boolean): (string | number)[][] =>
+  balanceSheetRatioDefinitions.map(({ key, label, formula }) => {
+    const ratio = data.ratios[key];
+    const current = ratio.current ?? "Not applicable";
+    if (!includeComparison) return [label, formula, current];
+    if (data.comparisonStatus !== "available") {
+      return [label, formula, current, "Comparison unavailable", "Comparison unavailable"];
+    }
+    return [label, formula, current, ratio.prior ?? "Not applicable", ratio.variance ?? "Not applicable"];
+  });
 
-  return ratios.map(([label, ratio]) => includeComparison
-    ? data.comparisonStatus === "available" && ratio.prior !== null && ratio.variance !== null
-      ? [label, ratio.current, ratio.prior, ratio.variance]
-      : [label, ratio.current, "Comparison unavailable", "Comparison unavailable"]
-    : [label, ratio.current]);
-};
-
-const getAccountRows = (accounts: FinancialAccount[], includeComparison: boolean): (string | number)[][] =>
+const getAccountRows = (accounts: FinancialAccount[], includeComparison: boolean, comparisonStatus: BalanceSheetComparisonStatus): (string | number)[][] =>
   accounts.map(account => includeComparison
     ? [
       account.code,
@@ -101,13 +107,17 @@ const getAccountRows = (accounts: FinancialAccount[], includeComparison: boolean
       account.currentBalanceStatus === "zero" ? "Zero balance" : "Reported",
       account.comparisonBalanceStatus === "unavailable" ? "Comparison unavailable" : account.priorPeriod ?? 0,
       account.comparisonBalanceStatus === "unavailable" ? "Comparison unavailable" : account.comparisonBalanceStatus === "zero" ? "Zero balance" : "Reported",
-      account.variance ?? "Comparison unavailable",
-      account.variancePercentage ?? "Comparison unavailable",
+      comparisonStatus !== "available" || account.comparisonBalanceStatus === "unavailable" ? "Comparison unavailable" : account.variance ?? "Comparison unavailable",
+      comparisonStatus !== "available" || account.comparisonBalanceStatus === "unavailable"
+        ? "Comparison unavailable"
+        : account.priorPeriod === 0 || account.variancePercentage === null
+          ? "No prior balance"
+          : account.variancePercentage,
     ]
     : [account.code, account.account, account.type, account.group, account.currentPeriod, account.currentBalanceStatus === "zero" ? "Zero balance" : "Reported"]);
 
 const getComparisonColumns = (filters: BalanceSheetFilterState) => filters.includeComparison
-  ? [`As of ${formatDate(filters.endDate)}`, "Current Balance Status", `As of ${formatDate(filters.comparisonEndDate)}`, "Comparison Balance Status", "Variance", "Variance %"]
+  ? [`As of ${formatDate(filters.endDate)}`, "Current Balance Status", `As of ${formatDate(filters.comparisonEndDate)}`, "Comparison Balance Status", "Change (current minus comparison)", "Percentage Change"]
   : [`As of ${formatDate(filters.endDate)}`, "Balance Status"];
 
 export const exportBalanceSheetToExcel = (data: BalanceSheetExportData) => {
@@ -116,16 +126,16 @@ export const exportBalanceSheetToExcel = (data: BalanceSheetExportData) => {
   const currentDateLabel = `As of ${formatDate(data.filters.endDate)}`;
   const comparisonDateLabel = `As of ${formatDate(data.filters.comparisonEndDate)}`;
   const summaryHeaders = hasComparison
-    ? ["Metric", currentDateLabel, comparisonDateLabel, "Variance"]
+    ? ["Metric", currentDateLabel, comparisonDateLabel, "Change (current minus comparison)"]
     : ["Metric", currentDateLabel];
   const ratioHeaders = hasComparison
-    ? ["Ratio", currentDateLabel, comparisonDateLabel, "Variance"]
-    : ["Ratio", currentDateLabel];
+    ? ["Ratio", "Formula", currentDateLabel, comparisonDateLabel, "Change (×; current minus comparison)"]
+    : ["Ratio", "Formula", currentDateLabel];
   const accountHeaders = ["GL Code", "Account", "Type", "Group", ...getComparisonColumns(data.filters)];
   const metadataRows = [
     [COMPANY_NAME],
     [REPORT_TITLE],
-    ...getMetadataRows(data.filters, data.comparisonStatus, generatedAt),
+    ...getMetadataRows(data.filters, data.comparisonStatus, generatedAt, data.accounts.length),
   ];
   const worksheetData: (string | number)[][] = [
     ...metadataRows,
@@ -140,7 +150,7 @@ export const exportBalanceSheetToExcel = (data: BalanceSheetExportData) => {
     [],
     ["ACCOUNT DETAILS"],
     accountHeaders,
-    ...getAccountRows(data.accounts, hasComparison),
+    ...getAccountRows(data.accounts, hasComparison, data.comparisonStatus),
   ];
   const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
   const accountHeaderRow = worksheetData.findIndex(row => row[0] === "GL Code");
@@ -154,9 +164,9 @@ export const exportBalanceSheetToExcel = (data: BalanceSheetExportData) => {
     }
   }
   for (let row = ratioHeaderRow + 1; row < ratioHeaderRow + 5; row++) {
-    for (const column of hasComparison ? [1, 2, 3] : [1]) {
+    for (const column of hasComparison ? [2, 3, 4] : [2]) {
       const cell = worksheet[XLSX.utils.encode_cell({ r: row, c: column })];
-      if (cell) cell.z = "0.00";
+      if (cell && typeof cell.v === "number") cell.z = '0.00"×"';
     }
   }
   for (let row = accountHeaderRow + 1; row < worksheetData.length; row++) {
@@ -172,7 +182,7 @@ export const exportBalanceSheetToExcel = (data: BalanceSheetExportData) => {
 
   worksheet["!cols"] = [
     { wch: 22 },
-    { wch: 42 },
+    { wch: 56 },
     { wch: 22 },
     { wch: 30 },
     ...Array.from({ length: hasComparison ? 6 : 2 }, () => ({ wch: 22 })),
@@ -205,7 +215,7 @@ export const exportBalanceSheetToPdf = (data: BalanceSheetExportData) => {
 
   autoTable(doc, {
     startY: 23,
-    body: getMetadataRows(data.filters, data.comparisonStatus, generatedAt),
+    body: getMetadataRows(data.filters, data.comparisonStatus, generatedAt, data.accounts.length),
     theme: "plain",
     styles: { font: "helvetica", fontSize: 8, cellPadding: 1 },
     columnStyles: { 0: { fontStyle: "bold", cellWidth: 38 } },
@@ -215,10 +225,13 @@ export const exportBalanceSheetToPdf = (data: BalanceSheetExportData) => {
   autoTable(doc, {
     startY: metadataEnd + 3,
     head: [hasComparison
-      ? ["Report summary", currentDateLabel, comparisonDateLabel, "Variance"]
+      ? ["Report summary", currentDateLabel, comparisonDateLabel, "Change (current minus comparison)"]
       : ["Report summary", currentDateLabel]],
-    body: getSummaryRows(data, hasComparison).map(row => row.map((value, index) =>
-      index === 0 || typeof value === "string" ? String(value) : formatPhp(value))),
+    body: getSummaryRows(data, hasComparison).map(row => row.map((value, index) => {
+      if (index === 0 || typeof value === "string") return String(value);
+      if (hasComparison && index === 3) return describePesoChange(value).replace("\u20B1", "PHP ");
+      return formatPhp(value);
+    })),
     theme: "grid",
     styles: { font: "helvetica", fontSize: 8, cellPadding: 2 },
     headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: "bold" },
@@ -229,21 +242,25 @@ export const exportBalanceSheetToPdf = (data: BalanceSheetExportData) => {
   autoTable(doc, {
     startY: summaryEnd + 3,
     head: [hasComparison
-      ? ["Key ratios", currentDateLabel, comparisonDateLabel, "Variance"]
-      : ["Key ratios", currentDateLabel]],
-    body: getRatioRows(data, hasComparison).map(row => row.map((value, index) =>
-      index === 0 || typeof value === "string" ? String(value) : `${value.toFixed(2)}x`)),
+      ? ["Key ratios", "Formula", currentDateLabel, comparisonDateLabel, "Change"]
+      : ["Key ratios", "Formula", currentDateLabel]],
+    body: getRatioRows(data, hasComparison).map(row => row.map((value, index) => {
+      if (index < 2 || typeof value === "string") return String(value);
+      if (hasComparison && index === 4) return describeRatioChange(value);
+      return `${value.toFixed(2)}\u00D7`;
+    })),
     theme: "grid",
     styles: { font: "helvetica", fontSize: 8, cellPadding: 2 },
     headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: "bold" },
-    columnStyles: { 0: { cellWidth: 52 }, 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" } },
+    columnStyles: { 0: { cellWidth: 38 }, 1: { cellWidth: 90 }, 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } },
   });
   const ratiosEnd = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
   const accountHeaders = ["GL Code", "Account", "Type", "Group", ...getComparisonColumns(data.filters)];
-  const accountRows = getAccountRows(data.accounts, hasComparison).map(row => row.map((value, index) => {
+  const accountRows = getAccountRows(data.accounts, hasComparison, data.comparisonStatus).map(row => row.map((value, index) => {
     if (index < 4 || typeof value === "string") return String(value);
     if (!hasComparison && index === 5) return String(value);
     if (hasComparison && index === 9) return typeof value === "number" ? `${value.toFixed(1)}%` : String(value);
+    if (hasComparison && index === 8 && typeof value === "number") return describePesoChange(value).replace("\u20B1", "PHP ");
     return formatPhp(Number(value));
   }));
 

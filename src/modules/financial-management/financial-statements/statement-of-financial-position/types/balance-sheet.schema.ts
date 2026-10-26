@@ -17,10 +17,10 @@ export const BalanceSheetSummarySchema = z.object({
   totalLiabilities: z.number(),
   totalEquity: z.number(),
   balanceVariance: z.number(),
-  currentRatio: z.number(),
-  quickRatio: z.number(),
-  debtToEquityRatio: z.number(),
-  debtRatio: z.number(),
+  currentRatio: z.number().nullable(),
+  quickRatio: z.number().nullable(),
+  debtToEquityRatio: z.number().nullable(),
+  debtRatio: z.number().nullable(),
 });
 
 export const BalanceSheetResponseSchema = z.object({
