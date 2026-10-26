@@ -29,7 +29,13 @@ import {
     type BalanceSheetDivisionOption,
 } from "../services/balance-sheet.service";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { getBalanceSheetAppliedFilterChips } from "../utils/report-state";
+import {
+    getBalanceSheetAppliedFilterChips,
+    getBalanceSheetMonthEnd,
+    getBalanceSheetPreviousYearDate,
+    getBalanceSheetTodayDate,
+    getBalanceSheetYearOptions,
+} from "../utils/report-state";
 
 export function ReportControlSection() {
     const {
@@ -123,6 +129,15 @@ export function ReportControlSection() {
         setFilters(prev => ({ ...prev, ...updates }));
     };
 
+    const updateDateSelection = (basis: typeof filters.dataBasis, startDate: string, endDate: string) => {
+        const updates: Partial<typeof filters> = { dataBasis: basis, startDate, endDate };
+        if (filters.comparisonBasis === "match") {
+            updates.comparisonStartDate = getBalanceSheetPreviousYearDate(startDate);
+            updates.comparisonEndDate = getBalanceSheetPreviousYearDate(endDate);
+        }
+        updateFilter(updates);
+    };
+
     const retryDivisionLookup = () => {
         setDivisionLoading(true);
         setDivisionLoadError(false);
@@ -136,54 +151,50 @@ export function ReportControlSection() {
     };
 
     const handleBasisChange = (basis: typeof filters.dataBasis) => {
-        const today = new Date();
-        const year = today.getFullYear();
+        const today = getBalanceSheetTodayDate();
+        const [currentYear, currentMonth] = today.split("-").map(Number);
         let startDate = filters.startDate;
         let endDate = filters.endDate;
 
-        if (basis === "as-of") {
-            startDate = `${year}-01-01`;
-            endDate = today.toISOString().split("T")[0];
+        if (basis === "today") {
+            endDate = today;
+            startDate = `${currentYear}-01-01`;
         } else if (basis === "annually") {
-            startDate = `${year}-01-01`;
-            endDate = `${year}-12-31`;
+            startDate = `${currentYear}-01-01`;
+            endDate = `${currentYear}-12-31`;
         } else if (basis === "monthly") {
-            const month = String(today.getMonth() + 1).padStart(2, "0");
-            startDate = `${year}-${month}-01`;
-            const lastDay = new Date(year, today.getMonth() + 1, 0).getDate();
-            endDate = `${year}-${month}-${lastDay}`;
+            const month = String(currentMonth).padStart(2, "0");
+            startDate = `${currentYear}-${month}-01`;
+            endDate = getBalanceSheetMonthEnd(currentYear, currentMonth);
         } else if (basis === "quarterly") {
-            const quarter = Math.floor(today.getMonth() / 3) + 1;
-            const startMonth = String((quarter - 1) * 3 + 1).padStart(2, "0");
-            const endMonth = String(quarter * 3).padStart(2, "0");
-            startDate = `${year}-${startMonth}-01`;
-            const lastDay = new Date(year, quarter * 3, 0).getDate();
-            endDate = `${year}-${endMonth}-${lastDay}`;
+            const quarter = Math.ceil(currentMonth / 3);
+            const startMonth = (quarter - 1) * 3 + 1;
+            const endMonth = quarter * 3;
+            startDate = `${currentYear}-${String(startMonth).padStart(2, "0")}-01`;
+            endDate = getBalanceSheetMonthEnd(currentYear, endMonth);
+        } else {
+            const [selectedYear] = endDate.split("-");
+            startDate = `${selectedYear}-01-01`;
         }
 
-        const newFilters: Partial<typeof filters> = { dataBasis: basis, startDate, endDate };
-        
-        // If comparison is set to match, sync comparison dates too
-        if (filters.comparisonBasis === "match") {
-            const priorYear = parseInt(startDate.split("-")[0]) - 1;
-            newFilters.comparisonStartDate = startDate.replace(startDate.split("-")[0], String(priorYear));
-            newFilters.comparisonEndDate = endDate.replace(endDate.split("-")[0], String(priorYear));
-        }
-
-        updateFilter(newFilters);
+        updateDateSelection(basis, startDate, endDate);
     };
 
     const handleComparisonBasisChange = (basis: typeof filters.comparisonBasis) => {
         const updates: Partial<typeof filters> = { comparisonBasis: basis };
-        
+
         if (basis === "match") {
-            const yearStr = filters.startDate.split("-")[0];
-            const priorYear = parseInt(yearStr) - 1;
-            updates.comparisonStartDate = filters.startDate.replace(yearStr, String(priorYear));
-            updates.comparisonEndDate = filters.endDate.replace(yearStr, String(priorYear));
+            updates.comparisonStartDate = getBalanceSheetPreviousYearDate(filters.startDate);
+            updates.comparisonEndDate = getBalanceSheetPreviousYearDate(filters.endDate);
         }
-        
+
         updateFilter(updates);
+    };
+
+    const handleComparisonDateChange = (date: string) => {
+        if (!date) return;
+        const [year] = date.split("-");
+        updateFilter({ comparisonStartDate: `${year}-01-01`, comparisonEndDate: date });
     };
 
     return (
@@ -309,11 +320,11 @@ export function ReportControlSection() {
                                                 <SelectValue placeholder="Select basis..." />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                <SelectItem value="as-of">As of Date</SelectItem>
-                                                <SelectItem value="manual">Manual Date Range</SelectItem>
-                                                <SelectItem value="monthly">Monthly</SelectItem>
-                                                <SelectItem value="quarterly">Quarterly</SelectItem>
-                                                <SelectItem value="annually">Annually</SelectItem>
+                                                <SelectItem value="today">As of today</SelectItem>
+                                                <SelectItem value="monthly">Month end</SelectItem>
+                                                <SelectItem value="quarterly">Quarter end</SelectItem>
+                                                <SelectItem value="annually">Year end</SelectItem>
+                                                <SelectItem value="manual">Custom as-of date</SelectItem>
                                             </SelectContent>
                                         </Select>
                                     </div>
@@ -321,41 +332,21 @@ export function ReportControlSection() {
                                     {/* Conditional Sub-inputs for Data Selection */}
                                     <div className="flex flex-wrap gap-2 pt-1">
                                         {filters.dataBasis === "manual" && (
-                                            <>
-                                                <div className="w-full space-y-1 sm:w-[150px]">
-                                                    <Label htmlFor="balance-sheet-start-date" className="text-xs">Start date</Label>
-                                                    <Input 
-                                                        id="balance-sheet-start-date"
-                                                        type="date"
-                                                        value={filters.startDate} 
-                                                        onChange={(e) => updateFilter({ startDate: e.target.value })}
-                                                        className="h-9 text-xs font-medium border-input bg-card" 
-                                                    />
-                                                </div>
-                                                <div className="w-full space-y-1 sm:w-[150px]">
-                                                    <Label htmlFor="balance-sheet-end-date" className="text-xs">End date</Label>
-                                                    <Input 
-                                                        id="balance-sheet-end-date"
-                                                        type="date"
-                                                        value={filters.endDate} 
-                                                        onChange={(e) => updateFilter({ endDate: e.target.value })}
-                                                        className="h-9 text-xs font-medium border-input bg-card" 
-                                                    />
-                                                </div>
-                                            </>
-                                        )}
-
-                                        {filters.dataBasis === "as-of" && (
                                             <div className="w-full space-y-1 sm:w-[220px]">
-                                                <Label htmlFor="balance-sheet-end-date" className="text-xs">As-of date</Label>
-                                                <Input 
+                                                <Label htmlFor="balance-sheet-end-date" className="text-xs">Custom as-of date</Label>
+                                                <Input
                                                     id="balance-sheet-end-date"
                                                     type="date"
-                                                    value={filters.endDate} 
-                                                    onChange={(e) => updateFilter({ endDate: e.target.value })}
-                                                    className="h-9 text-xs font-medium border-input bg-card" 
+                                                    value={filters.endDate}
+                                                    onChange={(e) => {
+                                                        const date = e.target.value;
+                                                        if (!date) return;
+                                                        const [year] = date.split("-");
+                                                        updateDateSelection("manual", `${year}-01-01`, date);
+                                                    }}
+                                                    className="h-9 text-xs font-medium border-input bg-card"
                                                 />
-                                            </div>
+                                                </div>
                                         )}
 
                                         {filters.dataBasis === "monthly" && (
@@ -365,12 +356,9 @@ export function ReportControlSection() {
                                                 <Select 
                                                     value={filters.endDate.split("-")[1]} 
                                                     onValueChange={(val) => {
-                                                        const year = filters.endDate.split("-")[0];
-                                                        const lastDay = new Date(parseInt(year), parseInt(val), 0).getDate();
-                                                        updateFilter({ 
-                                                            startDate: `${year}-${val}-01`,
-                                                            endDate: `${year}-${val}-${lastDay}` 
-                                                        });
+                                                        const year = Number(filters.endDate.split("-")[0]);
+                                                        const month = Number(val);
+                                                        updateDateSelection("monthly", `${year}-${val}-01`, getBalanceSheetMonthEnd(year, month));
                                                     }}
                                                 >
                                                     <SelectTrigger id="balance-sheet-month" className="w-[120px] h-9 text-xs font-medium border-input bg-card">
@@ -379,7 +367,7 @@ export function ReportControlSection() {
                                                     <SelectContent>
                                                         {["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"].map(m => (
                                                             <SelectItem key={m} value={m}>
-                                                                {new Date(2000, parseInt(m)-1).toLocaleString('default', { month: 'long' })}
+                                                                {new Intl.DateTimeFormat("en-PH", { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2000, Number(m) - 1, 1)))}
                                                             </SelectItem>
                                                         ))}
                                                     </SelectContent>
@@ -390,20 +378,16 @@ export function ReportControlSection() {
                                                 <Select 
                                                     value={filters.endDate.split("-")[0]} 
                                                     onValueChange={(val) => {
-                                                        const month = filters.endDate.split("-")[1];
-                                                        const lastDay = new Date(parseInt(val), parseInt(month), 0).getDate();
-                                                        updateFilter({ 
-                                                            startDate: `${val}-${month}-01`,
-                                                            endDate: `${val}-${month}-${lastDay}` 
-                                                        });
+                                                        const month = Number(filters.endDate.split("-")[1]);
+                                                        updateDateSelection("monthly", `${val}-${String(month).padStart(2, "0")}-01`, getBalanceSheetMonthEnd(Number(val), month));
                                                     }}
                                                 >
                                                     <SelectTrigger id="balance-sheet-month-year" className="w-[100px] h-9 text-xs font-medium border-input bg-card">
                                                         <SelectValue placeholder="Year" />
                                                     </SelectTrigger>
                                                     <SelectContent>
-                                                        {["2024", "2025", "2026", "2027"].map(y => (
-                                                            <SelectItem key={y} value={y}>{y}</SelectItem>
+                                                        {getBalanceSheetYearOptions(Number(filters.endDate.split("-")[0])).map(year => (
+                                                            <SelectItem key={year} value={String(year)}>{year}</SelectItem>
                                                         ))}
                                                     </SelectContent>
                                                 </Select>
@@ -419,14 +403,10 @@ export function ReportControlSection() {
                                                     value={`q${Math.ceil(parseInt(filters.endDate.split("-")[1])/3)}`}
                                                     onValueChange={(val) => {
                                                         const q = parseInt(val.charAt(1));
-                                                        const year = filters.endDate.split("-")[0];
-                                                        const startMonth = String((q - 1) * 3 + 1).padStart(2, "0");
-                                                        const endMonth = String(q * 3).padStart(2, "0");
-                                                        const lastDay = new Date(parseInt(year), q * 3, 0).getDate();
-                                                        updateFilter({
-                                                            startDate: `${year}-${startMonth}-01`,
-                                                            endDate: `${year}-${endMonth}-${lastDay}`
-                                                        });
+                                                        const year = Number(filters.endDate.split("-")[0]);
+                                                        const startMonth = (q - 1) * 3 + 1;
+                                                        const endMonth = q * 3;
+                                                        updateDateSelection("quarterly", `${year}-${String(startMonth).padStart(2, "0")}-01`, getBalanceSheetMonthEnd(year, endMonth));
                                                     }}
                                                 >
                                                     <SelectTrigger id="balance-sheet-quarter" className="w-[140px] h-9 text-xs font-medium border-input bg-card">
@@ -445,21 +425,18 @@ export function ReportControlSection() {
                                                 <Select 
                                                     value={filters.endDate.split("-")[0]}
                                                     onValueChange={(val) => {
-                                                        const startMonth = filters.startDate.split("-")[1];
-                                                        const endMonth = filters.endDate.split("-")[1];
-                                                        const lastDay = new Date(parseInt(val), parseInt(endMonth), 0).getDate();
-                                                        updateFilter({
-                                                            startDate: `${val}-${startMonth}-01`,
-                                                            endDate: `${val}-${endMonth}-${lastDay}`
-                                                        });
+                                                        const quarter = Math.ceil(Number(filters.endDate.split("-")[1]) / 3);
+                                                        const startMonth = (quarter - 1) * 3 + 1;
+                                                        const endMonth = quarter * 3;
+                                                        updateDateSelection("quarterly", `${val}-${String(startMonth).padStart(2, "0")}-01`, getBalanceSheetMonthEnd(Number(val), endMonth));
                                                     }}
                                                 >
                                                     <SelectTrigger id="balance-sheet-quarter-year" className="w-[100px] h-9 text-xs font-medium border-input bg-card">
                                                         <SelectValue placeholder="Year" />
                                                     </SelectTrigger>
                                                     <SelectContent>
-                                                        {["2024", "2025", "2026", "2027"].map(y => (
-                                                            <SelectItem key={y} value={y}>{y}</SelectItem>
+                                                        {getBalanceSheetYearOptions(Number(filters.endDate.split("-")[0])).map(year => (
+                                                            <SelectItem key={year} value={String(year)}>{year}</SelectItem>
                                                         ))}
                                                     </SelectContent>
                                                 </Select>
@@ -472,17 +449,14 @@ export function ReportControlSection() {
                                             <Label htmlFor="balance-sheet-year" className="text-xs">Year</Label>
                                             <Select 
                                                 value={filters.endDate.split("-")[0]}
-                                                onValueChange={(val) => updateFilter({ 
-                                                    startDate: `${val}-01-01`, 
-                                                    endDate: `${val}-12-31` 
-                                                })}
+                                                onValueChange={(val) => updateDateSelection("annually", `${val}-01-01`, `${val}-12-31`)}
                                             >
                                                 <SelectTrigger id="balance-sheet-year" className="w-[120px] h-9 text-xs font-medium border-input bg-card">
                                                     <SelectValue placeholder="Year" />
                                                 </SelectTrigger>
                                                 <SelectContent>
-                                                    {["2024", "2025", "2026", "2027"].map(y => (
-                                                        <SelectItem key={y} value={y}>{y}</SelectItem>
+                                                    {getBalanceSheetYearOptions(Number(filters.endDate.split("-")[0])).map(year => (
+                                                        <SelectItem key={year} value={String(year)}>{year}</SelectItem>
                                                     ))}
                                                 </SelectContent>
                                             </Select>
@@ -585,40 +559,14 @@ export function ReportControlSection() {
                                                     <SelectValue placeholder="Select basis..." />
                                                 </SelectTrigger>
                                                 <SelectContent>
-                                                    <SelectItem value="match">Match Current Date Selection (Prior Year)</SelectItem>
-                                                    <SelectItem value="as-of">As of Date</SelectItem>
-                                                    <SelectItem value="manual">Manual Date Range</SelectItem>
+                                                    <SelectItem value="match">Matching date last year</SelectItem>
+                                                    <SelectItem value="as-of">Custom comparison as-of date</SelectItem>
                                                 </SelectContent>
                                             </Select>
                                         </div>
 
                                         {/* Conditional Sub-inputs based on selection */}
                                         <div className="flex flex-wrap gap-2 pt-1">
-                                            {filters.comparisonBasis === "manual" && (
-                                                <>
-                                                    <div className="w-full space-y-1 sm:w-[150px]">
-                                                        <Label htmlFor="balance-sheet-comparison-start-date" className="text-xs">Comparison start date</Label>
-                                                        <Input 
-                                                            id="balance-sheet-comparison-start-date"
-                                                            type="date"
-                                                            value={filters.comparisonStartDate} 
-                                                            onChange={(e) => updateFilter({ comparisonStartDate: e.target.value })}
-                                                            className="h-9 text-xs font-medium border-input bg-card" 
-                                                        />
-                                                    </div>
-                                                    <div className="w-full space-y-1 sm:w-[150px]">
-                                                        <Label htmlFor="balance-sheet-comparison-end-date" className="text-xs">Comparison end date</Label>
-                                                        <Input 
-                                                            id="balance-sheet-comparison-end-date"
-                                                            type="date"
-                                                            value={filters.comparisonEndDate} 
-                                                            onChange={(e) => updateFilter({ comparisonEndDate: e.target.value })}
-                                                            className="h-9 text-xs font-medium border-input bg-card" 
-                                                        />
-                                                    </div>
-                                                </>
-                                            )}
-
                                             {filters.comparisonBasis === "as-of" && (
                                                 <div className="w-full space-y-1 sm:w-[220px]">
                                                     <Label htmlFor="balance-sheet-comparison-end-date" className="text-xs">Comparison as-of date</Label>
@@ -626,7 +574,7 @@ export function ReportControlSection() {
                                                         id="balance-sheet-comparison-end-date"
                                                         type="date"
                                                         value={filters.comparisonEndDate} 
-                                                        onChange={(e) => updateFilter({ comparisonEndDate: e.target.value })}
+                                                        onChange={(e) => handleComparisonDateChange(e.target.value)}
                                                         className="h-9 text-xs font-medium border-input bg-card" 
                                                     />
                                                 </div>
