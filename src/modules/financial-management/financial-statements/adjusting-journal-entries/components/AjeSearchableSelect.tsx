@@ -21,8 +21,10 @@ import { cn } from "@/lib/utils";
 
 import type { LookupOption } from "../types";
 
+type AjeSelectOption = LookupOption & { disabled?: boolean; disabledReason?: string };
+
 type AjeSearchableSelectProps = {
-  options: LookupOption[];
+  options: AjeSelectOption[];
   value?: string;
   onValueChange: (value: string) => void;
   placeholder?: string;
@@ -81,6 +83,8 @@ export function AjeSearchableSelect({
                 <CommandItem
                   key={option.value}
                   value={option.label}
+                  disabled={option.disabled}
+                  title={option.disabledReason}
                   onSelect={() => {
                     onValueChange(option.value);
                     setOpen(false);
@@ -92,7 +96,8 @@ export function AjeSearchableSelect({
                       value === option.value ? "opacity-100" : "opacity-0",
                     )}
                   />
-                  {option.label}
+                  <span className="truncate">{option.label}</span>
+                  {option.disabledReason && <span className="ml-auto shrink-0 text-xs text-muted-foreground">{option.disabledReason}</span>}
                 </CommandItem>
               ))}
             </CommandGroup>

@@ -26,6 +26,8 @@ export type AdjustingEntry = {
   originalEntryId: number | null;
   version: number;
   preparedBy: number | null;
+  preparedByName?: string | null;
+  preparedAt?: string | null;
   submittedBy: number | null;
   submittedByName: string | null;
   submittedAt: string | null;
@@ -68,6 +70,7 @@ export type AdjustingEntryPayload = {
   originalEntryId?: number | null;
   creationRequestKey?: string;
   version?: number;
+  saveAsDraft?: boolean;
   transactionDate: string;
   description: string;
   divisionId: number | null;

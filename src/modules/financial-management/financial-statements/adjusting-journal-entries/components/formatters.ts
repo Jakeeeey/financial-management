@@ -23,6 +23,12 @@ export function formatQueueAgeLabel(status: "Submitted" | "Approved" | "Failed",
 
 export function auditEventSummary(event: AjeAuditEvent) {
   if (event.reason?.trim()) return event.reason.trim();
+  if (event.action === "Withdrawn") {
+    const destination = event.changes.find(change => change.field === "Status")?.after;
+    if (destination === "Draft") return "Withdrawn to Draft";
+    if (destination === "For Revision") return "Withdrawn for revision";
+    return "Submission withdrawn";
+  }
   const summaries: Record<string, string> = {
     Created:"Adjusting entry created",
     Edited:"Journal details updated",
@@ -31,7 +37,6 @@ export function auditEventSummary(event: AjeAuditEvent) {
     Rejected:"Returned for revision",
     "Returned for Revision":"Returned for revision",
     "Workflow Migrated":"Workflow status updated",
-    Withdrawn:"Withdrawn for revision",
     "Revision Started":"Revision started",
     Cancelled:"Entry cancelled",
     Posted:"Posted to the General Ledger",

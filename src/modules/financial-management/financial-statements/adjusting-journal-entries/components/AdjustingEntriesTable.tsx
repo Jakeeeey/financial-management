@@ -20,6 +20,10 @@ export function availableActions(entry: AdjustingEntry): AjeAction[] {
   }
 }
 
+export function actionRequiresReason(entry: AdjustingEntry, action: AjeAction) {
+  return action === "reject" || action === "cancel" || action === "submit" && entry.status === "For Revision";
+}
+
 const creatorOnlyActions = new Set<AjeAction>(["submit", "withdraw", "revise", "cancel"]);
 
 export function isEntryCreator(entry: AdjustingEntry, userId?: number) {
@@ -33,6 +37,11 @@ export function isEntryPoster(entry: AdjustingEntry, userId?: number) {
 function availableActionsForUser(entry: AdjustingEntry, userId?: number) {
   const actions = availableActions(entry);
   return isEntryCreator(entry, userId) ? actions : actions.filter(action => !creatorOnlyActions.has(action));
+}
+
+export function actionsForPresentation(entry: AdjustingEntry, userId: number | undefined, creationView: boolean) {
+  if (creationView && entry.status === "Submitted") return [];
+  return availableActionsForUser(entry, userId).filter(action => !creationView || ["submit", "cancel"].includes(action));
 }
 
 export const actionLabels: Record<AjeAction, string> = { submit: "Submit", reject: "Return for revision", withdraw: "Withdraw", revise: "Revise", cancel: "Cancel entry", post: "Post", retry: "Retry posting" };
@@ -88,7 +97,7 @@ function EntryActions({ entry, userId, readOnly, onView, onAction, onReverse, co
   actionsDisabled?: boolean;
 }) {
   if (compactSummary) return <Button size="sm" variant="outline" disabled={actionsDisabled} onClick={event => onView(entry, false, event.currentTarget)}>View</Button>;
-  const actions = readOnly ? [] : availableActionsForUser(entry, userId).filter(action => !creationView || ["submit", "withdraw", "cancel"].includes(action));
+  const actions = readOnly ? [] : actionsForPresentation(entry, userId, creationView);
   const mainAction = actions.includes(primaryAction(entry) as AjeAction) ? primaryAction(entry) : null;
   const secondaryActions = actions.filter(action => action !== mainAction);
   const canEdit = !readOnly && entry.entryOrigin === "MANUAL" && ["Draft", "For Revision"].includes(entry.status) && isEntryCreator(entry, userId);
@@ -134,6 +143,26 @@ function EntryDescription({ entry, compactSummary = false }: { entry: AdjustingE
   </>;
 }
 
+function actorWithTime(name: string | null | undefined, timestamp: string | null | undefined) {
+  if (!name && !timestamp) return "—";
+  return `${name || "Name unavailable"} · ${timestamp ? formatDateTime(timestamp) : "Time unavailable"}`;
+}
+
+function EntryLifecycle({ entry }: { entry: AdjustingEntry }) {
+  const reviewEvents = [
+    { label: "Approved by", name: entry.approvedByName, timestamp: entry.approvedAt },
+    { label: "Returned by", name: entry.rejectedByName, timestamp: entry.rejectedAt },
+  ].filter(event => event.name || event.timestamp);
+
+  return <div className="space-y-1 break-words text-xs text-muted-foreground">
+    <p><span className="font-medium text-foreground">Prepared:</span> {actorWithTime(entry.preparedByName, entry.preparedAt)}</p>
+    <p><span className="font-medium text-foreground">Reviewed:</span> {reviewEvents.length
+      ? reviewEvents.map(event => `${event.label} ${actorWithTime(event.name, event.timestamp)}`).join("; ")
+      : "—"}</p>
+    <p><span className="font-medium text-foreground">Posted:</span> {actorWithTime(entry.postedByName, entry.datePosted)}</p>
+  </div>;
+}
+
 function EntriesSkeleton() {
   const row = (key: number) => <div key={key} className="flex items-center gap-4 border-t p-4">
     <div className="h-4 w-24 animate-pulse rounded bg-muted" />
@@ -169,10 +198,11 @@ export function AdjustingEntriesTable({ entries, presentation = "posting", loadi
     {loading && <p role="status" aria-live="polite" className="mb-2 text-xs font-medium text-muted-foreground">Updating…</p>}
     <div aria-busy={loading} className={loading ? "pointer-events-none opacity-60 transition-opacity" : "transition-opacity"}>
     <div className="hidden overflow-x-auto rounded-md border bg-background xl:block">
-      <table className={`w-full ${compactSummary ? "min-w-[900px]" : "min-w-[1100px]"} text-sm`}><thead className="bg-muted/30"><tr><th className="p-3 text-left">Journal / Reference</th><th className="p-3 text-left">Accounting date</th><th className="p-3 text-left">Description / Original</th><th className="p-3 text-left">Status</th><th className="p-3 text-right">Debit</th><th className="p-3 text-right">Credit</th><th className="p-3 text-right">Actions</th></tr></thead><tbody>
+      <table className="w-full min-w-[1100px] text-sm"><thead className="bg-muted/30"><tr><th className="p-3 text-left">Journal / Reference</th><th className="p-3 text-left">Accounting date</th><th className="p-3 text-left">Description / Original</th><th className="p-3 text-left">Status</th><th className="p-3 text-right">Debit</th><th className="p-3 text-right">Credit</th><th className="min-w-64 p-3 text-left">Prepared / Reviewed / Posted</th><th className="p-3 text-right">Actions</th></tr></thead><tbody>
         {entries.map(entry => <tr key={entry.id} className="border-t align-top"><td className="max-w-48 p-3"><p className="font-medium">{entry.jeNo}</p><p className="break-words text-xs text-muted-foreground">{entry.reference}</p>{!compactSummary && <p className="mt-1 text-xs text-muted-foreground">{entry.entryOrigin === "SYSTEM" ? "System journal" : entry.entryKind === "REVERSAL" ? "Reversal" : "Adjustment"}</p>}</td>
           <td className="whitespace-nowrap p-3">{formatDate(entry.transactionDate)}</td><td className="max-w-64 p-3"><EntryDescription entry={entry} compactSummary={compactSummary} /></td>
           <td className="p-3"><Badge variant="outline" className={statusBadgeClass(entry.status)}>{entry.status}</Badge>{!compactSummary && queueAge(entry) && <p className={`mt-1 whitespace-normal text-xs ${queueAge(entry)?.tone}`}>{queueAge(entry)?.label}</p>}{!compactSummary && queueTimestamp(entry) && <p className="mt-0.5 whitespace-nowrap text-xs text-muted-foreground">{entry.status === "Submitted" ? "Submitted" : entry.status === "Approved" ? "Approved" : "Last failed"}: {formatDateTime(queueTimestamp(entry))}</p>}</td><td className="p-3 text-right font-mono">{money(entry.totalDebit)}</td><td className="p-3 text-right font-mono">{money(entry.totalCredit)}</td>
+          <td className="min-w-64 p-3"><EntryLifecycle entry={entry} /></td>
           <td className="max-w-64 p-3"><EntryActions entry={entry} userId={userId} readOnly={readOnly} onView={onView} onAction={onAction} onReverse={onReverse} compactSummary={compactSummary} actionsDisabled={actionsDisabled} creationView={presentation === "creation"} /></td></tr>)}
       </tbody></table>
     </div>
@@ -186,6 +216,7 @@ export function AdjustingEntriesTable({ entries, presentation = "posting", loadi
         {compactSummary ? <p className="text-xs text-muted-foreground">Accounting date: {formatDate(entry.transactionDate)}</p> : <div className="grid grid-cols-2 gap-2 text-sm"><div><p className="text-xs text-muted-foreground">Accounting date</p><p>{formatDate(entry.transactionDate)}</p></div><div><p className="text-xs text-muted-foreground">Entry type</p><p>{entry.entryOrigin === "SYSTEM" ? "System journal" : entry.entryKind === "REVERSAL" ? "Reversal" : "Adjustment"}</p></div></div>}
         <div className="text-sm"><EntryDescription entry={entry} compactSummary={compactSummary} /></div>
         <div className="grid grid-cols-2 gap-2 rounded-md bg-muted/30 p-2 text-sm"><div><p className="text-xs text-muted-foreground">Debit</p><p className="font-mono">{money(entry.totalDebit)}</p></div><div><p className="text-xs text-muted-foreground">Credit</p><p className="font-mono">{money(entry.totalCredit)}</p></div></div>
+        <div className="rounded-md bg-muted/20 p-2"><EntryLifecycle entry={entry} /></div>
         {!compactSummary && queueAge(entry) && <div className={`rounded-md border p-2 text-xs ${queueAge(entry)?.containerTone}`}><p className="font-medium">{queueAge(entry)?.label}</p>{queueTimestamp(entry) && <p className="mt-0.5 text-muted-foreground">{entry.status === "Submitted" ? "Submitted" : entry.status === "Approved" ? "Approved" : "Last failed"}: {formatDateTime(queueTimestamp(entry))}</p>}</div>}
         <div className="border-t pt-3"><EntryActions entry={entry} userId={userId} readOnly={readOnly} onView={onView} onAction={onAction} onReverse={onReverse} compactSummary={compactSummary} actionsDisabled={actionsDisabled} creationView={presentation === "creation"} /></div>
       </article>)}
