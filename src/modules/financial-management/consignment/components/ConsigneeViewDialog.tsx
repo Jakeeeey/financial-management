@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { getConsignee } from "../providers/consignees.api";
-import type { ConsigneeDetail, ConsigneeSummary } from "../types";
+import { ConsigneeWorkflowActions } from "./ConsigneeWorkflowActions";
+import type { ConsigneeDetail, ConsigneeSummary, ConsignmentWorkspace } from "../types";
 
 export function manilaTime(value: string | null) {
   if (!value) return "Not recorded";
@@ -21,10 +22,12 @@ function Fields({ values }: { values: [string, string | number | null][] }) {
   </div>)}</dl>;
 }
 
-export function ConsigneeViewDialog({ selected, inspection, onClose, returnFocus }: {
-  selected: ConsigneeSummary | null; inspection: number; onClose: () => void; returnFocus: () => void;
+export function ConsigneeViewDialog({ selected, inspection, onClose, returnFocus, onEdit, workspace = "consignees", onChanged }: {
+  workspace?: ConsignmentWorkspace; onChanged: (detail: ConsigneeDetail) => void; onEdit: (detail: ConsigneeDetail) => void; selected: ConsigneeSummary | null; inspection: number; onClose: () => void; returnFocus: () => void;
 }) {
   const [result, setResult] = useState<{ key: string; detail: ConsigneeDetail | null; error: string | null } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [reasonState, setReasonState] = useState({ id: "", value: "" });
   const [attempt, setAttempt] = useState(0);
   const key = selected ? `${selected.id}:${inspection}:${attempt}` : "";
   const loading = selected !== null && result?.key !== key;
@@ -34,13 +37,13 @@ export function ConsigneeViewDialog({ selected, inspection, onClose, returnFocus
     if (!selected) return;
     const controller = new AbortController();
     let active = true;
-    getConsignee(selected.id, controller.signal).then(data => { if (active) setResult({ key, detail: data, error: null }); })
+    getConsignee(selected.id, controller.signal, workspace).then(data => { if (active) setResult({ key, detail: data, error: null }); })
       .catch(cause => { if (active) setResult({ key, detail: null, error: cause instanceof Error ? cause.message : "Unable to load consignee." }); });
     return () => { active = false; controller.abort(); };
-  }, [selected, key]);
+  }, [selected, key, workspace]);
   const defaults = detail?.defaults;
-  return <Dialog open={selected !== null} onOpenChange={open => { if (!open) onClose(); }}>
-    <DialogContent className="flex max-h-[90dvh] flex-col overflow-hidden sm:max-w-3xl" onCloseAutoFocus={event => { event.preventDefault(); returnFocus(); }}>
+  return <Dialog open={selected !== null} onOpenChange={open => { if (!open && !busy) onClose(); }}>
+    <DialogContent className="flex max-h-[90dvh] flex-col overflow-hidden sm:max-w-3xl" onEscapeKeyDown={event => { if (busy) event.preventDefault(); }} onInteractOutside={event => { if (busy) event.preventDefault(); }} onCloseAutoFocus={event => { event.preventDefault(); returnFocus(); }}>
       <DialogHeader className="shrink-0 pr-6">
         <DialogTitle>{selected?.name ?? "Consignee"}</DialogTitle>
         <DialogDescription>{selected?.code} · Read-only consignee details</DialogDescription>
@@ -66,11 +69,13 @@ export function ConsigneeViewDialog({ selected, inspection, onClose, returnFocus
           ]} /></section>}
           <section className="space-y-3 border-t pt-4"><h3 className="font-semibold">Record history</h3><Fields values={[
             ["Created by", detail.createdBy], ["Created", manilaTime(detail.createdAt)],
+            ["Submitted by", detail.submittedBy], ["Submitted", manilaTime(detail.submittedAt)], ["Reviewed", manilaTime(detail.reviewedAt)], ["Replaces consignee ID", detail.replacesConsigneeId],
             ["Reviewed by", detail.reviewedBy], ["Updated", manilaTime(detail.updatedAt)], ["Rejection reason", detail.rejectionReason],
           ]} /></section>
+          <ConsigneeWorkflowActions key={`${detail.summary.id}:${detail.version}:${workspace}`} detail={detail} workspace={workspace} reason={reasonState.id === detail.summary.id ? reasonState.value : ""} setReason={value => setReasonState({ id: detail.summary.id, value })} onBusy={setBusy} onChanged={onChanged} onReload={() => setAttempt(value => value + 1)} />
         </>}
       </div>
-      <DialogFooter className="shrink-0 border-t pt-4"><Button variant="outline" onClick={onClose}>Close</Button></DialogFooter>
+      <DialogFooter className="shrink-0 border-t pt-4">{detail?.editable && <Button disabled={busy} onClick={() => onEdit(detail)}>Edit draft</Button>}<Button disabled={busy} variant="outline" onClick={onClose}>Close</Button></DialogFooter>
     </DialogContent>
   </Dialog>;
 }

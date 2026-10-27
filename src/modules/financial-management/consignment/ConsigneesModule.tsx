@@ -7,10 +7,16 @@ import { Input } from "@/components/ui/input";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ConsigneeViewDialog, manilaTime } from "./components/ConsigneeViewDialog";
 import { useConsignees } from "./hooks/useConsignees";
-import type { ConsigneeSummary } from "./types";
+import { ConsigneeDraftDialog } from "./components/ConsigneeDraftDialog";
+import type { ConsigneeDetail, ConsigneeSummary, ConsignmentWorkspace } from "./types";
 
-export default function ConsigneesModule() {
-  const { query, setQuery, snapshot, loading, error, pending, refresh } = useConsignees();
+export default function ConsigneesModule({ workspace = "consignees" }: { workspace?: ConsignmentWorkspace }) {
+  const title = workspace === "consignees" ? "Consignees" : workspace === "my-submissions" ? "My Submissions" : "Approvals";
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const [status, setStatus] = useState(workspace === "consignees" ? "ALL" : "PENDING");
+  const { query, setQuery, snapshot, loading, error, pending, refresh } = useConsignees(workspace);
+  const [editor, setEditor] = useState<{ detail: ConsigneeDetail | null } | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<ConsigneeSummary | null>(null);
   const [inspection, setInspection] = useState(0);
@@ -23,16 +29,18 @@ export default function ConsigneesModule() {
   const pages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
 
   return <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4"><SidebarTrigger /><span className="truncate text-sm text-muted-foreground">Consignment / Consignees</span></header>
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4"><SidebarTrigger /><span className="truncate text-sm text-muted-foreground">Consignment / {title}</span></header>
     <main className="min-h-0 min-w-0 flex-1 space-y-5 overflow-y-auto p-4 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3"><div>
-        <h1 className="text-2xl font-semibold">Consignees</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Inspect consignee records and their default terms.</p>
-      </div><Button variant="outline" disabled={pending || denied} onClick={refresh}><RefreshCw className={pending ? "animate-spin" : ""} />Refresh</Button></div>
-      {!denied && <form className="flex flex-wrap items-end gap-2 rounded-lg border p-3" onSubmit={event => { event.preventDefault(); setQuery({ ...query, search: search.trim(), page: 1 }); }}>
+        <h1 ref={titleRef} tabIndex={-1} className="text-2xl font-semibold">{title}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{workspace === "consignees" ? "Create drafts and inspect consignee records and their default terms." : "Consignee records only. Review full details without leaving this workspace."}</p>
+      </div><div className="flex flex-wrap gap-2">{!denied && workspace === "consignees" && <Button onClick={event => { invoker.current = event.currentTarget; setEditor({ detail: null }); }}>New consignee</Button>}<Button variant="outline" disabled={pending || denied} onClick={refresh}><RefreshCw className={pending ? "animate-spin" : ""} />Refresh</Button></div></div>
+      {saved && <p role="status" className="rounded-lg border p-3 text-sm">{saved}</p>}
+      {!denied && <form className="flex flex-wrap items-end gap-2 rounded-lg border p-3" onSubmit={event => { event.preventDefault(); setQuery({ ...query, search: search.trim(), status, page: 1 }); }}>
         <div className="min-w-0 flex-1 basis-56"><label htmlFor="consignee-search" className="mb-2 block text-sm font-medium">Search consignees</label>
           <Input id="consignee-search" maxLength={200} value={search} onChange={event => setSearch(event.target.value)} placeholder="Code or consignee name" /></div>
-        <Button type="submit"><Search />Search</Button>
+        {workspace !== "consignees" && <div><label htmlFor="consignee-status" className="mb-2 block text-sm font-medium">Status</label><select id="consignee-status" className="h-10 rounded-md border bg-background px-3 focus-visible:outline-2 focus-visible:outline-ring" value={status} onChange={event => setStatus(event.target.value)}>{["PENDING","ACTIVE","REJECTED",...(workspace === "my-submissions" ? ["DRAFT"] : []),"ALL"].map(value => <option key={value} value={value}>{value === "ALL" ? "All statuses" : value}</option>)}</select></div>}
+        <Button type="submit"><Search />{workspace === "consignees" ? "Search" : "Apply filters"}</Button>
         <Button type="button" variant="outline" onClick={() => { setSearch(""); setQuery({ ...query, search: "", page: 1 }); }}>Clear search</Button>
       </form>}
       <div className="text-sm text-muted-foreground" role="status" aria-live="polite">
@@ -48,6 +56,7 @@ export default function ConsigneesModule() {
       {!snapshot && loading && <div aria-hidden="true" className="space-y-3 rounded-lg border p-4">{[0, 1, 2, 3].map(row => <div key={row} className="h-12 animate-pulse rounded bg-muted" />)}</div>}
       {data && <section className="overflow-hidden rounded-lg border" aria-label="Consignee register" aria-busy={pending}>
         <div className="space-y-1 border-b p-3 text-sm"><p>Showing {first}–{last} of {data.total} consignees</p>
+          {workspace !== "consignees" && <p className="text-muted-foreground">Applied status: {applied?.status}. {workspace === "my-submissions" ? "Your consignee records, including draft corrections." : "Pending and reviewed consignees. Self-review is blocked."}</p>}
           {applied?.search && <p className="break-words text-muted-foreground">Applied search: {applied.search}</p>}
           {pending && <p className="text-muted-foreground">Updating the requested page. The scope above describes the displayed results.</p>}
         </div>
@@ -74,6 +83,7 @@ export default function ConsigneesModule() {
         </div>
       </section>}
     </main>
-    <ConsigneeViewDialog selected={denied ? null : selected} inspection={inspection} onClose={() => setSelected(null)} returnFocus={() => invoker.current?.focus()} />
+    <ConsigneeViewDialog selected={denied ? null : selected} inspection={inspection} onClose={() => setSelected(null)} returnFocus={() => invoker.current?.isConnected ? invoker.current.focus() : titleRef.current?.focus()} workspace={workspace} onChanged={detail => { refresh(); setSaved(`${detail.summary.code}: ${detail.summary.status}.`); setSelected(detail.summary); setInspection(value => value + 1); }} onEdit={detail => { setSelected(null); setEditor({ detail }); }} />
+    {editor && !denied && <ConsigneeDraftDialog workspace={workspace} detail={editor.detail} onClose={() => setEditor(null)} returnFocus={() => invoker.current?.isConnected ? invoker.current.focus() : titleRef.current?.focus()} onSaved={detail => { setEditor(null); setSaved(`${detail.summary.code} saved as Draft. Search and pagination are retained; the saved record may be outside the displayed results.`); refresh(); setInspection(value => value + 1); setSelected(detail.summary); }} />}
   </div>;
 }
