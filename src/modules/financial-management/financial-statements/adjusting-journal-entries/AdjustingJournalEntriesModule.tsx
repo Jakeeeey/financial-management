@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AdjustingEntriesFilters } from "./components/AdjustingEntriesFilters";
-import { AdjustingEntriesTable, actionLabelForEntry } from "./components/AdjustingEntriesTable";
+import { actionRequiresReason, AdjustingEntriesTable, actionLabelForEntry } from "./components/AdjustingEntriesTable";
 import { AdjustingEntriesSummaryCards } from "./components/AdjustingEntriesSummaryCards";
 import { AjePeriodDialog } from "./components/AjePeriodDialog";
 import { AjeEntryEditorSkeleton } from "./components/AjeEntryEditorSkeleton";
@@ -30,8 +30,6 @@ const queueValues: PostingQueue[] = ["all","awaiting-my-review","ready-for-me-to
 const pageSizes = [10,20,50,100];
 const sortValues = ["lastActivity,desc","transactionDate,desc","transactionDate,asc","id,desc","jeNo,asc","status,asc"];
 const emptySummary: AdjustingEntrySummary = { draft:0, forRevision:0, submitted:0, approved:0, posted:0, rejected:0, cancelled:0, failed:0, voided:0, imbalanced:0, postedImbalanced:0, totalRecords:0, postedDebit:0, postedCredit:0, awaitingMyReview:0, readyForMeToPost:0, myDrafts:0 };
-const reasonRequired = new Set<AjeAction>(["reject","cancel"]);
-
 function validDate(value: string | null) {
   return value && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00`)) ? value : "";
 }
@@ -179,7 +177,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   const normalizedSearch = search.trim();
   const [searchDraft, setSearchDraft] = React.useState(search);
   const postingQueue = listFilters.queue || (initialView === "posting" && listFilters.status !== "All" ? "all" : savedPostingQueue || "ready-for-me-to-post");
-  const statusOptions = initialView === "creation" ? ["All","Drafts and revisions","Draft","For Revision","Submitted"] : initialView === "posting" ? ["All","Submitted","Failed","Posted"] : statuses;
+  const statusOptions = initialView === "creation" ? ["All","Drafts and revisions","Draft","For Revision","Submitted","Cancelled"] : initialView === "posting" ? ["All","Submitted","Failed","Posted"] : statuses;
   const status = initialView === "posting" && postingQueue !== "all" ? "All" : statusOptions.includes(listFilters.status) && listFilters.status !== "All" ? listFilters.status : initialView === "creation" && !searchParams.has("status") && listFilters.queue !== "my-drafts" ? "Draft" : "All";
   const workspace = initialView === "creation" || initialView === "posting" ? initialView : undefined;
   const startDate = listFilters.startDate;
@@ -621,7 +619,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   }
   async function executeAction(entry: AdjustingEntry, name: AjeAction) {
     if (commandLock.current) return;
-    if (reasonRequired.has(name) && !reason.trim()) { setActionError("A reason is required."); return; }
+    if (actionRequiresReason(entry,name) && !reason.trim()) { setActionError(name === "submit" ? "Revision notes are required before resubmitting." : "A reason is required."); return; }
     commandLock.current = true;
     setBusy(true);
     if (name === "post" || name === "retry") setReviewPostingError("");
@@ -630,8 +628,8 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
       const updated = await api.command(entry.id,name,entry.version,reason.trim() || undefined);
       if (name === "post" || name === "retry") { setReviewConfirmingPosting(false); setReviewPostingError(""); }
       else closeAction();
-      refreshEntriesAndSummary(); toast.success(`${actionLabelForEntry(entry, name)} completed - ${updated.jeNo || `Entry #${updated.id}`}`);
-      if (name === "withdraw" && initialView === "creation") updateFilters({ status:"For Revision",queue:"all" });
+      refreshEntriesAndSummary(); toast.success(name === "withdraw" ? `${updated.jeNo || `Entry #${updated.id}`} withdrawn to ${updated.status}` : `${actionLabelForEntry(entry, name)} completed - ${updated.jeNo || `Entry #${updated.id}`}`);
+      if (name === "withdraw" && initialView === "creation") updateFilters({ status:updated.status,queue:"all" });
       if (reviewEntry?.id === updated.id) { setReviewEntry(updated); setReviewDetails(updated); setReviewDetailsUpdatedAt(Date.now()); void refreshReviewAudit(updated.id); }
       if (name === "submit" && (initialView === "creation" || tab === "new")) finishEditing(updated);
       else if (name === "revise") { closeReview(); await view(updated,true); }
@@ -777,7 +775,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
       {tab === "summary" && summaryError && summaryUpdatedAt === null && <p role="status" className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">Summary counts are unavailable until they load successfully.</p>}
       {tab === "summary" && !(summaryError && summaryUpdatedAt === null) && <AdjustingEntriesSummaryCards summary={summary} loading={summaryLoading} actionsDisabled={countActionsDisabled} selectedStatus={status} onStatusSelect={value => updateFilters({ status:value === "All" ? null : value,queue:"all",unbalancedOnly:null })} showPostedAmounts onShowPosted={focusPosted} onInvestigatePosted={focusUnbalancedPosted} onShowUnbalancedDrafts={focusDrafts} />}
       {tab === "creation" && <div className="flex flex-wrap gap-2" aria-label="Creation status">
-        {([ ["Draft",summary.draft], ["For Revision",summary.forRevision], ["Submitted",summary.submitted] ] as const).map(([value,count]) => <Button key={value} type="button" size="sm" aria-pressed={status === value} variant={status === value ? "default" : "outline"} onClick={() => updateFilters({ status:value,queue:"all" })}>{value} ({summaryUpdatedAt === null ? "-" : count})</Button>)}
+        {([ ["Draft",summary.draft], ["For Revision",summary.forRevision], ["Submitted",summary.submitted], ["Cancelled",summary.cancelled] ] as const).map(([value,count]) => <Button key={value} type="button" size="sm" aria-pressed={status === value} variant={status === value ? "default" : "outline"} onClick={() => updateFilters({ status:value,queue:"all" })}>{value} ({summaryUpdatedAt === null ? "-" : count})</Button>)}
         <Button type="button" size="sm" variant={listFilters.queue === "my-drafts" ? "default" : "outline"} onClick={() => updateFilters({ status:"All",queue:"my-drafts" })}>My drafts and revisions</Button>
       </div>}
       {tab === "posting" && <>
@@ -804,14 +802,14 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>{totalElements > 0 ? `Showing ${page * pageSize + 1}–${Math.min((page + 1) * pageSize, totalElements)} of ${totalElements} entries · Page ${page + 1} of ${Math.max(totalPages, 1)}` : "0 entries"}</span><div className="flex gap-2"><Button variant="outline" size="icon-sm" aria-label="Go to first page" disabled={page === 0 || listLoading} onClick={() => updateListQuery({ page:"0" })}><ChevronsLeft className="h-4 w-4" /></Button><Button variant="outline" size="sm" disabled={page === 0 || listLoading} onClick={() => updateListQuery({ page:String(page - 1) })}>Previous</Button><Button variant="outline" size="sm" disabled={listLoading || page + 1 >= totalPages} onClick={() => updateListQuery({ page:String(page + 1) })}>Next</Button><Button variant="outline" size="icon-sm" aria-label="Go to last page" disabled={listLoading || page + 1 >= totalPages} onClick={() => updateListQuery({ page:String(Math.max(0, totalPages - 1)) })}><ChevronsRight className="h-4 w-4" /></Button></div></div>
     </>}
     {periodOpen && period && <AjePeriodDialog period={period} onClose={() => setPeriodOpen(false)} onSaved={value => { setPeriod(value); setPeriodUpdatedAt(Date.now()); setPeriodError(""); }} />}
-    <AlertDialog open={action !== null} onOpenChange={open => { if (!open && !busy) closeAction(); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{action ? `${actionLabelForEntry(action.entry, action.action)} ${action.entry.jeNo}?` : "Confirm action"}</AlertDialogTitle><AlertDialogDescription>{action?.action === "cancel" && action.entry.canCancelAfterReversalConflict ? "This cancels the failed full reversal and preserves the AJE and its audit history. It will not be permanently deleted." : action?.action === "post" || action?.action === "retry" ? "This commits the submitted entry to the General Ledger. Posted entries are read-only." : "This action updates the journal workflow and records an audit event."}</AlertDialogDescription></AlertDialogHeader>
+    <AlertDialog open={action !== null} onOpenChange={open => { if (!open && !busy) closeAction(); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{action ? `${actionLabelForEntry(action.entry, action.action)} ${action.entry.jeNo}?` : "Confirm action"}</AlertDialogTitle><AlertDialogDescription>{action?.action === "withdraw" ? "Withdrawal returns this entry to Draft so you can edit and resubmit it." : action?.action === "cancel" && action.entry.canCancelAfterReversalConflict ? "This cancels the failed full reversal and preserves the AJE and its audit history. It will not be permanently deleted." : action?.action === "post" || action?.action === "retry" ? "This commits the submitted entry to the General Ledger. Posted entries are read-only." : "This action updates the journal workflow and records an audit event."}</AlertDialogDescription></AlertDialogHeader>
       {action && ["post", "retry"].includes(action.action) ? <dl className="grid gap-3 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-2">
         <div><dt className="text-muted-foreground">Reference</dt><dd className="break-words font-medium">{action.entry.reference || "No reference"}</dd></div>
         <div><dt className="text-muted-foreground">Accounting date</dt><dd className="font-medium">{formatDate(action.entry.transactionDate)}</dd></div>
         <div><dt className="text-muted-foreground">Debit total</dt><dd className="font-medium">{money(action.entry.totalDebit)}</dd></div>
         <div><dt className="text-muted-foreground">Credit total</dt><dd className="font-medium">{money(action.entry.totalCredit)}</dd></div>
       </dl> : action && <div className="text-sm">Debit {money(action.entry.totalDebit)} | Credit {money(action.entry.totalCredit)}</div>}
-      {action && reasonRequired.has(action.action) && <div className="space-y-1"><Label htmlFor="aje-action-reason">Reason *</Label><Textarea id="aje-action-reason" maxLength={4000} value={reason} disabled={busy} onChange={e => setReason(e.target.value)} /></div>}
+      {action && actionRequiresReason(action.entry,action.action) && <div className="space-y-1"><Label htmlFor="aje-action-reason">{action.action === "submit" ? "Revision notes *" : "Reason *"}</Label>{action.action === "submit" && <p id="aje-action-reason-hint" className="text-xs text-muted-foreground">Explain how you addressed the requested revisions. This note will appear in the audit trail.</p>}<Textarea id="aje-action-reason" aria-describedby={action.action === "submit" ? "aje-action-reason-hint" : undefined} maxLength={4000} value={reason} disabled={busy} onChange={e => setReason(e.target.value)} /></div>}
       {actionError && <p role="alert" className="text-sm text-destructive">{actionError}</p>}
       <AlertDialogFooter><AlertDialogCancel disabled={busy}>{action?.action === "cancel" && action.entry.canCancelAfterReversalConflict ? "Keep AJE" : "Cancel"}</AlertDialogCancel><AlertDialogAction disabled={busy} onClick={event => runAction(event)}>{busy ? "Working…" : action ? actionLabelForEntry(action.entry, action.action) : "Confirm"}</AlertDialogAction></AlertDialogFooter>
     </AlertDialogContent></AlertDialog>
