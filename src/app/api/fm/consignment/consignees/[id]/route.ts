@@ -1,0 +1,11 @@
+import { NextRequest, NextResponse } from "next/server";
+import { readConsignment } from "../../_spring";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+export async function GET(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params;
+  if (!/^[1-9]\d*$/.test(id)) return NextResponse.json({ message: "Invalid consignee ID." }, { status: 400 });
+  return readConsignment(`/api/consignment/consignees/${encodeURIComponent(id)}`);
+}
