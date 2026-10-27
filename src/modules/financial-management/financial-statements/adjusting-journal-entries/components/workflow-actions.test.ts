@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { AdjustingEntry, AjeAuditEvent } from "../types";
+import type { AdjustingEntry, AdjustingEntrySummary, AjeAuditEvent } from "../types";
 import { actionRequiresReason, actionsForPresentation, AdjustingEntriesTable, availableActions, isEntryPoster } from "./AdjustingEntriesTable";
+import { canConfirmSubmission } from "./AjeReviewDialog";
+import { AdjustingEntriesSummaryCards } from "./AdjustingEntriesSummaryCards";
 import { auditEventSummary } from "./formatters";
 
 function entry(status: AdjustingEntry["status"], overrides: Partial<AdjustingEntry> = {}) {
@@ -11,6 +13,27 @@ function entry(status: AdjustingEntry["status"], overrides: Partial<AdjustingEnt
     variance: 0, transactionDate: "2026-10-26", status, entryOrigin: "MANUAL", creatorId: 24, preparedBy: 25, submittedBy: 26,
     canCancelAfterReversalConflict: false, ...overrides } as AdjustingEntry;
 }
+
+function summary(overrides: Partial<AdjustingEntrySummary> = {}): AdjustingEntrySummary {
+  return { draft: 2, forRevision: 1, posted: 3, voided: 0, imbalanced: 0, postedImbalanced: 0, totalRecords: 6,
+    submitted: 1, approved: 0, rejected: 0, cancelled: 0, failed: 0, postedDebit: 100, postedCredit: 90,
+    awaitingMyReview: 0, readyForMeToPost: 0, myDrafts: 0, ...overrides };
+}
+
+test("summary KPIs are static while targeted exception investigation remains actionable", () => {
+  const cards = renderToStaticMarkup(createElement(AdjustingEntriesSummaryCards, { summary: summary(), showPostedAmounts: true,
+    onInvestigatePosted: () => {}, onShowUnbalancedDrafts: () => {} }));
+  assert.equal(cards.includes("<button"), false);
+  assert.equal(cards.includes("Select a status count"), false);
+  assert.equal(cards.includes("Select to view posted journals"), false);
+  assert.ok(cards.includes("Posted entries"));
+  assert.ok(cards.includes("Awaiting posting"));
+
+  const exceptionCards = renderToStaticMarkup(createElement(AdjustingEntriesSummaryCards, { summary: summary({ imbalanced: 1, postedImbalanced: 1 }),
+    showPostedAmounts: true, onInvestigatePosted: () => {}, onShowUnbalancedDrafts: () => {} }));
+  assert.ok(exceptionCards.includes("Investigate unbalanced posted journals"));
+  assert.ok(exceptionCards.includes("Show unbalanced draft or revisions"));
+});
 
 test("drafts and revisions submit, submitted entries post, and approval is retired", () => {
   assert.deepEqual(availableActions(entry("For Revision")), ["submit", "cancel"]);
@@ -26,6 +49,14 @@ test("only resubmitting a revision requires creator notes in addition to reasone
   assert.equal(actionRequiresReason(entry("Submitted"), "reject"), true);
   assert.equal(actionRequiresReason(entry("Draft"), "cancel"), true);
   assert.equal(actionRequiresReason(entry("Submitted"), "post"), false);
+});
+
+test("submission preview waits for loaded review data and requires notes only for revisions", () => {
+  assert.equal(canConfirmSubmission(entry("Draft"), false, ""), false);
+  assert.equal(canConfirmSubmission(entry("Draft"), true, ""), true);
+  assert.equal(canConfirmSubmission(entry("For Revision"), true, "  "), false);
+  assert.equal(canConfirmSubmission(entry("For Revision"), true, "Addressed the requested change"), true);
+  assert.equal(canConfirmSubmission(entry("Submitted"), true, ""), false);
 });
 
 test("only an independent user may post regardless of historical approver", () => {

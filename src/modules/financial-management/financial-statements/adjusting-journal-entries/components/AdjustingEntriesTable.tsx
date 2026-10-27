@@ -3,8 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Printer } from "lucide-react";
-import { ajeEntryPrintUrl } from "../services/adjusting-journal-entries.api";
+import { MoreHorizontal } from "lucide-react";
 import type { AdjustingEntry, AjeAction } from "../types";
 import { formatDate, formatDateTime, formatQueueAgeLabel, money, statusBadgeClass } from "./formatters";
 
@@ -127,8 +126,6 @@ function EntryActions({ entry, userId, readOnly, onView, onAction, onReverse, co
         })}
         {!readOnly && !creationView && canReverse(entry) && <DropdownMenuItem disabled={actionsDisabled} onSelect={() => onReverse(entry)}>Reverse</DropdownMenuItem>}
         {selfReviewBlocked && <><DropdownMenuSeparator /><div className="px-2 py-1.5 text-xs text-amber-700">A different user must post or return this entry.</div></>}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild><a href={ajeEntryPrintUrl(entry.id,"pdf")} target="_blank" rel="noopener noreferrer"><Printer className="size-4" /> Print PDF</a></DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   </div>;

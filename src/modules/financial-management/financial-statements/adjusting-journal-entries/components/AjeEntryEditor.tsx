@@ -14,14 +14,14 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { AjeSearchableSelect } from "./AjeSearchableSelect";
 import { AjeDataFreshness, AjeRetryAlert } from "./AjeDataFreshness";
 import { money, formatDate, formatDateTime, todayManila } from "./formatters";
-import { ajeAttachmentPreviewUrl, ajeAttachmentThumbnailUrl, ajeAttachmentUrl, ajeEntryPrintUrl, adjustingJournalEntriesApi as api } from "../services/adjusting-journal-entries.api";
+import { ajeAttachmentPreviewUrl, ajeAttachmentThumbnailUrl, ajeAttachmentUrl, adjustingJournalEntriesApi as api } from "../services/adjusting-journal-entries.api";
 import { AjeAttachmentPreview, isPreviewableAjeImage } from "./AjeAttachmentPreview";
 import type { AdjustingEntry, AdjustingEntryPayload, AdjustingEntryPostedAdjustmentHistory, AdjustingEntrySourceJournal, AdjustingEntrySourceJournalSummary, AjeAccess, AjeAccount, AjeAction, AjeAttachment, AjeReversalPreview, DepartmentLookup, DivisionLookup } from "../types";
 
 type Line = { key: string; coaId: string; departmentId: string; description: string; debit: string; credit: string; originalDetailId: number | null };
 type Form = { reference: string; transactionDate: string; description: string; divisionId: string; sourceJeNo: string; entryKind: "ADJUSTMENT" | "REVERSAL"; originalEntryId: number | null; reversalMode: "FULL" | "PARTIAL" | null; details: Line[] };
 type SubmitBlocker = { message: string; selector: string };
-type Props = { initialEntry: AdjustingEntry | null; seed?: AdjustingEntryPayload | null; readOnly: boolean; hideTitle?: boolean; dirtyRef: React.MutableRefObject<boolean>; access: AjeAccess; accounts: AjeAccount[]; departments: DepartmentLookup[]; divisions: DivisionLookup[]; onSaved: (saveCompleted: boolean, entry: AdjustingEntry, submitting: boolean) => void; onAction: (entry: AdjustingEntry, action: AjeAction) => void };
+type Props = { initialEntry: AdjustingEntry | null; seed?: AdjustingEntryPayload | null; readOnly: boolean; hideTitle?: boolean; dirtyRef: React.MutableRefObject<boolean>; access: AjeAccess; accounts: AjeAccount[]; departments: DepartmentLookup[]; divisions: DivisionLookup[]; onSaved: (saveCompleted: boolean, entry: AdjustingEntry, submitting: boolean) => void; onAction: (entry: AdjustingEntry, action: AjeAction, trigger?: HTMLElement) => void };
 
 function CurrencyInput({ className, ...props }: React.ComponentPropsWithoutRef<typeof Input>) {
   return <div className="relative">
@@ -387,7 +387,7 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
     setForm(current => ({ ...current, sourceJeNo: "" }));
     closeSourcePicker();
   }
-  async function save(submit: boolean) {
+  async function save(submit: boolean, submitTrigger?: HTMLElement) {
     if (inFlight.current) return;
     setError("");
     setValidationMode(submit ? "submit" : "draft");
@@ -421,7 +421,7 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
       setValidationMode(null);
       setChecklistOpen(false);
       toast.success(`${saved.jeNo || `Entry #${saved.id}`} saved as ${saved.status}`);
-      if (submit) onAction(saved, "submit");
+      if (submit) onAction(saved, "submit", submitTrigger);
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to save this draft"); }
     finally { inFlight.current = false; setBusy(false); }
   }
@@ -472,7 +472,6 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
       <p>{validationFailed ? `Resolve these items before ${validationMode === "draft" ? "saving the draft" : "submitting"}:` : "Complete these requirements when you are ready to submit:"}</p>
       <ul className="list-inside list-disc space-y-1">{summaryBlockers.map((blocker, index) => <li key={`${blocker.message}-${index}`}><button type="button" className={`text-left underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring ${validationFailed ? "text-destructive" : "text-foreground"}`} onClick={() => focusBlocker(blocker.selector)}>{blocker.message}</button></li>)}</ul>
     </div>}
-    {entry && <a className="inline-block text-sm text-primary underline" href={ajeEntryPrintUrl(entry.id)} target="_blank" rel="noreferrer">Print journal</a>}
     {entry?.lastPostingError && <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm">Posting failed: {entry.lastPostingError}</div>}
 
     <section className="space-y-3 rounded-md border p-3 sm:p-4" aria-labelledby="aje-details-heading">
@@ -581,7 +580,7 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
         {validationFailed ? <p className="mt-1 text-xs text-muted-foreground">{validationBlockers.length} {validationBlockers.length === 1 ? "item needs" : "items need"} attention before {validationMode === "draft" ? "saving the draft" : "submission"}. <button type="button" className="underline underline-offset-2 hover:text-foreground" onClick={() => setSummaryFocusRequest(request => request + 1)}>Review errors</button></p>
           : submitBlockers.length > 0 ? <p className="mt-1 text-xs text-muted-foreground">Check the requirements when you are ready. <button type="button" className="underline underline-offset-2 hover:text-foreground" onClick={() => { setChecklistOpen(true); setSummaryFocusRequest(request => request + 1); }}>Show checklist</button></p> : <p className="mt-1 text-xs text-muted-foreground">Ready to submit for posting.</p>}
       </div>
-      <div className="flex shrink-0 justify-end gap-2"><Button type="button" variant="outline" disabled={busy || sourceBusy} onClick={() => void save(false)}>{busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Save className="mr-2 size-4" />}{!entry && reversal ? "Save for Revision" : "Save Draft"}</Button><Button type="button" disabled={busy || sourceBusy} onClick={() => void save(true)}><Send className="mr-2 size-4" />Save & Submit</Button></div>
+      <div className="flex shrink-0 justify-end gap-2"><Button type="button" variant="outline" disabled={busy || sourceBusy} onClick={() => void save(false)}>{busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Save className="mr-2 size-4" />}{!entry && reversal ? "Save for Revision" : "Save Draft"}</Button><Button type="button" disabled={busy || sourceBusy} onClick={event => void save(true,event.currentTarget)}><Send className="mr-2 size-4" />Save & Submit</Button></div>
     </div>}
     <AlertDialog open={pendingSource !== null} onOpenChange={open => { if (!open) setPendingSource(null); }}><AlertDialogContent onCloseAutoFocus={event => { event.preventDefault(); if (sourcePickerOpen) sourceResultTriggerRef.current?.focus(); else sourcePickerTriggerRef.current?.focus(); }}>
       <AlertDialogHeader><AlertDialogTitle>Replace the current entry details?</AlertDialogTitle><AlertDialogDescription>Selecting this original journal will replace the reference, narration, and journal lines. The accounting date, division, and supporting documents will stay unchanged.</AlertDialogDescription></AlertDialogHeader>
