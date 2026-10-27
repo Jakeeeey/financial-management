@@ -100,6 +100,8 @@ function EntryActions({ entry, userId, readOnly, onView, onAction, onReverse, co
   const mainAction = actions.includes(primaryAction(entry) as AjeAction) ? primaryAction(entry) : null;
   const secondaryActions = actions.filter(action => action !== mainAction);
   const canEdit = !readOnly && entry.entryOrigin === "MANUAL" && ["Draft", "For Revision"].includes(entry.status) && isEntryCreator(entry, userId);
+  const showReverse = !readOnly && !creationView && canReverse(entry);
+  const hasMoreActions = canEdit || secondaryActions.length > 0 || showReverse;
   const selfReviewBlocked = !readOnly && userId != null && ["post", "retry", "reject"].some(action => actions.includes(action as AjeAction)) && isSelfApproval(entry, userId);
   const postingActionBlocked = !readOnly && actions.some(action => ["post", "retry"].includes(action)) && !isEntryPoster(entry, userId);
   const postingActionTitle = "Another user must post this entry because you created, prepared, or submitted it.";
@@ -114,7 +116,7 @@ function EntryActions({ entry, userId, readOnly, onView, onAction, onReverse, co
     {mainAction && <Button size="sm" variant={mainAction === "cancel" && entry.canCancelAfterReversalConflict ? "destructive" : ["post", "retry", "submit"].includes(mainAction) ? "default" : "outline"} disabled={actionsDisabled || mainActionDisabled} title={mainActionTitle} onClick={event => onAction(entry, mainAction, event.currentTarget)}>{actionLabelForEntry(entry, mainAction)}</Button>}
     {!readOnly && selfReviewBlocked && <p className="basis-full text-xs text-amber-700">You created, prepared, or submitted this entry. Another user must review it.</p>}
     {postingActionBlocked && <p className="basis-full text-xs text-amber-700">{postingActionTitle}</p>}
-    <DropdownMenu>
+    {hasMoreActions && <DropdownMenu>
       <DropdownMenuTrigger asChild><Button size="sm" variant="outline" disabled={actionsDisabled} aria-label={`More actions for ${entry.jeNo}`}><MoreHorizontal className="size-4 sm:mr-1" /><span className="hidden sm:inline">More</span></Button></DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel>More actions</DropdownMenuLabel>
@@ -124,10 +126,10 @@ function EntryActions({ entry, userId, readOnly, onView, onAction, onReverse, co
           const blockedByPostingApprover = ["post", "retry"].includes(action) && !isEntryPoster(entry, userId);
           return <DropdownMenuItem key={action} disabled={actionsDisabled || blockedBySelfApproval || blockedByPostingApprover} title={blockedByPostingApprover ? postingActionTitle : undefined} onSelect={event => onAction(entry, action, event.currentTarget as HTMLElement)}>{actionLabelForEntry(entry, action)}</DropdownMenuItem>;
         })}
-        {!readOnly && !creationView && canReverse(entry) && <DropdownMenuItem disabled={actionsDisabled} onSelect={() => onReverse(entry)}>Reverse</DropdownMenuItem>}
+        {showReverse && <DropdownMenuItem disabled={actionsDisabled} onSelect={() => onReverse(entry)}>Reverse</DropdownMenuItem>}
         {selfReviewBlocked && <><DropdownMenuSeparator /><div className="px-2 py-1.5 text-xs text-amber-700">A different user must post or return this entry.</div></>}
       </DropdownMenuContent>
-    </DropdownMenu>
+    </DropdownMenu>}
   </div>;
 }
 
