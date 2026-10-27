@@ -9,3 +9,9 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
   if (!/^[1-9]\d*$/.test(id)) return NextResponse.json({ message: "Invalid consignee ID." }, { status: 400 });
   return readConsignment(`/api/consignment/consignees/${encodeURIComponent(id)}`);
 }
+
+export async function PUT(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params;
+  if (!/^[1-9]\d*$/.test(id)) return NextResponse.json({ message: "Invalid consignee ID." }, { status: 400 });
+  return readConsignment(`/api/consignment/consignees/${encodeURIComponent(id)}`, { method: "PUT", body: await request.text() });
+}
