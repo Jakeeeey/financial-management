@@ -2,17 +2,17 @@
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { MoreHorizontal } from "lucide-react";
 import type { AdjustingEntry, AjeAction } from "../types";
 import { formatDate, formatDateTime, formatQueueAgeLabel, money, statusBadgeClass } from "./formatters";
 
 export function availableActions(entry: AdjustingEntry): AjeAction[] {
-  if (entry.entryOrigin !== "MANUAL") return [];
+  if (entry.entryOrigin !== "MANUAL" || entry.finallyRejected) return [];
   switch (entry.status) {
     case "Draft":
     case "For Revision": return ["submit", "cancel"];
-    case "Submitted": return ["post", "reject", "withdraw", "cancel"];
+    case "Submitted": return ["post", "reject", "reject-final", "withdraw", "cancel"];
     case "Rejected": return ["revise", "cancel"];
     case "Failed": return entry.canCancelAfterReversalConflict ? ["cancel"] : ["retry", "revise", "cancel"];
     default: return [];
@@ -20,7 +20,7 @@ export function availableActions(entry: AdjustingEntry): AjeAction[] {
 }
 
 export function actionRequiresReason(entry: AdjustingEntry, action: AjeAction) {
-  return action === "reject" || action === "cancel" || action === "submit" && entry.status === "For Revision";
+  return action === "reject" || action === "reject-final" || action === "cancel" || action === "submit" && entry.status === "For Revision";
 }
 
 const creatorOnlyActions = new Set<AjeAction>(["submit", "withdraw", "revise", "cancel"]);
@@ -30,7 +30,7 @@ export function isEntryCreator(entry: AdjustingEntry, userId?: number) {
 }
 
 export function isEntryPoster(entry: AdjustingEntry, userId?: number) {
-  return userId != null && entry.entryOrigin === "MANUAL" && !isSelfApproval(entry, userId);
+  return userId != null && entry.entryOrigin === "MANUAL";
 }
 
 function availableActionsForUser(entry: AdjustingEntry, userId?: number) {
@@ -40,17 +40,15 @@ function availableActionsForUser(entry: AdjustingEntry, userId?: number) {
 
 export function actionsForPresentation(entry: AdjustingEntry, userId: number | undefined, creationView: boolean) {
   if (creationView && entry.status === "Submitted") return [];
-  return availableActionsForUser(entry, userId).filter(action => !creationView || ["submit", "cancel"].includes(action));
+  return availableActionsForUser(entry, userId).filter(action => creationView
+    ? ["submit", "cancel"].includes(action)
+    : ["post", "retry", "reject", "reject-final"].includes(action));
 }
 
-export const actionLabels: Record<AjeAction, string> = { submit: "Submit", reject: "Return for revision", withdraw: "Withdraw", revise: "Revise", cancel: "Cancel entry", post: "Post", retry: "Retry posting" };
+export const actionLabels: Record<AjeAction, string> = { submit: "Submit", "reject-final": "Reject", reject: "Return for revision", withdraw: "Withdraw", revise: "Revise", cancel: "Cancel entry", post: "Post", retry: "Retry posting" };
 
 export function actionLabelForEntry(entry: AdjustingEntry, action: AjeAction) {
   return action === "cancel" && entry.canCancelAfterReversalConflict ? "Delete AJE" : actionLabels[action];
-}
-
-export function isSelfApproval(entry: AdjustingEntry, userId?: number) {
-  return userId != null && [entry.creatorId, entry.preparedBy, entry.submittedBy].includes(userId);
 }
 
 function queueAge(entry: AdjustingEntry) {
@@ -99,35 +97,22 @@ function EntryActions({ entry, userId, readOnly, onView, onAction, onReverse, co
   const actions = readOnly ? [] : actionsForPresentation(entry, userId, creationView);
   const mainAction = actions.includes(primaryAction(entry) as AjeAction) ? primaryAction(entry) : null;
   const secondaryActions = actions.filter(action => action !== mainAction);
-  const canEdit = !readOnly && entry.entryOrigin === "MANUAL" && ["Draft", "For Revision"].includes(entry.status) && isEntryCreator(entry, userId);
+  const canEdit = creationView && !readOnly && entry.entryOrigin === "MANUAL" && ["Draft", "For Revision"].includes(entry.status) && isEntryCreator(entry, userId);
   const showReverse = !readOnly && !creationView && canReverse(entry);
   const hasMoreActions = canEdit || secondaryActions.length > 0 || showReverse;
-  const selfReviewBlocked = !readOnly && userId != null && ["post", "retry", "reject"].some(action => actions.includes(action as AjeAction)) && isSelfApproval(entry, userId);
-  const postingActionBlocked = !readOnly && actions.some(action => ["post", "retry"].includes(action)) && !isEntryPoster(entry, userId);
-  const postingActionTitle = "Another user must post this entry because you created, prepared, or submitted it.";
-  const mainActionDisabled = mainAction === "post" && isSelfApproval(entry, userId)
-    || ["post", "retry"].includes(mainAction || "") && !isEntryPoster(entry, userId);
-  const mainActionTitle = mainAction === "post" && isSelfApproval(entry, userId)
-    ? "Another user must review your submission"
-    : ["post", "retry"].includes(mainAction || "") && !isEntryPoster(entry, userId) ? postingActionTitle : undefined;
 
   return <div className="flex flex-wrap items-center gap-1.5">
     <Button size="sm" variant="outline" disabled={actionsDisabled} onClick={event => onView(entry, false, event.currentTarget)}>View</Button>
-    {mainAction && <Button size="sm" variant={mainAction === "cancel" && entry.canCancelAfterReversalConflict ? "destructive" : ["post", "retry", "submit"].includes(mainAction) ? "default" : "outline"} disabled={actionsDisabled || mainActionDisabled} title={mainActionTitle} onClick={event => onAction(entry, mainAction, event.currentTarget)}>{actionLabelForEntry(entry, mainAction)}</Button>}
-    {!readOnly && selfReviewBlocked && <p className="basis-full text-xs text-amber-700">You created, prepared, or submitted this entry. Another user must review it.</p>}
-    {postingActionBlocked && <p className="basis-full text-xs text-amber-700">{postingActionTitle}</p>}
+    {mainAction && <Button size="sm" variant={mainAction === "cancel" && entry.canCancelAfterReversalConflict ? "destructive" : ["post", "retry", "submit"].includes(mainAction) ? "default" : "outline"} disabled={actionsDisabled} onClick={event => onAction(entry, mainAction, event.currentTarget)}>{actionLabelForEntry(entry, mainAction)}</Button>}
     {hasMoreActions && <DropdownMenu>
       <DropdownMenuTrigger asChild><Button size="sm" variant="outline" disabled={actionsDisabled} aria-label={`More actions for ${entry.jeNo}`}><MoreHorizontal className="size-4 sm:mr-1" /><span className="hidden sm:inline">More</span></Button></DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel>More actions</DropdownMenuLabel>
         {canEdit && <DropdownMenuItem onSelect={() => onView(entry, true)}>Edit</DropdownMenuItem>}
         {secondaryActions.map(action => {
-          const blockedBySelfApproval = ["post", "retry", "reject"].includes(action) && isSelfApproval(entry, userId);
-          const blockedByPostingApprover = ["post", "retry"].includes(action) && !isEntryPoster(entry, userId);
-          return <DropdownMenuItem key={action} disabled={actionsDisabled || blockedBySelfApproval || blockedByPostingApprover} title={blockedByPostingApprover ? postingActionTitle : undefined} onSelect={event => onAction(entry, action, event.currentTarget as HTMLElement)}>{actionLabelForEntry(entry, action)}</DropdownMenuItem>;
+          return <DropdownMenuItem key={action} disabled={actionsDisabled} onSelect={event => onAction(entry, action, event.currentTarget as HTMLElement)}>{actionLabelForEntry(entry, action)}</DropdownMenuItem>;
         })}
         {showReverse && <DropdownMenuItem disabled={actionsDisabled} onSelect={() => onReverse(entry)}>Reverse</DropdownMenuItem>}
-        {selfReviewBlocked && <><DropdownMenuSeparator /><div className="px-2 py-1.5 text-xs text-amber-700">A different user must post or return this entry.</div></>}
       </DropdownMenuContent>
     </DropdownMenu>}
   </div>;
@@ -150,11 +135,11 @@ function actorWithTime(name: string | null | undefined, timestamp: string | null
 function EntryLifecycle({ entry }: { entry: AdjustingEntry }) {
   const reviewEvents = [
     { label: "Approved by", name: entry.approvedByName, timestamp: entry.approvedAt },
-    { label: "Returned by", name: entry.rejectedByName, timestamp: entry.rejectedAt },
+    { label: entry.finallyRejected ? "Rejected by" : "Returned by", name: entry.rejectedByName, timestamp: entry.rejectedAt },
   ].filter(event => event.name || event.timestamp);
 
   return <div className="space-y-1 break-words text-xs text-muted-foreground">
-    <p><span className="font-medium text-foreground">Prepared:</span> {actorWithTime(entry.preparedByName, entry.preparedAt)}</p>
+    <p><span className="font-medium text-foreground">Prepared:</span> {entry.preparedByName || entry.preparedBy != null || entry.preparedAt ? actorWithTime(entry.preparedByName || (entry.preparedBy != null ? `User #${entry.preparedBy}` : undefined), entry.preparedAt) : "Preparation details unavailable"}</p>
     <p><span className="font-medium text-foreground">Reviewed:</span> {reviewEvents.length
       ? reviewEvents.map(event => `${event.label} ${actorWithTime(event.name, event.timestamp)}`).join("; ")
       : "—"}</p>

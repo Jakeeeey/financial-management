@@ -19,6 +19,7 @@ export type AdjustingEntry = {
   transactionDate: string;
   description: string;
   status: AdjustingEntryStatus;
+  finallyRejected?: boolean;
   reference: string | null;
   entryOrigin: "MANUAL" | "SYSTEM";
   entryKind: "ADJUSTMENT" | "REVERSAL";
@@ -234,7 +235,7 @@ export type DepartmentLookup = {
 };
 
 export type AjeAccess = { userId: number; userName: string };
-export type AjeAction = "submit" | "reject" | "withdraw" | "revise" | "cancel" | "post" | "retry";
+export type AjeAction = "submit" | "reject" | "reject-final" | "withdraw" | "revise" | "cancel" | "post" | "retry";
 export type AjeAccount = { id: number; label: string; accountTypeId: number | null; accountTypeName: string | null; departmentRequired: boolean };
 export type AjeAttachment = { id: number; entryId: number; fileId: string; filename: string; mimeType: string; fileSize: number; state: string; uploadedByName: string; uploadedAt: string };
 export type AjePeriod = { closedThroughDate: string | null; version: number; updatedByName: string | null; updatedAt: string | null };

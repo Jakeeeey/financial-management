@@ -59,9 +59,10 @@ test("submission preview waits for loaded review data and requires notes only fo
   assert.equal(canConfirmSubmission(entry("Submitted"), true, ""), false);
 });
 
-test("only an independent user may post regardless of historical approver", () => {
+test("authorized users may post their own entries regardless of historical approver", () => {
   const submitted = entry("Submitted", { approvedBy: 24 });
-  for (const actor of [24, 25, 26, undefined]) assert.equal(isEntryPoster(submitted, actor), false);
+  for (const actor of [24, 25, 26]) assert.equal(isEntryPoster(submitted, actor), true);
+  assert.equal(isEntryPoster(submitted, undefined), false);
   assert.equal(isEntryPoster(submitted, 27), true);
   assert.equal(isEntryPoster(entry("Submitted", { entryOrigin: "SYSTEM" }), 27), false);
 });
@@ -69,7 +70,7 @@ test("only an independent user may post regardless of historical approver", () =
 test("Submitted entries are view only in Creation while creator workflow actions remain in Posting", () => {
   const submitted = entry("Submitted");
   assert.deepEqual(actionsForPresentation(submitted, 24, true), []);
-  assert.deepEqual(actionsForPresentation(submitted, 24, false), ["post", "reject", "withdraw", "cancel"]);
+  assert.deepEqual(actionsForPresentation(submitted, 24, false), ["post", "reject", "reject-final"]);
   assert.deepEqual(actionsForPresentation(submitted, 27, true), []);
   assert.deepEqual(actionsForPresentation(entry("Draft"), 24, true), ["submit", "cancel"]);
 });
@@ -136,4 +137,11 @@ test("withdrawal events without a recorded destination use neutral wording", () 
 
 test("withdrawal audit retains explicitly recorded reasons", () => {
   assert.equal(auditEventSummary(withdrawalEvent({ reason: "  Correct the reference  " })), "Correct the reference");
+});
+
+test("final rejection is terminal and posting excludes creator maintenance actions", () => {
+  assert.deepEqual(availableActions(entry("Rejected", { finallyRejected: true })), []);
+  assert.deepEqual(actionsForPresentation(entry("Submitted"), 24, false), ["post", "reject", "reject-final"]);
+  assert.equal(actionRequiresReason(entry("Submitted"), "reject-final"), true);
+  assert.ok(availableActions(entry("Rejected")).includes("revise"));
 });
