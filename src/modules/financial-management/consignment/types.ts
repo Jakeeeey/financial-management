@@ -7,11 +7,16 @@ export type ConsigneeSummary = {
   email: string | null;
   phone: string | null;
   status: string;
+  createdBy?: string | null;
+  createdByMe?: boolean;
+  submittedAt?: string | null;
+  updatedAt?: string | null;
+  rejectionReason?: string | null;
 };
 
 export type ConsignmentWorkspace = "consignees" | "my-submissions" | "approvals";
 export type ConsigneeQuery = { search: string; page: number; pageSize: number; status?: string };
-export type ConsigneePage = { items: ConsigneeSummary[]; page: number; pageSize: number; total: number };
+export type ConsigneePage = { items: ConsigneeSummary[]; page: number; pageSize: number; total: number; statusCounts?: Record<string, number> };
 export type ConsigneeDetail = {
   summary: ConsigneeSummary;
   legalName: string | null;
@@ -35,6 +40,7 @@ export type ConsigneeDetail = {
   canSubmit: boolean;
   canReview: boolean;
   canReplace: boolean;
+  canWithdraw?: boolean;
   reviewRestriction: string | null;
   defaults: {
     commissionRate: number | null;

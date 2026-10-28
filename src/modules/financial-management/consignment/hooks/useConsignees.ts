@@ -5,7 +5,7 @@ import { ConsigneeReadError, listConsignees } from "../providers/consignees.api"
 import type { ConsigneePage, ConsigneeQuery, ConsignmentWorkspace } from "../types";
 
 export function useConsignees(workspace: ConsignmentWorkspace = "consignees") {
-  const [query, setStoredQuery] = useState<ConsigneeQuery>({ search: "", page: 1, pageSize: 25, status: workspace === "consignees" ? "ALL" : "PENDING" });
+  const [query, setStoredQuery] = useState<ConsigneeQuery>({ search: "", page: 1, pageSize: 25, status: workspace === "approvals" ? "PENDING" : "ALL" });
   const [revision, setRevision] = useState(0);
   const [snapshot, setSnapshot] = useState<{ data: ConsigneePage; query: ConsigneeQuery; key: string; updated: string } | null>(null);
   const [completed, setCompleted] = useState<{ key: string; error: ConsigneeReadError | null } | null>(null);

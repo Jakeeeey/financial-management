@@ -1,51 +1,65 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { ConsigneeSaveError, consigneeCommand } from "../providers/consignees.api";
-import type { ConsigneeDetail, ConsignmentWorkspace } from "../types";
+import type { ConsigneeSaveError } from "../providers/consignees.api";
+import type { ConsigneeDetail } from "../types";
+import type { ConsigneeWorkflowIntent } from "../hooks/useConsigneeWorkflow";
 
-export function ConsigneeWorkflowActions({ detail, workspace, reason, setReason, onChanged, onReload, onBusy }: {
-  detail: ConsigneeDetail; workspace: ConsignmentWorkspace; reason: string; setReason: (value: string) => void;
-  onChanged: (detail: ConsigneeDetail) => void; onReload: () => void; onBusy: (value: boolean) => void;
+const CONFIRM_LABELS: Record<ConsigneeWorkflowIntent, string> = {
+  submit: "Confirm submission",
+  approve: "Confirm approval",
+  reject: "Confirm rejection",
+  "replacement-draft": "Confirm replacement draft",
+  withdraw: "Confirm withdrawal",
+};
+
+export function ConsigneeWorkflowFeedback({ detail, intent, failure, busy, reason, setReason, onReload }: {
+  detail: ConsigneeDetail; intent: ConsigneeWorkflowIntent | null; failure: ConsigneeSaveError | null; busy: boolean;
+  reason: string; setReason: (value: string) => void; onReload: () => void;
 }) {
-  const [intent, setIntent] = useState<string | null>(null);
-  const [failure, setFailure] = useState<ConsigneeSaveError | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [requestId] = useState(() => crypto.randomUUID());
-  const mustReload = !!failure && (failure.status === 409 || failure.status === 401 || failure.status === 403 || ((failure.status === 0 || failure.status >= 500) && intent !== "replacement-draft"));
-  async function execute() {
-    if (!intent || busy || mustReload) return;
-    if (intent === "reject" && (!reason.trim() || reason.trim().length > 1000)) {
-      setFailure(new ConsigneeSaveError("Enter a rejection reason of 1 to 1,000 characters.", 400)); return;
-    }
-    setBusy(true); onBusy(true); setFailure(null);
-    try {
-      const result = await consigneeCommand(workspace,detail.summary.id,intent,detail.version,reason,requestId);
-      setReason(""); onChanged(result);
-    } catch (cause) { setFailure(cause instanceof ConsigneeSaveError ? cause : new ConsigneeSaveError("The action could not be confirmed. Reload the preview to check its saved status.",0)); }
-    finally { setBusy(false); onBusy(false); }
-  }
-  const labels: Record<string,string> = { submit: "Confirm submission", approve: "Confirm approval", reject: "Confirm rejection", "replacement-draft": "Create replacement draft" };
+  const confirmationRef = useRef<HTMLDivElement>(null);
+  const rejectionRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!intent) return;
+    confirmationRef.current?.scrollIntoView({ block: "nearest" });
+    if (intent === "reject" || intent === "withdraw") rejectionRef.current?.focus();
+  }, [intent]);
+
+  if (!detail.reviewRestriction && !failure && !intent) return null;
+
   return <section className="space-y-3 border-t pt-4" aria-label="Consignee workflow actions">
     {detail.reviewRestriction && <p className="rounded border p-3 text-sm">{detail.reviewRestriction}</p>}
     {failure && <div role="alert" className="space-y-2 rounded border border-destructive p-3 text-sm"><p>{failure.message}</p>
-      {Object.entries(failure.fields).map(([field,message]) => <p key={field}>{message}</p>)}
-      {detail.editable && Object.keys(failure.fields).length > 0 && <p>Use Edit draft below to complete these fields, save, then review and submit again.</p>}
+      {Object.entries(failure.fields).map(([field, message]) => <p key={field}>{message}</p>)}
+      {detail.editable && Object.keys(failure.fields).length > 0 && <p>Use Edit draft in the footer to complete these fields, save, then review and submit again.</p>}
       <Button variant="outline" disabled={busy} onClick={onReload}>Reload preview</Button>
     </div>}
-    {!intent && <div className="flex flex-wrap gap-2">
-      {detail.canSubmit && <Button onClick={() => setIntent("submit")}>Review and submit</Button>}
-      {detail.canReview && <><Button onClick={() => setIntent("approve")}>Approve consignee</Button><Button variant="destructive" onClick={() => setIntent("reject")}>Reject</Button></>}
-      {detail.canReplace && <Button onClick={() => setIntent("replacement-draft")}>Create replacement draft</Button>}
-    </div>}
-    {intent && <div className="space-y-3 rounded-lg border p-3">
-      <p className="text-sm">{intent === "submit" ? "Submit this saved consignee for independent review? Its fields will be locked." : intent === "approve" ? "Approve this consignee to Active? No agreement, inventory movement, or accounting entry will be created." : intent === "reject" ? "Reject this submission? Its saved details and your reason will remain in history." : "Create a new draft with a new CS-CON code and a link to this rejected record? The original will remain unchanged."}</p>
-      {intent === "reject" && <div><label htmlFor="consignee-rejection-reason" className="mb-1 block text-sm font-medium">Rejection reason (required)</label>
-        <textarea id="consignee-rejection-reason" maxLength={1000} required rows={3} className="w-full rounded-md border bg-background p-2 text-sm focus-visible:outline-2 focus-visible:outline-ring" value={reason} disabled={busy} onChange={event => setReason(event.target.value)} aria-describedby="consignee-reason-hint" />
-        <p id="consignee-reason-hint" className="text-sm text-muted-foreground">Explain the changes needed. Up to 1,000 characters.</p></div>}
-      <div className="flex flex-wrap gap-2"><Button disabled={busy || mustReload} onClick={() => void execute()}>{busy ? "Please wait..." : labels[intent]}</Button><Button variant="outline" disabled={busy || mustReload} onClick={() => { setIntent(null); setFailure(null); }}>Cancel action</Button></div>
+    {intent && <div ref={confirmationRef} className="space-y-3 rounded-lg border p-3">
+      <p className="text-sm">{intent === "submit" ? "Submit this saved consignee for independent review? Its fields will be locked." : intent === "approve" ? "Approve this consignee to Active? No agreement, inventory movement, or accounting entry will be created." : intent === "reject" ? "Reject this submission? Its saved details and your reason will remain in history." : intent === "withdraw" ? "Withdraw this submission back to Draft? It will leave the approval queue and become editable." : "Create a new draft with a new CS-CON code and a link to this rejected record? The original will remain unchanged."}</p>
+      {(intent === "reject" || intent === "withdraw") && <div>
+        <label htmlFor="consignee-workflow-note" className="mb-1 block text-sm font-medium">{intent === "reject" ? "Rejection reason (required)" : "Withdrawal note (optional)"}</label>
+        <textarea ref={rejectionRef} id="consignee-workflow-note" maxLength={1000} required={intent === "reject"} rows={3} className="w-full rounded-md border bg-background p-2 text-sm focus-visible:outline-2 focus-visible:outline-ring" value={reason} disabled={busy} onChange={event => setReason(event.target.value)} aria-describedby="consignee-workflow-note-hint" />
+        <div id="consignee-workflow-note-hint" className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground"><span>{intent === "reject" ? "Explain the changes needed." : "Optionally record why this submission is being withdrawn."}</span><span aria-live="polite">{reason.length}/1,000</span></div>
+      </div>}
     </div>}
     <p role="status" className="text-sm text-muted-foreground">{busy ? "Saving the workflow action. Please wait." : ""}</p>
   </section>;
+}
+
+export function ConsigneeWorkflowFooterActions({ detail, intent, busy, mustReload, confirmDisabled, onRequest, onCancel, onConfirm }: {
+  detail: ConsigneeDetail; intent: ConsigneeWorkflowIntent | null; busy: boolean; mustReload: boolean; confirmDisabled: boolean;
+  onRequest: (intent: ConsigneeWorkflowIntent) => void; onCancel: () => void; onConfirm: () => Promise<void>;
+}) {
+  if (intent) return <>
+    <Button type="button" variant="outline" disabled={busy || mustReload} onClick={onCancel}>Cancel action</Button>
+    <Button type="button" disabled={confirmDisabled} onClick={() => void onConfirm()}>{busy ? "Please wait..." : CONFIRM_LABELS[intent]}</Button>
+  </>;
+  return <>
+    {detail.canSubmit && <Button type="button" onClick={() => onRequest("submit")}>Review and submit</Button>}
+    {detail.canReview && <><Button type="button" onClick={() => onRequest("approve")}>Approve consignee</Button><Button type="button" variant="destructive" onClick={() => onRequest("reject")}>Reject</Button></>}
+    {detail.canWithdraw && <Button type="button" variant="outline" onClick={() => onRequest("withdraw")}>Withdraw submission</Button>}
+    {detail.canReplace && <Button type="button" onClick={() => onRequest("replacement-draft")}>Create replacement draft</Button>}
+  </>;
 }
