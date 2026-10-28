@@ -5,9 +5,28 @@ import {
   BalanceSheetEntry,
   BalanceSheetSummary,
   BalanceSheetFilterState,
+  BalanceSheetEntrySchema,
+  BalanceSheetSummarySchema,
 } from "../types/balance-sheet.schema";
-import { FinancialAccount, ValidationStatus, KeyRatios } from "../types";
-import { toast } from "sonner";
+import { BalanceSheetComparisonStatus, FinancialAccount, ValidationStatus, KeyRatios } from "../types";
+import {
+  createDefaultBalanceSheetFilters,
+  getBalanceSheetTodayDate,
+  hasPendingBalanceSheetChanges,
+  parseBalanceSheetUrl,
+  removeBalanceSheetFilterChip,
+  writeBalanceSheetFiltersToSearchParams,
+  type BalanceSheetFilterChipKey,
+} from "../utils/report-state";
+
+export type BalanceSheetReportStatus =
+  | "not-generated"
+  | "loading-initial"
+  | "refreshing"
+  | "success"
+  | "empty"
+  | "initial-error"
+  | "refresh-error";
 
 interface BalanceSheetContextType {
   // Raw API data
@@ -15,6 +34,7 @@ interface BalanceSheetContextType {
   comparisonEntries: BalanceSheetEntry[];
   summary: BalanceSheetSummary | null;
   comparisonSummary: BalanceSheetSummary | null;
+  comparisonStatus: BalanceSheetComparisonStatus;
 
   // Derived data for the UI components
   accounts: FinancialAccount[];
@@ -23,39 +43,19 @@ interface BalanceSheetContextType {
 
   // State
   filters: BalanceSheetFilterState;
+  appliedFilters: BalanceSheetFilterState | null;
+  hasPendingChanges: boolean;
   setFilters: React.Dispatch<React.SetStateAction<BalanceSheetFilterState>>;
   isLoading: boolean;
-  isInitialLoad: boolean;
+  reportStatus: BalanceSheetReportStatus;
+  lastUpdated: Date | null;
   error: string | null;
 
   // Actions
   refresh: () => Promise<void>;
   resetFilters: () => void;
+  removeAppliedFilter: (key: BalanceSheetFilterChipKey) => void;
 }
-
-const DEFAULT_FILTERS: BalanceSheetFilterState = {
-  startDate: "2026-01-01",
-  endDate: "2026-12-31",
-  status: "Posted",
-  includeComparison: true,
-  divisionName: "",
-  departmentName: "",
-  comparisonStartDate: "2025-01-01",
-  comparisonEndDate: "2025-12-31",
-  dataBasis: "annually",
-  comparisonBasis: "match",
-};
-
-const EMPTY_SUMMARY: BalanceSheetSummary = {
-  totalAssets: 0,
-  totalLiabilities: 0,
-  totalEquity: 0,
-  balanceVariance: 0,
-  currentRatio: 0,
-  quickRatio: 0,
-  debtToEquityRatio: 0,
-  debtRatio: 0,
-};
 
 const EMPTY_VALIDATION: ValidationStatus = {
   totalAssets: 0,
@@ -66,33 +66,49 @@ const EMPTY_VALIDATION: ValidationStatus = {
 };
 
 const EMPTY_RATIOS: KeyRatios = {
-  currentRatio: { current: 0, prior: 0, variance: 0 },
-  quickRatio: { current: 0, prior: 0, variance: 0 },
-  debtToEquity: { current: 0, prior: 0, variance: 0 },
-  debtRatio: { current: 0, prior: 0, variance: 0 },
+  currentRatio: { current: null, prior: null, variance: null },
+  quickRatio: { current: null, prior: null, variance: null },
+  debtToEquity: { current: null, prior: null, variance: null },
+  debtRatio: { current: null, prior: null, variance: null },
 };
 
 const BalanceSheetContext = React.createContext<BalanceSheetContextType | undefined>(undefined);
 
-export function BalanceSheetProvider({ children }: { children: React.ReactNode }) {
+export function BalanceSheetProvider({ children, initialAsOfDate }: { children: React.ReactNode; initialAsOfDate: string }) {
+  const defaultFilters = React.useMemo(
+    () => createDefaultBalanceSheetFilters(initialAsOfDate),
+    [initialAsOfDate],
+  );
   const [entries, setEntries] = React.useState<BalanceSheetEntry[]>([]);
   const [comparisonEntries, setComparisonEntries] = React.useState<BalanceSheetEntry[]>([]);
   const [summary, setSummary] = React.useState<BalanceSheetSummary | null>(null);
   const [comparisonSummary, setComparisonSummary] = React.useState<BalanceSheetSummary | null>(null);
+  const [comparisonStatus, setComparisonStatus] = React.useState<BalanceSheetComparisonStatus>("disabled");
   const [isLoading, setIsLoading] = React.useState(false);
-  const [isInitialLoad, setIsInitialLoad] = React.useState(true);
+  const [reportStatus, setReportStatus] = React.useState<BalanceSheetReportStatus>("not-generated");
+  const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null);
   const [error, setError] = React.useState<string | null>(null);
-  const [filters, setFilters] = React.useState<BalanceSheetFilterState>(DEFAULT_FILTERS);
+  const [filters, setFilters] = React.useState<BalanceSheetFilterState>({ ...defaultFilters });
+  const [appliedFilters, setAppliedFilters] = React.useState<BalanceSheetFilterState | null>(null);
 
   const filtersRef = React.useRef(filters);
+  const appliedFiltersRef = React.useRef<BalanceSheetFilterState | null>(null);
+  const requestGenerationRef = React.useRef(0);
+  const observedSearchRef = React.useRef<string | null>(null);
   React.useEffect(() => {
     filtersRef.current = filters;
   }, [filters]);
 
-  const fetchData = React.useCallback(async (overrideFilters?: BalanceSheetFilterState) => {
+  const fetchData = React.useCallback(async (
+    overrideFilters?: BalanceSheetFilterState,
+    urlMode: false | "push" | "replace" = false,
+  ) => {
     const currentFilters = overrideFilters || filtersRef.current;
+    const requestGeneration = ++requestGenerationRef.current;
+    const hasPreviousReport = appliedFiltersRef.current !== null;
+    filtersRef.current = currentFilters;
     setIsLoading(true);
-    setIsInitialLoad(false);
+    setReportStatus(hasPreviousReport ? "refreshing" : "loading-initial");
     setError(null);
 
     try {
@@ -130,40 +146,128 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
       }
 
       const data = await res.json();
+      if (requestGeneration !== requestGenerationRef.current) return;
 
-      const safeAbs = (num: unknown) => (typeof num === "number" ? Math.abs(num) : 0);
-      
-      const normalizeEntries = (entries: Record<string, unknown>[]) => 
-        entries.map(e => ({ ...e, amount: safeAbs(e.amount) } as unknown as BalanceSheetEntry));
-        
+      const safeNumber = (num: unknown) => (typeof num === "number" && Number.isFinite(num) ? num : 0);
+
+      const hasUniqueAccountIds = (items: BalanceSheetEntry[]) => {
+        const ids = new Set<number>();
+        return items.every(item => {
+          if (!Number.isInteger(item.coaId) || ids.has(item.coaId)) return false;
+          ids.add(item.coaId);
+          return true;
+        });
+      };
+
       const normalizeSummary = (s: Record<string, unknown> | null) => {
         if (!s) return null;
-        let variance = safeAbs(s.totalAssets) - (safeAbs(s.totalLiabilities) + safeAbs(s.totalEquity));
+        // Preserve signs: a credit-balance asset (e.g. an unfunded petty cash
+        // account) must render negative instead of being flipped positive.
+        const totalAssets = safeNumber(s.totalAssets);
+        const totalLiabilities = safeNumber(s.totalLiabilities);
+        const totalEquity = safeNumber(s.totalEquity);
+        let variance = totalAssets - (totalLiabilities + totalEquity);
         // Handle floating point precision issues
         variance = Math.round(variance * 100) / 100;
-        
+
         return {
           ...s,
-          totalAssets: safeAbs(s.totalAssets),
-          totalLiabilities: safeAbs(s.totalLiabilities),
-          totalEquity: safeAbs(s.totalEquity),
+          totalAssets,
+          totalLiabilities,
+          totalEquity,
           balanceVariance: variance
         } as unknown as BalanceSheetSummary;
       };
 
-      setEntries(Array.isArray(data.entries) ? normalizeEntries(data.entries) : []);
-      setComparisonEntries(Array.isArray(data.comparisonEntries) ? normalizeEntries(data.comparisonEntries) : []);
+      const currentEntriesResult = BalanceSheetEntrySchema.array().safeParse(data.entries);
+      if (!currentEntriesResult.success) {
+        throw new Error("The balance sheet response did not include valid account entries.");
+      }
+
+      const normalizedEntries = currentEntriesResult.data;
+      if (!hasUniqueAccountIds(normalizedEntries)) {
+        throw new Error("The balance sheet response contains missing or duplicate account identifiers.");
+      }
+      const comparisonEntriesResult = BalanceSheetEntrySchema.array().safeParse(data.comparisonEntries);
+      const normalizedComparisonSummary = normalizeSummary(data.comparisonSummary);
+      const hasValidComparisonSummary = BalanceSheetSummarySchema.safeParse(data.comparisonSummary).success;
+      const hasAvailableComparison = currentFilters.includeComparison
+        && comparisonEntriesResult.success
+        && normalizedComparisonSummary !== null
+        && hasValidComparisonSummary
+        && hasUniqueAccountIds(comparisonEntriesResult.data);
+      const normalizedComparisonEntries = comparisonEntriesResult.success ? comparisonEntriesResult.data : [];
+
+      setEntries(normalizedEntries);
+      setComparisonEntries(hasAvailableComparison ? normalizedComparisonEntries : []);
       setSummary(normalizeSummary(data.summary));
-      setComparisonSummary(normalizeSummary(data.comparisonSummary));
+      setComparisonSummary(hasAvailableComparison ? normalizedComparisonSummary : null);
+      setComparisonStatus(currentFilters.includeComparison
+        ? hasAvailableComparison ? "available" : "unavailable"
+        : "disabled");
+      appliedFiltersRef.current = { ...currentFilters };
+      setAppliedFilters({ ...currentFilters });
+      setLastUpdated(new Date());
+      setReportStatus(normalizedEntries.length > 0 || (hasAvailableComparison && normalizedComparisonEntries.length > 0) ? "success" : "empty");
+
+      if (urlMode && typeof window !== "undefined") {
+        const url = new URL(window.location.href);
+        writeBalanceSheetFiltersToSearchParams(url.searchParams, currentFilters);
+        const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+        const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+        if (nextUrl !== currentUrl) {
+          if (urlMode === "push") window.history.pushState(window.history.state, "", nextUrl);
+          else window.history.replaceState(window.history.state, "", nextUrl);
+        }
+        observedSearchRef.current = window.location.search;
+      }
     } catch (e: unknown) {
+      if (requestGeneration !== requestGenerationRef.current) return;
       const message = e instanceof Error ? e.message : "Unknown error";
       console.error("Balance Sheet Fetch Error:", e);
       setError(message);
-      toast.error(`Database Error: ${message}`);
+      setReportStatus(hasPreviousReport ? "refresh-error" : "initial-error");
     } finally {
-      setIsLoading(false);
+      if (requestGeneration === requestGenerationRef.current) setIsLoading(false);
     }
   }, []);
+
+  const clearReport = React.useCallback(() => {
+    requestGenerationRef.current += 1;
+    appliedFiltersRef.current = null;
+    setEntries([]);
+    setComparisonEntries([]);
+    setSummary(null);
+    setComparisonSummary(null);
+    setComparisonStatus("disabled");
+    setAppliedFilters(null);
+    setReportStatus("not-generated");
+    setLastUpdated(null);
+    setError(null);
+    setIsLoading(false);
+  }, []);
+
+  React.useEffect(() => {
+    const loadLocationReport = () => {
+      const currentSearch = window.location.search;
+      if (observedSearchRef.current === currentSearch) return;
+      observedSearchRef.current = currentSearch;
+
+      const parsed = parseBalanceSheetUrl(new URLSearchParams(currentSearch), defaultFilters);
+      filtersRef.current = parsed.filters;
+      setFilters(parsed.filters);
+
+      if (parsed.hasReportCriteria) {
+        void fetchData(parsed.filters, "replace");
+      } else {
+        clearReport();
+      }
+    };
+
+    loadLocationReport();
+    window.addEventListener("popstate", loadLocationReport);
+    return () => window.removeEventListener("popstate", loadLocationReport);
+  }, [clearReport, defaultFilters, fetchData]);
 
   /* 
   React.useEffect(() => {
@@ -172,34 +276,54 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
   }, []);
   */
 
-  // ─── Derived: Map entries → FinancialAccount[] for the interactive table ───
+  // ─── Derived: Union current and comparison accounts by stable coa_id ───
   const accounts: FinancialAccount[] = React.useMemo(() => {
-    // Build a lookup of comparison amounts by glCode
-    const comparisonMap = new Map<string, number>();
+    const currentMap = new Map<number, BalanceSheetEntry>();
+    for (const entry of entries) currentMap.set(entry.coaId, entry);
+
+    const comparisonMap = new Map<number, BalanceSheetEntry>();
     for (const ce of comparisonEntries) {
-      comparisonMap.set(ce.glCode, ce.amount);
+      comparisonMap.set(ce.coaId, ce);
     }
 
-    return entries.map((entry, index) => {
-      const priorAmount = comparisonMap.get(entry.glCode) ?? 0;
-      const variance = entry.amount - priorAmount;
-      const variancePercentage = priorAmount !== 0
-        ? ((variance / Math.abs(priorAmount)) * 100)
-        : (entry.amount !== 0 ? 100 : 0);
+    const accountIds = [...currentMap.keys()];
+    if (comparisonStatus === "available") {
+      for (const id of comparisonMap.keys()) {
+        if (!currentMap.has(id)) accountIds.push(id);
+      }
+    }
+
+    return accountIds.map(id => {
+      const currentEntry = currentMap.get(id);
+      const comparisonEntry = comparisonMap.get(id);
+      const entry = currentEntry ?? comparisonEntry!;
+      const currentAmount = currentEntry?.amount ?? 0;
+      const priorAmount = comparisonStatus === "available" ? comparisonEntry?.amount ?? 0 : null;
+      const variance = priorAmount === null ? null : currentAmount - priorAmount;
+      const variancePercentage = priorAmount === null || priorAmount === 0
+        ? null
+        : (variance! / Math.abs(priorAmount)) * 100;
 
       return {
-        id: String(index + 1),
+        id: String(id),
+        coaId: id,
         account: entry.accountTitle,
         code: entry.glCode,
-        currentPeriod: entry.amount,
+        currentPeriod: currentAmount,
+        currentBalanceStatus: currentEntry ? "reported" : "zero",
         priorPeriod: priorAmount,
+        comparisonBalanceStatus: comparisonStatus === "unavailable"
+          ? "unavailable"
+          : comparisonStatus === "disabled"
+            ? "disabled"
+            : comparisonEntry ? "reported" : "zero",
         variance,
-        variancePercentage: Math.round(variancePercentage * 10) / 10,
+        variancePercentage: variancePercentage === null ? null : Math.round(variancePercentage * 10) / 10,
         type: entry.majorClassification as FinancialAccount["type"],
         group: entry.subClassification as FinancialAccount["group"],
       };
     });
-  }, [entries, comparisonEntries]);
+  }, [entries, comparisonEntries, comparisonStatus]);
 
   // ─── Derived: ValidationStatus from summary ───
   const validation: ValidationStatus = React.useMemo(() => {
@@ -210,7 +334,7 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
       totalLiabilities: summary.totalLiabilities,
       totalEquity: summary.totalEquity,
       variance: summary.balanceVariance,
-      isBalanced: summary.balanceVariance === 0,
+      isBalanced: Math.abs(summary.balanceVariance) < 0.005,
     };
   }, [summary]);
 
@@ -218,56 +342,54 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
   const ratios: KeyRatios = React.useMemo(() => {
     if (!summary) return EMPTY_RATIOS;
 
-    const prior = comparisonSummary || EMPTY_SUMMARY;
+    const prior = comparisonStatus === "available" ? comparisonSummary : null;
+    const toRatioValue = (current: number | null, previous: number | null) => ({
+      current,
+      prior: previous,
+      variance: current !== null && previous !== null
+        ? Math.round((current - previous) * 100) / 100
+        : null,
+    });
 
     return {
-      currentRatio: {
-        current: summary.currentRatio,
-        prior: prior.currentRatio,
-        variance: Math.round((summary.currentRatio - prior.currentRatio) * 100) / 100,
-      },
-      quickRatio: {
-        current: summary.quickRatio,
-        prior: prior.quickRatio,
-        variance: Math.round((summary.quickRatio - prior.quickRatio) * 100) / 100,
-      },
-      debtToEquity: {
-        current: summary.debtToEquityRatio,
-        prior: prior.debtToEquityRatio,
-        variance: Math.round((summary.debtToEquityRatio - prior.debtToEquityRatio) * 100) / 100,
-      },
-      debtRatio: {
-        current: summary.debtRatio,
-        prior: prior.debtRatio,
-        variance: Math.round((summary.debtRatio - prior.debtRatio) * 100) / 100,
-      },
+      currentRatio: toRatioValue(summary.currentRatio, prior?.currentRatio ?? null),
+      quickRatio: toRatioValue(summary.quickRatio, prior?.quickRatio ?? null),
+      debtToEquity: toRatioValue(summary.debtToEquityRatio, prior?.debtToEquityRatio ?? null),
+      debtRatio: toRatioValue(summary.debtRatio, prior?.debtRatio ?? null),
     };
-  }, [summary, comparisonSummary]);
+  }, [summary, comparisonSummary, comparisonStatus]);
 
   const resetFilters = () => {
-    setFilters(DEFAULT_FILTERS);
-    setEntries([]);
-    setComparisonEntries([]);
-    setSummary(null);
-    setComparisonSummary(null);
-    setIsInitialLoad(true);
+    setFilters(createDefaultBalanceSheetFilters(getBalanceSheetTodayDate()));
   };
+
+  const removeAppliedFilter = (key: BalanceSheetFilterChipKey) => {
+    const currentDefaults = createDefaultBalanceSheetFilters(getBalanceSheetTodayDate());
+    setFilters(current => removeBalanceSheetFilterChip(current, key, currentDefaults));
+  };
+
+  const hasPendingChanges = hasPendingBalanceSheetChanges(filters, appliedFilters);
 
   const value: BalanceSheetContextType = {
     entries,
     comparisonEntries,
     summary,
     comparisonSummary,
+    comparisonStatus,
     accounts,
     validation,
     ratios,
     filters,
+    appliedFilters,
+    hasPendingChanges,
     setFilters,
     isLoading,
-    isInitialLoad,
+    reportStatus,
+    lastUpdated,
     error,
-    refresh: fetchData,
+    refresh: () => fetchData(filters, "push"),
     resetFilters,
+    removeAppliedFilter,
   };
 
   return (

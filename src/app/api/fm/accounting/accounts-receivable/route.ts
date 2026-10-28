@@ -19,6 +19,7 @@ const COOKIE_NAME = 'vos_access_token';
 const CACHE_TTL_SEC = 60;
 
 function parseFilters(searchParams: URLSearchParams): ARTableFilters {
+  const genericStatus = searchParams.get('status') || undefined;
   return {
     dateFrom: searchParams.get('dateFrom') || undefined,
     dateTo: searchParams.get('dateTo') || undefined,
@@ -29,12 +30,15 @@ function parseFilters(searchParams: URLSearchParams): ARTableFilters {
     operation: searchParams.get('operation') || undefined,
     agingRange: searchParams.get('agingRange') || undefined,
     search: searchParams.get('search') || undefined,
+    arStatus: searchParams.get('arStatus') || (genericStatus === 'Due' || genericStatus === 'Overdue' ? genericStatus : undefined),
+    transactionStatus: searchParams.get('transactionStatus') || (genericStatus && genericStatus !== 'Due' && genericStatus !== 'Overdue' ? genericStatus : undefined),
   };
 }
 
 function hasActiveFilters(filters: ARTableFilters): boolean {
   return !!(filters.dateFrom || filters.dateTo || filters.customer || filters.cluster ||
-    filters.salesman || filters.division || filters.operation || filters.agingRange || filters.search);
+    filters.salesman || filters.division || filters.operation || filters.agingRange || filters.search ||
+    filters.arStatus || filters.transactionStatus);
 }
 
 function filterOperationData(payload: ARFullPayload, filteredRows: ARRow[]) {

@@ -22,14 +22,19 @@ export type AccountGroup =
     | "Share Capital" | "Retained Earnings"
     | string;
 
+export type BalanceSheetComparisonStatus = "disabled" | "available" | "unavailable";
+
 export interface FinancialAccount {
     id: string;
+    coaId?: number;
     account: string;
     code: string;
     currentPeriod: number;
-    priorPeriod: number;
-    variance: number;
-    variancePercentage: number;
+    currentBalanceStatus?: "reported" | "zero";
+    priorPeriod: number | null;
+    comparisonBalanceStatus?: "reported" | "zero" | "unavailable" | "disabled";
+    variance: number | null;
+    variancePercentage: number | null;
     type: AccountType;
     group: AccountGroup;
     isParent?: boolean;
@@ -45,9 +50,9 @@ export interface ValidationStatus {
 }
 
 export interface RatioValue {
-    current: number;
-    prior: number;
-    variance: number;
+    current: number | null;
+    prior: number | null;
+    variance: number | null;
 }
 
 export interface KeyRatios {

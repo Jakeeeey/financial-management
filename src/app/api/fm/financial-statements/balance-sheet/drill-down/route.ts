@@ -7,13 +7,17 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
 
-  const glCode = searchParams.get("glCode");
+  const rawCoaId = searchParams.get("coaId");
+  const coaId = rawCoaId === null ? NaN : Number(rawCoaId);
   const startDate = searchParams.get("startDate");
   const endDate = searchParams.get("endDate");
+  const status = searchParams.get("status") || undefined;
+  const divisionName = searchParams.get("divisionName") || undefined;
+  const departmentName = searchParams.get("departmentName") || undefined;
 
-  if (!glCode || !startDate || !endDate) {
+  if (!Number.isInteger(coaId) || !startDate || !endDate) {
     return NextResponse.json(
-      { error: "glCode, startDate, and endDate are required" },
+      { error: "coaId, startDate, and endDate are required" },
       { status: 400 }
     );
   }
@@ -24,9 +28,12 @@ export async function GET(request: NextRequest) {
   try {
     const data = await getBalanceSheetDrillDown(
       {
-        glCode,
+        coaId,
         startDate,
         endDate,
+        status,
+        divisionName,
+        departmentName,
       },
       token
     );

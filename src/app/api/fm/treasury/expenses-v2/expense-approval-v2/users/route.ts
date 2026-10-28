@@ -19,7 +19,7 @@ export async function GET() {
       "user_department",
     ].join(",");
 
-    const res = await fetch(`${API_BASE_URL}/items/user?fields=${fields}&sort=user_fname`, {
+    const res = await fetch(`${API_BASE_URL}/items/user?fields=${fields}&sort=user_fname&limit=-1`, {
       headers: AUTH_HEADERS,
       cache: "no-store",
     });

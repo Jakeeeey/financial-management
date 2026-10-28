@@ -108,13 +108,32 @@ export const ExpenseSummaryTable: React.FC<ExpenseSummaryTableProps> = ({
     }).format(val || 0);
   };
 
+  // Helper to format ISO-8601 week number (Monday to Sunday)
   const getWeekLabel = (dateStr: string) => {
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return "Unknown Week";
-    const startOfYear = new Date(d.getFullYear(), 0, 1);
-    const pastDaysOfYear = (d.getTime() - startOfYear.getTime()) / 86400000;
-    const weekNum = Math.ceil((pastDaysOfYear + startOfYear.getDay() + 1) / 7);
-    return `Week ${weekNum} (${d.getFullYear()})`;
+    if (!dateStr) return "Unknown Week";
+    const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    let year: number;
+    let month: number;
+    let day: number;
+
+    if (match) {
+      year = parseInt(match[1], 10);
+      month = parseInt(match[2], 10) - 1;
+      day = parseInt(match[3], 10);
+    } else {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return "Unknown Week";
+      year = d.getFullYear();
+      month = d.getMonth();
+      day = d.getDate();
+    }
+
+    const target = new Date(Date.UTC(year, month, day));
+    const dayNum = target.getUTCDay() || 7;
+    target.setUTCDate(target.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1));
+    const weekNo = Math.ceil(((target.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+    return `Week ${weekNo} (${target.getUTCFullYear()})`;
   };
 
   const formatDisplayDate = (dateStr?: string | null) => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useFinancialPerformance } from "../hooks/useFinancialPerformance";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,142 +17,193 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { ChevronDown, Loader2, X } from "lucide-react";
 import { CertificationModal } from "./CertificationModal";
-import { exportToExcel, exportToPdf } from "../services/export.service";
+import {
+    exportToExcel,
+    exportToPdf,
+    type FinancialPerformanceExportScope,
+} from "../services/export.service";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+    formatFinancialPerformanceDateRange,
+    getFinancialPerformancePeriodRange,
+    getFinancialPerformanceToday,
+    getFinancialPerformanceYears,
+} from "../utils/periods";
+import { getFinancialPerformanceAppliedFilterChips, toFinancialPerformanceReportCriteria } from "../utils/report-state";
+import {
+    describeFinancialPerformanceStatus,
+    FINANCIAL_PERFORMANCE_SOURCE_MODULES,
+} from "../utils/report-coverage";
+import {
+    getFinancialPerformanceDepartments,
+    getFinancialPerformanceDivisions,
+    type FinancialPerformanceDepartmentOption,
+    type FinancialPerformanceDivisionOption,
+} from "../services/financial-performance.service";
+
+const formatLastUpdated = (date: Date) => new Intl.DateTimeFormat("en-PH", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Manila",
+}).format(date);
 
 export function ReportControlSection() {
-    const { refresh, resetFilters, isLoading, isInitialLoad, filters, setFilters, data, validation } = useFinancialPerformance();
+    const { refresh, resetFilters, removeAppliedFilter, isLoading, isInitialLoad, filters, updateFilters: updateFilter, data, reportError, lastUpdatedAt, validation, appliedCriteria, hasPendingChanges, periodError, comparisonStatus } = useFinancialPerformance();
     const [isCertifyModalOpen, setIsCertifyModalOpen] = useState(false);
+    const [isMoreFiltersOpen, setIsMoreFiltersOpen] = useState(false);
+    const [divisions, setDivisions] = useState<FinancialPerformanceDivisionOption[]>([]);
+    const [departments, setDepartments] = useState<FinancialPerformanceDepartmentOption[]>([]);
+    const [divisionLoading, setDivisionLoading] = useState(true);
+    const [departmentLoading, setDepartmentLoading] = useState(true);
+    const [divisionLoadError, setDivisionLoadError] = useState(false);
+    const [departmentLoadError, setDepartmentLoadError] = useState(false);
+    const [divisionRetry, setDivisionRetry] = useState(0);
+    const [departmentRetry, setDepartmentRetry] = useState(0);
+    const [exporting, setExporting] = useState<{ scope: FinancialPerformanceExportScope; format: "PDF" | "Excel" } | null>(null);
+    const [exportError, setExportError] = useState<string | null>(null);
+    const [exportStatus, setExportStatus] = useState("");
 
-    const updateFilter = (updates: Partial<typeof filters>) => {
-        setFilters(prev => ({ ...prev, ...updates }));
-    };
+    useEffect(() => {
+        let active = true;
+        void getFinancialPerformanceDivisions()
+            .then(options => { if (active) setDivisions(options); })
+            .catch(() => { if (active) setDivisionLoadError(true); })
+            .finally(() => { if (active) setDivisionLoading(false); });
+        return () => { active = false; };
+    }, [divisionRetry]);
+
+    useEffect(() => {
+        let active = true;
+        void getFinancialPerformanceDepartments()
+            .then(options => { if (active) setDepartments(options); })
+            .catch(() => { if (active) setDepartmentLoadError(true); })
+            .finally(() => { if (active) setDepartmentLoading(false); });
+        return () => { active = false; };
+    }, [departmentRetry]);
+
+    const today = getFinancialPerformanceToday();
+    const selectedYear = Number(filters.startDate.slice(0, 4)) || Number(today.slice(0, 4));
+    const selectedMonth = Number(filters.startDate.slice(5, 7)) || Number(today.slice(5, 7));
+    const years = getFinancialPerformanceYears([
+        selectedYear, Number(filters.endDate.slice(0, 4)),
+        Number(filters.comparisonStartDate.slice(0, 4)), Number(filters.comparisonEndDate.slice(0, 4)),
+    ]);
+    const presets = [
+        { label: "This month", basis: "monthly" as const, ...getFinancialPerformancePeriodRange("monthly", today) },
+        { label: "This quarter", basis: "quarterly" as const, ...getFinancialPerformancePeriodRange("quarterly", today) },
+        { label: "Year to date", basis: "yearToDate" as const, ...getFinancialPerformancePeriodRange("yearToDate", today) },
+    ];
+    const appliedFilterChips = appliedCriteria ? getFinancialPerformanceAppliedFilterChips(appliedCriteria) : [];
+    const draftFilterChipKeys = new Set(getFinancialPerformanceAppliedFilterChips(toFinancialPerformanceReportCriteria(filters)).map(chip => chip.key));
+    const canExport = !!data && !!appliedCriteria && !isInitialLoad && !isLoading && comparisonStatus !== "loading" && !hasPendingChanges;
+    const divisionNames = [...new Set(divisions.map(option => option.divisionName).filter((name): name is string => typeof name === "string" && name.trim().length > 0))];
+    const departmentNames = [...new Set(departments.map(option => option.departmentName).filter((name): name is string => typeof name === "string" && name.trim().length > 0))];
 
     const handleBasisChange = (basis: typeof filters.dataBasis) => {
-        const today = new Date();
-        const year = today.getFullYear();
-        let startDate = filters.startDate;
-        let endDate = filters.endDate;
+        updateFilter(basis === "manual"
+            ? { dataBasis: basis }
+            : { dataBasis: basis, ...getFinancialPerformancePeriodRange(basis, filters.startDate) });
+    };
 
-        if (basis === "annually") {
-            startDate = `${year}-01-01`;
-            endDate = `${year}-12-31`;
-        } else if (basis === "monthly") {
-            const month = String(today.getMonth() + 1).padStart(2, "0");
-            startDate = `${year}-${month}-01`;
-            const lastDay = new Date(year, today.getMonth() + 1, 0).getDate();
-            endDate = `${year}-${month}-${lastDay}`;
-        } else if (basis === "quarterly") {
-            const quarter = Math.floor(today.getMonth() / 3) + 1;
-            const startMonth = String((quarter - 1) * 3 + 1).padStart(2, "0");
-            const endMonth = String(quarter * 3).padStart(2, "0");
-            startDate = `${year}-${startMonth}-01`;
-            const lastDay = new Date(year, quarter * 3, 0).getDate();
-            endDate = `${year}-${endMonth}-${lastDay}`;
+    const handleYearChange = (year: string) => {
+        if (filters.dataBasis === "monthly" || filters.dataBasis === "quarterly" || filters.dataBasis === "annually") {
+            updateFilter(getFinancialPerformancePeriodRange(filters.dataBasis, year + "-" + String(selectedMonth).padStart(2, "0") + "-01"));
         }
-
-        updateFilter({ dataBasis: basis, startDate, endDate });
     };
 
-    const handleComparisonBasisChange = (basis: typeof filters.comparisonBasis) => {
-        updateFilter({ comparisonBasis: basis });
+    const retryDivisionLookup = () => {
+        setDivisionLoading(true);
+        setDivisionLoadError(false);
+        setDivisionRetry(value => value + 1);
     };
 
-    const renderRatioItem = ({ title, subtitle, value, priorValue }: { title: string; subtitle: string; value?: number; priorValue?: number }) => {
-        const current = value ?? 0;
-        const prior = priorValue ?? 0;
-        const variance = current - prior;
-        
-        const isPositive = current > prior;
-        const isNegative = current < prior;
-        const isNeutral = current === prior;
+    const retryDepartmentLookup = () => {
+        setDepartmentLoading(true);
+        setDepartmentLoadError(false);
+        setDepartmentRetry(value => value + 1);
+    };
+
+    const handleExport = async (scope: FinancialPerformanceExportScope, format: "PDF" | "Excel") => {
+        if (!canExport || !data || !appliedCriteria) {
+            toast.error("Please generate a report first");
+            return;
+        }
+        const scopeLabel = scope === "statement" ? "Statement" : "Account breakdown";
+        setExportError(null);
+        setExportStatus("");
+        setExporting({ scope, format });
+
+        try {
+            await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+            const context = {
+                criteria: appliedCriteria,
+                comparisonStatus,
+                searchQuery: filters.searchQuery,
+                generatedAt: new Date(),
+            };
+
+            if (format === "PDF") exportToPdf(data, scope, context);
+            else exportToExcel(data, scope, context);
+
+            const message = `${scopeLabel} ${format} export is ready.`;
+            setExportStatus(message);
+            toast.success(message);
+        } catch (error) {
+            const detail = error instanceof Error ? error.message : "Please try again.";
+            const message = `Unable to generate the ${scopeLabel.toLowerCase()} ${format} export. ${detail}`;
+            setExportError(message);
+            toast.error(message);
+        } finally {
+            setExporting(null);
+        }
+    };
+
+    const renderExportMenu = (scope: FinancialPerformanceExportScope) => {
+        const scopeLabel = scope === "statement" ? "statement" : "account breakdown";
+        const isGenerating = exporting?.scope === scope;
 
         return (
-            <div className="flex flex-col gap-1 border border-border rounded-lg p-4 bg-card shadow-sm hover:shadow-md transition-all">
-                <span className="text-[10px] font-bold tracking-tight uppercase text-muted-foreground">{title}</span>
-                <span className="text-[9px] text-muted-foreground font-medium uppercase tracking-wider">{subtitle}</span>
-                <div className="flex items-center justify-between mt-3">
-                    <span className="text-2xl font-bold tracking-tight text-foreground">
-                        {isInitialLoad ? "—" : `${current.toFixed(1)}%`}
-                    </span>
-                    {!isInitialLoad && (priorValue !== undefined || variance !== 0) && (
-                        <div className="flex items-center gap-1.5">
-                            {isPositive && <span className="text-foreground text-[10px]">▲</span>}
-                            {isNegative && <span className="text-foreground text-[10px]">▼</span>}
-                            <span
-                                className={cn("text-[11px] font-bold px-2 py-0.5 rounded transition-colors", {
-                                    "bg-success/10 text-success": isPositive,
-                                    "bg-destructive/10 text-destructive": isNegative,
-                                    "bg-muted text-muted-foreground": isNeutral,
-                                })}
-                            >
-                                {Math.abs(variance).toFixed(1)}%
-                            </span>
-                        </div>
-                    )}
-                </div>
-            </div>
-        );
-    };
-
-    const getComparisonLabel = () => {
-        if (!filters.includeComparison) return "";
-        if (filters.comparisonBasis === "monthly") return `Past FS (${new Date(filters.comparisonStartDate).toLocaleString('default', { month: 'long' })} ${filters.comparisonStartDate.split("-")[0]})`;
-        if (filters.comparisonBasis === "quarterly") {
-             const startMonth = parseInt(filters.comparisonStartDate.split("-")[1]);
-             const q = Math.ceil(startMonth / 3);
-             return `Past FS (Q${q} ${filters.comparisonStartDate.split("-")[0]})`;
-        }
-        return `Past FS (${filters.comparisonStartDate.split("-")[0]})`;
-    };
-
-    const getDateRangeText = () => {
-        try {
-            const startStr = format(new Date(filters.startDate), "MMM d, yyyy");
-            const endStr = format(new Date(filters.endDate), "MMM d, yyyy");
-            return `${startStr} to ${endStr}`;
-        } catch {
-            return `${filters.startDate} to ${filters.endDate}`;
-        }
-    };
-
-    const handleExportPdf = () => {
-        if (!data || isInitialLoad) {
-            toast.error("Please generate a report first");
-            return;
-        }
-        exportToPdf(
-            data,
-            getDateRangeText(),
-            filters.includeComparison,
-            getComparisonLabel(),
-            filters.taxRate
-        );
-    };
-
-    const handleExportExcel = () => {
-        if (!data || isInitialLoad) {
-            toast.error("Please generate a report first");
-            return;
-        }
-        exportToExcel(
-            data,
-            getDateRangeText(),
-            filters.includeComparison,
-            getComparisonLabel(),
-            filters.taxRate
+            <DropdownMenu key={scope}>
+                <DropdownMenuTrigger asChild>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        className="h-9 rounded-xl px-4 text-xs font-bold shadow-sm"
+                        disabled={!canExport || !!exporting}
+                        aria-busy={isGenerating}
+                    >
+                        {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        {isGenerating ? "Generating…" : `Export ${scopeLabel}`}
+                        {!isGenerating ? <ChevronDown className="ml-2 h-4 w-4" /> : null}
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={() => void handleExport(scope, "PDF")}>
+                        Export as PDF
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => void handleExport(scope, "Excel")}>
+                        Export as Excel
+                    </DropdownMenuItem>
+                </DropdownMenuContent>
+            </DropdownMenu>
         );
     };
 
     return (
-        <Card className="shadow-none border border-border overflow-hidden bg-card mb-6">
+        <Card className="mb-0 w-full min-w-0 overflow-hidden border border-border bg-card shadow-none">
             <CardContent className="p-0">
                 {/* ─── ROW 1: Module Name + Action Buttons (full width) ─── */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 sm:p-6 lg:px-8 bg-card transition-colors shrink-0 min-h-0 min-w-0">
+                <div className="flex min-w-0 shrink-0 flex-col justify-between gap-4 bg-card p-4 transition-colors sm:flex-row sm:items-center sm:p-5">
                     <div className="min-w-0">
                         <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 font-bold truncate">Business Analytics / Financial Management</p>
-                        <h2 className="text-2xl font-bold tracking-tight text-foreground truncate">Statement of Financial Performance</h2>
+                        <h2 className="truncate text-xl font-bold tracking-tight text-foreground sm:text-2xl">Statement of Financial Performance</h2>
                         <p className="text-xs text-muted-foreground mt-1 max-w-[700px] leading-relaxed line-clamp-2 sm:line-clamp-none">
                             Dynamic income statement with period selection, comparison view, validation checks, and drill-down.
                         </p>
@@ -168,22 +219,8 @@ export function ReportControlSection() {
                                 {validation.isCertified ? "Certified" : "Validated"}
                             </div>
                         )}
-                        <Button 
-                            variant="outline" 
-                            className="rounded-xl shadow-sm h-9 px-4 text-xs font-bold"
-                            onClick={handleExportPdf}
-                            disabled={isInitialLoad || isLoading}
-                        >
-                            Export PDF
-                        </Button>
-                        <Button 
-                            variant="outline" 
-                            className="rounded-xl shadow-sm h-9 px-4 text-xs font-bold"
-                            onClick={handleExportExcel}
-                            disabled={isInitialLoad || isLoading}
-                        >
-                            Export Excel
-                        </Button>
+                        {renderExportMenu("statement")}
+                        {renderExportMenu("account-breakdown")}
                         {false && (
                             <Button 
                                 variant="default" 
@@ -197,118 +234,109 @@ export function ReportControlSection() {
                     </div>
                 </div>
 
+                {(exporting || exportError || exportStatus) && (
+                    <div className="space-y-1 px-4 pb-3 text-xs sm:px-5">
+                        {exporting && (
+                            <p role="status" className="text-muted-foreground">
+                                Generating {exporting.scope === "statement" ? "statement" : "account breakdown"} {exporting.format}…
+                            </p>
+                        )}
+                        {exportStatus && !exporting && (
+                            <p role="status" className="text-muted-foreground">{exportStatus}</p>
+                        )}
+                        {exportError && !exporting && (
+                            <p role="alert" className="text-destructive">{exportError}</p>
+                        )}
+                    </div>
+                )}
+
                 <Separator />
 
-                {/* ─── ROW 2: Two-column Grid (lg and up) ─── */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-border">
+                <section aria-label="Report criteria" className="min-w-0 space-y-4 p-4 sm:p-5">
+                    <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+                        <div className="min-w-0 flex-1 space-y-3">
+                            <div className="text-sm font-semibold tracking-tight text-foreground">Reporting period</div>
 
-                    {/* ── LEFT: Filters ── */}
-                    <div className="p-5 sm:p-6 lg:px-8 flex flex-col justify-between gap-8 bg-card shrink-0 min-h-0 min-w-0 overflow-y-auto">
-                        <div>
-                            <div className="text-sm font-bold flex items-center gap-2 mb-6 tracking-tight text-foreground">
-                                Report Initialization
+                            <div className="flex flex-wrap gap-2" aria-label="Reporting period shortcuts">
+                                {presets.map(preset => (
+                                    <Button
+                                        key={preset.basis}
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        aria-pressed={filters.dataBasis === preset.basis && filters.startDate === preset.startDate && filters.endDate === preset.endDate}
+                                        onClick={() => updateFilter({ dataBasis: preset.basis, startDate: preset.startDate, endDate: preset.endDate })}
+                                    >
+                                        {preset.label}
+                                    </Button>
+                                ))}
+                                <Button type="button" size="sm" variant="outline" aria-pressed={filters.dataBasis === "manual"} onClick={() => handleBasisChange("manual")}>
+                                    Custom
+                                </Button>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-6">
-                                {/* Search */}
-                                <div className="space-y-2">
-                                    <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Search</Label>
-                                    <Input 
-                                        type="text"
-                                        placeholder="Search accounts or sections..."
-                                        value={filters.searchQuery}
-                                        onChange={(e) => updateFilter({ searchQuery: e.target.value })}
-                                        className="h-10 text-sm border-input rounded-xl bg-card transition-all focus-visible:ring-1" 
-                                    />
-                                </div>
-                                
-                                {/* Date Basis */}
-                                <div className="space-y-2">
-                                    <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Date Basis</Label>
+                            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="sfp-period-basis" className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Period type</Label>
                                     <Select value={filters.dataBasis} onValueChange={handleBasisChange}>
-                                        <SelectTrigger className="w-full h-10 text-sm border-input rounded-xl bg-card hover:bg-muted/50 transition-all">
-                                            <SelectValue placeholder="Select basis..." />
+                                        <SelectTrigger id="sfp-period-basis" className="h-10 w-full text-sm">
+                                            <SelectValue placeholder="Select period..." />
                                         </SelectTrigger>
-                                        <SelectContent className="rounded-xl">
-                                            <SelectItem value="manual">Manual Date Range</SelectItem>
+                                        <SelectContent>
+                                            <SelectItem value="manual">Custom date range</SelectItem>
                                             <SelectItem value="monthly">Monthly</SelectItem>
                                             <SelectItem value="quarterly">Quarterly</SelectItem>
                                             <SelectItem value="annually">Annually</SelectItem>
+                                            <SelectItem value="yearToDate">Year to date</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </div>
 
-                                {/* Dynamic Fields based on Data Basis */}
                                 {filters.dataBasis === "manual" && (
                                     <>
-                                        <div className="space-y-2">
-                                            <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Date From</Label>
-                                            <Input 
-                                                type="date"
-                                                value={filters.startDate} 
-                                                onChange={(e) => updateFilter({ startDate: e.target.value })}
-                                                className="h-10 text-sm border-input rounded-xl bg-card" 
-                                            />
+                                        <div className="space-y-1.5">
+                                            <Label htmlFor="sfp-start-date" className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Date from</Label>
+                                            <Input id="sfp-start-date" type="date" value={filters.startDate}
+                                                onChange={e => updateFilter({ startDate: e.target.value })}
+                                                aria-describedby={periodError ? "sfp-period-error" : undefined}
+                                                className="h-10 w-full text-sm" />
                                         </div>
-                                        <div className="space-y-2">
-                                            <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Date To</Label>
-                                            <Input 
-                                                type="date"
-                                                value={filters.endDate} 
-                                                onChange={(e) => updateFilter({ endDate: e.target.value })}
-                                                className="h-10 text-sm border-input rounded-xl bg-card" 
-                                            />
+                                        <div className="space-y-1.5">
+                                            <Label htmlFor="sfp-end-date" className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Date to</Label>
+                                            <Input id="sfp-end-date" type="date" value={filters.endDate}
+                                                onChange={e => updateFilter({ endDate: e.target.value })}
+                                                aria-describedby={periodError ? "sfp-period-error" : undefined}
+                                                className="h-10 w-full text-sm" />
                                         </div>
                                     </>
                                 )}
 
                                 {filters.dataBasis === "monthly" && (
                                     <>
-                                        <div className="space-y-2">
-                                            <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Month</Label>
-                                            <Select 
-                                                value={filters.startDate.split("-")[1] || "03"} 
-                                                onValueChange={(val) => {
-                                                    const year = filters.endDate.split("-")[0];
-                                                    const lastDay = new Date(parseInt(year), parseInt(val), 0).getDate();
-                                                    updateFilter({ 
-                                                        startDate: `${year}-${val}-01`,
-                                                        endDate: `${year}-${val}-${lastDay}` 
-                                                    });
-                                                }}
-                                            >
-                                                <SelectTrigger className="w-full h-10 text-sm border-input rounded-xl bg-card hover:bg-muted/50 transition-all">
+                                        <div className="space-y-1.5">
+                                            <Label htmlFor="sfp-month" className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Month</Label>
+                                            <Select value={String(selectedMonth).padStart(2, "0")}
+                                                onValueChange={month => updateFilter(getFinancialPerformancePeriodRange("monthly", selectedYear + "-" + month + "-01"))}>
+                                                <SelectTrigger id="sfp-month" className="h-10 w-full text-sm">
                                                     <SelectValue placeholder="Month" />
                                                 </SelectTrigger>
-                                                <SelectContent className="rounded-xl max-h-[300px]">
-                                                    {["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"].map(m => (
-                                                        <SelectItem key={m} value={m}>
-                                                            {new Date(2000, parseInt(m)-1).toLocaleString('default', { month: 'long' })}
+                                                <SelectContent className="max-h-[300px]">
+                                                    {Array.from({ length: 12 }, (_, index) => (
+                                                        <SelectItem key={index} value={String(index + 1).padStart(2, "0")}>
+                                                            {new Intl.DateTimeFormat("en-PH", { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(selectedYear, index, 1)))}
                                                         </SelectItem>
                                                     ))}
                                                 </SelectContent>
                                             </Select>
                                         </div>
-                                        <div className="space-y-2">
-                                            <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Year</Label>
-                                            <Select 
-                                                value={filters.endDate.split("-")[0] || "2026"} 
-                                                onValueChange={(val) => {
-                                                    const month = filters.startDate.split("-")[1] || "01";
-                                                    const lastDay = new Date(parseInt(val), parseInt(month), 0).getDate();
-                                                    updateFilter({ 
-                                                        startDate: `${val}-${month}-01`,
-                                                        endDate: `${val}-${month}-${lastDay}` 
-                                                    });
-                                                }}
-                                            >
-                                                <SelectTrigger className="w-full h-10 text-sm border-input rounded-xl bg-card hover:bg-muted/50 transition-all">
+                                        <div className="space-y-1.5">
+                                            <Label htmlFor="sfp-year" className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Year</Label>
+                                            <Select value={String(selectedYear)} onValueChange={handleYearChange}>
+                                                <SelectTrigger id="sfp-year" className="h-10 w-full text-sm">
                                                     <SelectValue placeholder="Year" />
                                                 </SelectTrigger>
-                                                <SelectContent className="rounded-xl">
-                                                    {["2024", "2025", "2026", "2027"].map(y => (
-                                                        <SelectItem key={y} value={y}>{y}</SelectItem>
-                                                    ))}
+                                                <SelectContent>
+                                                    {years.map(year => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
                                                 </SelectContent>
                                             </Select>
                                         </div>
@@ -317,54 +345,26 @@ export function ReportControlSection() {
 
                                 {filters.dataBasis === "quarterly" && (
                                     <>
-                                        <div className="space-y-2">
-                                            <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Quarter</Label>
-                                            <Select 
-                                                value={`q${Math.ceil(parseInt(filters.endDate.split("-")[1] || "3")/3)}`}
-                                                onValueChange={(val) => {
-                                                    const q = parseInt(val.charAt(1));
-                                                    const year = filters.endDate.split("-")[0] || new Date().getFullYear().toString();
-                                                    const startMonth = String((q - 1) * 3 + 1).padStart(2, "0");
-                                                    const endMonth = String(q * 3).padStart(2, "0");
-                                                    const lastDay = new Date(parseInt(year), q * 3, 0).getDate();
-                                                    updateFilter({
-                                                        startDate: `${year}-${startMonth}-01`,
-                                                        endDate: `${year}-${endMonth}-${lastDay}`
-                                                    });
-                                                }}
-                                            >
-                                                <SelectTrigger className="w-full h-10 text-sm border-input rounded-xl bg-card hover:bg-muted/50 transition-all">
+                                        <div className="space-y-1.5">
+                                            <Label htmlFor="sfp-quarter" className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Quarter</Label>
+                                            <Select value={String(Math.ceil(selectedMonth / 3))}
+                                                onValueChange={quarter => updateFilter(getFinancialPerformancePeriodRange("quarterly", selectedYear + "-" + String((Number(quarter) - 1) * 3 + 1).padStart(2, "0") + "-01"))}>
+                                                <SelectTrigger id="sfp-quarter" className="h-10 w-full text-sm">
                                                     <SelectValue placeholder="Quarter" />
                                                 </SelectTrigger>
-                                                <SelectContent className="rounded-xl">
-                                                    <SelectItem value="q1">1st Quarter</SelectItem>
-                                                    <SelectItem value="q2">2nd Quarter</SelectItem>
-                                                    <SelectItem value="q3">3rd Quarter</SelectItem>
-                                                    <SelectItem value="q4">4th Quarter</SelectItem>
+                                                <SelectContent>
+                                                    {[1, 2, 3, 4].map(quarter => <SelectItem key={quarter} value={String(quarter)}>Q{quarter}</SelectItem>)}
                                                 </SelectContent>
                                             </Select>
                                         </div>
-                                        <div className="space-y-2">
-                                            <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Year</Label>
-                                            <Select 
-                                                value={filters.endDate.split("-")[0] || "2026"}
-                                                onValueChange={(val) => {
-                                                    const startMonth = filters.startDate.split("-")[1] || "01";
-                                                    const endMonth = filters.endDate.split("-")[1] || "03";
-                                                    const lastDay = new Date(parseInt(val), parseInt(endMonth), 0).getDate();
-                                                    updateFilter({
-                                                        startDate: `${val}-${startMonth}-01`,
-                                                        endDate: `${val}-${endMonth}-${lastDay}`
-                                                    });
-                                                }}
-                                            >
-                                                <SelectTrigger className="w-full h-10 text-sm border-input rounded-xl bg-card hover:bg-muted/50 transition-all">
+                                        <div className="space-y-1.5">
+                                            <Label htmlFor="sfp-year" className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Year</Label>
+                                            <Select value={String(selectedYear)} onValueChange={handleYearChange}>
+                                                <SelectTrigger id="sfp-year" className="h-10 w-full text-sm">
                                                     <SelectValue placeholder="Year" />
                                                 </SelectTrigger>
-                                                <SelectContent className="rounded-xl">
-                                                    {["2024", "2025", "2026", "2027"].map(y => (
-                                                        <SelectItem key={y} value={y}>{y}</SelectItem>
-                                                    ))}
+                                                <SelectContent>
+                                                    {years.map(year => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
                                                 </SelectContent>
                                             </Select>
                                         </div>
@@ -372,245 +372,241 @@ export function ReportControlSection() {
                                 )}
 
                                 {filters.dataBasis === "annually" && (
-                                    <div className="space-y-2 col-span-1 sm:col-span-2">
-                                        <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Year</Label>
-                                        <Select 
-                                            value={filters.endDate.split("-")[0] || "2026"}
-                                            onValueChange={(val) => updateFilter({ 
-                                                startDate: `${val}-01-01`, 
-                                                endDate: `${val}-12-31` 
-                                            })}
-                                        >
-                                            <SelectTrigger className="w-full sm:w-1/2 h-10 text-sm border-input rounded-xl bg-card hover:bg-muted/50 transition-all">
+                                    <div className="space-y-1.5">
+                                        <Label htmlFor="sfp-year" className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Year</Label>
+                                        <Select value={String(selectedYear)} onValueChange={handleYearChange}>
+                                            <SelectTrigger id="sfp-year" className="h-10 w-full text-sm">
                                                 <SelectValue placeholder="Year" />
                                             </SelectTrigger>
-                                            <SelectContent className="rounded-xl">
-                                                {["2024", "2025", "2026", "2027"].map(y => (
-                                                    <SelectItem key={y} value={y}>{y}</SelectItem>
-                                                ))}
+                                            <SelectContent>
+                                                {years.map(year => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
                                             </SelectContent>
                                         </Select>
                                     </div>
                                 )}
+                            </div>
 
-                                {/* Division */}
-                                <div className="space-y-2">
-                                    <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Division</Label>
-                                    <Select value={filters.divisionName || "all"} onValueChange={(val) => updateFilter({ divisionName: val === "all" ? "" : val })}>
-                                        <SelectTrigger className="w-full h-10 text-sm border-input rounded-xl bg-card hover:bg-muted/50 transition-all">
+                            <p className="text-xs text-muted-foreground">
+                                Selected reporting period: {formatFinancialPerformanceDateRange(filters.startDate, filters.endDate)}
+                            </p>
+                        </div>
+
+                        <div className="flex shrink-0 flex-wrap gap-2 xl:pb-0.5">
+                            <Button variant="default" className="h-10 px-5 text-sm font-medium" onClick={() => refresh()} disabled={isLoading || !!periodError}>
+                                {isLoading ? "Generating..." : "Generate Report"}
+                            </Button>
+                            <Button variant="outline" className="h-10 px-4 text-sm" onClick={() => resetFilters()} disabled={isLoading}>
+                                Reset filters
+                            </Button>
+                        </div>
+                    </div>
+
+                    <div className="min-w-0 border-t border-border pt-3">
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            aria-expanded={isMoreFiltersOpen}
+                            aria-controls="sfp-more-filters-content"
+                            onClick={() => setIsMoreFiltersOpen(open => !open)}
+                            className="h-auto min-h-9 px-2 text-sm font-medium focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                            <ChevronDown aria-hidden="true" className={cn("mr-2 h-4 w-4 transition-transform", isMoreFiltersOpen && "rotate-180")} />
+                            More filters
+                        </Button>
+
+                        <div id="sfp-more-filters-content" hidden={!isMoreFiltersOpen} className="mt-3 min-w-0 rounded-lg border border-border bg-muted/20 p-3 sm:p-4">
+                            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="sfp-division" className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Division</Label>
+                                    <Select value={filters.divisionName || "all"} onValueChange={val => updateFilter({ divisionName: val === "all" ? "" : val })} disabled={divisionLoading}>
+                                        <SelectTrigger id="sfp-division" className="h-10 w-full text-sm">
                                             <SelectValue placeholder="All Divisions" />
                                         </SelectTrigger>
-                                        <SelectContent className="rounded-xl">
+                                        <SelectContent>
                                             <SelectItem value="all">All Divisions</SelectItem>
-                                            <SelectItem value="North">North</SelectItem>
-                                            <SelectItem value="South">South</SelectItem>
-                                            <SelectItem value="Central">Central</SelectItem>
+                                            {filters.divisionName && filters.divisionName !== "all" && !divisionNames.includes(filters.divisionName) && (
+                                                <SelectItem value={filters.divisionName}>Unavailable — {filters.divisionName}</SelectItem>
+                                            )}
+                                            {divisionNames.map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}
                                         </SelectContent>
                                     </Select>
+                                    {divisionLoading && <p role="status" className="text-xs text-muted-foreground">Loading divisions…</p>}
+                                    {divisionLoadError && (
+                                        <div role="alert" className="flex flex-wrap items-center gap-2 text-xs text-destructive">
+                                            <span>Could not load divisions.</span>
+                                            <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs" onClick={retryDivisionLookup}>Retry</Button>
+                                        </div>
+                                    )}
                                 </div>
 
-                                {/* Department */}
-                                <div className="space-y-2">
-                                    <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Department</Label>
-                                    <Select value={filters.departmentName || "all"} onValueChange={(val) => updateFilter({ departmentName: val === "all" ? "" : val })}>
-                                        <SelectTrigger className="w-full h-10 text-sm border-input rounded-xl bg-card hover:bg-muted/50 transition-all">
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="sfp-department" className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Department</Label>
+                                    <Select value={filters.departmentName || "all"} onValueChange={val => updateFilter({ departmentName: val === "all" ? "" : val })} disabled={departmentLoading}>
+                                        <SelectTrigger id="sfp-department" className="h-10 w-full text-sm">
                                             <SelectValue placeholder="All Departments" />
                                         </SelectTrigger>
-                                        <SelectContent className="rounded-xl">
+                                        <SelectContent>
                                             <SelectItem value="all">All Departments</SelectItem>
-                                            <SelectItem value="Sales">Sales</SelectItem>
-                                            <SelectItem value="Accounting">Accounting</SelectItem>
-                                            <SelectItem value="Warehouse">Warehouse</SelectItem>
+                                            {filters.departmentName && filters.departmentName !== "all" && !departmentNames.includes(filters.departmentName) && (
+                                                <SelectItem value={filters.departmentName}>Unavailable — {filters.departmentName}</SelectItem>
+                                            )}
+                                            {departmentNames.map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}
                                         </SelectContent>
                                     </Select>
+                                    {departmentLoading && <p role="status" className="text-xs text-muted-foreground">Loading departments…</p>}
+                                    {departmentLoadError && (
+                                        <div role="alert" className="flex flex-wrap items-center gap-2 text-xs text-destructive">
+                                            <span>Could not load departments.</span>
+                                            <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs" onClick={retryDepartmentLookup}>Retry</Button>
+                                        </div>
+                                    )}
                                 </div>
 
-                                {/* Tax Rate Settings */}
-                                <div className="space-y-2">
-                                    <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Tax Rate</Label>
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="sfp-tax-rate" className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Tax rate</Label>
                                     <div className="relative">
-                                        <Input 
+                                        <Input
+                                            id="sfp-tax-rate"
                                             type="number"
                                             value={filters.taxRate}
-                                            onChange={(e) => updateFilter({ taxRate: Number(e.target.value) || 0 })}
-                                            className="h-10 text-sm border-input rounded-xl bg-card pl-4 pr-8 transition-all focus-visible:ring-1" 
+                                            onChange={e => updateFilter({ taxRate: Number(e.target.value) || 0 })}
+                                            className="h-10 w-full pl-4 pr-8 text-sm"
                                         />
-                                        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                            <span className="text-muted-foreground text-sm font-medium">%</span>
+                                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+                                            <span className="text-sm font-medium text-muted-foreground">%</span>
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Comparison Toggle */}
-                                <div className="space-y-2">
+                                <div className="space-y-1.5">
                                     <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Comparison</Label>
-                                    <div className="flex h-10 items-center justify-start rounded-xl border border-input bg-card px-4">
+                                    <div className="flex h-10 items-center rounded-md border border-input bg-background px-3">
                                         <div className="flex items-center gap-2">
                                             <Checkbox
                                                 id="comparison"
                                                 checked={filters.includeComparison}
-                                                onCheckedChange={(checked) => updateFilter({ includeComparison: !!checked })}
-                                                className="h-5 w-5 rounded-md border-input data-[state=checked]:bg-red-500! data-[state=checked]:border-red-500! dark:data-[state=checked]:bg-red-500! transition-all shadow-sm"
+                                                onCheckedChange={checked => updateFilter({ includeComparison: !!checked })}
                                             />
-                                            <Label
-                                                htmlFor="comparison"
-                                                className={cn(
-                                                    "text-sm cursor-pointer transition-colors pt-0.5",
-                                                    filters.includeComparison ? "text-foreground font-medium" : "text-muted-foreground"
-                                                )}
-                                            >
-                                                Include past FS comparison
+                                            <Label htmlFor="comparison" className="cursor-pointer text-sm">
+                                                Include comparison
                                             </Label>
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Conditional Comparison Sub-inputs */}
                                 {filters.includeComparison && (
                                     <>
-                                        <div className="space-y-2">
-                                            <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Comparison Basis</Label>
-                                            <Select value={filters.comparisonBasis} onValueChange={handleComparisonBasisChange}>
-                                                <SelectTrigger className="w-full h-10 text-sm border-input rounded-xl bg-card hover:bg-muted/50 transition-all">
-                                                    <SelectValue placeholder="Select basis..." />
+                                        <div className="space-y-1.5 lg:col-span-2">
+                                            <Label htmlFor="sfp-comparison-mode" className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Compare with</Label>
+                                            <Select value={filters.comparisonMode}
+                                                onValueChange={value => updateFilter({ comparisonMode: value as typeof filters.comparisonMode })}>
+                                                <SelectTrigger id="sfp-comparison-mode" className="h-10 w-full text-sm">
+                                                    <SelectValue />
                                                 </SelectTrigger>
-                                                <SelectContent className="rounded-xl">
-                                                    <SelectItem value="monthly">Monthly</SelectItem>
-                                                    <SelectItem value="quarterly">Quarterly</SelectItem>
-                                                    <SelectItem value="annually">Annually</SelectItem>
+                                                <SelectContent>
+                                                    <SelectItem value="previousPeriod">Previous period</SelectItem>
+                                                    <SelectItem value="samePeriodLastYear">Same period last year</SelectItem>
+                                                    <SelectItem value="custom">Custom dates</SelectItem>
                                                 </SelectContent>
                                             </Select>
                                         </div>
-
-                                        {filters.comparisonBasis === "monthly" && (
-                                            <div className="space-y-2">
-                                                <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Comparison Month</Label>
-                                                <Select 
-                                                    value={filters.comparisonStartDate.split("-")[1] || "02"} 
-                                                    onValueChange={(val) => {
-                                                        const year = filters.comparisonStartDate.split("-")[0];
-                                                        const lastDay = new Date(parseInt(year), parseInt(val), 0).getDate();
-                                                        updateFilter({ 
-                                                            comparisonStartDate: `${year}-${val}-01`,
-                                                            comparisonEndDate: `${year}-${val}-${lastDay}` 
-                                                        });
-                                                    }}
-                                                >
-                                                    <SelectTrigger className="w-full h-10 text-sm border-input rounded-xl bg-card hover:bg-muted/50 transition-all">
-                                                        <SelectValue placeholder="Month" />
-                                                    </SelectTrigger>
-                                                    <SelectContent className="rounded-xl max-h-[300px]">
-                                                        {["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"].map(m => (
-                                                            <SelectItem key={m} value={m}>
-                                                                {new Date(2000, parseInt(m)-1).toLocaleString('default', { month: 'long' })}
-                                                            </SelectItem>
-                                                        ))}
-                                                    </SelectContent>
-                                                </Select>
-                                            </div>
+                                        {filters.comparisonMode === "custom" && (
+                                            <>
+                                                <div className="space-y-1.5">
+                                                    <Label htmlFor="sfp-comparison-start" className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Comparison from</Label>
+                                                    <Input id="sfp-comparison-start" type="date" value={filters.comparisonStartDate}
+                                                        onChange={e => updateFilter({ comparisonStartDate: e.target.value })}
+                                                        aria-describedby={periodError ? "sfp-period-error" : undefined}
+                                                        className="h-10 w-full text-sm" />
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <Label htmlFor="sfp-comparison-end" className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Comparison to</Label>
+                                                    <Input id="sfp-comparison-end" type="date" value={filters.comparisonEndDate}
+                                                        onChange={e => updateFilter({ comparisonEndDate: e.target.value })}
+                                                        aria-describedby={periodError ? "sfp-period-error" : undefined}
+                                                        className="h-10 w-full text-sm" />
+                                                </div>
+                                            </>
                                         )}
-                                        
-                                        {filters.comparisonBasis === "quarterly" && (
-                                            <div className="space-y-2">
-                                                <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Comparison Quarter</Label>
-                                                <Select 
-                                                    value={`q${Math.ceil(parseInt(filters.comparisonEndDate.split("-")[1] || "3")/3)}`}
-                                                    onValueChange={(val) => {
-                                                        const q = parseInt(val.charAt(1));
-                                                        const year = filters.comparisonEndDate.split("-")[0];
-                                                        const startMonth = String((q - 1) * 3 + 1).padStart(2, "0");
-                                                        const endMonth = String(q * 3).padStart(2, "0");
-                                                        const lastDay = new Date(parseInt(year), q * 3, 0).getDate();
-                                                        updateFilter({
-                                                            comparisonStartDate: `${year}-${startMonth}-01`,
-                                                            comparisonEndDate: `${year}-${endMonth}-${lastDay}`
-                                                        });
-                                                    }}
-                                                >
-                                                    <SelectTrigger className="w-full h-10 text-sm border-input rounded-xl bg-card hover:bg-muted/50 transition-all">
-                                                        <SelectValue placeholder="Quarter" />
-                                                    </SelectTrigger>
-                                                    <SelectContent className="rounded-xl">
-                                                        <SelectItem value="q1">1st Quarter</SelectItem>
-                                                        <SelectItem value="q2">2nd Quarter</SelectItem>
-                                                        <SelectItem value="q3">3rd Quarter</SelectItem>
-                                                        <SelectItem value="q4">4th Quarter</SelectItem>
-                                                    </SelectContent>
-                                                </Select>
-                                            </div>
-                                        )}
-
-                                        <div className="space-y-2">
-                                            <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Comparison Year</Label>
-                                            <Select 
-                                                value={filters.comparisonEndDate.split("-")[0] || "2025"} 
-                                                onValueChange={(val) => {
-                                                    const monthOrStart = filters.comparisonStartDate.split("-")[1] || "01";
-                                                    const monthOrEnd = filters.comparisonEndDate.split("-")[1] || "12";
-                                                    const lastDay = new Date(parseInt(val), parseInt(monthOrEnd), 0).getDate();
-                                                    updateFilter({ 
-                                                        comparisonStartDate: `${val}-${monthOrStart}-01`,
-                                                        comparisonEndDate: `${val}-${monthOrEnd}-${lastDay}` 
-                                                    });
-                                                }}
-                                            >
-                                                <SelectTrigger className="w-full h-10 text-sm border-input rounded-xl bg-card hover:bg-muted/50 transition-all">
-                                                    <SelectValue placeholder="Year" />
-                                                </SelectTrigger>
-                                                <SelectContent className="rounded-xl">
-                                                    {["2024", "2025", "2026", "2027"].map(y => (
-                                                        <SelectItem key={y} value={y}>{y}</SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
+                                        <p className="text-xs text-muted-foreground sm:col-span-2 lg:col-span-4">
+                                            Selected comparison period: {formatFinancialPerformanceDateRange(filters.comparisonStartDate, filters.comparisonEndDate)}
+                                        </p>
                                     </>
                                 )}
                             </div>
                         </div>
-
-                        {/* Buttons */}
-                        <div className="flex items-center gap-3 pt-6 mt-auto">
-                            <Button variant="default" className="rounded-xl px-6 h-10 text-sm font-medium shadow-sm transition-all focus-visible:ring-primary/50" onClick={() => refresh()} disabled={isLoading}>
-                                {isLoading ? "Loading..." : "Generate Report"}
-                            </Button>
-                            <Button variant="outline" className="rounded-xl px-6 h-10 text-sm font-medium border-input text-foreground hover:bg-accent transition-all" onClick={() => resetFilters()} disabled={isLoading}>
-                                Clear
-                            </Button>
-                        </div>
                     </div>
 
-                    {/* ── RIGHT: Key Ratios ── */}
-                    <div className="p-5 sm:p-6 lg:px-8 flex flex-col bg-card shrink-0 min-h-0 min-w-0">
-                        <h4 className="font-bold text-sm tracking-tight text-foreground mb-6">Key Ratios</h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            {renderRatioItem({
-                                title: "Gross Profit Margin",
-                                subtitle: "Gross Profit ÷ Revenue",
-                                value: data?.grossProfitMargin,
-                                priorValue: data?.comparisonData?.grossProfitMargin
-                            })}
-                            {renderRatioItem({
-                                title: "Operating Expense Ratio",
-                                subtitle: "Operating Expenses ÷ Revenue",
-                                value: data?.operatingExpenseRatio,
-                                priorValue: data?.comparisonData?.operatingExpenseRatio
-                            })}
-                            {renderRatioItem({
-                                title: "Net Profit Margin",
-                                subtitle: "Net Income ÷ Revenue",
-                                value: data?.netProfitMargin,
-                                priorValue: data?.comparisonData?.netProfitMargin
-                            })}
-                            {renderRatioItem({
-                                title: "Effective Tax Rate",
-                                subtitle: "Income Tax Expense ÷ Income Before Tax",
-                                value: data?.effectiveTaxRate,
-                                priorValue: data?.comparisonData?.effectiveTaxRate
-                            })}
+                    {periodError && <p id="sfp-period-error" role="alert" className="text-sm text-destructive">{periodError}</p>}
+
+                    {isLoading && (
+                        <p role="status" aria-live="polite" className="text-xs text-muted-foreground">
+                            {data ? "Generating report. The last successful report remains displayed." : "Generating report…"}
+                        </p>
+                    )}
+                    {reportError && !isLoading && (
+                        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
+                            <div>
+                                <p className="font-medium text-destructive">{reportError}</p>
+                                {data && lastUpdatedAt && (
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                        Showing the last successful report from {formatLastUpdated(lastUpdatedAt)} PHT.
+                                    </p>
+                                )}
+                            </div>
+                            <Button type="button" variant="outline" size="sm" disabled={isLoading} onClick={() => void refresh()}>
+                                Retry
+                            </Button>
                         </div>
-                    </div>
-                </div>
+                    )}
+                    {data && lastUpdatedAt && (
+                        <p role="status" aria-live="polite" className="text-xs text-muted-foreground">
+                            Report ready. Last updated: {formatLastUpdated(lastUpdatedAt)} PHT
+                        </p>
+                    )}
+                    {hasPendingChanges && (
+                        <p role="status" aria-live="polite" className="text-sm font-medium text-amber-700 dark:text-amber-400">
+                            Changes pending — Generate report to apply. The displayed report still uses its applied criteria.
+                        </p>
+                    )}
+                    {appliedCriteria && (
+                        <section aria-label="Applied report coverage" className="flex min-w-0 flex-wrap gap-x-6 gap-y-2 border-t border-border pt-3 text-xs">
+                            <p>
+                                <span className="font-medium text-muted-foreground">Transaction status: </span>
+                                {describeFinancialPerformanceStatus(appliedCriteria.status)}
+                            </p>
+                            <p className="min-w-0">
+                                <span className="font-medium text-muted-foreground">Source coverage: </span>
+                                {FINANCIAL_PERFORMANCE_SOURCE_MODULES.join(", ")}
+                            </p>
+                        </section>
+                    )}
+                    {appliedCriteria && (
+                        <section aria-label="Applied report filters" className="flex min-w-0 flex-wrap items-center gap-2 border-t border-border pt-3">
+                            <span className="mr-1 text-xs font-medium text-muted-foreground">Applied filters:</span>
+                            {appliedFilterChips.length ? appliedFilterChips.map(chip => {
+                                const pendingRemoval = !draftFilterChipKeys.has(chip.key);
+                                return (
+                                    <button
+                                        key={chip.key}
+                                        type="button"
+                                        onClick={() => removeAppliedFilter(chip.key)}
+                                        disabled={pendingRemoval}
+                                        aria-label={pendingRemoval ? `${chip.label} pending removal on next report` : `Remove ${chip.label} from the next report`}
+                                        className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-background px-2.5 py-1 text-left text-xs hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-70"
+                                    >
+                                        <span className="min-w-0 [overflow-wrap:anywhere]">{chip.label}</span>
+                                        {pendingRemoval
+                                            ? <span className="shrink-0 text-[10px] text-amber-700 dark:text-amber-400">Pending removal</span>
+                                            : <X aria-hidden="true" className="h-3 w-3 shrink-0" />}
+                                    </button>
+                                );
+                            }) : (
+                                <span className="text-xs text-muted-foreground">Default report criteria</span>
+                            )}
+                        </section>
+                    )}
+                </section>
             </CardContent>
             <CertificationModal 
                 isOpen={isCertifyModalOpen} 

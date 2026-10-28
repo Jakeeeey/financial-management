@@ -32,7 +32,7 @@ export async function GET(req: Request) {
       "created_by.user_email",
     ].join(",");
 
-    const url = `${API_BASE_URL}/items/expense_logs?fields=${fields}&filter[expense_id][_eq]=${expenseId}&sort=created_at`;
+    const url = `${API_BASE_URL}/items/expense_logs?fields=${fields}&filter[expense_id][_eq]=${expenseId}&sort=created_at&limit=-1`;
 
     const res = await fetch(url, {
       headers: AUTH_HEADERS,

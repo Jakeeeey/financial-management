@@ -8,8 +8,10 @@ import type {
   AdjustingEntrySourceJournalSummary,
   AdjustingEntrySourceTotals,
   AdjustingEntrySummary,
+  AdjustingEntrySummaryQuery,
   DepartmentLookup,
   DivisionLookup,
+  AjeAccess, AjeAction, AjeAccount, AjeAttachment, AjePeriod, AjeAuditPage, AjeReversalPreview,
 } from "../types";
 
 const BASE = "/api/fm/financial-statements/adjusting-journal-entries";
@@ -127,6 +129,8 @@ async function fetchWithAuthRetry(input: RequestInfo | URL, init?: RequestInit) 
   const res = await fetch(input, requestInit);
   if (res.status !== 401) return res;
 
+  if (requestInit.signal?.aborted) throw new DOMException("The request was aborted", "AbortError");
+
   const refreshed = await refreshSession();
   if (!refreshed) return res;
 
@@ -134,7 +138,7 @@ async function fetchWithAuthRetry(input: RequestInfo | URL, init?: RequestInit) 
 }
 
 export const adjustingJournalEntriesApi = {
-  async list(query: AdjustingEntryQuery): Promise<AdjustingEntryPage> {
+  async list(query: AdjustingEntryQuery, signal?: AbortSignal): Promise<AdjustingEntryPage> {
     const params = new URLSearchParams();
     params.set("page", String(query.page));
     params.set("pageSize", String(query.pageSize));
@@ -146,21 +150,27 @@ export const adjustingJournalEntriesApi = {
     appendOptional(params, "departmentId", query.departmentId);
     appendOptional(params, "sourceJeNo", query.sourceJeNo?.trim());
     appendOptional(params, "sort", query.sort);
+    appendOptional(params, "accountTypeId", query.accountTypeId);
+    appendOptional(params, "workspace", query.workspace);
+    appendOptional(params, "unbalancedOnly", query.unbalancedOnly);
+    appendOptional(params, "queue", query.queue);
 
-    const res = await fetchWithAuthRetry(`${BASE}?${params.toString()}`, { cache: "no-store" });
+    const res = await fetchWithAuthRetry(`${BASE}?${params.toString()}`, { cache: "no-store", signal });
     const data = await parseResponse<AdjustingEntryPage & { page?: Partial<AdjustingEntryPage> }>(res, "Failed to load adjusting journal entries");
     return normalizePage(data);
   },
 
-  async summary(query: Omit<AdjustingEntryQuery, "page" | "pageSize" | "status" | "sourceJeNo" | "sort">): Promise<AdjustingEntrySummary> {
+  async summary(query: AdjustingEntrySummaryQuery, signal?: AbortSignal): Promise<AdjustingEntrySummary> {
     const params = new URLSearchParams();
     appendOptional(params, "search", query.search?.trim());
     appendOptional(params, "startDate", query.startDate);
     appendOptional(params, "endDate", query.endDate);
     appendOptional(params, "divisionId", query.divisionId);
     appendOptional(params, "departmentId", query.departmentId);
+    appendOptional(params, "accountTypeId", query.accountTypeId);
+    appendOptional(params, "workspace", query.workspace);
 
-    const res = await fetchWithAuthRetry(`${BASE}/summary?${params.toString()}`, { cache: "no-store" });
+    const res = await fetchWithAuthRetry(`${BASE}/summary?${params.toString()}`, { cache: "no-store", signal });
     return parseResponse<AdjustingEntrySummary>(res, "Failed to load adjusting entry summary");
   },
 
@@ -247,7 +257,68 @@ export const adjustingJournalEntriesApi = {
       await parseResponse<unknown>(res, "Failed to delete adjusting journal entry");
     }
   },
+
+  async access(): Promise<AjeAccess> { return request<AjeAccess>("/access"); },
+  async accounts(): Promise<AjeAccount[]> { return request<AjeAccount[]>("/accounts"); },
+  async command(id: number, action: AjeAction, version: number, reason?: string): Promise<AdjustingEntry> {
+    return request<AdjustingEntry>(`/${id}/${action}`, "POST", { version, reason });
+  },
+  async reversalPreview(id: number): Promise<AjeReversalPreview> { return request<AjeReversalPreview>(`/${id}/reversal-preview`); },
+  async period(): Promise<AjePeriod> { return request<AjePeriod>("/controls/period"); },
+  async setPeriod(closedThroughDate: string | null, version: number, reason: string): Promise<AjePeriod> {
+    return request<AjePeriod>("/controls/period", "PUT", { closedThroughDate, version, reason });
+  },
+  async audit(params: URLSearchParams, signal?: AbortSignal): Promise<AjeAuditPage> {
+    const page = await request<AjeAuditPage & { page?: { totalPages: number; totalElements: number } }>(`/audit?${params}`, "GET", undefined, signal);
+    return { ...page, totalPages: page.totalPages ?? page.page?.totalPages ?? 0, totalElements: page.totalElements ?? page.page?.totalElements ?? 0, dayCounts: page.dayCounts ?? {} };
+  },
+  async auditUsers(): Promise<Array<{ id: number; name: string }>> { return request("/audit/users"); },
+  async attachments(id: number): Promise<AjeAttachment[]> { return request<AjeAttachment[]>(`/${id}/attachments`); },
+  async attachmentsForEntries(entryIds: number[]): Promise<AjeAttachment[]> {
+    if (entryIds.length === 0) return [];
+    const params = new URLSearchParams();
+    [...new Set(entryIds)].forEach(id => params.append("entryIds", String(id)));
+    return request<AjeAttachment[]>(`/attachments?${params.toString()}`);
+  },
+  async uploadAttachment(id: number, file: File): Promise<AjeAttachment> {
+    const body = new FormData(); body.append("file", file);
+    const response = await fetchWithAuthRetry(`${BASE}/${id}/attachments`, { method: "POST", body });
+    return parseResponse<AjeAttachment>(response, "Supporting document upload failed");
+  },
+  async removeAttachment(id: number, attachmentId: number): Promise<void> {
+    await request(`/${id}/attachments/${attachmentId}`, "DELETE");
+  },
 };
+
+async function request<T>(path: string, method = "GET", payload?: unknown, signal?: AbortSignal): Promise<T> {
+  const response = await fetchWithAuthRetry(BASE + path, {
+    method, cache: "no-store", signal,
+    ...(payload !== undefined ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) } : {}),
+  });
+  return parseResponse<T>(response, "Adjusting entry request failed");
+}
+
+export function ajeAttachmentUrl(id: number, attachmentId: number) { return `${BASE}/${id}/attachments/${attachmentId}`; }
+export function ajeAttachmentThumbnailUrl(id: number, attachmentId: number) { return `${ajeAttachmentUrl(id, attachmentId)}?preview=thumbnail`; }
+export function ajeAttachmentPreviewUrl(id: number, attachmentId: number) { return `${ajeAttachmentUrl(id, attachmentId)}?preview=1`; }
+export function ajeEntryPrintUrl(id: number, format?: "pdf") { return `${BASE}/${id}/print${format === "pdf" ? "?format=pdf" : ""}`; }
+export function ajeReportUrl(query: AdjustingEntryQuery, format: "csv" | "html" | "pdf") {
+  const params = new URLSearchParams({ format });
+  for (const [key, value] of Object.entries(query)) {
+    if (key === "page" || key === "pageSize" || value == null || value === "" || value === "All") continue;
+    params.set(key, String(value));
+  }
+  return `${BASE}/report?${params}`;
+}
+
+export function ajeAuditReportUrl(filters: { search:string; userId:string; action:string; status:string; fromDate:string; toDate:string; entryId?:number | null }, format: "csv" | "html") {
+  const params = new URLSearchParams({ format });
+  for (const [key, value] of Object.entries(filters)) {
+    if (value == null || value === "") continue;
+    params.set(key, String(value));
+  }
+  return `${BASE}/audit/report?${params}`;
+}
 
 export async function fetchCoaOptions() {
   const res = await fetch("/api/fm/chart-of-accounts?resource=chart_of_accounts&page=1&pageSize=100", {

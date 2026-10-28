@@ -44,7 +44,7 @@ export async function GET() {
     ].join(",");
 
     const res = await fetch(
-      `${API_BASE_URL}/items/expense_approvers?fields=${fields}&filter[is_deleted][_eq]=false&sort=division_id,approver_hierarchy`,
+      `${API_BASE_URL}/items/expense_approvers?fields=${fields}&filter[is_deleted][_eq]=false&sort=division_id,approver_hierarchy&limit=-1`,
       {
         headers: AUTH_HEADERS,
         cache: "no-store",

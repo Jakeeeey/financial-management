@@ -21,11 +21,14 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AIInsight } from "../services/ai-cash-flow.service";
+import { formatCashFlowDate } from "../utils/reporting-dates";
 
 interface CashFlowAIInsightsProps {
   insight: AIInsight | null;
   isAnalyzing: boolean;
   hasRun: boolean;
+  canAnalyze: boolean;
+  availabilityMessage: string | null;
   onAnalyze: () => void;
   error?: string | null;
 }
@@ -34,6 +37,8 @@ export function CashFlowAIInsights({
   insight,
   isAnalyzing,
   hasRun,
+  canAnalyze,
+  availabilityMessage,
   onAnalyze,
   error,
 }: CashFlowAIInsightsProps) {
@@ -87,6 +92,13 @@ export function CashFlowAIInsights({
     : getHealthConfig("unknown");
 
   const HealthIcon = healthConfig.icon;
+  const generatedAtLabel = insight
+    ? new Intl.DateTimeFormat("en-PH", {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: "Asia/Manila",
+      }).format(new Date(insight.generatedAt))
+    : null;
 
   // If analysis hasn't been triggered yet, show the CTA
   if (!hasRun && !error) {
@@ -103,11 +115,10 @@ export function CashFlowAIInsights({
             </div>
             <div className="flex-1 min-w-0">
               <h3 className="text-lg font-bold uppercase tracking-tight">
-                AI-Powered Analysis
+                Cash Flow Analysis
               </h3>
               <p className="text-sm text-muted-foreground mt-1">
-                Get intelligent insights, risk assessment, and actionable recommendations
-                for your cash flow statement.
+                Review findings, risk indicators, and recommendations for the applied cash flow report.
               </p>
               <div className="flex flex-wrap gap-2 mt-3">
                 <Badge
@@ -122,7 +133,7 @@ export function CashFlowAIInsights({
                   className="text-[10px] font-bold uppercase tracking-wider"
                 >
                   <Activity className="w-3 h-3 mr-1" />
-                  Trend Analysis
+                  Period Observations
                 </Badge>
                 <Badge
                   variant="secondary"
@@ -135,7 +146,7 @@ export function CashFlowAIInsights({
             </div>
             <Button
               onClick={onAnalyze}
-              disabled={isAnalyzing}
+              disabled={isAnalyzing || !canAnalyze}
               size="lg"
               className="h-12 px-6 text-xs font-black uppercase tracking-widest bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 transition-all duration-300 shrink-0"
             >
@@ -147,11 +158,16 @@ export function CashFlowAIInsights({
               ) : (
                 <>
                   <Brain className="w-4 h-4 mr-2" />
-                  Analyze with AI
+                  Analyze cash flow
                 </>
               )}
             </Button>
           </div>
+          {availabilityMessage && (
+            <p className="mt-4 text-xs text-muted-foreground" role="status">
+              {availabilityMessage}
+            </p>
+          )}
         </CardContent>
       </Card>
     );
@@ -170,10 +186,10 @@ export function CashFlowAIInsights({
           </div>
           <div className="text-center">
             <p className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
-              Analyzing Cash Flow Data
+              Analyzing Cash Flow Report
             </p>
             <p className="text-xs text-muted-foreground/60 mt-1">
-              Processing transactions and generating insights...
+              Reviewing the applied period and generating analysis...
             </p>
           </div>
           <div className="flex gap-1.5 mt-2">
@@ -198,14 +214,20 @@ export function CashFlowAIInsights({
           <AlertTriangle className="h-5 w-5 text-rose-500 shrink-0" />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-bold text-rose-600 dark:text-rose-400">
-              AI Analysis Failed
+              Cash Flow Analysis Failed
             </p>
             <p className="text-xs text-rose-500/80 mt-1">{error}</p>
+            {availabilityMessage && (
+              <p className="mt-1 text-xs text-muted-foreground" role="status">
+                {availabilityMessage}
+              </p>
+            )}
           </div>
           <Button
             variant="outline"
             size="sm"
             onClick={onAnalyze}
+            disabled={!canAnalyze}
             className="h-8 px-3 text-[10px] font-bold uppercase tracking-widest border-rose-500/30 text-rose-600 hover:bg-rose-500/10 shrink-0"
           >
             <RefreshCw className="w-3 h-3 mr-1" />
@@ -243,8 +265,11 @@ export function CashFlowAIInsights({
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-3 flex-wrap">
                 <h3 className="text-xl font-black uppercase tracking-tight">
-                  AI Analysis Results
+                  Cash Flow Analysis
                 </h3>
+                <Badge variant="outline" className="text-[10px] font-bold uppercase tracking-wider">
+                  {insight.analysisSource === "ai" ? "AI-generated" : "Rules-based"}
+                </Badge>
                 <Badge className={cn("text-[10px] font-bold uppercase tracking-widest", healthConfig.badge)}>
                   <Sparkles className="w-3 h-3 mr-1" />
                   {healthConfig.label}
@@ -253,16 +278,27 @@ export function CashFlowAIInsights({
               <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
                 {insight.summary}
               </p>
+              <p className="mt-3 text-xs text-muted-foreground">
+                Analyzed period: {formatCashFlowDate(insight.analyzedPeriod.startDate)} – {formatCashFlowDate(insight.analyzedPeriod.endDate)}
+                {generatedAtLabel ? ` · Generated ${generatedAtLabel} PHT` : ""}
+              </p>
+              <div className="mt-3 rounded-lg border border-border/50 bg-background/60 px-3 py-2.5 text-sm">
+                <span className="font-semibold">Why this status: </span>
+                <span className="text-muted-foreground">{insight.healthRationale}</span>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                This is a cash-flow indicator based on this period only, not a complete assessment of business health.
+              </p>
             </div>
             <Button
               variant="outline"
               size="sm"
               onClick={onAnalyze}
-              disabled={isAnalyzing}
+              disabled={isAnalyzing || !canAnalyze}
               className="h-9 px-3 text-[10px] font-bold uppercase tracking-widest shrink-0"
             >
               <RefreshCw className={cn("w-3 h-3 mr-1", isAnalyzing && "animate-spin")} />
-              Re-analyze
+              Re-analyze report
             </Button>
           </div>
         </CardContent>
@@ -351,14 +387,14 @@ export function CashFlowAIInsights({
         </Card>
       </div>
 
-      {/* Trends */}
+      {/* Period observations */}
       <Card className="border-border/50 shadow-sm">
         <CardContent className="p-5">
           <div className="flex items-center gap-2 mb-4">
             <div className="h-8 w-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
               <Activity className="h-4 w-4 text-blue-500" />
             </div>
-            <h4 className="text-sm font-bold uppercase tracking-wide">Trend Analysis</h4>
+            <h4 className="text-sm font-bold uppercase tracking-wide">Period Observations</h4>
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/10">
@@ -369,7 +405,7 @@ export function CashFlowAIInsights({
                 </span>
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                {insight.trends.operating}
+                {insight.periodObservations.operating}
               </p>
             </div>
             <div className="p-3 rounded-xl bg-blue-500/5 border border-blue-500/10">
@@ -380,7 +416,7 @@ export function CashFlowAIInsights({
                 </span>
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                {insight.trends.investing}
+                {insight.periodObservations.investing}
               </p>
             </div>
             <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/10">
@@ -391,7 +427,7 @@ export function CashFlowAIInsights({
                 </span>
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                {insight.trends.financing}
+                {insight.periodObservations.financing}
               </p>
             </div>
           </div>

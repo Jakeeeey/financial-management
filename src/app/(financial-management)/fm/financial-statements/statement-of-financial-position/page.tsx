@@ -14,6 +14,7 @@ import { cookies } from "next/headers";
 
 // ✅ Wire the module you asked for
 import { StatementOfFinancialPositionClient } from "@/modules/financial-management/financial-statements/statement-of-financial-position/components/statement-of-financial-position-client";
+import { getBalanceSheetTodayDate } from "@/modules/financial-management/financial-statements/statement-of-financial-position/utils/report-state";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -78,6 +79,7 @@ export default async function Page() {
     const token = cookieStore.get(COOKIE_NAME)?.value ?? null;
 
     const headerUser = buildHeaderUserFromToken(token);
+    const initialAsOfDate = getBalanceSheetTodayDate();
 
     return (
         // ✅ UI ONLY: avoid page-level scroll container; prevent horizontal overflow
@@ -119,7 +121,7 @@ export default async function Page() {
 
             {/* ✅ UI ONLY: remove ScrollArea so the page doesn't scroll; the table card handles scrolling */}
             <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4 md:p-6 lg:p-8 bg-muted/50">
-                <StatementOfFinancialPositionClient />
+                <StatementOfFinancialPositionClient initialAsOfDate={initialAsOfDate} />
             </main>
         </div>
     );

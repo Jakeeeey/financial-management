@@ -106,6 +106,10 @@ export async function GET(req: Request) {
     query.append("sort", "-id");
   }
 
+  if (!query.has("limit")) {
+    query.append("limit", "-1");
+  }
+
   const targetUrl = `${API_BASE_URL}/items/expense?${query.toString()}`;
 
   try {

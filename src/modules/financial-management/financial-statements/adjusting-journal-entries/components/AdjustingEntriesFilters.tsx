@@ -1,6 +1,7 @@
 "use client";
 
-import { Search, X } from "lucide-react";
+import { ChevronDown, Search, X } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +30,8 @@ type AdjustingEntriesFiltersProps = {
   filterDivisionOptions: LookupOption[];
   filterDepartmentOptions: LookupOption[];
   hasActiveFilters: boolean;
+  moreFiltersCount?: number;
+  children?: ReactNode;
   onSearchChange: (value: string) => void;
   onStartDateChange: (value: string) => void;
   onEndDateChange: (value: string) => void;
@@ -52,6 +55,8 @@ export function AdjustingEntriesFilters({
   filterDivisionOptions,
   filterDepartmentOptions,
   hasActiveFilters,
+  moreFiltersCount = 0,
+  children,
   onSearchChange,
   onStartDateChange,
   onEndDateChange,
@@ -62,8 +67,9 @@ export function AdjustingEntriesFilters({
   onClearFilters,
 }: AdjustingEntriesFiltersProps) {
   return (
-    <div className="grid gap-3 rounded-md border bg-background p-3 shadow-sm lg:grid-cols-12">
-      <div className="space-y-1.5 lg:col-span-4">
+    <div className="space-y-3 rounded-md border bg-background p-3 shadow-sm">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-12">
+      <div className="col-span-2 space-y-1.5 lg:col-span-5">
         <Label htmlFor="aje-search-filter" className="text-xs font-medium text-muted-foreground">Search</Label>
         <div className="relative min-w-0">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -76,7 +82,7 @@ export function AdjustingEntriesFilters({
           />
         </div>
       </div>
-      <div className="space-y-1.5 lg:col-span-2">
+      <div className="min-w-0 space-y-1.5 lg:col-span-2">
         <Label htmlFor="aje-start-date-filter" className="text-xs font-medium text-muted-foreground">Start Date</Label>
         <Input
           id="aje-start-date-filter"
@@ -86,7 +92,7 @@ export function AdjustingEntriesFilters({
           aria-label="Start date"
         />
       </div>
-      <div className="space-y-1.5 lg:col-span-2">
+      <div className="min-w-0 space-y-1.5 lg:col-span-2">
         <Label htmlFor="aje-end-date-filter" className="text-xs font-medium text-muted-foreground">End Date</Label>
         <Input
           id="aje-end-date-filter"
@@ -96,7 +102,7 @@ export function AdjustingEntriesFilters({
           aria-label="End date"
         />
       </div>
-      <div className="space-y-1.5 lg:col-span-2">
+      <div className="col-span-2 space-y-1.5 lg:col-span-3">
         <Label className="text-xs font-medium text-muted-foreground">Status</Label>
         <Select value={status} onValueChange={onStatusChange}>
           <SelectTrigger className="w-full">
@@ -111,49 +117,35 @@ export function AdjustingEntriesFilters({
           </SelectContent>
         </Select>
       </div>
-      <div className="space-y-1.5 lg:col-span-2">
-        <Label className="text-xs font-medium text-muted-foreground">Rows Per Page</Label>
-        <Select value={String(pageSize)} onValueChange={(value) => onPageSizeChange(Number(value))}>
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Rows" />
-          </SelectTrigger>
-          <SelectContent>
-            {pageSizes.map((size) => (
-              <SelectItem key={size} value={String(size)}>
-                {size} rows
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
       </div>
-      <div className="space-y-1.5 lg:col-span-3">
-        <Label className="text-xs font-medium text-muted-foreground">Division</Label>
-        <AjeSearchableSelect
-          options={filterDivisionOptions}
-          value={filterDivisionId}
-          onValueChange={onDivisionChange}
-          placeholder="All divisions"
-        />
-      </div>
-      <div className="space-y-1.5 lg:col-span-3">
-        <Label className="text-xs font-medium text-muted-foreground">Department</Label>
-        <AjeSearchableSelect
-          options={filterDepartmentOptions}
-          value={filterDepartmentId}
-          onValueChange={onDepartmentChange}
-          placeholder="All departments"
-        />
-      </div>
-      <div className="flex items-end lg:col-span-2">
-        <Button
-          type="button"
-          variant="outline"
-          className="w-full"
-          onClick={onClearFilters}
-          disabled={!hasActiveFilters}
-        >
-          <X className="mr-2 size-4" />
-          Clear Filters
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <details className="group w-full">
+          <summary className="flex cursor-pointer list-none items-center gap-2 rounded-md px-1 py-1.5 text-sm font-medium hover:text-primary [&::-webkit-details-marker]:hidden">
+            <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
+            More filters
+            {moreFiltersCount > 0 && <span className="rounded-full bg-muted px-2 py-0.5 text-xs">{moreFiltersCount}</span>}
+          </summary>
+          <div className="grid gap-3 border-t pt-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-muted-foreground">Rows Per Page</Label>
+              <Select value={String(pageSize)} onValueChange={(value) => onPageSizeChange(Number(value))}>
+                <SelectTrigger className="w-full"><SelectValue placeholder="Rows" /></SelectTrigger>
+                <SelectContent>{pageSizes.map((size) => <SelectItem key={size} value={String(size)}>{size} rows</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-muted-foreground">Division</Label>
+              <AjeSearchableSelect options={filterDivisionOptions} value={filterDivisionId} onValueChange={onDivisionChange} placeholder="All divisions" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-muted-foreground">Department</Label>
+              <AjeSearchableSelect options={filterDepartmentOptions} value={filterDepartmentId} onValueChange={onDepartmentChange} placeholder="All departments" />
+            </div>
+            {children}
+          </div>
+        </details>
+        <Button type="button" variant="outline" size="sm" onClick={onClearFilters} disabled={!hasActiveFilters}>
+          <X className="mr-2 size-4" />Clear Filters
         </Button>
       </div>
     </div>
