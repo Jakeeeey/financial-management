@@ -17,6 +17,7 @@ const WORKSPACE_TITLES: Record<string, string> = {
   consignees: "Consignees",
   "my-submissions": "My Submissions",
   approvals: "Approvals",
+  agreements: "Agreements",
 };
 
 type ConsignmentAppHeaderProps = {
@@ -45,7 +46,7 @@ export function ConsignmentAppHeader({ user }: ConsignmentAppHeaderProps) {
               </BreadcrumbItem>
               <BreadcrumbSeparator className="hidden shrink-0 md:block" />
               <BreadcrumbItem className="shrink-0">
-                <BreadcrumbLink href="/fm/consignment/consignees">Consignment</BreadcrumbLink>
+                <span>Consignment</span>
               </BreadcrumbItem>
               <BreadcrumbSeparator className="shrink-0" />
               <BreadcrumbItem className="min-w-0 overflow-hidden">
