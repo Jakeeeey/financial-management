@@ -10,7 +10,7 @@ import { ajeAttachmentPreviewUrl, ajeAttachmentThumbnailUrl, ajeAttachmentUrl, a
 import { AjeAttachmentPreview, isPreviewableAjeImage } from "./AjeAttachmentPreview";
 import { AjeDataFreshness, AjeRetryAlert } from "./AjeDataFreshness";
 import { auditEventSummary, formatDate, formatDateTime, money, statusBadgeClass } from "./formatters";
-import { availableActions, isSelfApproval } from "./AdjustingEntriesTable";
+import { availableActions } from "./AdjustingEntriesTable";
 
 export function canConfirmSubmission(entry: AdjustingEntry | null, reviewReady: boolean, notes: string) {
   return Boolean(entry && reviewReady && availableActions(entry).includes("submit")
@@ -55,9 +55,8 @@ type Props = {
   onCloseAutoFocus: (event: { preventDefault: () => void }) => void;
 };
 
-export function AjeReviewDialog({ open, journalNumber, entry, attachments, loading, error, attachmentsLoading, attachmentsError, detailsUpdatedAt, attachmentsUpdatedAt, auditEvents, auditLoading, auditError, auditUpdatedAt, canReview, userId, onAction, confirmingPosting, postingBusy, postingError, confirmingSubmission, submissionBusy, submissionError, submissionNotes, onSubmissionNotesChange, onCancelSubmission, onConfirmSubmission, onRequestPosting, onCancelPosting, onConfirmPosting, onRetryDetails, onRetryAttachments, onRetryAudit, onClose, onCloseAutoFocus }: Props) {
-  const reviewActions = entry ? availableActions(entry).filter(action => action === "post" || action === "retry" || action === "reject") : [];
-  const selfReviewBlocked = Boolean(canReview && userId != null && entry && reviewActions.length && isSelfApproval(entry, userId));
+export function AjeReviewDialog({ open, journalNumber, entry, attachments, loading, error, attachmentsLoading, attachmentsError, detailsUpdatedAt, attachmentsUpdatedAt, auditEvents, auditLoading, auditError, auditUpdatedAt, canReview, onAction, confirmingPosting, postingBusy, postingError, confirmingSubmission, submissionBusy, submissionError, submissionNotes, onSubmissionNotesChange, onCancelSubmission, onConfirmSubmission, onRequestPosting, onCancelPosting, onConfirmPosting, onRetryDetails, onRetryAttachments, onRetryAudit, onClose, onCloseAutoFocus }: Props) {
+  const reviewActions = entry ? availableActions(entry).filter(action => action === "post" || action === "retry" || action === "reject" || action === "reject-final") : [];
   const reviewReady = Boolean(entry && !loading && !error && !attachmentsLoading && !attachmentsError && !auditLoading && !auditError);
   const revisionNotesRequired = entry?.status === "For Revision";
   return <Dialog open={open} onOpenChange={value => { if (!value && !postingBusy && !submissionBusy) onClose(); }}>
@@ -137,7 +136,6 @@ export function AjeReviewDialog({ open, journalNumber, entry, attachments, loadi
           </ol>}
         </section>
       </div>}
-      {canReview && selfReviewBlocked && <p className="text-sm text-amber-700">Another user must review this entry because you created, prepared, or submitted it.</p>}
       </div>
       <DialogFooter className="shrink-0 flex-wrap border-t bg-background px-6 py-4">
         {!loading && entry && <Button type="button" variant="outline" asChild><a href={ajeEntryPrintUrl(entry.id,"pdf")} target="_blank" rel="noopener noreferrer">Print PDF</a></Button>}
@@ -146,10 +144,11 @@ export function AjeReviewDialog({ open, journalNumber, entry, attachments, loadi
           <Button type="button" disabled={submissionBusy || !canConfirmSubmission(entry,reviewReady,submissionNotes)} onClick={() => { if (entry) onConfirmSubmission(entry,submissionNotes); }}>{submissionBusy ? "Submitting..." : "Confirm submission"}</Button>
         </> : confirmingPosting ? <>
           <Button type="button" variant="outline" disabled={postingBusy} onClick={onCancelPosting}>Cancel</Button>
-          <Button type="button" disabled={postingBusy || !reviewReady || selfReviewBlocked || !reviewActions.some(action => action === "post" || action === "retry")} onClick={() => { if (entry) onConfirmPosting(entry); }}>{postingBusy ? "Posting..." : "Confirm posting"}</Button>
+          <Button type="button" disabled={postingBusy || !reviewReady || !reviewActions.some(action => action === "post" || action === "retry")} onClick={() => { if (entry) onConfirmPosting(entry); }}>{postingBusy ? "Posting..." : "Confirm posting"}</Button>
         </> : <>
-          {canReview && entry && !selfReviewBlocked && reviewActions.includes("reject") && <Button type="button" variant="outline" onClick={() => onAction(entry, "reject")}>Return for revision</Button>}
-          {canReview && entry && !selfReviewBlocked && reviewActions.some(action => action === "post" || action === "retry") && <Button type="button" onClick={onRequestPosting}>{entry.status === "Failed" ? "Retry posting" : "Post"}</Button>}
+          {canReview && entry && reviewActions.includes("reject-final") && <Button type="button" variant="destructive" onClick={() => onAction(entry, "reject-final")}>Reject</Button>}
+          {canReview && entry && reviewActions.includes("reject") && <Button type="button" variant="outline" onClick={() => onAction(entry, "reject")}>Return for revision</Button>}
+          {canReview && entry && reviewActions.some(action => action === "post" || action === "retry") && <Button type="button" onClick={onRequestPosting}>{entry.status === "Failed" ? "Retry posting" : "Post"}</Button>}
         </>}
         {!confirmingSubmission && <DialogClose asChild><Button type="button" variant="outline" disabled={postingBusy || submissionBusy}>Close</Button></DialogClose>}
       </DialogFooter>
