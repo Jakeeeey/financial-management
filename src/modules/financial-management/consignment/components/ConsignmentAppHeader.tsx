@@ -14,6 +14,7 @@ import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 
 const WORKSPACE_TITLES: Record<string, string> = {
+  policies: "Policies",
   consignees: "Consignees",
   "my-submissions": "My Submissions",
   approvals: "Approvals",
