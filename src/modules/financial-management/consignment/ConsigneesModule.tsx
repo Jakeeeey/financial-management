@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ConsigneeViewDialog, manilaTime } from "./components/ConsigneeViewDialog";
-import { ConsigneeStatusBadge } from "./components/ConsigneeStatusBadge";
+import { ConsignmentStatusBadge } from "./components/ConsignmentStatusBadge";
 import { ConsigneeStatusTabs } from "./components/ConsigneeStatusTabs";
 import { useConsignees } from "./hooks/useConsignees";
 import { ConsigneeDraftDialog } from "./components/ConsigneeDraftDialog";
@@ -70,7 +70,7 @@ export default function ConsigneesModule({ workspace = "consignees" }: { workspa
       {!snapshot && loading && <div aria-hidden="true" className="space-y-3 rounded-lg border p-4">{[0, 1, 2, 3].map(row => <div key={row} className="h-12 animate-pulse rounded bg-muted" />)}</div>}
       {data && <section className="overflow-hidden rounded-lg border" aria-label="Consignee register" aria-busy={pending}>
         <div className="space-y-1 border-b p-3 text-sm"><p>Showing {first}–{last} of {data.total} consignees</p>
-          <p className="flex flex-wrap items-center gap-1.5 text-muted-foreground"><span>Applied status:</span><ConsigneeStatusBadge status={applied?.status ?? status} />{workspace !== "consignees" && <span>{workspace === "my-submissions" ? "Your consignee records, including draft corrections." : "Pending and reviewed consignees. Self-review is blocked."}</span>}</p>
+          <p className="flex flex-wrap items-center gap-1.5 text-muted-foreground"><span>Applied status:</span><ConsignmentStatusBadge status={applied?.status ?? status} />{workspace !== "consignees" && <span>{workspace === "my-submissions" ? "Your consignee records, including draft corrections." : "Pending and reviewed consignees. Self-review is blocked."}</span>}</p>
           {applied?.search && <p className="break-words text-muted-foreground">Applied search: {applied.search}</p>}
           {pending && <p className="text-muted-foreground">Updating the requested page. The scope above describes the displayed results.</p>}
         </div>
@@ -85,7 +85,7 @@ export default function ConsigneesModule({ workspace = "consignees" }: { workspa
               <td className="px-4 py-3">{formatVatTreatment(item.vatTreatment)}</td>
               <td className="px-4 py-3"><p>{item.contactPerson || "Not provided"}</p>{item.email && <p className="text-muted-foreground">{item.email}</p>}{item.phone && <p className="text-muted-foreground">{item.phone}</p>}</td>
               <td className="px-4 py-3">
-                <ConsigneeStatusBadge status={item.status} />
+                <ConsignmentStatusBadge status={item.status} />
                 {item.status === "REJECTED" && item.rejectionReason && <p className="mt-1 max-w-56 truncate text-xs text-rose-700" title={item.rejectionReason}>Rejection: {item.rejectionReason}</p>}
                 {workspace === "approvals" && item.status === "PENDING" && item.createdByMe && <p className="mt-1 text-xs text-amber-700">Awaiting another reviewer</p>}
               </td>
