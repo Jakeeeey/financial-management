@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { getConsignee } from "../providers/consignees.api";
 import { ConsigneeWorkflowFeedback, ConsigneeWorkflowFooterActions } from "./ConsigneeWorkflowActions";
-import { ConsigneeStatusBadge } from "./ConsigneeStatusBadge";
+import { ConsignmentStatusBadge } from "./ConsignmentStatusBadge";
 import { useConsigneeWorkflow } from "../hooks/useConsigneeWorkflow";
 import { formatVatTreatment } from "../utils/consignment-format";
 import type { ConsigneeDetail, ConsigneeSummary, ConsignmentWorkspace } from "../types";
@@ -73,7 +73,7 @@ export function ConsigneeViewDialog({ selected, inspection, onClose, returnFocus
         <DialogTitle>{selected?.name ?? "Consignee"}</DialogTitle>
         <DialogDescription className="flex flex-wrap items-center gap-2">
           <span>{selected?.code} · Read-only consignee details</span>
-          {(detail?.summary.status ?? selected?.status) && <ConsigneeStatusBadge status={detail?.summary.status ?? selected?.status} />}
+          {(detail?.summary.status ?? selected?.status) && <ConsignmentStatusBadge status={detail?.summary.status ?? selected?.status} />}
         </DialogDescription>
       </DialogHeader>
       <div className="min-h-0 space-y-6 overflow-y-auto pr-2" aria-busy={loading}>
@@ -81,7 +81,7 @@ export function ConsigneeViewDialog({ selected, inspection, onClose, returnFocus
         {error && <div role="alert" className="space-y-3 rounded-md border p-4"><p>{error}</p><Button variant="outline" onClick={() => setAttempt(value => value + 1)}>Retry details</Button></div>}
         {detail && detail.summary.id === selected?.id && <>
           <section className="space-y-3"><h3 className="font-semibold">Identity</h3><Fields values={[
-            ["Consignee code", <CopyValue key="code" value={detail.summary.code} label="consignee code" />], ["Status", <ConsigneeStatusBadge key="status" status={detail.summary.status} />], ["Legal name", detail.legalName],
+            ["Consignee code", <CopyValue key="code" value={detail.summary.code} label="consignee code" />], ["Status", <ConsignmentStatusBadge key="status" status={detail.summary.status} />], ["Legal name", detail.legalName],
             ["Trade name", detail.tradeName], ["TIN", <CopyValue key="tin" value={detail.tin} label="TIN" />], ["VAT treatment", formatVatTreatment(detail.summary.vatTreatment)],
           ]} /></section>
           <section className="space-y-3 border-t pt-4"><h3 className="font-semibold">Contact and address</h3><Fields values={[

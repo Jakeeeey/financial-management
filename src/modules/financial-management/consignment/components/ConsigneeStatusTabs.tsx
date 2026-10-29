@@ -1,7 +1,7 @@
 "use client";
 
 import type { ConsignmentWorkspace } from "../types";
-import { ConsigneeStatusBadge } from "./ConsigneeStatusBadge";
+import { ConsignmentStatusBadge } from "./ConsignmentStatusBadge";
 import { consigneeStatusLabel } from "../utils/consignment-format";
 
 const WORKSPACE_STATUSES: Record<ConsignmentWorkspace, string[]> = {
@@ -35,7 +35,7 @@ export function ConsigneeStatusTabs({ workspace, status, counts, onChange, disab
         onClick={() => onChange(value)}
         className={`inline-flex items-center gap-2 rounded-lg border px-2 py-1 transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${active ? "border-primary/40 bg-primary/5 ring-1 ring-primary/30" : "border-transparent hover:bg-muted"}`}
       >
-        <ConsigneeStatusBadge status={value} />
+        <ConsignmentStatusBadge status={value} />
         {count !== null && count !== undefined && <span className="min-w-4 text-right text-xs font-semibold tabular-nums text-muted-foreground">{count}</span>}
       </button>;
     })}

@@ -10,8 +10,13 @@ export type AgreementSummary = {
 export type AgreementDetail = {
   summary: AgreementSummary; consignee: AgreementConsignee; terms: AgreementTerms; vatTreatment: string | null;
   createdAt: string | null; updatedAt: string | null; version: number; editable: boolean;
+  submittedBy: string | null; submittedAt: string | null; reviewedBy: string | null; reviewedAt: string | null;
+  closedBy: string | null; closedAt: string | null; closureReason: string | null; rejectionReason: string | null;
+  canSubmit: boolean; canReview: boolean; canClose: boolean; reviewRestriction: string | null; warnings: string[];
 };
+export type AgreementClosureBlocker = { code: string; message: string };
+export type AgreementClosureReadiness = { canClose: boolean; blockers: AgreementClosureBlocker[] };
 export type AgreementDraft = { requestId: string; version: number | null; consigneeId: string; startDate: string; endDate: string; terms: AgreementTerms };
 export type AgreementQuery = { search: string; status: string; page: number; pageSize: number };
-export type AgreementPage = { items: AgreementSummary[]; page: number; pageSize: number; total: number };
+export type AgreementPage = { items: AgreementSummary[]; page: number; pageSize: number; total: number; statusCounts: Record<string, number> };
 export type AgreementConsigneePage = { items: AgreementConsignee[]; page: number; pageSize: number; total: number };
