@@ -1,3 +1,4 @@
+import { calculateExpenseVariance } from "@/modules/financial-management/reports/logistics-wer/utils/budget-balances";
 import { NextRequest, NextResponse } from "next/server";
 import { hasDisbursementApprovalAccess } from "@/app/api/fm/treasury/disbursements/_approval-access";
 import {
@@ -74,6 +75,8 @@ export async function GET(
       dispatchPlanId: planId,
       dispatchPlanDocNo: context.plan?.docNo ?? `Plan #${planId}`,
       dispatchPlanStatus: context.plan?.status ?? null,
+      variance: calculateExpenseVariance(submission.lines, context.budgetBalancesByCoa, context.allocatedBudget, context.reserved,
+        ["submitted", "approved"].includes((submission.status || "").toLowerCase()) ? submission.lines : []),
       budgetByCoa: buildSubmissionBudgetByCoa(reviewSubmission.lines, context.budgetBalancesByCoa),
       disbursementDocNo,
       supplierEligibility: eligibility,

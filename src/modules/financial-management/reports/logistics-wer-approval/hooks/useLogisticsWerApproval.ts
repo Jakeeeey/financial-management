@@ -97,11 +97,11 @@ export function useLogisticsWerApproval() {
     setReviewError(null);
   }, []);
 
-  const decide = useCallback(async (decision: ApprovalDecision, remarks?: string) => {
+  const decide = useCallback(async (decision: ApprovalDecision, remarks?: string, acknowledgeVariance = false) => {
     if (reviewId === null) return null;
     setDeciding(true);
     try {
-      const result = await decideSubmission(reviewId, decision, remarks);
+      const result = await decideSubmission(reviewId, decision, remarks, acknowledgeVariance);
       setReview((current) => (current ? {
         ...current,
         submission: result.submission,

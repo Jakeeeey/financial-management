@@ -20,9 +20,8 @@ import {
 } from "@/components/ui/table";
 import type { LogisticsWerDispatchPlanDetail } from "../types";
 import { dispatchPlanStatusClassName, displayWerStatus } from "../utils/status";
-import { LogisticsWerPayablesSection } from "./LogisticsWerPayablesSection";
 import { BudgetClassificationEditor } from "./BudgetClassificationEditor";
-import { BudgetAllocationEditor } from "./BudgetAllocationEditor";
+import { LogisticsWerPayablesSection } from "./LogisticsWerPayablesSection";
 
 function formatMoney(value: number): string {
   return `₱${value.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -118,7 +117,7 @@ export function LogisticsWerDetailsSheet({ open, detail, loading, error, onOpenC
                 <div>
                   <h3 className="font-semibold">Expense budget by COA</h3>
                   <p className="text-xs text-muted-foreground">
-                    WER submissions are reserved against the remaining amount for their own expense account.
+                    Pending and recorded expenses are compared with each account allocation. Variances require approval review.
                   </p>
                 </div>
                 {!detail.budgetContextAvailable ? (
@@ -131,7 +130,7 @@ export function LogisticsWerDetailsSheet({ open, detail, loading, error, onOpenC
                   </Alert>
                 ) : detail.budgetBalancesByCoa.length === 0 ? (
                   <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-                    No classified expense budgets are available for payable submissions.
+                    No classified expense allocations are recorded. Actual expenses can still be submitted for variance review.
                   </div>
                 ) : (
                   <div className="overflow-x-auto rounded-lg border">
@@ -169,7 +168,7 @@ export function LogisticsWerDetailsSheet({ open, detail, loading, error, onOpenC
                 )}
                 {(detail.unclassifiedBudgetAmount ?? 0) > 0 && (
                   <p className="text-xs text-amber-700 dark:text-amber-300">
-                    {formatMoney(detail.unclassifiedBudgetAmount ?? 0)} is not available until its budget line is classified to a COA.
+                    {formatMoney(detail.unclassifiedBudgetAmount ?? 0)} has no completed COA classification. Actual expense submissions remain available for variance review.
                   </p>
                 )}
                 {(detail.unclassifiedReservedAmount ?? 0) > 0 && (
@@ -177,7 +176,7 @@ export function LogisticsWerDetailsSheet({ open, detail, loading, error, onOpenC
                     <AlertCircle className="size-4" />
                     <AlertTitle>Unclassified active reservation</AlertTitle>
                     <AlertDescription>
-                      {formatMoney(detail.unclassifiedReservedAmount ?? 0)} in submitted payables has no COA classification, so new submissions are blocked until it is resolved.
+                      {formatMoney(detail.unclassifiedReservedAmount ?? 0)} in submitted payables has no COA classification. Review these records; new actual expenses remain permitted.
                     </AlertDescription>
                   </Alert>
                 )}
@@ -188,15 +187,10 @@ export function LogisticsWerDetailsSheet({ open, detail, loading, error, onOpenC
                   <div>
                     <h3 className="font-semibold">Dispatch budget allocations</h3>
                     <p className="text-xs text-muted-foreground">
-                      Set the expense allowance by account. Payable submissions are checked against each account&apos;s available balance.
+                      Allocation amounts are fixed. Complete missing classifications below; classified lines are read-only. Payable submissions display variances against each account&apos;s allocation.
                     </p>
                   </div>
-                  <BudgetAllocationEditor
-                    planId={detail.plan.id}
-                    budgetLines={detail.budgetLines}
-                    disabled={(detail.plan.status || "").toLowerCase() !== "for clearance" || detail.isLiquidated === true}
-                    onSaved={() => onChanged?.()}
-                  />
+
                 </div>
 
                 {detail.budgetLines.length === 0 ? (
@@ -235,13 +229,9 @@ export function LogisticsWerDetailsSheet({ open, detail, loading, error, onOpenC
                                 </Badge>
                               </TableCell>
                               <TableCell className="text-right">
-                                <BudgetClassificationEditor
-                                  planId={detail.plan.id}
-                                  line={line}
-                                  disabled={(detail.plan.status || "").toLowerCase() !== "for clearance" || detail.isLiquidated === true}
-                                  onSaved={() => onChanged?.()}
-                                />
+                                {!isClassified && <BudgetClassificationEditor planId={detail.plan.id} line={line} disabled={(detail.plan.status || "").toLowerCase() !== "for clearance" || detail.isLiquidated === true} onSaved={() => onChanged?.()} />}
                               </TableCell>
+
                             </TableRow>
                           );
                         })}

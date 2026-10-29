@@ -49,11 +49,11 @@ export default function LogisticsWerApprovalModule() {
   const [bulkNotice, setBulkNotice] = useState<string | null>(null);
   const [bulkError, setBulkError] = useState<string | null>(null);
 
-  const handleDecide = async (decision: ApprovalDecision, remarks: string) => {
+  const handleDecide = async (decision: ApprovalDecision, remarks: string, acknowledgeVariance = false) => {
     setDecisionError(null);
     setDecisionNotice(null);
     try {
-      const result = await queue.decide(decision, remarks.trim() || undefined);
+      const result = await queue.decide(decision, remarks.trim() || undefined, acknowledgeVariance);
       if (!result) return;
       if (decision === "approve") {
         if (result.idempotent) {
@@ -271,6 +271,7 @@ export default function LogisticsWerApprovalModule() {
       </div>
 
       <LogisticsWerApprovalReviewDialog
+        key={queue.review?.submission.id ?? "closed"}
         review={queue.review}
         loading={queue.reviewLoading}
         error={queue.reviewError}
@@ -284,7 +285,7 @@ export default function LogisticsWerApprovalModule() {
             queue.closeReview();
           }
         }}
-        onDecide={(decision, remarks) => void handleDecide(decision, remarks)}
+        onDecide={(decision, remarks, acknowledged) => void handleDecide(decision, remarks, acknowledged)}
       />
     </div>
   );

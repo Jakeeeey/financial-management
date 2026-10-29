@@ -121,7 +121,7 @@ test("draft and submission actions require changes, valid fields, and an idle fo
   assert.equal(canRunPayableAction("save-draft", { ...ready, uploading: true }), false);
 });
 
-test("budget overages block submission but still allow a valid draft", () => {
+test("unavailable verification context blocks submission but still allows a valid draft", () => {
   const state = { dirty: true, valid: true, busy: false, uploading: false, submissionBlocked: true };
   assert.equal(canRunPayableAction("save-draft", state), true);
   assert.equal(canRunPayableAction("submit", state), false);

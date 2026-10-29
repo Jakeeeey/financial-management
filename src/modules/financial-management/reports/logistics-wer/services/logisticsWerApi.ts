@@ -1,3 +1,4 @@
+import { RECEIPT_SIZE_ERROR, RECEIPT_UPLOAD_TIMEOUT_MS, validateReceiptFile } from "../utils/receipt-upload";
 import type {
   LogisticsWerDispatchPlan,
   LogisticsWerDispatchPlanDetail,
@@ -114,6 +115,8 @@ interface DispatchApprovalSubmission {
 }
 
 interface DispatchApprovalSubmissionSummary {
+  submittedAt?: unknown;
+  decidedAt?: unknown;
   id?: unknown;
   status?: unknown;
   totalAmount?: unknown;
@@ -144,6 +147,9 @@ interface DispatchApprovalWerPayables {
   }> | null;
   isLiquidated?: unknown;
   supplierEligibility?: {
+    departmentId?: unknown;
+    departmentName?: unknown;
+    departmentError?: unknown;
     eligible?: unknown;
     driverId?: unknown;
     supplierId?: unknown;
@@ -310,6 +316,9 @@ function mapEligibility(
 ): LogisticsWerSupplierEligibility | null {
   if (!data) return null;
   return {
+    departmentId: asNullableNumber(data.departmentId),
+    departmentName: asNullableString(data.departmentName),
+    departmentError: asNullableString(data.departmentError),
     eligible: data.eligible === true,
     driverId: asNullableNumber(data.driverId),
     supplierId: asNullableNumber(data.supplierId),
@@ -359,6 +368,8 @@ function mapSubmission(data: DispatchApprovalSubmission): LogisticsWerPayableSub
 
 function mapSubmissionSummary(data: DispatchApprovalSubmissionSummary): LogisticsWerPayableSubmissionSummary {
   return {
+    submittedAt: asNullableString(data.submittedAt),
+    decidedAt: asNullableString(data.decidedAt),
     id: asNumber(data.id),
     status: asNullableString(data.status),
     totalAmount: asNumber(data.totalAmount),
@@ -562,14 +573,27 @@ export async function fetchPayableDivisions(): Promise<PayableDivisionOption[]> 
 }
 
 export async function uploadPayableReceipt(planId: number, file: File): Promise<StagedReceipt> {
+  const validation = validateReceiptFile(file);
+  if (validation) throw new Error(validation.message);
   const formData = new FormData();
   formData.append("file", file, file.name);
-  const response = await fetch(
-    `${ENDPOINT}/${encodeURIComponent(String(planId))}/payables/receipts`,
-    { method: "POST", credentials: "include", body: formData, cache: "no-store" },
-  );
-  const data = await readJson<{ fileId?: unknown; fileName?: unknown }>(response);
-  return { fileId: asString(data.fileId), fileName: asNullableString(data.fileName) };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), RECEIPT_UPLOAD_TIMEOUT_MS);
+  try {
+    const response = await fetch(
+      `${ENDPOINT}/${encodeURIComponent(String(planId))}/payables/receipts`,
+      { method: "POST", credentials: "include", body: formData, cache: "no-store", signal: controller.signal },
+    );
+    if (response.status === 413) throw new Error(RECEIPT_SIZE_ERROR);
+    const data = await readJson<{ fileId?: unknown; fileName?: unknown }>(response);
+    if (!asString(data.fileId)) throw new Error("Upload did not return an attachment. Please try again.");
+    return { fileId: asString(data.fileId), fileName: asNullableString(data.fileName) };
+  } catch (uploadError) {
+    if (controller.signal.aborted) throw new Error("Upload timed out. Please try again.");
+    throw uploadError instanceof Error ? uploadError : new Error("Unable to upload the receipt. Please try again.");
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function deletePayableReceipt(planId: number, fileId: string): Promise<void> {

@@ -48,3 +48,17 @@ export function formatDateRange(range: DateRange): string {
   });
   return `${formatter.format(start)} – ${formatter.format(end)}`;
 }
+
+export function todayManilaDate(date: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+export function formatWerTimestamp(value: string | null | undefined): string {
+  if (!value) return "Not recorded";
+  const raw = value.replace(" ", "T");
+  const date = new Date(/(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw) ? raw : `${raw}+08:00`);
+  if (Number.isNaN(date.getTime())) return "Date unavailable";
+  return `${new Intl.DateTimeFormat("en-PH", { timeZone: "Asia/Manila", year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" }).format(date)} PHT (UTC+08:00)`;
+}

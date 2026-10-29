@@ -1,3 +1,4 @@
+import { formatManilaWallClock, serializeManilaTimestamp } from "./_timestamps";
 import { NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
@@ -66,6 +67,9 @@ export interface DraftReceiptRow {
 }
 
 export interface SupplierEligibility {
+  departmentId?: number | null;
+  departmentName?: string | null;
+  departmentError?: string | null;
   eligible: boolean;
   driverId: number | null;
   supplierId: number | null;
@@ -190,7 +194,27 @@ export async function requireSessionUserId(request: NextRequest): Promise<number
 }
 
 /** Resolve the assigned driver to one active supplier account via suppliers.user_id. */
+export async function resolveDriverDepartment(driverId: number | null): Promise<{ departmentId: number | null; departmentName: string | null; departmentError: string | null }> {
+  const unavailable = (message: string) => ({ departmentId: null, departmentName: null, departmentError: message });
+  if (!driverId) return unavailable("No driver is assigned. Assign a driver before submission.");
+  try {
+    const employee = await directusFetch<DirectusList<{ user_department?: unknown }>>(`/items/user?filter[user_id][_eq]=${driverId}&fields=user_department&limit=2`);
+    if (employee.data?.length !== 1) return unavailable("The assigned driver employee record is unavailable.");
+    const departmentId = asNullableNumber(employee.data[0].user_department);
+    if (!departmentId || !Number.isInteger(departmentId) || departmentId <= 0) return unavailable("The driver has no assigned department. Correct the employee assignment before submission.");
+    const departments = await directusFetch<DirectusList<{ department_name?: unknown }>>(`/items/department?filter[department_id][_eq]=${departmentId}&fields=department_name&limit=2`);
+    const departmentName = asString(departments.data?.[0]?.department_name);
+    if (departments.data?.length !== 1 || !departmentName) return unavailable("The assigned department is unavailable. Correct the employee assignment before submission.");
+    return { departmentId, departmentName, departmentError: null };
+  } catch { return unavailable("Driver department lookup failed. Retry before submitting."); }
+}
+
 export async function resolveDriverSupplier(driverId: number | null): Promise<SupplierEligibility> {
+  const [supplier, department] = await Promise.all([resolveDriverSupplierAccount(driverId), resolveDriverDepartment(driverId)]);
+  return { ...supplier, ...department };
+}
+
+async function resolveDriverSupplierAccount(driverId: number | null): Promise<SupplierEligibility> {
   const base: SupplierEligibility = {
     eligible: false,
     driverId,
@@ -341,9 +365,9 @@ export async function getPlanDraftSummaries(planId: number): Promise<DraftSubmis
       status: asString(row.status) || null,
       totalAmount: asNumber(row.total_amount),
       submittedBy: asNullableNumber(row.submitted_by),
-      submittedAt: asString(row.submitted_at) || null,
+      submittedAt: serializeManilaTimestamp(row.submitted_at),
       decidedBy: asNullableNumber(row.decided_by),
-      decidedAt: asString(row.decided_at) || null,
+      decidedAt: serializeManilaTimestamp(row.decided_at),
       decisionRemarks: asString(row.decision_remarks) || null,
       disbursementId: asNullableNumber(row.disbursement_id),
       disbursementDocNo: null,
@@ -403,9 +427,9 @@ export async function getPlanSubmission(submissionId: number): Promise<{ planId:
       status: asString(row.status) || null,
       totalAmount: asNumber(row.total_amount),
       submittedBy: asNullableNumber(row.submitted_by),
-      submittedAt: asString(row.submitted_at) || null,
+      submittedAt: serializeManilaTimestamp(row.submitted_at),
       decidedBy: asNullableNumber(row.decided_by),
-      decidedAt: asString(row.decided_at) || null,
+      decidedAt: serializeManilaTimestamp(row.decided_at),
       decisionRemarks: asString(row.decision_remarks) || null,
       disbursementId: asNullableNumber(row.disbursement_id),
       idempotencyKey: asString(row.idempotency_key) || null,
@@ -761,5 +785,5 @@ export async function withPlanLock<T>(planId: number, task: () => Promise<T>): P
 }
 
 export function manilaTimestamp(date: Date = new Date()): string {
-  return date.toISOString();
+  return formatManilaWallClock(date);
 }

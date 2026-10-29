@@ -184,3 +184,43 @@ export function findBudgetAllocationOverages(
       : [];
   });
 }
+
+
+export interface ExpenseVariance {
+  allocatedAmount: number;
+  actualAmount: number;
+  otherCommittedAmount: number;
+  projectedActualAmount: number;
+  netVariance: number;
+  requiresAcknowledgment: boolean;
+  byCoa: Array<{ coaId: number; allocatedAmount: number; otherCommittedAmount: number; requestedAmount: number; projectedAmount: number; overAmount: number; unbudgeted: boolean }>;
+}
+
+/** Exclude an already-reserved proposal before adding its current lines. */
+export function calculateExpenseVariance(
+  lines: CoaAmount[],
+  balances: CoaBudgetBalance[],
+  allocatedAmount: number,
+  reservedAmount: number,
+  reservedProposal: CoaAmount[] = [],
+): ExpenseVariance {
+  const sumByCoa = (items: CoaAmount[]) => {
+    const result = new Map<number, number>();
+    for (const line of items) {
+      if (line.coaId !== null) result.set(line.coaId, (result.get(line.coaId) ?? 0) + cents(line.amount));
+    }
+    return result;
+  };
+  const requested = sumByCoa(lines);
+  const previous = sumByCoa(reservedProposal);
+  const actual = lines.reduce((sum, line) => sum + cents(line.amount), 0);
+  const other = Math.max(0, cents(reservedAmount) - reservedProposal.reduce((sum, line) => sum + cents(line.amount), 0));
+  const byCoa = Array.from(requested, ([coaId, amount]) => {
+    const balance = balances.find((row) => row.coaId === coaId);
+    const allocated = cents(balance?.allocatedAmount ?? 0);
+    const committed = Math.max(0, cents(balance?.reservedAmount ?? 0) - (previous.get(coaId) ?? 0));
+    return { coaId, allocatedAmount: dollars(allocated), otherCommittedAmount: dollars(committed), requestedAmount: dollars(amount), projectedAmount: dollars(committed + amount), overAmount: dollars(Math.max(0, committed + amount - allocated)), unbudgeted: allocated === 0 };
+  });
+  const net = other + actual - cents(allocatedAmount);
+  return { allocatedAmount, actualAmount: dollars(actual), otherCommittedAmount: dollars(other), projectedActualAmount: dollars(other + actual), netVariance: dollars(net), requiresAcknowledgment: net > 0 || byCoa.some((row) => row.overAmount > 0), byCoa };
+}

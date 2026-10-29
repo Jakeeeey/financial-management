@@ -1,3 +1,4 @@
+import type { ExpenseVariance } from "../../logistics-wer/utils/budget-balances";
 import type {
   LogisticsWerPayableSubmission,
   LogisticsWerSupplierEligibility,
@@ -38,6 +39,7 @@ export interface ReviewBudgetByCoa {
 }
 
 export interface SubmissionReview {
+  variance: ExpenseVariance;
   submission: LogisticsWerPayableSubmission;
   dispatchPlanId: number;
   dispatchPlanDocNo: string;
@@ -89,13 +91,14 @@ export async function decideSubmission(
   submissionId: number,
   decision: ApprovalDecision,
   remarks?: string,
+  acknowledgeVariance = false,
 ): Promise<DecisionResult> {
 
   const response = await fetch(`${ENDPOINT}/${encodeURIComponent(String(submissionId))}/decision`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ decision, remarks }),
+    body: JSON.stringify({ decision, remarks, acknowledgeVariance }),
     cache: "no-store",
   });
   const payload = await readJson<{
