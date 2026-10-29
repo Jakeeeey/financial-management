@@ -92,8 +92,7 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
   const selectedFilePreviewUrls = React.useRef(new Map<File, string>());
   const [preview, setPreview] = React.useState<AjeReversalPreview | null>(null);
   const inFlight = React.useRef(false);
-  const creatorEditBlocked = Boolean(entry && ["Draft", "For Revision"].includes(entry.status) && entry.entryOrigin === "MANUAL" && entry.creatorId !== access.userId);
-  const frozen = readOnly || Boolean(entry && (!["Draft", "For Revision"].includes(entry.status) || entry.entryOrigin !== "MANUAL" || entry.creatorId !== access.userId));
+  const frozen = readOnly || Boolean(entry && (!["Draft", "For Revision"].includes(entry.status) || entry.entryOrigin !== "MANUAL"));
   const reversal = form.entryKind === "REVERSAL";
   const isFull = reversal && form.reversalMode === "FULL";
   const hasUnsavedChanges = !frozen && (serializeForm(form) !== savedSnapshot || selectedFiles.length > 0);
@@ -466,7 +465,6 @@ export function AjeEntryEditor({ initialEntry, seed, readOnly, hideTitle = false
       <div id="aje-balance-indicator" tabIndex={-1} aria-describedby={balanceError ? "aje-balance-error" : undefined} className={`text-sm font-medium ${balanced ? "text-emerald-700" : balanceError ? "text-destructive" : "text-muted-foreground"}`} aria-live="polite">{balanced ? "Balanced" : hasAmounts ? <>Unbalanced · Difference {money((totals.debit - totals.credit) / 100)}</> : "No amounts entered yet · Add a debit and a credit line."}{balanceError && <p id="aje-balance-error" className="mt-1 text-xs">{balanceError}</p>}</div>
     </div>
     {error && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
-    {creatorEditBlocked && <div role="status" className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-800">Only the AJE creator can edit or submit this draft.</div>}
     {summaryBlockers.length > 0 && <div id="aje-submit-checklist" tabIndex={-1} role={validationFailed ? "alert" : undefined} aria-labelledby="aje-checklist-heading" className={`space-y-2 rounded-md border p-3 text-sm focus-visible:outline-2 focus-visible:outline-ring ${validationFailed ? "border-destructive/30 bg-destructive/5" : "bg-muted/20"}`}>
       <h3 id="aje-checklist-heading" className="font-medium">{validationFailed ? "There is a problem" : "Before submitting"}</h3>
       <p>{validationFailed ? `Resolve these items before ${validationMode === "draft" ? "saving the draft" : "submitting"}:` : "Complete these requirements when you are ready to submit:"}</p>
