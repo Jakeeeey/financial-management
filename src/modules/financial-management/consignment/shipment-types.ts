@@ -1,0 +1,9 @@
+export interface ShipmentChoice { id:number;code:string|null;name:string|null;uomId:number|null;uomName:string|null;multiplier:string|number|null;startDate:string|null;endDate:string|null;exposureLimit:string|number|null }
+export interface ShipmentLineInput { productId:number|null;quantity:string|null }
+export interface ShipmentDraft { requestId:string;version:number|null;agreementId:number|null;documentDate:string|null;deliveryReference:string;lines:ShipmentLineInput[] }
+export interface ShipmentLine { id:number;lineNo:number;productId:number|null;productCode:string|null;productName:string|null;uomId:number|null;uomName:string|null;multiplier:string|number|null;quantity:string|number|null }
+export interface ShipmentSummary { id:number;number:string;status:string;agreementId:number|null;documentDate:string|null;deliveryReference:string|null;createdBy:number;editable:boolean;version:number;updatedAt:string|null }
+export interface ShipmentDetail { agreement?:ShipmentChoice|null;summary:ShipmentSummary;lines:ShipmentLine[] }
+export interface ShipmentPreview { policyVersion:number;available:boolean;blockers:{code:string;field:string;message:string}[];warnings:string[];shipmentCost:string|number|null;availableQuantity:string|number|null;projectedExposure:string|number|null;exposureLimit:string|number|null }
+export interface ShipmentPage { items:ShipmentSummary[];page:number;pageSize:number;total:number }
+export interface ShipmentChoices { items:ShipmentChoice[];page:number;pageSize:number;total:number }
