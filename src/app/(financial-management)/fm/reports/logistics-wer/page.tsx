@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Suspense } from "react";
 import { cookies } from "next/headers";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
@@ -41,7 +42,7 @@ export default async function Page() {
 
       <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4">
         <Suspense fallback={<p className="p-4 text-sm text-muted-foreground">Loading Logistics WER…</p>}>
-          <LogisticsWerModule />
+          <LogisticsWerModule cooldownScope={createHash("sha256").update(String(payload?.sub ?? payload?.email ?? "anonymous")).digest("hex")} />
         </Suspense>
       </main>
     </div>

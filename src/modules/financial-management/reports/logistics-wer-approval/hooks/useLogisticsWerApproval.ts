@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { fetchPayableDivisions, type PayableDivisionOption } from "../../logistics-wer/services/logisticsWerApi";
 import { useSearchParams } from "next/navigation";
 import {
   decideSubmission,
@@ -26,6 +27,14 @@ export const APPROVAL_STATUS_OPTIONS = [
 
 export function useLogisticsWerApproval() {
   const searchParams = useSearchParams();
+  const [divisions, setDivisions] = useState<PayableDivisionOption[]>([]);
+  useEffect(() => {
+    let active = true;
+    fetchPayableDivisions().then(options => { if (active) setDivisions(options); }).catch(() => {
+      // Review remains available with division-ID fallbacks when the lookup is unavailable.
+    });
+    return () => { active = false; };
+  }, []);
   const initialSearch = (searchParams.get("search") || "").trim();
   const [status, setStatus] = useState("all");
   const [draftSearch, setDraftSearch] = useState(initialSearch);
@@ -139,6 +148,7 @@ export function useLogisticsWerApproval() {
   }, [load, selectedIds]);
 
   return {
+    divisions,
     status,
     draftSearch,
     setDraftSearch,

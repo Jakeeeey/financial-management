@@ -1,3 +1,4 @@
+import { WerDependencyError, werFailureResponse } from "../_errors";
 import { NextRequest, NextResponse } from "next/server";
 import { getSpringDispatchPlanDetail } from "../_spring";
 import {
@@ -21,19 +22,20 @@ export async function GET(
 
   const springResponse = await getSpringDispatchPlanDetail(id);
   if (!springResponse.ok) return springResponse;
-  const springPayload = await springResponse.json().catch(() => ({})) as Record<string, unknown>;
+  const springPayload = await springResponse.json().catch((cause: unknown) => cause instanceof WerDependencyError && cause.upstreamStatus === 429 ? cause : ({})) as Record<string, unknown>;
 
   // Merge Logistics WER reservations with the budget lines supplied by Spring.
   let context: Awaited<ReturnType<typeof getPlanFinancialContext>>;
   try {
     context = await getPlanFinancialContext(id, true, springPayload.budgets);
   } catch (mergeError) {
+    if (mergeError instanceof WerDependencyError && mergeError.upstreamStatus === 429) return werFailureResponse(mergeError);
     console.error("[Logistics WER] Failed to merge payables context:", mergeError);
     return NextResponse.json({
       ...springPayload,
       werPayables: {
         budgetContextAvailable: false,
-        budgetContextError: mergeError instanceof Error ? mergeError.message : "Unable to verify expense budget context.",
+        budgetContextError: "The service is temporarily busy. Existing values could not be refreshed. Please try again later.",
         dispatchPlanValue: typeof springPayload.amount === "number" ? springPayload.amount : null,
         reservedAmount: null,
         remainingAmount: null,
@@ -50,13 +52,14 @@ export async function GET(
   }
 
   const eligibility = await resolveDriverSupplier(context.plan?.driverId ?? null)
-    .catch((eligibilityError: unknown) => ({
+    .catch(() => ({
       eligible: false,
       driverId: context.plan?.driverId ?? null,
       supplierId: null,
       supplierName: null,
-      reason: eligibilityError instanceof Error ? eligibilityError.message : "Supplier eligibility could not be resolved.",
+      reason: "Supplier eligibility could not be resolved.",
     }));
+  if (eligibility instanceof WerDependencyError) return werFailureResponse(eligibility);
   return NextResponse.json({
     ...springPayload,
     werPayables: {

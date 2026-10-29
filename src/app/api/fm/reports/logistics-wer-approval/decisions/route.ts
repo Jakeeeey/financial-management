@@ -1,3 +1,4 @@
+import { publicWerFailure, WerDependencyError, werFailureResponse } from "../../logistics-wer/_errors";
 import { NextRequest, NextResponse } from "next/server";
 import { hasDisbursementApprovalAccess } from "@/app/api/fm/treasury/disbursements/_approval-access";
 import { requireSessionUserId } from "../../logistics-wer/_payables";
@@ -75,13 +76,18 @@ export async function POST(request: NextRequest) {
         disbursementDocNo: outcome.disbursementDocNo,
         idempotent: outcome.idempotent,
       });
+      if (outcome.refreshFailure) {
+        const pending = submissionIds.slice(results.length).map((id) => ({ submissionId: id, ok: false, message: "Not attempted. Refresh the queue before trying again.", disbursementId: null, disbursementDocNo: null, idempotent: false }));
+        return NextResponse.json({ ...outcome.refreshFailure, results: [...results, ...pending], decided: results.filter(row => row.ok).length, failed: pending.length + results.filter(row => !row.ok).length }, { headers: outcome.refreshFailure.retryAfterSeconds ? { "Retry-After": String(outcome.refreshFailure.retryAfterSeconds) } : undefined });
+      }
     } catch (itemError) {
+      if (itemError instanceof WerDependencyError && itemError.upstreamStatus === 429) return werFailureResponse(itemError, "unknown");
       results.push({
         submissionId,
         ok: false,
         message: itemError instanceof DecisionFailure
           ? itemError.message
-          : itemError instanceof Error ? itemError.message : "Unable to record the decision.",
+          : publicWerFailure(itemError, "unknown", submissionId).message,
         disbursementId: null,
         disbursementDocNo: null,
         idempotent: false,

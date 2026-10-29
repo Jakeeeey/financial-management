@@ -1,3 +1,4 @@
+import { werFailureResponse } from "../../logistics-wer/_errors";
 import { calculateExpenseVariance } from "@/modules/financial-management/reports/logistics-wer/utils/budget-balances";
 import { NextRequest, NextResponse } from "next/server";
 import { hasDisbursementApprovalAccess } from "@/app/api/fm/treasury/disbursements/_approval-access";
@@ -83,6 +84,6 @@ export async function GET(
     });
   } catch (detailError) {
     console.error("[Logistics WER] Submission detail failed:", detailError);
-    return error("Unable to load the submission.", 502);
+    return werFailureResponse(detailError);
   }
 }

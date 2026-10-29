@@ -1,5 +1,7 @@
 "use client";
 
+import { WerCooldownBoundary } from "./WerCooldownBoundary";
+
 import { AlertCircle, Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +56,7 @@ export function LogisticsWerDetailsSheet({ open, detail, loading, error, onOpenC
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-[min(96vw,1120px)] overflow-y-auto sm:max-w-[1120px]">
+        <WerCooldownBoundary>
         <SheetHeader className="border-b px-6 pb-4">
           <SheetTitle>Logistics WER details</SheetTitle>
           <SheetDescription>
@@ -298,6 +301,7 @@ export function LogisticsWerDetailsSheet({ open, detail, loading, error, onOpenC
             </>
           )}
         </div>
+      </WerCooldownBoundary>
       </SheetContent>
     </Sheet>
   );

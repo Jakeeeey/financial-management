@@ -1,3 +1,4 @@
+import { werFailureResponse } from "../../../logistics-wer/_errors";
 import { NextRequest, NextResponse } from "next/server";
 import { hasDisbursementApprovalAccess } from "@/app/api/fm/treasury/disbursements/_approval-access";
 import { requireSessionUserId } from "../../../logistics-wer/_payables";
@@ -57,12 +58,13 @@ export async function POST(
       disbursementId: outcome.disbursementId,
       disbursementDocNo: outcome.disbursementDocNo,
       idempotent: outcome.idempotent,
-    });
+      ...(outcome.refreshFailure ?? {}),
+    }, { headers: outcome.refreshFailure?.retryAfterSeconds ? { "Retry-After": String(outcome.refreshFailure.retryAfterSeconds) } : undefined });
   } catch (decisionError) {
     if (decisionError instanceof DecisionFailure) {
       return error(decisionError.message, decisionError.status, decisionError.extra);
     }
     console.error("[Logistics WER] Decision failed:", decisionError);
-    return error(decisionError instanceof Error ? decisionError.message : "Unable to record the decision.", 502);
+    return werFailureResponse(decisionError, "unknown");
   }
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import { WerCooldownBoundary, useWerScope } from "./components/WerCooldownBoundary";
+
 import type { ReactNode } from "react";
 import { AlertCircle, ClipboardList, DollarSign } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -15,7 +17,8 @@ function formatMoney(value: number): string {
   return `₱${value.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-export default function LogisticsWerModule() {
+export default function LogisticsWerModule({ cooldownScope = "session" }: { cooldownScope?: string }) {
+  useWerScope(cooldownScope);
   const report = useLogisticsWer();
   const rows = report.report?.content ?? [];
   const pageCount = report.report?.totalPages ?? 0;
@@ -23,6 +26,7 @@ export default function LogisticsWerModule() {
   const visibleDispatchPlanValue = rows.reduce((total, row) => total + row.amount, 0);
 
   return (
+    <WerCooldownBoundary>
     <div className="flex min-h-0 min-w-0 w-full max-w-full flex-1 flex-col gap-5">
       <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
@@ -112,11 +116,10 @@ export default function LogisticsWerModule() {
         onOpenChange={(open) => {
           if (!open) report.closeDetails();
         }}
-        onChanged={() => {
-          void report.refreshDetails();
-        }}
+        onChanged={() => report.refreshDetails()}
       />
     </div>
+    </WerCooldownBoundary>
   );
 }
 
