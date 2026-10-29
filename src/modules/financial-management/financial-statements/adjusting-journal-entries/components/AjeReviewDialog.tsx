@@ -144,10 +144,10 @@ export function AjeReviewDialog({ open, journalNumber, entry, attachments, loadi
         {!loading && entry && <Button type="button" variant="outline" asChild><a href={ajeEntryPrintUrl(entry.id,"pdf")} target="_blank" rel="noopener noreferrer">Print PDF</a></Button>}
         {confirmingSubmission ? <>
           <Button type="button" variant="outline" disabled={submissionBusy} onClick={onCancelSubmission}>Cancel submission</Button>
-          <Button type="button" disabled={submissionBusy || !canConfirmSubmission(entry,reviewReady,submissionNotes)} onClick={() => { if (entry) onConfirmSubmission(entry,submissionNotes); }}>{submissionBusy ? "Submitting..." : "Confirm submission"}</Button>
+          <Button type="button" className="bg-green-700 text-white hover:bg-green-800 focus-visible:ring-green-600/50" disabled={submissionBusy || !canConfirmSubmission(entry,reviewReady,submissionNotes)} onClick={() => { if (entry) onConfirmSubmission(entry,submissionNotes); }}>{submissionBusy ? "Submitting..." : "Confirm submission"}</Button>
         </> : confirmingPosting ? <>
           <Button type="button" variant="outline" disabled={postingBusy} onClick={onCancelPosting}>Cancel</Button>
-          <Button type="button" disabled={postingBusy || postingUncertain || !reviewReady || !reviewActions.some(action => action === "post" || action === "retry")} onClick={() => { if (entry) onConfirmPosting(entry); }}>{postingBusy ? "Posting..." : "Confirm posting"}</Button>
+          <Button type="button" className="bg-green-700 text-white hover:bg-green-800 focus-visible:ring-green-600/50" disabled={postingBusy || postingUncertain || !reviewReady || !reviewActions.some(action => action === "post" || action === "retry")} onClick={() => { if (entry) onConfirmPosting(entry); }}>{postingBusy ? "Posting..." : "Confirm posting"}</Button>
           {postingUncertain && <Button type="button" disabled={checkingPosting || postingBusy} onClick={onCheckPosting}>{checkingPosting ? "Checking status..." : "Check posting status"}</Button>}
         </> : <>
           {canReview && entry && reviewActions.includes("reject-final") && <Button type="button" variant="destructive" onClick={() => onAction(entry, "reject-final")}>Reject</Button>}

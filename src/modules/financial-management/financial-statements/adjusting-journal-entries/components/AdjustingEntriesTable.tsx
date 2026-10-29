@@ -23,25 +23,13 @@ export function actionRequiresReason(entry: AdjustingEntry, action: AjeAction) {
   return action === "reject" || action === "reject-final" || action === "cancel" || action === "submit" && entry.status === "For Revision";
 }
 
-const creatorOnlyActions = new Set<AjeAction>(["submit", "withdraw", "revise", "cancel"]);
-
-export function isEntryCreator(entry: AdjustingEntry, userId?: number) {
-  return userId != null && entry.creatorId === userId;
-}
-
 export function isEntryPoster(entry: AdjustingEntry, userId?: number) {
   return userId != null && entry.entryOrigin === "MANUAL";
 }
 
-function availableActionsForUser(entry: AdjustingEntry, userId?: number) {
-  const actions = availableActions(entry);
-  return isEntryCreator(entry, userId) ? actions : actions.filter(action => !creatorOnlyActions.has(action));
-}
-
 export function actionsForPresentation(entry: AdjustingEntry, userId: number | undefined, creationView: boolean) {
-  if (creationView && entry.status === "Submitted") return [];
-  return availableActionsForUser(entry, userId).filter(action => creationView
-    ? ["submit", "cancel"].includes(action)
+  return (userId == null ? [] : availableActions(entry)).filter(action => creationView
+    ? ["submit", "withdraw", "revise", "cancel"].includes(action)
     : ["post", "retry", "reject", "reject-final"].includes(action));
 }
 
@@ -97,13 +85,13 @@ function EntryActions({ entry, userId, readOnly, onView, onAction, onReverse, co
   const actions = readOnly ? [] : actionsForPresentation(entry, userId, creationView);
   const mainAction = actions.includes(primaryAction(entry) as AjeAction) ? primaryAction(entry) : null;
   const secondaryActions = actions.filter(action => action !== mainAction);
-  const canEdit = creationView && !readOnly && entry.entryOrigin === "MANUAL" && ["Draft", "For Revision"].includes(entry.status) && isEntryCreator(entry, userId);
+  const canEdit = creationView && !readOnly && entry.entryOrigin === "MANUAL" && ["Draft", "For Revision"].includes(entry.status);
   const showReverse = !readOnly && !creationView && canReverse(entry);
   const hasMoreActions = canEdit || secondaryActions.length > 0 || showReverse;
 
   return <div className="flex flex-wrap items-center gap-1.5">
     <Button size="sm" variant="outline" disabled={actionsDisabled} onClick={event => onView(entry, false, event.currentTarget)}>View</Button>
-    {mainAction && <Button size="sm" variant={mainAction === "cancel" && entry.canCancelAfterReversalConflict ? "destructive" : ["post", "retry", "submit"].includes(mainAction) ? "default" : "outline"} disabled={actionsDisabled} onClick={event => onAction(entry, mainAction, event.currentTarget)}>{actionLabelForEntry(entry, mainAction)}</Button>}
+    {mainAction && <Button size="sm" className={["submit", "post"].includes(mainAction) ? "bg-green-700 text-white hover:bg-green-800 focus-visible:ring-green-600/50" : undefined} variant={mainAction === "cancel" && entry.canCancelAfterReversalConflict ? "destructive" : ["post", "retry", "submit"].includes(mainAction) ? "default" : "outline"} disabled={actionsDisabled} onClick={event => onAction(entry, mainAction, event.currentTarget)}>{actionLabelForEntry(entry, mainAction)}</Button>}
     {hasMoreActions && <DropdownMenu>
       <DropdownMenuTrigger asChild><Button size="sm" variant="outline" disabled={actionsDisabled} aria-label={`More actions for ${entry.jeNo}`}><MoreHorizontal className="size-4 sm:mr-1" /><span className="hidden sm:inline">More</span></Button></DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">

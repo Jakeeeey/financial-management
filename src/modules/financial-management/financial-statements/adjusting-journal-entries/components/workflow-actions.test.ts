@@ -67,11 +67,11 @@ test("authorized users may post their own entries regardless of historical appro
   assert.equal(isEntryPoster(entry("Submitted", { entryOrigin: "SYSTEM" }), 27), false);
 });
 
-test("Submitted entries are view only in Creation while creator workflow actions remain in Posting", () => {
+test("Creation maintenance actions are shared while Posting retains review actions", () => {
   const submitted = entry("Submitted");
-  assert.deepEqual(actionsForPresentation(submitted, 24, true), []);
+  assert.deepEqual(actionsForPresentation(submitted, 24, true), ["withdraw", "cancel"]);
   assert.deepEqual(actionsForPresentation(submitted, 24, false), ["post", "reject", "reject-final"]);
-  assert.deepEqual(actionsForPresentation(submitted, 27, true), []);
+  assert.deepEqual(actionsForPresentation(submitted, 27, true), ["withdraw", "cancel"]);
   assert.deepEqual(actionsForPresentation(entry("Draft"), 24, true), ["submit", "cancel"]);
 });
 
@@ -144,4 +144,10 @@ test("final rejection is terminal and posting excludes creator maintenance actio
   assert.deepEqual(actionsForPresentation(entry("Submitted"), 24, false), ["post", "reject", "reject-final"]);
   assert.equal(actionRequiresReason(entry("Submitted"), "reject-final"), true);
   assert.ok(availableActions(entry("Rejected")).includes("revise"));
+});
+
+test("another authorized user can submit drafts and revisions", () => {
+  assert.deepEqual(actionsForPresentation(entry("Draft"), 27, true), ["submit", "cancel"]);
+  assert.deepEqual(actionsForPresentation(entry("For Revision"), 27, true), ["submit", "cancel"]);
+  assert.deepEqual(actionsForPresentation(entry("Posted"), 27, true), []);
 });
