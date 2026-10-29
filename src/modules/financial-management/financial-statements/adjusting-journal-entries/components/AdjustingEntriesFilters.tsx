@@ -22,11 +22,9 @@ type AdjustingEntriesFiltersProps = {
   startDate: string;
   endDate: string;
   status: string;
-  pageSize: number;
   filterDivisionId: string;
   filterDepartmentId: string;
   statusOptions: string[];
-  pageSizes: number[];
   filterDivisionOptions: LookupOption[];
   filterDepartmentOptions: LookupOption[];
   hasActiveFilters: boolean;
@@ -36,7 +34,6 @@ type AdjustingEntriesFiltersProps = {
   onStartDateChange: (value: string) => void;
   onEndDateChange: (value: string) => void;
   onStatusChange: (value: string) => void;
-  onPageSizeChange: (value: number) => void;
   onDivisionChange: (value: string) => void;
   onDepartmentChange: (value: string) => void;
   onClearFilters: () => void;
@@ -47,11 +44,9 @@ export function AdjustingEntriesFilters({
   startDate,
   endDate,
   status,
-  pageSize,
   filterDivisionId,
   filterDepartmentId,
   statusOptions,
-  pageSizes,
   filterDivisionOptions,
   filterDepartmentOptions,
   hasActiveFilters,
@@ -61,7 +56,6 @@ export function AdjustingEntriesFilters({
   onStartDateChange,
   onEndDateChange,
   onStatusChange,
-  onPageSizeChange,
   onDivisionChange,
   onDepartmentChange,
   onClearFilters,
@@ -126,13 +120,7 @@ export function AdjustingEntriesFilters({
             {moreFiltersCount > 0 && <span className="rounded-full bg-muted px-2 py-0.5 text-xs">{moreFiltersCount}</span>}
           </summary>
           <div className="grid gap-3 border-t pt-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-muted-foreground">Rows Per Page</Label>
-              <Select value={String(pageSize)} onValueChange={(value) => onPageSizeChange(Number(value))}>
-                <SelectTrigger className="w-full"><SelectValue placeholder="Rows" /></SelectTrigger>
-                <SelectContent>{pageSizes.map((size) => <SelectItem key={size} value={String(size)}>{size} rows</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
+
             <div className="space-y-1.5">
               <Label className="text-xs font-medium text-muted-foreground">Division</Label>
               <AjeSearchableSelect options={filterDivisionOptions} value={filterDivisionId} onValueChange={onDivisionChange} placeholder="All divisions" />
