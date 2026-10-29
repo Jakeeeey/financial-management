@@ -175,7 +175,7 @@ export const adjustingJournalEntriesApi = {
   },
 
   async get(id: number): Promise<AdjustingEntry> {
-    const res = await fetchWithAuthRetry(`${BASE}/${id}`, { cache: "no-store" });
+    const res = await fetchWithAuthRetry(`${BASE}/${id}`, { cache: "no-store", signal: AbortSignal.timeout(15000) });
     return parseResponse<AdjustingEntry>(res, "Failed to load adjusting journal entry");
   },
 
@@ -261,7 +261,7 @@ export const adjustingJournalEntriesApi = {
   async access(): Promise<AjeAccess> { return request<AjeAccess>("/access"); },
   async accounts(): Promise<AjeAccount[]> { return request<AjeAccount[]>("/accounts"); },
   async command(id: number, action: AjeAction, version: number, reason?: string): Promise<AdjustingEntry> {
-    return request<AdjustingEntry>(`/${id}/${action}`, "POST", { version, reason });
+    return request<AdjustingEntry>(`/${id}/${action}`, "POST", { version, reason }, ["post", "retry"].includes(action) ? AbortSignal.timeout(60000) : undefined);
   },
   async reversalPreview(id: number): Promise<AjeReversalPreview> { return request<AjeReversalPreview>(`/${id}/reversal-preview`); },
   async period(): Promise<AjePeriod> { return request<AjePeriod>("/controls/period"); },

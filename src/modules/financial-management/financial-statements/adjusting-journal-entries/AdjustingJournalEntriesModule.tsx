@@ -2,7 +2,7 @@
 import * as React from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronDown, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { ChevronsLeft, ChevronsRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -528,6 +528,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   }
   function requestAction(entry: AdjustingEntry, name: AjeAction, trigger?: HTMLElement) {
     if (commandLock.current) return;
+
     if (name === "submit") {
       setAction(null);
       setActionError("");
@@ -634,7 +635,24 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
     if (invoker?.isConnected) invoker.focus({ preventScroll:true });
     else pageHeadingRef.current?.focus({ preventScroll:true });
   }
+  const uncertainPostings = React.useRef(new Set<number>());
+  const [checkingPosting, setCheckingPosting] = React.useState(false);
+  async function checkPostingStatus(entry: AdjustingEntry) {
+    if (checkingPosting) return;
+    setCheckingPosting(true);
+    try {
+      const latest = await api.get(entry.id);
+      setReviewEntry(latest); setReviewDetails(latest); setReviewDetailsUpdatedAt(Date.now());
+      if (latest.status === "Posted") {
+        uncertainPostings.current.delete(entry.id); closeReview(); closeAction(); refreshEntriesAndSummary(); toast.success("Posting confirmed.");
+      } else if (latest.status === "Failed") {
+        uncertainPostings.current.delete(entry.id); setReviewPostingError(latest.lastPostingError || "Posting failed. Review the error before retrying.");
+      } else setReviewPostingError("Posting outcome not confirmed. Check posting status before attempting again.");
+    } catch { setReviewPostingError("Posting outcome not confirmed. Status is unavailable; check again before attempting posting."); }
+    finally { setCheckingPosting(false); }
+  }
   async function executeAction(entry: AdjustingEntry, name: AjeAction, reasonOverride?: string) {
+    if (["post", "retry"].includes(name) && uncertainPostings.current.has(entry.id)) { await checkPostingStatus(entry); return; }
     if (commandLock.current) return;
     const actionReason = reasonOverride ?? reason;
     const submissionPreview = name === "submit" && reviewConfirmingSubmission && reviewEntry?.id === entry.id;
@@ -650,19 +668,26 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
     else setActionError("");
     try {
       const updated = await api.command(entry.id,name,entry.version,actionReason.trim() || undefined);
-      if (name === "post" || name === "retry") { setReviewConfirmingPosting(false); setReviewPostingError(""); }
-      else if (submissionPreview) closeReview();
-      else closeAction();
+      const closesReview = submissionPreview || ["post", "retry", "reject", "reject-final"].includes(name);
+      closeAction();
+      setActionError("");
+      if (closesReview && reviewEntry?.id === updated.id) closeReview();
       refreshEntriesAndSummary(); toast.success(name === "withdraw" ? `${updated.jeNo || `Entry #${updated.id}`} withdrawn to ${updated.status}` : `${actionLabelForEntry(entry, name)} completed - ${updated.jeNo || `Entry #${updated.id}`}`);
       if (name === "withdraw" && initialView === "creation") updateFilters({ status:updated.status,queue:"all" });
-      if (!submissionPreview && reviewEntry?.id === updated.id) { setReviewEntry(updated); setReviewDetails(updated); setReviewDetailsUpdatedAt(Date.now()); void refreshReviewAudit(updated.id); }
+      if (!closesReview && reviewEntry?.id === updated.id) { setReviewEntry(updated); setReviewDetails(updated); setReviewDetailsUpdatedAt(Date.now()); void refreshReviewAudit(updated.id); }
       if (name === "submit" && (initialView === "creation" || tab === "new")) finishEditing(updated);
       else if (name === "revise") { closeReview(); await view(updated,true); }
       else if (editorEntry?.id === updated.id || (initialView === "posting" && tab === "new")) { setEditorEntry(updated); setEditorSeed(null); setReadOnly(!["Draft", "For Revision"].includes(updated.status)); setEditorKey(k => k + 1); }
     } catch (e) {
       const message = e instanceof Error ? e.message : "The action failed";
-      if (name === "post" || name === "retry") setReviewPostingError(message);
-      else if (submissionPreview) setReviewSubmissionError(message);
+      if (name === "post" || name === "retry") {
+        uncertainPostings.current.add(entry.id);
+        setBusy(false);
+        setReviewPostingError("Posting outcome not confirmed. Checking posting status...");
+        await checkPostingStatus(entry);
+        return;
+      }
+      if (submissionPreview) setReviewSubmissionError(message);
       else setActionError(message);
       refreshEntriesAndSummary();
       try {
@@ -716,8 +741,6 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   const focusUnbalancedPosted = () => updateFilters({ status:"Posted",queue:"all",unbalancedOnly:"true" });
   const focusDrafts = () => updateFilters({ status:"Drafts and revisions",queue:"all",unbalancedOnly:"true" });
   const hasFilters = Boolean((initialView === "creation" && listFilters.queue === "my-drafts") || searchDraft.trim() || status !== "All" || startDate || endDate || division !== "all" || department !== "all" || accountType || unbalancedOnly || sort !== "lastActivity,desc" || page > 0 || pageSize !== 20 || (initialView === "posting" && postingQueue !== "all"));
-  const summaryDateScope = startDate && endDate ? `${formatDate(startDate)} – ${formatDate(endDate)}` : startDate ? `From ${formatDate(startDate)}` : endDate ? `Through ${formatDate(endDate)}` : "All dates";
-  const summaryScopeFilterCount = Number(Boolean(unbalancedOnly)) + Number(Boolean(normalizedSearch)) + Number(divisionId != null) + Number(departmentId != null) + Number(accountTypeId != null);
   const postingQueueOptions = [
     { value:"all",label:"All posting entries",count:summary.totalRecords },
     { value:"ready-for-me-to-post",label:"Ready for me to post",count:summary.readyForMeToPost },
@@ -753,10 +776,10 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   </div></div>;
   return <div className="space-y-5 p-4 sm:p-6">
     {pageHeader}
-    {initialView !== "creation" && initialView !== "posting" && lookupResources.some(resource => resource.updatedAt !== null || resource.loading) && <div aria-label="Lookup freshness" className="flex flex-wrap gap-x-4 gap-y-1">{lookupResources.map(resource => <AjeDataFreshness key={resource.key} label={resource.label} updatedAt={resource.updatedAt} loading={resource.loading} stale={Boolean(resource.error)} />)}</div>}
+    {initialView !== "creation" && initialView !== "posting" && initialView !== "summary" && lookupResources.some(resource => resource.updatedAt !== null || resource.loading) && <div aria-label="Lookup freshness" className="flex flex-wrap gap-x-4 gap-y-1">{lookupResources.map(resource => <AjeDataFreshness key={resource.key} label={resource.label} updatedAt={resource.updatedAt} loading={resource.loading} stale={Boolean(resource.error)} />)}</div>}
     {lookupResources.filter(resource => resource.error).map(resource => <AjeRetryAlert key={resource.key} message={`${resource.label}: ${resource.error}`} retrying={resource.loading} retryLabel={`Retry ${resource.label.toLowerCase()}`} onRetry={() => retryLookup(resource.key)} />)}
     {error && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
-    {listViewActive && tab !== "creation" && tab !== "posting" && <div className="flex flex-wrap gap-x-4 gap-y-1"><AjeDataFreshness label="Journals" updatedAt={listUpdatedAt} loading={listLoading} stale={Boolean(listError) || listScopeStale} />{tab === "summary" || tab === "posting" ? <AjeDataFreshness label="Counts" updatedAt={summaryUpdatedAt} loading={summaryLoading} stale={Boolean(summaryError) || summaryScopeStale} /> : null}</div>}
+
     {listViewActive && tab !== "creation" && listScopeStale && <p role="status" className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-900">Filters changed. Showing the previous journal results while the requested results load. Actions and exports are disabled until the current results arrive.</p>}
     {listViewActive && summaryScopeStale && <p role="status" className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-900">The filters changed. Summary counts below are from the previous report scope while updated counts load.</p>}
     {listViewActive && listError && <AjeRetryAlert message={listError} retrying={listLoading} retryLabel="Retry journals" onRetry={retryList} />}
@@ -767,39 +790,6 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
     </>}
     {tab === "audit" && <React.Suspense fallback={<p role="status" className="text-sm text-muted-foreground">Loading audit trail…</p>}><AjeAuditTrail revision={auditRevision} /></React.Suspense>}
     {(tab === "creation" || tab === "posting" || tab === "summary") && <>
-      {tab === "summary" && <section aria-label="Applied report scope" className="space-y-2 rounded-md border bg-muted/20 px-3 py-2 sm:hidden">
-        <p className="text-xs font-semibold text-muted-foreground">Report scope</p>
-        <p className="text-sm">{summaryDateScope} <span className="text-muted-foreground">·</span> {status === "All" ? "All statuses" : status}</p>
-        <details className="group border-t pt-2">
-          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium hover:text-foreground [&::-webkit-details-marker]:hidden">
-            <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />Additional report details{summaryScopeFilterCount > 0 ? ` (${summaryScopeFilterCount} ${summaryScopeFilterCount === 1 ? "filter" : "filters"})` : ""}
-          </summary>
-          <div className="space-y-2 pt-2">
-            <div className="flex flex-wrap gap-1.5 text-xs">
-              {unbalancedOnly && <span className="rounded-full border bg-background px-2 py-1">Unbalanced entries only</span>}
-              {normalizedSearch && <span className="max-w-full break-words rounded-full border bg-background px-2 py-1">Search: “{normalizedSearch}”</span>}
-              {divisionId != null && <span className="rounded-full border bg-background px-2 py-1">Division: {catalogs?.divisions.find(item => item.id === divisionId)?.name || `Division ${division}`}</span>}
-              {departmentId != null && <span className="rounded-full border bg-background px-2 py-1">Department: {catalogs?.departments.find(item => item.id === departmentId)?.name || `Department ${department}`}</span>}
-              {accountTypeId != null && <span className="rounded-full border bg-background px-2 py-1">Account type: {accountTypes.find(item => item.id === accountTypeId)?.name || `Account type ${accountType}`}</span>}
-              {summaryScopeFilterCount === 0 && <span className="text-muted-foreground">No additional report filters.</span>}
-            </div>
-            <p className="text-xs text-muted-foreground">Summary cards reflect search, date, and organizational filters across all workflow statuses. They do not apply the register’s status or imbalance filters. The register and both exports apply all selected filters; exports include every matching entry across all pages.</p>
-          </div>
-        </details>
-      </section>}
-      {tab === "summary" && <section aria-label="Applied report scope" className="hidden space-y-1.5 rounded-md border bg-muted/20 px-3 py-2 sm:block">
-        <p className="text-xs font-semibold text-muted-foreground">Report scope</p>
-        <div className="flex flex-wrap gap-1.5 text-xs">
-          <span className="rounded-full border bg-background px-2 py-1">Accounting dates: {summaryDateScope}</span>
-          <span className="rounded-full border bg-background px-2 py-1">Status: {status === "All" ? "All statuses" : status}</span>
-          {unbalancedOnly && <span className="rounded-full border bg-background px-2 py-1">Unbalanced entries only</span>}
-          {normalizedSearch && <span className="max-w-full break-words rounded-full border bg-background px-2 py-1">Search: “{normalizedSearch}”</span>}
-          {divisionId != null && <span className="rounded-full border bg-background px-2 py-1">Division: {catalogs?.divisions.find(item => item.id === divisionId)?.name || `Division ${division}`}</span>}
-          {departmentId != null && <span className="rounded-full border bg-background px-2 py-1">Department: {catalogs?.departments.find(item => item.id === departmentId)?.name || `Department ${department}`}</span>}
-          {accountTypeId != null && <span className="rounded-full border bg-background px-2 py-1">Account type: {accountTypes.find(item => item.id === accountTypeId)?.name || `Account type ${accountType}`}</span>}
-        </div>
-        <p className="text-xs text-muted-foreground">Summary cards reflect search, date, and organizational filters across all workflow statuses. They do not apply the register’s status or imbalance filters. The register and both exports apply all selected filters; exports include every matching entry across all pages.</p>
-      </section>}
       {tab === "summary" && summaryError && summaryUpdatedAt === null && <p role="status" className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">Summary counts are unavailable until they load successfully.</p>}
       {tab === "summary" && !(summaryError && summaryUpdatedAt === null) && <AdjustingEntriesSummaryCards summary={summary} loading={summaryLoading} showPostedAmounts onInvestigatePosted={focusUnbalancedPosted} onShowUnbalancedDrafts={focusDrafts} />}
       {tab === "posting" && <>
@@ -813,11 +803,11 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
           {postingQueueOptions.map(({ value, label, count }) => <Button key={value} type="button" size="sm" disabled={countActionsDisabled} aria-pressed={postingQueue === value && (value !== "all" || status === "All")} variant={postingQueue === value && (value !== "all" || status === "All") ? "default" : "outline"} onClick={() => selectPostingQueue(value)}>{label}<span className="ml-1 rounded-full bg-background/20 px-1.5 text-xs">{summaryUpdatedAt === null ? "—" : count}</span></Button>)}
         </div>
       </>}
-      <AdjustingEntriesFilters search={searchDraft} startDate={startDate} endDate={endDate} status={selectedStatus} pageSize={pageSize} filterDivisionId={division} filterDepartmentId={department} statusOptions={statusOptions} pageSizes={[10,20,50,100]}
+      <AdjustingEntriesFilters search={searchDraft} startDate={startDate} endDate={endDate} status={selectedStatus} filterDivisionId={division} filterDepartmentId={department} statusOptions={statusOptions}
         filterDivisionOptions={[{ value:"all",label:"All divisions" },...(catalogs?.divisions || []).map(d => ({ value:String(d.id),label:d.name }))]}
         filterDepartmentOptions={[{ value:"all",label:"All departments" },...(catalogs?.departments || []).filter(d => division === "all" || !d.parentDivision || String(d.parentDivision) === division).map(d => ({ value:String(d.id),label:d.name }))]}
         hasActiveFilters={hasFilters} moreFiltersCount={Number(division !== "all") + Number(department !== "all") + Number(Boolean(accountType))} onSearchChange={handleSearchChange} onStartDateChange={v => updateFilters({ startDate:v || null })} onEndDateChange={v => updateFilters({ endDate:v || null })}
-        onStatusChange={v => updateFilters({ status:initialView === "creation" ? v === "My drafts and revisions" ? "All" : v : v === "All" ? null : v,queue:initialView === "creation" && v === "My drafts and revisions" ? "my-drafts" : "all",unbalancedOnly:null })} onPageSizeChange={v => updateListQuery({ pageSize:String(v),page:"0" })} onDivisionChange={v => updateFilters({ divisionId:v === "all" ? null : v,departmentId:null })} onDepartmentChange={v => updateFilters({ departmentId:v === "all" ? null : v })} onClearFilters={clearFilters}>
+        onStatusChange={v => updateFilters({ status:initialView === "creation" ? v === "My drafts and revisions" ? "All" : v : v === "All" ? null : v,queue:initialView === "creation" && v === "My drafts and revisions" ? "my-drafts" : "all",unbalancedOnly:null })} onDivisionChange={v => updateFilters({ divisionId:v === "all" ? null : v,departmentId:null })} onDepartmentChange={v => updateFilters({ departmentId:v === "all" ? null : v })} onClearFilters={clearFilters}>
         <div className="space-y-1.5"><Label className="text-xs font-medium text-muted-foreground">Account type</Label><AjeSearchableSelect ariaLabel="Account type" value={accountType || "all"} onValueChange={value => updateFilters({ accountTypeId:value === "all" ? null : value })} options={[{ value:"all",label:"All account types" },...accountTypes.map(accountType => ({ value:String(accountType.id),label:accountType.name }))]} placeholder="All account types" /></div>
         <div className="space-y-1.5"><Label htmlFor="aje-sort" className="text-xs font-medium text-muted-foreground">Sort</Label><select id="aje-sort" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={sort} onChange={e => updateFilters({ sort:e.target.value === "lastActivity,desc" ? null : e.target.value })}><option value="lastActivity,desc">Last activity: newest</option><option value="transactionDate,desc">Accounting date: newest</option><option value="transactionDate,asc">Accounting date: oldest</option><option value="id,desc">Newest created</option><option value="jeNo,asc">Journal number</option><option value="status,asc">Status</option></select></div>
       </AdjustingEntriesFilters>
@@ -827,7 +817,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
         {listUpdatedAt !== null && <span>Last updated <time dateTime={new Date(listUpdatedAt).toISOString()}>{new Date(listUpdatedAt).toLocaleString("en-PH", { timeZone: "Asia/Manila" })} PHT</time></span>}
       </div>}
       <AdjustingEntriesTable entries={entries} presentation={tab === "summary" ? "summary" : tab === "creation" ? "creation" : "posting"} loading={listLoading || busy} actionsDisabled={listScopeStale || Boolean(listError) || Boolean(accessError)} emptyMessage={tab === "creation" && !listError ? "No entries match this Creation scope." : listError && entries.length === 0 ? "Journal results are unavailable. Retry the journal request above." : listScopeStale && entries.length === 0 ? "Previous filter results were empty. Waiting for the current results." : postingQueue === "awaiting-my-review" ? "No entries are awaiting your review." : postingQueue === "ready-for-me-to-post" ? "No submitted or retryable entries are ready for you to post." : postingQueue === "my-drafts" ? "You have no draft entries." : undefined} userId={access?.userId} readOnly={tab === "summary" || !access || accessLoading || Boolean(accessError)} onView={(entry,edit,trigger) => { if ((initialView === "creation" || initialView === "posting" || initialView === "summary") && !edit) void openReview(entry,"view",trigger); else void view(entry,edit); }} onAction={requestAction} onReverse={entry => void previewReversal(entry)} />
-      <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>{totalElements > 0 ? `Showing ${page * pageSize + 1}–${Math.min((page + 1) * pageSize, totalElements)} of ${totalElements} entries · Page ${page + 1} of ${Math.max(totalPages, 1)}` : "0 entries"}</span><div className="flex gap-2"><Button variant="outline" size="icon-sm" aria-label="Go to first page" disabled={page === 0 || listLoading} onClick={() => updateListQuery({ page:"0" })}><ChevronsLeft className="h-4 w-4" /></Button><Button variant="outline" size="sm" disabled={page === 0 || listLoading} onClick={() => updateListQuery({ page:String(page - 1) })}>Previous</Button><Button variant="outline" size="sm" disabled={listLoading || page + 1 >= totalPages} onClick={() => updateListQuery({ page:String(page + 1) })}>Next</Button><Button variant="outline" size="icon-sm" aria-label="Go to last page" disabled={listLoading || page + 1 >= totalPages} onClick={() => updateListQuery({ page:String(Math.max(0, totalPages - 1)) })}><ChevronsRight className="h-4 w-4" /></Button></div></div>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><div className="flex items-center gap-2"><label htmlFor="aje-register-page-size">Rows per page</label><select id="aje-register-page-size" disabled={listLoading} value={pageSize} onChange={event => updateListQuery({ pageSize:event.target.value,page:"0" })} className="h-9 rounded-md border bg-background px-2 text-sm">{[10,20,50,100].map(size => <option key={size} value={size}>{size}</option>)}</select></div><span>{totalElements > 0 ? `Showing ${page * pageSize + 1}–${Math.min((page + 1) * pageSize, totalElements)} of ${totalElements} entries · Page ${page + 1} of ${Math.max(totalPages, 1)}` : "0 entries"}</span><div className="flex gap-2"><Button variant="outline" size="icon-sm" aria-label="Go to first page" disabled={page === 0 || listLoading} onClick={() => updateListQuery({ page:"0" })}><ChevronsLeft className="h-4 w-4" /></Button><Button variant="outline" size="sm" disabled={page === 0 || listLoading} onClick={() => updateListQuery({ page:String(page - 1) })}>Previous</Button><Button variant="outline" size="sm" disabled={listLoading || page + 1 >= totalPages} onClick={() => updateListQuery({ page:String(page + 1) })}>Next</Button><Button variant="outline" size="icon-sm" aria-label="Go to last page" disabled={listLoading || page + 1 >= totalPages} onClick={() => updateListQuery({ page:String(Math.max(0, totalPages - 1)) })}><ChevronsRight className="h-4 w-4" /></Button></div></div>
     </>}
     {periodOpen && period && <AjePeriodDialog period={period} onClose={() => setPeriodOpen(false)} onSaved={value => { setPeriod(value); setPeriodUpdatedAt(Date.now()); setPeriodError(""); }} />}
     <AlertDialog open={action !== null} onOpenChange={open => { if (!open && !busy) closeAction(); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{action ? `${actionLabelForEntry(action.entry, action.action)} ${action.entry.jeNo}?` : "Confirm action"}</AlertDialogTitle><AlertDialogDescription>{action?.action === "reject-final" ? "This finally rejects the entry. It cannot be edited, resubmitted, or posted. A reason is required." : action?.action === "reject" ? "This returns the entry for correction and resubmission. A reason is required." : action?.action === "withdraw" ? "Withdrawal returns this entry to Draft so you can edit and resubmit it." : action?.action === "cancel" && action.entry.canCancelAfterReversalConflict ? "This cancels the failed full reversal and preserves the AJE and its audit history. It will not be permanently deleted." : action?.action === "post" || action?.action === "retry" ? "This commits the submitted entry to the General Ledger. Posted entries are read-only." : "This action updates the journal workflow and records an audit event."}</AlertDialogDescription></AlertDialogHeader>
@@ -850,6 +840,6 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
         <p role="status" className="py-8 text-center text-sm text-muted-foreground">Loading review dialog…</p>
         <DialogFooter><Button type="button" variant="outline" onClick={closeReview}>Close</Button></DialogFooter>
       </DialogContent>
-    </Dialog>}><AjeReviewDialog open journalNumber={reviewEntry.jeNo || null} entry={reviewDetails} attachments={reviewAttachments} loading={reviewLoading} error={reviewError} attachmentsLoading={reviewAttachmentsLoading} attachmentsError={reviewAttachmentsError} detailsUpdatedAt={reviewDetailsUpdatedAt} attachmentsUpdatedAt={reviewAttachmentsUpdatedAt} auditEvents={reviewAuditEvents} auditLoading={reviewAuditLoading} auditError={reviewAuditError} auditUpdatedAt={reviewAuditUpdatedAt} canReview={tab === "posting" && Boolean(access)} userId={access?.userId} confirmingPosting={reviewConfirmingPosting} postingBusy={busy} postingError={reviewPostingError} confirmingSubmission={reviewConfirmingSubmission} submissionBusy={busy} submissionError={reviewSubmissionError} submissionNotes={reviewSubmissionNotes} onSubmissionNotesChange={setReviewSubmissionNotes} onCancelSubmission={cancelReviewSubmission} onConfirmSubmission={(entry,notes) => void executeAction(entry,"submit",notes)} onAction={requestAction} onRequestPosting={requestReviewPosting} onCancelPosting={cancelReviewPosting} onConfirmPosting={entry => void executeAction(entry,entry.status === "Failed" ? "retry" : "post")} onRetryDetails={retryReviewDetails} onRetryAttachments={retryReviewAttachments} onRetryAudit={() => { if (reviewEntry) void refreshReviewAudit(reviewEntry.id); }} onClose={closeReview} onCloseAutoFocus={restoreReviewFocus} /></React.Suspense>}
+    </Dialog>}><AjeReviewDialog open journalNumber={reviewEntry.jeNo || null} entry={reviewDetails} attachments={reviewAttachments} loading={reviewLoading} error={reviewError} attachmentsLoading={reviewAttachmentsLoading} attachmentsError={reviewAttachmentsError} detailsUpdatedAt={reviewDetailsUpdatedAt} attachmentsUpdatedAt={reviewAttachmentsUpdatedAt} auditEvents={reviewAuditEvents} auditLoading={reviewAuditLoading} auditError={reviewAuditError} auditUpdatedAt={reviewAuditUpdatedAt} canReview={tab === "posting" && Boolean(access)} userId={access?.userId} confirmingPosting={reviewConfirmingPosting} postingBusy={busy} postingUncertain={Boolean(reviewDetails && uncertainPostings.current.has(reviewDetails.id))} checkingPosting={checkingPosting} onCheckPosting={() => { if (reviewDetails) void checkPostingStatus(reviewDetails); }} postingError={reviewPostingError} confirmingSubmission={reviewConfirmingSubmission} submissionBusy={busy} submissionError={reviewSubmissionError} submissionNotes={reviewSubmissionNotes} onSubmissionNotesChange={setReviewSubmissionNotes} onCancelSubmission={cancelReviewSubmission} onConfirmSubmission={(entry,notes) => void executeAction(entry,"submit",notes)} onAction={requestAction} onRequestPosting={requestReviewPosting} onCancelPosting={cancelReviewPosting} onConfirmPosting={entry => void executeAction(entry,entry.status === "Failed" ? "retry" : "post")} onRetryDetails={retryReviewDetails} onRetryAttachments={retryReviewAttachments} onRetryAudit={() => { if (reviewEntry) void refreshReviewAudit(reviewEntry.id); }} onClose={closeReview} onCloseAutoFocus={restoreReviewFocus} /></React.Suspense>}
   </div>;
 }

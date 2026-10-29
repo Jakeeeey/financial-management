@@ -38,6 +38,9 @@ type Props = {
   confirmingPosting: boolean;
   postingBusy: boolean;
   postingError: string;
+  postingUncertain: boolean;
+  checkingPosting: boolean;
+  onCheckPosting: () => void;
   confirmingSubmission: boolean;
   submissionBusy: boolean;
   submissionError: string;
@@ -55,7 +58,7 @@ type Props = {
   onCloseAutoFocus: (event: { preventDefault: () => void }) => void;
 };
 
-export function AjeReviewDialog({ open, journalNumber, entry, attachments, loading, error, attachmentsLoading, attachmentsError, detailsUpdatedAt, attachmentsUpdatedAt, auditEvents, auditLoading, auditError, auditUpdatedAt, canReview, onAction, confirmingPosting, postingBusy, postingError, confirmingSubmission, submissionBusy, submissionError, submissionNotes, onSubmissionNotesChange, onCancelSubmission, onConfirmSubmission, onRequestPosting, onCancelPosting, onConfirmPosting, onRetryDetails, onRetryAttachments, onRetryAudit, onClose, onCloseAutoFocus }: Props) {
+export function AjeReviewDialog({ open, journalNumber, entry, attachments, loading, error, attachmentsLoading, attachmentsError, detailsUpdatedAt, attachmentsUpdatedAt, auditEvents, auditLoading, auditError, auditUpdatedAt, canReview, onAction, confirmingPosting, postingBusy, postingUncertain, checkingPosting, onCheckPosting, postingError, confirmingSubmission, submissionBusy, submissionError, submissionNotes, onSubmissionNotesChange, onCancelSubmission, onConfirmSubmission, onRequestPosting, onCancelPosting, onConfirmPosting, onRetryDetails, onRetryAttachments, onRetryAudit, onClose, onCloseAutoFocus }: Props) {
   const reviewActions = entry ? availableActions(entry).filter(action => action === "post" || action === "retry" || action === "reject" || action === "reject-final") : [];
   const reviewReady = Boolean(entry && !loading && !error && !attachmentsLoading && !attachmentsError && !auditLoading && !auditError);
   const revisionNotesRequired = entry?.status === "For Revision";
@@ -144,7 +147,8 @@ export function AjeReviewDialog({ open, journalNumber, entry, attachments, loadi
           <Button type="button" disabled={submissionBusy || !canConfirmSubmission(entry,reviewReady,submissionNotes)} onClick={() => { if (entry) onConfirmSubmission(entry,submissionNotes); }}>{submissionBusy ? "Submitting..." : "Confirm submission"}</Button>
         </> : confirmingPosting ? <>
           <Button type="button" variant="outline" disabled={postingBusy} onClick={onCancelPosting}>Cancel</Button>
-          <Button type="button" disabled={postingBusy || !reviewReady || !reviewActions.some(action => action === "post" || action === "retry")} onClick={() => { if (entry) onConfirmPosting(entry); }}>{postingBusy ? "Posting..." : "Confirm posting"}</Button>
+          <Button type="button" disabled={postingBusy || postingUncertain || !reviewReady || !reviewActions.some(action => action === "post" || action === "retry")} onClick={() => { if (entry) onConfirmPosting(entry); }}>{postingBusy ? "Posting..." : "Confirm posting"}</Button>
+          {postingUncertain && <Button type="button" disabled={checkingPosting || postingBusy} onClick={onCheckPosting}>{checkingPosting ? "Checking status..." : "Check posting status"}</Button>}
         </> : <>
           {canReview && entry && reviewActions.includes("reject-final") && <Button type="button" variant="destructive" onClick={() => onAction(entry, "reject-final")}>Reject</Button>}
           {canReview && entry && reviewActions.includes("reject") && <Button type="button" variant="outline" onClick={() => onAction(entry, "reject")}>Return for revision</Button>}

@@ -113,6 +113,7 @@ function attachRefreshedCookies(response: NextResponse, refreshed: RefreshedToke
 async function fetchSpring(path: string, token: string, init?: RequestInit) {
   return fetch(`${getSpringBaseUrl()}${path}`, {
     ...init,
+    signal: init?.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(/\/(post|retry)$/.test(path) ? 60000 : 15000)]) : AbortSignal.timeout(/\/(post|retry)$/.test(path) ? 60000 : 15000),
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "application/json",
