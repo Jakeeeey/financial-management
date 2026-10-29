@@ -1,3 +1,4 @@
+import { RECEIPT_SIZE_ERROR, validateReceiptFile } from "@/modules/financial-management/reports/logistics-wer/utils/receipt-upload";
 import { NextRequest, NextResponse } from "next/server";
 import {
   getPlanBaseline,
@@ -9,8 +10,6 @@ export const dynamic = "force-dynamic";
 
 const DIRECTUS_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "");
 const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "";
-
-const MAX_RECEIPT_BYTES = 10 * 1024 * 1024;
 
 function error(message: string, status: number) {
   return NextResponse.json({ message }, { status });
@@ -59,9 +58,8 @@ export async function POST(
   if (!(file instanceof File) || file.size === 0) {
     return error("A non-empty file field is required.", 400);
   }
-  if (file.size > MAX_RECEIPT_BYTES) {
-    return error("Receipt files must not exceed 10 MB.", 400);
-  }
+  const validation = validateReceiptFile(file);
+  if (validation) return error(validation.message, validation.status);
 
   try {
     const forward = new FormData();
@@ -72,6 +70,7 @@ export async function POST(
       body: forward,
       cache: "no-store",
     });
+    if (upload.status === 413) return error(RECEIPT_SIZE_ERROR, 413);
     const payload = await upload.json().catch(() => null);
     if (!upload.ok) {
       console.error("[Logistics WER] Receipt upload failed:", payload);

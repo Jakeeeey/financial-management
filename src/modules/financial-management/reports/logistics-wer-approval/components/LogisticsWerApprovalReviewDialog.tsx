@@ -1,10 +1,15 @@
 "use client";
 
+import { ExpenseVarianceSummary } from "../../logistics-wer/components/ExpenseVarianceSummary";
+
+import { formatWerTimestamp } from "../../logistics-wer/utils/date";
+
 import { useState } from "react";
 import { AlertCircle, CheckCircle2, Expand, ExternalLink, Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -73,7 +78,7 @@ interface LogisticsWerApprovalReviewDialogProps {
   decisionError: string | null;
   decisionNotice: string | null;
   onOpenChange: (open: boolean) => void;
-  onDecide: (decision: "approve" | "return" | "reject", remarks: string) => void;
+  onDecide: (decision: "approve" | "return" | "reject", remarks: string, acknowledgeVariance?: boolean) => void;
 }
 
 export function LogisticsWerApprovalReviewDialog({
@@ -87,6 +92,7 @@ export function LogisticsWerApprovalReviewDialog({
   onDecide,
 }: LogisticsWerApprovalReviewDialogProps) {
   const [remarks, setRemarks] = useState("");
+  const [acknowledgedSubmission, setAcknowledgedSubmission] = useState<number | null>(null);
   const [previewFileId, setPreviewFileId] = useState<string | null>(null);
   const open = loading || error !== null || review !== null;
   const submission = review?.submission ?? null;
@@ -122,6 +128,7 @@ export function LogisticsWerApprovalReviewDialog({
 
         {review && submission && (
           <div className="space-y-4">
+            {review.variance && <ExpenseVarianceSummary variance={review.variance} />}
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {review.budgetByCoa.length > 0 ? review.budgetByCoa.map((budget) => {
                 const categoryLabel = [budget.coaCode, budget.coaTitle]
@@ -240,9 +247,17 @@ export function LogisticsWerApprovalReviewDialog({
               </Alert>
             )}
 
+            {submission.decisionRemarks && <div className="rounded-lg border p-3 text-sm">
+              <h4 className="font-semibold">Recorded decision</h4>
+              <p className="whitespace-pre-wrap">{submission.decisionRemarks}</p>
+            </div>}
             {decidable ? (
               <div className="space-y-2 rounded-xl border p-4">
-                <Label htmlFor="wer-decision-remarks">Decision remarks (required to return or reject)</Label>
+                <Label htmlFor="wer-decision-remarks">Decision remarks (required for variance approval, return or rejection)</Label>
+                {review.variance?.requiresAcknowledgment && <label className="flex items-center gap-2 text-sm">
+                  <Checkbox checked={acknowledgedSubmission === submission.id} onCheckedChange={(checked) => setAcknowledgedSubmission(checked === true ? submission.id : null)} />
+                  I reviewed and acknowledge this budget variance.
+                </label>}
                 <Textarea
                   id="wer-decision-remarks"
                   value={remarks}
@@ -271,7 +286,7 @@ export function LogisticsWerApprovalReviewDialog({
                   <Button type="button" variant="destructive" disabled={deciding} onClick={() => onDecide("reject", remarks)}>
                     {deciding ? "Saving…" : "Reject"}
                   </Button>
-                  <Button type="button" disabled={deciding} onClick={() => onDecide("approve", remarks)}>
+                  <Button type="button" disabled={deciding || Boolean(review.variance?.requiresAcknowledgment && (acknowledgedSubmission !== submission.id || !remarks.trim()))} onClick={() => onDecide("approve", remarks, acknowledgedSubmission === submission.id)}>
                     {deciding ? "Approving…" : "Approve"}
                   </Button>
                 </div>
@@ -279,6 +294,8 @@ export function LogisticsWerApprovalReviewDialog({
             ) : (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Badge variant="outline">{displayWerStatus(submission.status)}</Badge>
+                {submission.submittedAt && <span>Submitted: {formatWerTimestamp(submission.submittedAt)}</span>}
+                {submission.decidedAt && <span>Decided: {formatWerTimestamp(submission.decidedAt)}</span>}
                 <span>This submission is no longer awaiting a decision.</span>
               </div>
             )}

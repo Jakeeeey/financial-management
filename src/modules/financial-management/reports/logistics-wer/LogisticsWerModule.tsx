@@ -51,6 +51,17 @@ export default function LogisticsWerModule() {
         onCurrentWeek={report.resetToCurrentWeek}
       />
 
+      {report.report?.budgetSummaryError && (
+        <Alert variant="destructive">
+          <AlertCircle className="size-4" />
+          <AlertTitle>Allocated expense budgets unavailable</AlertTitle>
+          <AlertDescription className="flex flex-wrap items-center gap-3">
+            <span>{report.report.budgetSummaryError}</span>
+            <Button type="button" variant="outline" size="sm" disabled={report.loading} onClick={() => void report.retry()}>Retry budgets</Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {report.error && (
         <Alert variant="destructive">
           <AlertCircle className="size-4" />

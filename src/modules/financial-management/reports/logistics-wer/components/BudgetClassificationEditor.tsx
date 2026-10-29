@@ -86,8 +86,8 @@ export function BudgetClassificationEditor({ planId, line, disabled, onSaved }: 
   return (
     <Dialog open={open} onOpenChange={openEditor}>
       <DialogTrigger asChild>
-        <Button type="button" size="sm" variant="outline" disabled={disabled}>
-          {line.coaId && line.remarks?.trim() ? "Edit" : "Classify"}
+        <Button type="button" size="sm" variant="outline" disabled={disabled || Boolean(line.coaId && line.remarks?.trim())}>
+          Classify
         </Button>
       </DialogTrigger>
       <DialogContent className="w-[min(96vw,48rem)] sm:max-w-3xl">

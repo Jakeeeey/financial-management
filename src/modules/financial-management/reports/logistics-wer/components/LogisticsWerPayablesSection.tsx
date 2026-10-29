@@ -1,10 +1,14 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { RECEIPT_ACCEPT, RECEIPT_GUIDANCE, validateReceiptFile } from "../utils/receipt-upload";
+import { ExpenseVarianceSummary } from "./ExpenseVarianceSummary";
+
+import { Fragment, useEffect, useRef, useState } from "react";
 import { v4 as generateUuid } from "uuid";
 import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Copy, Loader2, Paperclip, Plus, Trash2, X } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { todayManilaDate, formatWerTimestamp } from "../utils/date";
 import { displayWerStatus } from "../utils/status";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,11 +30,10 @@ import type {
   LogisticsWerPayableSubmissionLineDetails,
   LogisticsWerPayableSubmissionSummary,
 } from "../types";
-import { findBudgetRequestOverages } from "../utils/budget-balances";
+import { calculateExpenseVariance } from "../utils/budget-balances";
 import { canRunPayableAction, hasCompletePayableOrganization, isPayableFormDirty, validatePayableLines } from "../utils/payable-validation";
 import {
   deletePayableReceipt,
-  fetchPayableDepartments,
   fetchPayableDivisions,
   fetchPayableSubmissionDetails,
   fetchPayableCoas,
@@ -40,7 +43,6 @@ import {
   uploadPayableReceipt,
   withdrawPayableSubmission,
   type PayableCoaOption,
-  type PayableDepartmentOption,
   type PayableDivisionOption,
   type PayableLineInput,
   type StagedReceipt,
@@ -48,6 +50,14 @@ import {
 
 function formatMoney(value: number | null | undefined): string {
   return `₱${Number(value ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function formatLineDate(value: string | null): string {
+  if (!value) return "\u2014";
+  const date = new Date(`${value.slice(0, 10)}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) ? "\u2014" : new Intl.DateTimeFormat("en-PH", {
+    timeZone: "UTC", month: "short", day: "numeric", year: "numeric",
+  }).format(date);
 }
 
 function submissionBadgeClassName(status: string | null): string {
@@ -83,16 +93,9 @@ interface EditableLine {
   receipts: StagedReceipt[];
 }
 
-function todayDateOnly(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
 
 function emptyLine(key: number): EditableLine {
-  return { key, id: null, amount: "", referenceNo: "", remarks: "", date: todayDateOnly(), coaId: "", divisionId: "", receipts: [] };
+  return { key, id: null, amount: "", referenceNo: "", remarks: "", date: todayManilaDate(), coaId: "", divisionId: "", receipts: [] };
 }
 
 function editableLinesFromDetails(lines: LogisticsWerPayableSubmissionLineDetails[]): EditableLine[] {
@@ -124,15 +127,16 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
   const [initialLines, setInitialLines] = useState<EditableLine[]>(() => [emptyLine(1)]);
   const [lines, setLines] = useState<EditableLine[]>(initialLines);
   const [coas, setCoas] = useState<PayableCoaOption[]>([]);
-  const [departments, setDepartments] = useState<PayableDepartmentOption[]>([]);
   const [divisions, setDivisions] = useState<PayableDivisionOption[]>([]);
   const [organizationOptionsLoaded, setOrganizationOptionsLoaded] = useState(false);
   const [organizationOptionsError, setOrganizationOptionsError] = useState<string | null>(null);
   const [initialDepartmentId, setInitialDepartmentId] = useState("");
-  const [departmentId, setDepartmentId] = useState("");
+  const [, setDepartmentId] = useState("");
   const [coasError, setCoasError] = useState<string | null>(null);
   const [coasLoaded, setCoasLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
+  const uploadInProgress = useRef(false);
+  const [receiptErrors, setReceiptErrors] = useState<Record<number, string | undefined>>({});
   const [uploadingKey, setUploadingKey] = useState<number | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -173,10 +177,9 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
   useEffect(() => {
     if ((!isForClearance && submissions.length === 0) || organizationOptionsLoaded) return;
     let active = true;
-    Promise.all([fetchPayableDepartments(), fetchPayableDivisions()])
-      .then(([departmentOptions, divisionOptions]) => {
+    Promise.all([fetchPayableDivisions()])
+      .then(([divisionOptions]) => {
         if (!active) return;
-        setDepartments(departmentOptions);
         setDivisions(divisionOptions);
       })
       .catch((loadError) => {
@@ -226,7 +229,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
   };
 
   const handleEditSubmission = async (submissionId: number, status: string) => {
-    if ((isPayableFormDirty(lines, initialLines) || departmentId !== initialDepartmentId)
+    if ((isPayableFormDirty(lines, initialLines) || String(eligibility?.departmentId ?? "") !== initialDepartmentId)
       && !window.confirm("Discard the unsaved new payable and edit this submission?")) {
       return;
     }
@@ -294,13 +297,10 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
     const coaId = line.coaId ? Number(line.coaId) : null;
     return [{ amount, coaId: Number.isInteger(coaId) && Number(coaId) > 0 ? Number(coaId) : null }];
   });
-  const projectedOverages = detail.budgetContextAvailable
-    ? findBudgetRequestOverages(requestLines, detail.budgetBalancesByCoa)
-    : [];
-  const submissionBlocked = !detail.budgetContextAvailable
-    || (detail.unclassifiedReservedAmount ?? 0) > 0
-    || projectedOverages.length > 0
-    || !eligibility?.eligible;
+  const variance = detail.budgetContextAvailable
+    ? calculateExpenseVariance(requestLines, detail.budgetBalancesByCoa, detail.allocatedExpenseBudget ?? 0, detail.reservedAmount ?? 0)
+    : null;
+  const submissionBlocked = !detail.budgetContextAvailable || !eligibility?.eligible;
 
   const buildPayload = (): PayableLineInput[] => lines.map((line) => ({
     ...(line.id === null ? {} : { id: line.id }),
@@ -313,11 +313,11 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
     receiptFileIds: line.receipts.map((receipt) => receipt.fileId),
   }));
 
-  const isDirty = isPayableFormDirty(lines, initialLines) || departmentId !== initialDepartmentId;
+  const isDirty = isPayableFormDirty(lines, initialLines) || String(eligibility?.departmentId ?? "") !== initialDepartmentId;
   const payload = buildPayload();
   const draftValidation = validatePayableLines(payload, false);
   const submitValidation = validatePayableLines(payload, true, true);
-  const selectedDepartmentId = departmentId ? Number(departmentId) : null;
+  const selectedDepartmentId = eligibility?.departmentId ?? null;
   const organizationValid = hasCompletePayableOrganization(selectedDepartmentId, payload);
   const departmentValid = selectedDepartmentId !== null && Number.isInteger(selectedDepartmentId) && selectedDepartmentId > 0;
   const draftActionEnabled = canRunPayableAction("save-draft", {
@@ -336,7 +336,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
   });
 
   const handleAction = async (kind: "save-draft" | "submit") => {
-    const dirty = isPayableFormDirty(lines, initialLines) || departmentId !== initialDepartmentId;
+    const dirty = isPayableFormDirty(lines, initialLines) || String(eligibility?.departmentId ?? "") !== initialDepartmentId;
     const actionDirty = dirty || (kind === "submit" && editingSubmissionId !== null);
     if (kind === "submit" && !departmentValid) {
       if (actionDirty && !busy && uploadingKey === null) {
@@ -412,8 +412,11 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
   };
 
   const handleAttach = async (key: number, file: File | undefined) => {
-    if (!file) return;
-    setFormError(null);
+    if (!file || uploadInProgress.current || busy) return;
+    const validation = validateReceiptFile(file);
+    setReceiptErrors((current) => ({ ...current, [key]: validation?.message }));
+    if (validation) return;
+    uploadInProgress.current = true;
     setUploadingKey(key);
     try {
       const staged = await uploadPayableReceipt(planId, file);
@@ -421,8 +424,9 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
         line.key === key ? { ...line, receipts: [...line.receipts, staged] } : line
       )));
     } catch (uploadError) {
-      setFormError(uploadError instanceof Error ? uploadError.message : "Unable to upload the receipt.");
+      setReceiptErrors((current) => ({ ...current, [key]: uploadError instanceof Error ? uploadError.message : "Unable to upload the receipt. Please try again." }));
     } finally {
+      uploadInProgress.current = false;
       setUploadingKey(null);
     }
   };
@@ -531,7 +535,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
           <AlertCircle className="size-4" />
           <AlertTitle>Budget classification required</AlertTitle>
           <AlertDescription>
-            {formatMoney(detail.unclassifiedBudgetAmount)} is not available to submit until the related budget lines are classified to a COA.
+            {formatMoney(detail.unclassifiedBudgetAmount)} has no completed COA classification. Actual expenses can still be submitted for variance review.
           </AlertDescription>
         </Alert>
       )}
@@ -545,11 +549,11 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
         </Alert>
       )}
       {(detail.overBudgetAmount ?? 0) > 0 && (
-        <Alert variant="destructive">
+        <Alert className="border-amber-300 bg-amber-50/30">
           <AlertCircle className="size-4" />
           <AlertTitle>Existing expense budget overage</AlertTitle>
           <AlertDescription>
-            Active or recorded payables exceed the allocated budget by {formatMoney(detail.overBudgetAmount)} across one or more COAs. New spending in those accounts is blocked.
+            Active or recorded payables exceed the allocated budget by {formatMoney(detail.overBudgetAmount)} across one or more COAs. Additional actual expenses can be submitted for variance review.
           </AlertDescription>
         </Alert>
       )}
@@ -604,6 +608,8 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
                     <Badge variant="outline" className={submissionBadgeClassName(submission.status)}>
                       {displayWerStatus(submission.status)}
                     </Badge>
+                    {submission.submittedAt && <p className="mt-1 text-xs text-muted-foreground">Submitted: {formatWerTimestamp(submission.submittedAt)}</p>}
+                    {submission.decidedAt && <p className="mt-1 text-xs text-muted-foreground">Decided: {formatWerTimestamp(submission.decidedAt)}</p>}
                     {submission.decisionRemarks && (
                       <p className="mt-1 max-w-48 truncate text-[11px] text-muted-foreground" title={submission.decisionRemarks}>
                         {submission.decisionRemarks}
@@ -672,15 +678,17 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
                         ) : submissionLines?.length === 0 ? (
                           <p className="py-4 text-sm text-muted-foreground">This submission has no line items.</p>
                         ) : submissionLines ? (
-                          <div className="overflow-x-auto rounded-md border bg-background">
-                            <Table>
+                          <div className="w-0 min-w-full overflow-x-auto rounded-md border bg-background">
+                            <Table className="min-w-[1000px] table-fixed">
                               <TableHeader>
                                 <TableRow>
                                   <TableHead className="w-16">Line</TableHead>
+                                  <TableHead className="w-32">Date</TableHead>
+                                  <TableHead className="w-48">COA Account</TableHead>
+                                  <TableHead className="w-36">Division</TableHead>
                                   <TableHead className="w-32 text-right">Amount</TableHead>
-                                  <TableHead>COA account</TableHead>
                                   <TableHead>Remarks</TableHead>
-                                  <TableHead>Receipts</TableHead>
+                                  <TableHead className="w-32">Receipts</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
@@ -691,9 +699,13 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
                                   return (
                                     <TableRow key={line.id}>
                                       <TableCell>{line.lineNo ?? index + 1}</TableCell>
+                                      <TableCell>{formatLineDate(line.date)}</TableCell>
+                                      <TableCell className="whitespace-normal break-words">{coaLabel}</TableCell>
+                                      <TableCell className="whitespace-normal break-words">{line.divisionId
+                                        ? divisions.find((division) => division.divisionId === line.divisionId)?.divisionName || `Division #${line.divisionId}`
+                                        : "\u2014"}</TableCell>
                                       <TableCell className="text-right font-medium">{formatMoney(line.amount)}</TableCell>
-                                      <TableCell>{coaLabel}</TableCell>
-                                      <TableCell className="max-w-sm whitespace-pre-wrap break-words">{line.remarks || "—"}</TableCell>
+                                      <TableCell className="whitespace-pre-wrap [overflow-wrap:anywhere]">{line.remarks || "—"}</TableCell>
                                       <TableCell>
                                         {line.receipts.length === 0 ? (
                                           <span className="text-muted-foreground">—</span>
@@ -814,19 +826,10 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
 
           <div className="max-w-xl space-y-1">
             <Label htmlFor="wer-payable-department">Department *</Label>
-            <WerOrganizationCombobox
-              id="wer-payable-department"
-              value={departmentId}
-              onValueChange={setDepartmentId}
-              options={departments.map((department) => ({
-                value: String(department.departmentId),
-                label: department.departmentName,
-              }))}
-              placeholder="Select department"
-              searchLabel="departments"
-              disabled={!organizationOptionsLoaded || busy}
-            />
-            <p className="text-[11px] text-muted-foreground">Required for submission. You can save a draft before choosing one.</p>
+            <input id="wer-payable-department" readOnly value={eligibility?.departmentName || "Department unavailable"} className="h-10 w-full rounded-md border bg-muted/30 px-3 text-sm" />
+            <p className="text-[11px] text-muted-foreground">Department follows the assigned driver/payee.</p>
+            {eligibility?.departmentError && <p role="alert" className="text-xs text-destructive">{eligibility.departmentError} <Button type="button" variant="outline" size="sm" onClick={() => void onChanged()}>Retry department</Button></p>}
+            {editingSubmissionId && initialDepartmentId !== String(eligibility?.departmentId ?? "") && <p role="status" className="text-xs text-amber-700">Driver department differs from the saved draft. Save the updated draft before submitting.</p>}
             {organizationOptionsError && (
               <p className="text-[11px] text-destructive">Department and division options unavailable: {organizationOptionsError}</p>
             )}
@@ -990,7 +993,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
                     })}
                     <label
                       className={`ml-auto inline-flex shrink-0 items-center gap-1 text-xs font-medium ${
-                        uploadingKey === line.key ? "cursor-not-allowed opacity-50" : "cursor-pointer text-primary hover:underline"
+                        uploadingKey !== null || busy ? "cursor-not-allowed opacity-50" : "cursor-pointer text-primary hover:underline"
                       }`}
                     >
                       <Paperclip className="size-3.5" />
@@ -999,7 +1002,10 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
                         type="file"
                         aria-label="Upload receipt"
                         className="sr-only"
-                        disabled={uploadingKey === line.key}
+                        accept={RECEIPT_ACCEPT}
+                        aria-describedby={`wer-receipt-guidance-${line.key}${receiptErrors[line.key] ? ` wer-receipt-error-${line.key}` : ""}`}
+                        aria-invalid={Boolean(receiptErrors[line.key])}
+                        disabled={uploadingKey !== null || busy}
                         onChange={(event) => {
                           const file = event.target.files?.[0];
                           event.target.value = "";
@@ -1008,6 +1014,8 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
                       />
                     </label>
                   </div>
+                  <p id={`wer-receipt-guidance-${line.key}`} className="text-xs text-muted-foreground">{RECEIPT_GUIDANCE}</p>
+                  {receiptErrors[line.key] && <p id={`wer-receipt-error-${line.key}`} role="alert" className="text-xs text-destructive">{receiptErrors[line.key]}</p>}
                   {uploadingKey === line.key && (
                     <p className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Loader2 className="size-3 animate-spin" /> Uploading receipt…
@@ -1022,18 +1030,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
             <Plus className="size-3.5" /> Add New Entry Line Item
           </Button>
 
-          {projectedOverages.length > 0 && (
-            <Alert variant="destructive">
-              <AlertCircle className="size-4" />
-              <AlertTitle>Submission exceeds a COA budget</AlertTitle>
-              <AlertDescription>
-                {projectedOverages.map((overage) => {
-                  const label = coas.find((option) => option.coaId === overage.coaId)?.label || `COA ${overage.coaId}`;
-                  return `${label}: requested ${formatMoney(overage.requestedAmount)}, available ${formatMoney(overage.remainingAmount)}.`;
-                }).join(" ")}
-              </AlertDescription>
-            </Alert>
-          )}
+          {variance && <ExpenseVarianceSummary variance={variance} />}
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
             <span>
               Lines total: <strong className="text-foreground">{formatMoney(linesTotal)}</strong>

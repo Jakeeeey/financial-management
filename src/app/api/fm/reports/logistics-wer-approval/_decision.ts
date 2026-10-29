@@ -1,3 +1,4 @@
+import { calculateExpenseVariance } from "@/modules/financial-management/reports/logistics-wer/utils/budget-balances";
 import {
   acquireDocumentNumberLock,
   documentPrefixForTransactionType,
@@ -88,6 +89,7 @@ async function convertSubmission(
   submission: DraftSubmission,
   supplierId: number,
   approverId: number,
+  decisionRemarks: string,
 ): Promise<{ disbursementId: number; disbursementDocNo: string | null; idempotent: boolean }> {
   if (submission.disbursementId) {
     const existing = await directusFetch<{ data?: Record<string, unknown> }>(
@@ -103,6 +105,7 @@ async function convertSubmission(
   const releaseDocLock = await acquireDocumentNumberLock(TRANSACTION_TYPE);
   try {
     const now = new Date().toISOString();
+    const werNow = formatManilaWallClock(new Date(now));
     const docNo = await findNextAvailableDocumentNumber(TRANSACTION_TYPE, directusFetch);
     const header = await directusWrite<{ data?: { id?: unknown; transaction_type?: unknown; doc_no?: unknown } }>("POST", "/items/disbursement", {
       doc_no: docNo,
@@ -175,18 +178,20 @@ async function convertSubmission(
       if (Math.abs(persistedTotal - submission.totalAmount) > 1e-6) {
         throw new Error("Converted payable rows do not match the submission total.");
       }
+
+      await directusWrite("PATCH", `/items/${DRAFT_COLLECTION}/${submission.id}`, {
+        status: "approved",
+        decision_remarks: decisionRemarks,
+        disbursement_id: created.disbursementId,
+        decided_by: approverId,
+        decided_at: werNow,
+        date_updated: werNow,
+      });
     } catch (conversionError) {
       await cleanupConversion(created);
       throw conversionError;
     }
 
-    await directusWrite("PATCH", `/items/${DRAFT_COLLECTION}/${submission.id}`, {
-      status: "approved",
-      disbursement_id: created.disbursementId,
-      decided_by: approverId,
-      decided_at: now,
-      date_updated: formatManilaWallClock(),
-    });
     return { disbursementId: created.disbursementId, disbursementDocNo: docNo, idempotent: false };
   } finally {
     releaseDocLock();
@@ -198,6 +203,7 @@ export interface DecideOneInput {
   decision: WerApprovalDecision;
   remarks: string;
   approverId: number;
+  acknowledgeVariance?: boolean;
 }
 
 /**
@@ -230,8 +236,8 @@ export async function decideOneSubmission(input: DecideOneInput): Promise<Decisi
       );
     }
 
-    const now = new Date().toISOString();
-    const auditNow = formatManilaWallClock();
+    const now = formatManilaWallClock();
+    const auditNow = now;
     if (decision === "return" || decision === "reject") {
       await directusWrite("PATCH", `/items/${DRAFT_COLLECTION}/${submission.id}`, {
         status: decision === "return" ? "returned" : "rejected",
@@ -269,25 +275,20 @@ export async function decideOneSubmission(input: DecideOneInput): Promise<Decisi
       );
     }
     const remaining = await getPlanRemaining(initial.planId);
-    const otherReservations = remaining.reserved - submission.totalAmount;
-    if (submission.totalAmount - (remaining.baseline - otherReservations) > 1e-6) {
-      throw new DecisionFailure("The submission no longer fits the remaining payable amount.", 409, {
-        remaining: remaining.baseline - otherReservations,
-      });
+    const variance = calculateExpenseVariance(submission.lines, remaining.budgetBalancesByCoa, remaining.allocatedBudget, remaining.reserved, submission.lines);
+    if (variance.requiresAcknowledgment && (input.acknowledgeVariance !== true || !remarks.trim())) {
+      throw new DecisionFailure("Review this submission individually and acknowledge the budget variance with a reason before approval.", 422, { variance });
     }
-
+    const decisionRemarks = variance.requiresAcknowledgment
+      ? `${remarks.trim()}\nBudget variance acknowledged. Allocation: PHP ${variance.allocatedAmount.toFixed(2)}; current actual: PHP ${variance.actualAmount.toFixed(2)}; other committed: PHP ${variance.otherCommittedAmount.toFixed(2)}; projected cumulative actual: PHP ${variance.projectedActualAmount.toFixed(2)}; net variance: PHP ${variance.netVariance.toFixed(2)}.\n${variance.byCoa.map((row) => `COA ${row.coaId}: allocated PHP ${row.allocatedAmount.toFixed(2)}, other committed PHP ${row.otherCommittedAmount.toFixed(2)}, current PHP ${row.requestedAmount.toFixed(2)}, projected PHP ${row.projectedAmount.toFixed(2)}, overage PHP ${row.overAmount.toFixed(2)}${row.unbudgeted ? " (Unbudgeted)" : ""}.`).join("\n")}`
+      : remarks;
     const { disbursementId, disbursementDocNo, idempotent } = await convertSubmission(
       baseline.docNo,
       submission,
       eligibility.supplierId,
       approverId,
+      decisionRemarks,
     );
-    if (!idempotent && remarks) {
-      await directusWrite("PATCH", `/items/${DRAFT_COLLECTION}/${submission.id}`, {
-        decision_remarks: remarks,
-        date_updated: formatManilaWallClock(),
-      }).catch(() => null);
-    }
     const updated = (await loadSubmission(submissionId)).submission;
     if (!updated) throw new DecisionFailure("Submission not found.", 404);
     return { submission: updated, disbursementId, disbursementDocNo, idempotent };

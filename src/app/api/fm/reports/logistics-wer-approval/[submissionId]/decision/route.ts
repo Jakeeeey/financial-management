@@ -51,7 +51,7 @@ export async function POST(
   }
 
   try {
-    const outcome = await decideOneSubmission({ submissionId: id, decision, remarks, approverId });
+    const outcome = await decideOneSubmission({ submissionId: id, decision, remarks, approverId, acknowledgeVariance: body.acknowledgeVariance === true });
     return NextResponse.json({
       draft: outcome.submission,
       disbursementId: outcome.disbursementId,
