@@ -1,3 +1,4 @@
+import { publicWerFailure, WerDependencyError } from "../logistics-wer/_errors";
 import { calculateExpenseVariance } from "@/modules/financial-management/reports/logistics-wer/utils/budget-balances";
 import {
   acquireDocumentNumberLock,
@@ -29,6 +30,7 @@ const TRANSACTION_TYPE: DisbursementTransactionType = LOGISTICS_WER_TRANSACTION_
 export type WerApprovalDecision = "approve" | "return" | "reject";
 
 export interface DecisionOutcome {
+  refreshFailure?: ReturnType<typeof publicWerFailure>;
   submission: DraftSubmission;
   disbursementId: number | null;
   disbursementDocNo: string | null;
@@ -212,11 +214,15 @@ export interface DecideOneInput {
  */
 export async function decideOneSubmission(input: DecideOneInput): Promise<DecisionOutcome> {
   const { submissionId, decision, remarks, approverId } = input;
-  const initial = await loadSubmission(submissionId);
+  const initial = await loadSubmission(submissionId).catch((cause) => {
+    if (cause instanceof WerDependencyError) cause.mutationOutcome = "not_applied";
+    throw cause;
+  });
   if (!initial.submission || !initial.planId) {
     throw new DecisionFailure("Submission not found.", 404);
   }
 
+  let writeStarted = false;
   return withPlanLock(initial.planId, async () => {
     const reloaded = await loadSubmission(submissionId);
     const submission = reloaded.submission;
@@ -239,6 +245,7 @@ export async function decideOneSubmission(input: DecideOneInput): Promise<Decisi
     const now = formatManilaWallClock();
     const auditNow = now;
     if (decision === "return" || decision === "reject") {
+      writeStarted = true;
       await directusWrite("PATCH", `/items/${DRAFT_COLLECTION}/${submission.id}`, {
         status: decision === "return" ? "returned" : "rejected",
         decided_by: approverId,
@@ -249,9 +256,12 @@ export async function decideOneSubmission(input: DecideOneInput): Promise<Decisi
       await markWerPlanLiquidatedIfSettled(submission.id).catch((syncError) => {
         console.error("[Logistics WER] Liquidation sync after decision failed:", syncError);
       });
-      const updated = (await loadSubmission(submissionId)).submission;
-      if (!updated) throw new DecisionFailure("Submission not found.", 404);
-      return { submission: updated, disbursementId: null, disbursementDocNo: null, idempotent: false };
+      let refreshFailure: ReturnType<typeof publicWerFailure> | undefined;
+      const updated = await loadSubmission(submissionId).then(record => record.submission).catch((cause) => {
+        refreshFailure = publicWerFailure(cause, "applied", submissionId);
+        return null;
+      });
+      return { submission: updated ?? { ...submission, status: decision === "return" ? "returned" : "rejected", decidedBy: approverId, decidedAt: now, decisionRemarks: remarks }, disbursementId: null, disbursementDocNo: null, idempotent: false, refreshFailure };
     }
 
     if (!hasCompletePayableOrganization(submission.departmentId, submission.lines)) {
@@ -282,6 +292,7 @@ export async function decideOneSubmission(input: DecideOneInput): Promise<Decisi
     const decisionRemarks = variance.requiresAcknowledgment
       ? `${remarks.trim()}\nBudget variance acknowledged. Allocation: PHP ${variance.allocatedAmount.toFixed(2)}; current actual: PHP ${variance.actualAmount.toFixed(2)}; other committed: PHP ${variance.otherCommittedAmount.toFixed(2)}; projected cumulative actual: PHP ${variance.projectedActualAmount.toFixed(2)}; net variance: PHP ${variance.netVariance.toFixed(2)}.\n${variance.byCoa.map((row) => `COA ${row.coaId}: allocated PHP ${row.allocatedAmount.toFixed(2)}, other committed PHP ${row.otherCommittedAmount.toFixed(2)}, current PHP ${row.requestedAmount.toFixed(2)}, projected PHP ${row.projectedAmount.toFixed(2)}, overage PHP ${row.overAmount.toFixed(2)}${row.unbudgeted ? " (Unbudgeted)" : ""}.`).join("\n")}`
       : remarks;
+    writeStarted = true;
     const { disbursementId, disbursementDocNo, idempotent } = await convertSubmission(
       baseline.docNo,
       submission,
@@ -289,8 +300,17 @@ export async function decideOneSubmission(input: DecideOneInput): Promise<Decisi
       approverId,
       decisionRemarks,
     );
-    const updated = (await loadSubmission(submissionId)).submission;
-    if (!updated) throw new DecisionFailure("Submission not found.", 404);
-    return { submission: updated, disbursementId, disbursementDocNo, idempotent };
+    let refreshFailure: ReturnType<typeof publicWerFailure> | undefined;
+    const updated = await loadSubmission(submissionId).then((record) => record.submission).catch((cause) => {
+      refreshFailure = publicWerFailure(cause, "applied", submissionId);
+      return null;
+    });
+    return {
+      submission: updated ?? { ...submission, status: "approved", disbursementId, decidedBy: approverId, decidedAt: null, decisionRemarks },
+      disbursementId, disbursementDocNo, idempotent, refreshFailure,
+    };
+  }).catch((cause) => {
+    if (cause instanceof WerDependencyError) cause.mutationOutcome = writeStarted ? "unknown" : "not_applied";
+    throw cause;
   });
 }

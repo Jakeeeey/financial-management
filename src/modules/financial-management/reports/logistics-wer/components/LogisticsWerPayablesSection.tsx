@@ -1,5 +1,6 @@
 "use client";
 
+import { WerRateLimitError } from "../services/wer-requests";
 import { RECEIPT_ACCEPT, RECEIPT_GUIDANCE, validateReceiptFile } from "../utils/receipt-upload";
 import { ExpenseVarianceSummary } from "./ExpenseVarianceSummary";
 
@@ -33,6 +34,8 @@ import type {
 import { calculateExpenseVariance } from "../utils/budget-balances";
 import { canRunPayableAction, hasCompletePayableOrganization, isPayableFormDirty, validatePayableLines } from "../utils/payable-validation";
 import {
+  WerActionError,
+  reconcilePayable,
   deletePayableReceipt,
   fetchPayableDivisions,
   fetchPayableSubmissionDetails,
@@ -135,6 +138,11 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
   const [coasError, setCoasError] = useState<string | null>(null);
   const [coasLoaded, setCoasLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
+  const actionInProgress = useRef(false);
+  const creationKey = useRef<string | null>(null);
+  const [pendingOutcome, setPendingOutcome] = useState<{ submissionId?: number; idempotencyKey?: string } | null>(null);
+  const [checkingStatus, setCheckingStatus] = useState(false);
+  const [refreshWarning, setRefreshWarning] = useState<string | null>(null);
   const uploadInProgress = useRef(false);
   const [receiptErrors, setReceiptErrors] = useState<Record<number, string | undefined>>({});
   const [uploadingKey, setUploadingKey] = useState<number | null>(null);
@@ -300,7 +308,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
   const variance = detail.budgetContextAvailable
     ? calculateExpenseVariance(requestLines, detail.budgetBalancesByCoa, detail.allocatedExpenseBudget ?? 0, detail.reservedAmount ?? 0)
     : null;
-  const submissionBlocked = !detail.budgetContextAvailable || !eligibility?.eligible;
+  const submissionBlocked = !detail.budgetContextAvailable || !eligibility?.eligible || pendingOutcome !== null;
 
   const buildPayload = (): PayableLineInput[] => lines.map((line) => ({
     ...(line.id === null ? {} : { id: line.id }),
@@ -323,19 +331,26 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
   const draftActionEnabled = canRunPayableAction("save-draft", {
     dirty: isDirty,
     valid: draftValidation.valid,
-    busy,
+    busy: busy || pendingOutcome !== null || withdrawingId !== null,
     uploading: uploadingKey !== null,
     submissionBlocked,
   });
   const submitActionEnabled = canRunPayableAction("submit", {
     dirty: isDirty || editingSubmissionId !== null,
     valid: submitValidation.valid && organizationValid,
-    busy,
+    busy: busy || pendingOutcome !== null || withdrawingId !== null,
     uploading: uploadingKey !== null,
     submissionBlocked,
   });
 
+  const refreshAfterAction = async () => {
+    setRefreshWarning(null);
+    try { await onChanged(); }
+    catch { setRefreshWarning("Your action was saved, but the list could not be refreshed. Please refresh the page data before taking another action."); }
+  };
+
   const handleAction = async (kind: "save-draft" | "submit") => {
+    if (actionInProgress.current || pendingOutcome) return;
     const dirty = isPayableFormDirty(lines, initialLines) || String(eligibility?.departmentId ?? "") !== initialDepartmentId;
     const actionDirty = dirty || (kind === "submit" && editingSubmissionId !== null);
     if (kind === "submit" && !departmentValid) {
@@ -364,13 +379,16 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
     setFormError(null);
     setNotice(null);
     setBusy(true);
+    actionInProgress.current = true;
     try {
-      const idempotencyKey = generateUuid();
+      const idempotencyKey = creationKey.current ?? generateUuid();
+      creationKey.current = idempotencyKey;
       const submission = editingSubmissionId !== null
         ? await updatePayableSubmission(planId, editingSubmissionId, kind, selectedDepartmentId, validation.lines)
         : kind === "submit"
           ? await submitPayable(planId, selectedDepartmentId, validation.lines, idempotencyKey)
           : await savePayableDraft(planId, selectedDepartmentId, validation.lines, idempotencyKey);
+      creationKey.current = null;
       if (editingSubmissionId !== null && kind === "save-draft") {
         const updatedLines = editableLinesFromDetails(submission.lines);
         const updatedDepartmentId = submission.departmentId ? String(submission.departmentId) : "";
@@ -383,7 +401,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
           [submission.id]: submission.lines,
         }));
         setNotice(`Changes saved to ${editingSubmissionStatus === "draft" ? "draft" : "returned submission"} #${submission.id}.`);
-        await onChanged();
+        await refreshAfterAction();
         return;
       }
       if (editingSubmissionId !== null) {
@@ -403,10 +421,16 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
       setDepartmentId("");
       setEditingSubmissionId(null);
       setEditingSubmissionStatus(null);
-      await onChanged();
+      await refreshAfterAction();
     } catch (actionError) {
-      setFormError(actionError instanceof Error ? actionError.message : "Unable to record the payable.");
+      const outcome = actionError instanceof WerActionError || actionError instanceof WerRateLimitError ? actionError.outcome : "unknown";
+      if (outcome !== "not_applied") {
+        setPendingOutcome(editingSubmissionId ? { submissionId: editingSubmissionId } : { idempotencyKey: creationKey.current ?? undefined });
+      }
+      if (outcome === "applied") setNotice("Your action was saved. Refresh the submission status to load the result.");
+      else setFormError(actionError instanceof Error ? actionError.message : "The action outcome is unknown. Refresh the submission status before trying again.");
     } finally {
+      actionInProgress.current = false;
       setBusy(false);
     }
   };
@@ -451,17 +475,63 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
   };
 
   const handleWithdraw = async (submission: LogisticsWerPayableSubmissionSummary) => {
+    if (actionInProgress.current || pendingOutcome) return;
     if (!window.confirm(`Withdraw submission #${submission.id}? Its reservation will be released.`)) return;
+    actionInProgress.current = true;
     setFormError(null);
     setWithdrawingId(submission.id);
     try {
       await withdrawPayableSubmission(planId, submission.id);
       setNotice(`Submission #${submission.id} withdrawn; its reservation was released.`);
-      await onChanged();
+      await refreshAfterAction();
     } catch (withdrawError) {
-      setFormError(withdrawError instanceof Error ? withdrawError.message : "Unable to withdraw the submission.");
+      const outcome = withdrawError instanceof WerActionError || withdrawError instanceof WerRateLimitError ? withdrawError.outcome : "unknown";
+      if (outcome !== "not_applied") setPendingOutcome({ submissionId: submission.id });
+      if (outcome === "applied") setNotice("Withdrawal saved. Refresh the submission status to load the result.");
+      else setFormError(withdrawError instanceof Error ? withdrawError.message : "Unable to confirm withdrawal. Refresh submission status.");
     } finally {
+      actionInProgress.current = false;
       setWithdrawingId(null);
+    }
+  };
+
+  const checkSubmissionStatus = async () => {
+    if (!pendingOutcome || actionInProgress.current) return;
+    actionInProgress.current = true;
+    setCheckingStatus(true);
+    try {
+      const saved = await reconcilePayable(planId, pendingOutcome);
+      if (saved) {
+        if (["draft", "returned"].includes((saved.status || "").toLowerCase())) {
+          const savedLines = editableLinesFromDetails(saved.lines);
+          setLines(savedLines);
+          setInitialLines(savedLines);
+          setEditingSubmissionId(saved.id);
+          setEditingSubmissionStatus(saved.status);
+          setInitialDepartmentId(String(saved.departmentId ?? ""));
+          setNotice(`Saved submission #${saved.id} is ${saved.status}. Review its saved values before editing.`);
+        } else {
+          if (pendingOutcome.idempotencyKey || pendingOutcome.submissionId === editingSubmissionId) {
+            const empty = [emptyLine(1)];
+            setLines(empty);
+            setInitialLines(empty);
+            setEditingSubmissionId(null);
+            setEditingSubmissionStatus(null);
+          }
+          setNotice(`Submission #${saved.id} is ${saved.status}. The status has been checked.`);
+        }
+        creationKey.current = null;
+      } else {
+        setNotice("No saved submission was found. You may retry; the original request key will be reused.");
+      }
+      setPendingOutcome(null);
+      setFormError(null);
+      await refreshAfterAction();
+    } catch (statusError) {
+      setFormError(statusError instanceof Error ? statusError.message : "The service is still unavailable. Your entries have been kept. Please refresh the submission status again later.");
+    } finally {
+      actionInProgress.current = false;
+      setCheckingStatus(false);
     }
   };
 
@@ -637,7 +707,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
                         type="button"
                         variant="outline"
                         size="sm"
-                        disabled={editingSubmissionId !== null || loadingEditId !== null || busy || uploadingKey !== null}
+                        disabled={editingSubmissionId !== null || loadingEditId !== null || busy || uploadingKey !== null || pendingOutcome !== null || withdrawingId !== null}
                         onClick={() => void handleEditSubmission(submission.id, status)}
                       >
                         {loadingEditId === submission.id ? "Loading…" : "Edit"}
@@ -648,7 +718,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
                         type="button"
                         variant="outline"
                         size="sm"
-                        disabled={withdrawingId === submission.id}
+                        disabled={withdrawingId !== null || busy || pendingOutcome !== null}
                         onClick={() => void handleWithdraw(submission)}
                       >
                         {withdrawingId === submission.id ? "Withdrawing…" : "Withdraw"}
@@ -750,6 +820,13 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
         </Table>
       </div>
 
+      {refreshWarning && <Alert><AlertTitle>Refresh unavailable</AlertTitle><AlertDescription>{refreshWarning}</AlertDescription></Alert>}
+      {pendingOutcome && <Alert>
+        <AlertTitle>Submission status needs confirmation</AlertTitle>
+        <AlertDescription>Check the saved result before taking another action.
+          <Button type="button" variant="outline" size="sm" disabled={checkingStatus} onClick={() => void checkSubmissionStatus()}>{checkingStatus ? "Checking status..." : "Refresh status"}</Button>
+        </AlertDescription>
+      </Alert>}
       {formError && (
         <Alert variant="destructive">
           <AlertCircle className="size-4" />
@@ -795,7 +872,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
             </div>
             <div className="flex items-center gap-2">
               {editingSubmissionId !== null && (
-                <Button type="button" variant="outline" size="sm" disabled={busy || uploadingKey !== null} onClick={() => void cancelSubmissionEdit()}>
+                <Button type="button" variant="outline" size="sm" disabled={busy || uploadingKey !== null || pendingOutcome !== null} onClick={() => void cancelSubmissionEdit()}>
                   Cancel
                 </Button>
               )}

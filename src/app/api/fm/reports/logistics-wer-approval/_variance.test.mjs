@@ -18,13 +18,14 @@ function load(file, overrides = {}) {
   return exports;
 }
 const directory = "src/app/api/fm/reports/logistics-wer-approval";
-function fixture({ budgetFailure = false, auditFailure = false, withinBudget = false } = {}) {
+function fixture({ budgetFailure = false, auditFailure = false, withinBudget = false, reloadFailure = false } = {}) {
   const writes = [];
+  const errors = load("src/app/api/fm/reports/logistics-wer/_errors.ts");
   const submission = { id: 1, status: "submitted", departmentId: 8, totalAmount: 1600, disbursementId: null, lines: [{ id: 10, coaId: 1024, divisionId: 1, amount: 1000, receipts: [] }, { id: 11, coaId: 1031, divisionId: 1, amount: 600, receipts: [] }] };
   const dependencies = {
     DRAFT_COLLECTION: "drafts",
     withPlanLock: async (_, task) => task(),
-    getPlanSubmission: async () => ({ planId: 2, submission }),
+    getPlanSubmission: async () => { if (reloadFailure && submission.status === "approved") throw new errors.WerDependencyError(429, "RATE_LIMITED", 3); return { planId: 2, submission }; },
     getPlanBaseline: async () => ({ status: "For Clearance", docNo: "TEST", driverId: 3 }),
     resolveDriverSupplier: async () => ({ eligible: true, supplierId: 4 }),
     getPlanRemaining: async () => {
@@ -42,6 +43,7 @@ function fixture({ budgetFailure = false, auditFailure = false, withinBudget = f
   };
   const api = load(`${directory}/_decision.ts`, {
     "../logistics-wer/_payables": dependencies,
+    "../logistics-wer/_errors": errors,
     "@/modules/financial-management/treasury/disbursement/document-number": { acquireDocumentNumberLock: async () => () => {}, findNextAvailableDocumentNumber: async () => "NT-1", documentPrefixForTransactionType: () => "NT" },
   });
   return { api, writes, submission };
@@ -117,4 +119,14 @@ test("within-allocation approval needs no variance acknowledgment", async () => 
   const { api, submission } = fixture({ withinBudget: true });
   await api.decideOneSubmission({ submissionId: 1, decision: "approve", approverId: 2, remarks: "" });
   assert.equal(submission.status, "approved");
+});
+
+
+test("confirmed approval remains successful when the result reload is rate-limited", async () => {
+  const { api } = fixture({ withinBudget: true, reloadFailure: true });
+  const result = await api.decideOneSubmission({ submissionId: 1, decision: "approve", approverId: 2, remarks: "" });
+  assert.equal(result.submission.status, "approved");
+  assert.equal(result.refreshFailure.code, "WER_RATE_LIMITED");
+  assert.equal(result.refreshFailure.outcome, "applied");
+  assert.equal(result.refreshFailure.retryAfterSeconds, 3);
 });

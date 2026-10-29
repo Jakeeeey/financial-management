@@ -181,6 +181,7 @@ export async function proxySpring(path: string, init?: RequestInit, tokenOverrid
         status: springRes.status,
         headers: text ? { "Content-Type": contentType } : undefined,
       });
+    if (springRes.headers.has("Retry-After")) response.headers.set("Retry-After", springRes.headers.get("Retry-After")!);
     attachRefreshedCookies(response, refreshed);
     return response;
   } catch (error) {

@@ -1,3 +1,4 @@
+import { publicWerFailure, werFailureStatus, WerDependencyError } from "../../../_errors";
 import { NextRequest, NextResponse } from "next/server";
 import {
   BudgetContextError,
@@ -105,8 +106,8 @@ export async function PATCH(
   } catch (requestError) {
     console.error("[Logistics WER] Budget classification failed:", requestError);
     if (requestError instanceof BudgetContextError) {
-      return error(`Budget classification was blocked because reservations could not be verified: ${requestError.message}`, 503);
+      return error("Budget classification was blocked because reservations could not be verified. Please refresh and try again.", 503);
     }
-    return error(requestError instanceof Error ? requestError.message : "Unable to classify the budget line.", 502);
+    return NextResponse.json(publicWerFailure(requestError, "unknown"), { status: requestError instanceof WerDependencyError ? werFailureStatus(requestError) : 502 });
   }
 }

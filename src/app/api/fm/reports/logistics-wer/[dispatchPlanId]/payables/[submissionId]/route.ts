@@ -1,3 +1,4 @@
+import { werFailureResponse } from "../../../_errors";
 import { NextRequest, NextResponse } from "next/server";
 import { getSpringDispatchPlanDetail } from "../../../_spring";
 import { getPlanSubmission, requireSessionUserId } from "../../../_payables";
@@ -36,6 +37,6 @@ export async function GET(
     return NextResponse.json(details);
   } catch (detailError) {
     console.error("[Logistics WER] Payable line details failed:", detailError);
-    return error("Unable to load payable line details.", 502);
+    return werFailureResponse(detailError);
   }
 }

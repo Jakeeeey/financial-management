@@ -1,3 +1,4 @@
+import { dependencyFromResponse, werFailureResponse } from "./_errors";
 import { NextRequest, NextResponse } from "next/server";
 import { proxySpring } from "@/app/api/fm/financial-statements/adjusting-journal-entries/_spring";
 import { getDispatchPlans } from "./_directus";
@@ -82,6 +83,7 @@ export async function GET(request: NextRequest) {
         budgetSummaryResponse = await proxySpring(
           `/api/v1/dispatch-approvals/budget-summaries?${budgetParams.toString()}`,
         );
+        if (budgetSummaryResponse.status === 429) return werFailureResponse(dependencyFromResponse(budgetSummaryResponse, "spring"), "not_applied", budgetSummaryResponse);
         if (!budgetSummaryResponse.ok) {
           throw new Error(`Expense budget summary lookup failed with HTTP ${budgetSummaryResponse.status}.`);
         }
@@ -123,9 +125,6 @@ export async function GET(request: NextRequest) {
     return nextResponse;
   } catch (error) {
     console.error("[Logistics WER] Failed to load report:", error);
-    return NextResponse.json(
-      { message: error instanceof Error ? error.message : "Unable to load Logistics WER." },
-      { status: 502 },
-    );
+    return werFailureResponse(error);
   }
 }

@@ -1,3 +1,4 @@
+import { werFailureResponse } from "../logistics-wer/_errors";
 import { serializeManilaTimestamp } from "../logistics-wer/_timestamps";
 import { NextRequest, NextResponse } from "next/server";
 import { hasDisbursementApprovalAccess } from "@/app/api/fm/treasury/disbursements/_approval-access";
@@ -286,6 +287,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (queueError) {
     console.error("[Logistics WER] Approval queue failed:", queueError);
-    return error("Unable to load the approval queue.", 502);
+    return werFailureResponse(queueError);
   }
 }

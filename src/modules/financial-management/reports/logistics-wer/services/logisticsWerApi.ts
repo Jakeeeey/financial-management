@@ -1,3 +1,4 @@
+import { werFetch } from "./wer-requests";
 import { RECEIPT_SIZE_ERROR, RECEIPT_UPLOAD_TIMEOUT_MS, validateReceiptFile } from "../utils/receipt-upload";
 import type {
   LogisticsWerDispatchPlan,
@@ -196,6 +197,10 @@ function toDateOnly(value: unknown): string | null {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
+export class WerActionError extends Error {
+  constructor(message: string, readonly outcome: "not_applied" | "applied" | "unknown", readonly submissionId?: number) { super(message); }
+}
+
 async function readJson<T>(response: Response): Promise<T> {
   const payload = await response.json().catch(() => null) as { message?: string; detail?: string; error?: string } | null;
   if (!response.ok) {
@@ -214,7 +219,7 @@ export async function fetchLogisticsWerReport(query: LogisticsWerReportQuery): P
   if (query.search.trim()) params.set("search", query.search.trim());
   if (query.status && query.status !== "ALL") params.set("status", query.status);
 
-  const response = await fetch(`${ENDPOINT}?${params.toString()}`, {
+  const response = await werFetch(`${ENDPOINT}?${params.toString()}`, {
     credentials: "include",
     cache: "no-store",
   });
@@ -386,13 +391,18 @@ export async function fetchLogisticsWerDetails(
   id: number,
   sourcePlan?: LogisticsWerDispatchPlan,
 ): Promise<LogisticsWerDispatchPlanDetail> {
-  const response = await fetch(`${ENDPOINT}/${encodeURIComponent(String(id))}`, {
+  const response = await werFetch(`${ENDPOINT}/${encodeURIComponent(String(id))}`, {
     credentials: "include",
     cache: "no-store",
   });
   const data = await readJson<DispatchApprovalResponse>(response);
+  if (data.werPayables?.budgetContextAvailable === false) {
+    throw new Error(asNullableString(data.werPayables.budgetContextError) || "The service is temporarily busy. Existing details have been kept; please refresh again later.");
+  }
   return mapDetails(data, sourcePlan);
 }
+
+
 
 export interface PayableLineInput {
   id?: number;
@@ -441,7 +451,7 @@ export async function saveBudgetClassification(
   budgetId: number,
   input: BudgetClassificationInput,
 ): Promise<void> {
-  const response = await fetch(
+  const response = await werFetch(
     `${ENDPOINT}/${encodeURIComponent(String(planId))}/budgets/${encodeURIComponent(String(budgetId))}`,
     {
       method: "PATCH",
@@ -458,7 +468,7 @@ export async function saveBudgetAllocations(
   planId: number,
   budgets: BudgetAllocationInput[],
 ): Promise<void> {
-  const response = await fetch(
+  const response = await werFetch(
     `${ENDPOINT}/${encodeURIComponent(String(planId))}/budgets`,
     {
       method: "PUT",
@@ -476,15 +486,18 @@ async function postPayables(
   action: "save-draft" | "submit" | "withdraw",
   payload: Record<string, unknown>,
 ): Promise<LogisticsWerPayableSubmission> {
-  const response = await fetch(`${ENDPOINT}/${encodeURIComponent(String(planId))}/payables`, {
+  const response = await werFetch(`${ENDPOINT}/${encodeURIComponent(String(planId))}/payables`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, ...payload }),
     cache: "no-store",
   });
-  const data = await readJson<{ draft?: DispatchApprovalSubmission }>(response);
-  return mapSubmission(data.draft ?? {});
+  const data = await response.json().catch(() => null) as { draft?: DispatchApprovalSubmission; message?: string; outcome?: "not_applied" | "applied" | "unknown"; submissionId?: number } | null;
+  if (!response.ok || !data?.draft) {
+    throw new WerActionError(data?.message || "The service is unavailable. Refresh the submission status before trying again.", data?.outcome ?? "unknown", data?.submissionId);
+  }
+  return mapSubmission(data.draft);
 }
 
 export function savePayableDraft(
@@ -526,7 +539,7 @@ export async function fetchPayableSubmissionDetails(
   planId: number,
   submissionId: number,
 ): Promise<LogisticsWerPayableSubmissionDetails> {
-  const response = await fetch(
+  const response = await werFetch(
     `${ENDPOINT}/${encodeURIComponent(String(planId))}/payables/${encodeURIComponent(String(submissionId))}`,
     { credentials: "include", cache: "no-store" },
   );
@@ -555,7 +568,7 @@ export async function fetchPayableSubmissionDetails(
 }
 
 export async function fetchPayableDepartments(): Promise<PayableDepartmentOption[]> {
-  const response = await fetch("/api/fm/setup/departments", { credentials: "include", cache: "no-store" });
+  const response = await werFetch("/api/fm/setup/departments", { credentials: "include", cache: "no-store" });
   const rows = await readJson<Array<{ departmentId?: unknown; departmentName?: unknown }>>(response);
   return (Array.isArray(rows) ? rows : []).map((row) => ({
     departmentId: asNumber(row.departmentId),
@@ -564,7 +577,7 @@ export async function fetchPayableDepartments(): Promise<PayableDepartmentOption
 }
 
 export async function fetchPayableDivisions(): Promise<PayableDivisionOption[]> {
-  const response = await fetch("/api/fm/setup/divisions", { credentials: "include", cache: "no-store" });
+  const response = await werFetch("/api/fm/setup/divisions", { credentials: "include", cache: "no-store" });
   const rows = await readJson<Array<{ divisionId?: unknown; divisionName?: unknown }>>(response);
   return (Array.isArray(rows) ? rows : []).map((row) => ({
     divisionId: asNumber(row.divisionId),
@@ -580,7 +593,7 @@ export async function uploadPayableReceipt(planId: number, file: File): Promise<
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), RECEIPT_UPLOAD_TIMEOUT_MS);
   try {
-    const response = await fetch(
+    const response = await werFetch(
       `${ENDPOINT}/${encodeURIComponent(String(planId))}/payables/receipts`,
       { method: "POST", credentials: "include", body: formData, cache: "no-store", signal: controller.signal },
     );
@@ -597,7 +610,7 @@ export async function uploadPayableReceipt(planId: number, file: File): Promise<
 }
 
 export async function deletePayableReceipt(planId: number, fileId: string): Promise<void> {
-  const response = await fetch(
+  const response = await werFetch(
     `${ENDPOINT}/${encodeURIComponent(String(planId))}/payables/receipts/${encodeURIComponent(fileId)}`,
     { method: "DELETE", credentials: "include", cache: "no-store" },
   );
@@ -608,7 +621,7 @@ export async function deletePayableReceipt(planId: number, fileId: string): Prom
 }
 
 export async function fetchPayableCoas(): Promise<PayableCoaOption[]> {
-  const response = await fetch("/api/fm/treasury/coas?forPayable=true", {
+  const response = await werFetch("/api/fm/treasury/coas?forPayable=true", {
     credentials: "include",
     cache: "no-store",
   });
@@ -619,4 +632,14 @@ export async function fetchPayableCoas(): Promise<PayableCoaOption[]> {
     const code = asString(row.glCode);
     return { coaId, label: code ? `${code} · ${title}` : title };
   }).filter((row) => row.coaId > 0);
+}
+
+
+export async function reconcilePayable(planId: number, identifier: { submissionId?: number; idempotencyKey?: string }): Promise<LogisticsWerPayableSubmission | null> {
+  const params = new URLSearchParams();
+  if (identifier.submissionId) params.set("submissionId", String(identifier.submissionId));
+  if (identifier.idempotencyKey) params.set("idempotencyKey", identifier.idempotencyKey);
+  const response = await werFetch(`${ENDPOINT}/${planId}/payables?${params}`, { credentials: "include", cache: "no-store" });
+  const data = await readJson<{ draft?: DispatchApprovalSubmission | null }>(response);
+  return data.draft ? mapSubmission(data.draft) : null;
 }

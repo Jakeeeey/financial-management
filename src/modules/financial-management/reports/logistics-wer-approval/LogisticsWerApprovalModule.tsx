@@ -1,5 +1,7 @@
 "use client";
 
+import { WerCooldownBoundary, useWerScope } from "../logistics-wer/components/WerCooldownBoundary";
+
 import { useState } from "react";
 import { AlertCircle, Loader2, Search } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -41,7 +43,8 @@ function statusBadgeClassName(status: string | null): string {
   }
 }
 
-export default function LogisticsWerApprovalModule() {
+export default function LogisticsWerApprovalModule({ cooldownScope = "session" }: { cooldownScope?: string }) {
+  useWerScope(cooldownScope);
   const queue = useLogisticsWerApproval();
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [decisionNotice, setDecisionNotice] = useState<string | null>(null);
@@ -100,6 +103,7 @@ export default function LogisticsWerApprovalModule() {
   };
 
   return (
+    <WerCooldownBoundary>
     <div className="space-y-4">
       <div className="flex min-w-0 flex-col gap-2">
         <div className="min-w-0">
@@ -273,6 +277,7 @@ export default function LogisticsWerApprovalModule() {
       <LogisticsWerApprovalReviewDialog
         key={queue.review?.submission.id ?? "closed"}
         review={queue.review}
+        divisions={queue.divisions}
         loading={queue.reviewLoading}
         error={queue.reviewError}
         deciding={queue.deciding}
@@ -288,5 +293,6 @@ export default function LogisticsWerApprovalModule() {
         onDecide={(decision, remarks, acknowledged) => void handleDecide(decision, remarks, acknowledged)}
       />
     </div>
+    </WerCooldownBoundary>
   );
 }

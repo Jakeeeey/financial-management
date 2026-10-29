@@ -1,5 +1,7 @@
 "use client";
 
+import { WerCooldownBoundary } from "../../logistics-wer/components/WerCooldownBoundary";
+
 import { ExpenseVarianceSummary } from "../../logistics-wer/components/ExpenseVarianceSummary";
 
 import { formatWerTimestamp } from "../../logistics-wer/utils/date";
@@ -27,11 +29,20 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import type { PayableDivisionOption } from "../../logistics-wer/services/logisticsWerApi";
 import type { SubmissionReview } from "../services/logisticsWerApprovalApi";
 import { displayWerStatus } from "../../logistics-wer/utils/status";
 
 function formatMoney(value: number | null | undefined): string {
   return `₱${Number(value ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function formatLineDate(value: string | null): string {
+  if (!value) return "\u2014";
+  const date = new Date(`${value.slice(0, 10)}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) ? "\u2014" : new Intl.DateTimeFormat("en-PH", {
+    timeZone: "UTC", month: "short", day: "numeric", year: "numeric",
+  }).format(date);
 }
 
 function receiptHref(fileId: string): string {
@@ -72,6 +83,7 @@ function ReceiptThumbnail({ fileId, receiptId, onPreview }: { fileId: string; re
 
 interface LogisticsWerApprovalReviewDialogProps {
   review: SubmissionReview | null;
+  divisions: PayableDivisionOption[];
   loading: boolean;
   error: string | null;
   deciding: boolean;
@@ -83,6 +95,7 @@ interface LogisticsWerApprovalReviewDialogProps {
 
 export function LogisticsWerApprovalReviewDialog({
   review,
+  divisions,
   loading,
   error,
   deciding,
@@ -102,6 +115,7 @@ export function LogisticsWerApprovalReviewDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] w-[95vw] overflow-y-auto sm:max-w-4xl">
+        <WerCooldownBoundary>
         <DialogHeader>
           <DialogTitle>
             {submission ? `Review submission #${submission.id}` : "Review submission"}
@@ -127,7 +141,7 @@ export function LogisticsWerApprovalReviewDialog({
         )}
 
         {review && submission && (
-          <div className="space-y-4">
+          <div className="min-w-0 space-y-4">
             {review.variance && <ExpenseVarianceSummary variance={review.variance} />}
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {review.budgetByCoa.length > 0 ? review.budgetByCoa.map((budget) => {
@@ -160,24 +174,26 @@ export function LogisticsWerApprovalReviewDialog({
               </div>
             </div>
 
-            <div className="rounded-lg border">
+            <div className="min-w-0 rounded-lg border">
               <Table style={{ width: "100%", tableLayout: "fixed" }}>
                 <colgroup>
                   <col style={{ width: "6%" }} />
-                  <col style={{ width: "12%" }} />
-                  <col style={{ width: "21%" }} />
                   <col style={{ width: "13%" }} />
-                  <col style={{ width: "36%" }} />
+                  <col style={{ width: "20%" }} />
+                  <col style={{ width: "14%" }} />
+                  <col style={{ width: "13%" }} />
+                  <col style={{ width: "22%" }} />
                   <col style={{ width: "12%" }} />
                 </colgroup>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Line</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead>COA</TableHead>
-                    <TableHead>Reference</TableHead>
-                    <TableHead>Remarks</TableHead>
-                    <TableHead>Receipts</TableHead>
+                    <TableHead className="whitespace-normal px-1 sm:px-2">Line</TableHead>
+                    <TableHead className="whitespace-normal px-1 sm:px-2">Date</TableHead>
+                    <TableHead className="whitespace-normal px-1 sm:px-2">COA Account</TableHead>
+                    <TableHead className="whitespace-normal px-1 sm:px-2">Division</TableHead>
+                    <TableHead className="whitespace-normal px-1 text-right sm:px-2">Amount</TableHead>
+                    <TableHead className="whitespace-normal px-1 sm:px-2">Remarks</TableHead>
+                    <TableHead className="whitespace-normal px-1 sm:px-2">Receipts</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -188,8 +204,8 @@ export function LogisticsWerApprovalReviewDialog({
                       .join(" · ");
                     return (
                       <TableRow key={line.id}>
-                        <TableCell>{line.lineNo ?? index + 1}</TableCell>
-                        <TableCell className="text-right font-medium">{formatMoney(line.amount)}</TableCell>
+                        <TableCell className="whitespace-normal">{line.lineNo ?? index + 1}</TableCell>
+                        <TableCell className="whitespace-normal">{formatLineDate(line.date)}</TableCell>
                         <TableCell
                           className="whitespace-normal text-xs"
                           style={{ overflowWrap: "anywhere", wordBreak: "break-all" }}
@@ -202,15 +218,21 @@ export function LogisticsWerApprovalReviewDialog({
                           className="whitespace-normal"
                           style={{ overflowWrap: "anywhere", wordBreak: "break-all" }}
                         >
-                          {line.referenceNo || "—"}
+                          {line.divisionId ? divisions.find(division => division.divisionId === line.divisionId)?.divisionName || `Division #${line.divisionId}` : "\u2014"}
+                        </TableCell>
+                        <TableCell
+                          className="whitespace-normal text-right font-medium"
+                          style={{ overflowWrap: "anywhere" }}
+                        >
+                          {formatMoney(line.amount)}
                         </TableCell>
                         <TableCell
                           className="align-top"
-                          style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-all" }}
+                          style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
                         >
                           {line.remarks || "—"}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="whitespace-normal">
                           {line.receipts.length === 0 ? (
                             <span className="text-muted-foreground">—</span>
                           ) : (
@@ -301,6 +323,7 @@ export function LogisticsWerApprovalReviewDialog({
             )}
           </div>
         )}
+      </WerCooldownBoundary>
       </DialogContent>
 
       <Dialog open={previewFileId !== null} onOpenChange={(nextOpen) => { if (!nextOpen) setPreviewFileId(null); }}>

@@ -1,3 +1,4 @@
+import { werFetch } from "../../logistics-wer/services/wer-requests";
 import type { ExpenseVariance } from "../../logistics-wer/utils/budget-balances";
 import type {
   LogisticsWerPayableSubmission,
@@ -73,7 +74,7 @@ export async function fetchApprovalQueue(query: ApprovalQueueQuery): Promise<App
     size: String(query.size),
   });
   if (query.search.trim()) params.set("search", query.search.trim());
-  const response = await fetch(`${ENDPOINT}?${params.toString()}`, {
+  const response = await werFetch(`${ENDPOINT}?${params.toString()}`, {
     credentials: "include",
     cache: "no-store",
   });
@@ -81,7 +82,7 @@ export async function fetchApprovalQueue(query: ApprovalQueueQuery): Promise<App
 }
 
 export async function fetchSubmissionReview(submissionId: number): Promise<SubmissionReview> {
-  const response = await fetch(`${ENDPOINT}/${encodeURIComponent(String(submissionId))}`, {
+  const response = await werFetch(`${ENDPOINT}/${encodeURIComponent(String(submissionId))}`, {
     credentials: "include",
     cache: "no-store",
   });
@@ -94,7 +95,7 @@ export async function decideSubmission(
   acknowledgeVariance = false,
 ): Promise<DecisionResult> {
 
-  const response = await fetch(`${ENDPOINT}/${encodeURIComponent(String(submissionId))}/decision`, {
+  const response = await werFetch(`${ENDPOINT}/${encodeURIComponent(String(submissionId))}/decision`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -135,7 +136,7 @@ export async function decideSubmissionsBulk(
   decision: ApprovalDecision,
   remarks?: string,
 ): Promise<BulkDecisionResult> {
-  const response = await fetch(`${ENDPOINT}/decisions`, {
+  const response = await werFetch(`${ENDPOINT}/decisions`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
