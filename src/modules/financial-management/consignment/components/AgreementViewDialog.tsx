@@ -33,6 +33,7 @@ export function AgreementViewDialog({ id, onClose, onEdit, onChanged, returnFocu
   const [readiness, setReadiness] = useState<AgreementClosureReadiness | null>(null);
   const [readinessLoading, setReadinessLoading] = useState(false);
   const startingEdit = useRef(false);
+  const actionRef = useRef<HTMLElement | null>(null);
   const loading = result?.attempt !== attempt;
   const detail = result?.attempt === attempt ? result.detail : null;
   const error = result?.attempt === attempt ? result.error : null;
@@ -44,6 +45,10 @@ export function AgreementViewDialog({ id, onClose, onEdit, onChanged, returnFocu
       .catch(error => { if (active) setResult({ detail: null, error: error instanceof Error ? error.message : "Unable to load this agreement.", attempt }); });
     return () => { active = false; controller.abort(); };
   }, [id, attempt]);
+
+  useEffect(() => {
+    if (intent) actionRef.current?.scrollIntoView({ block: "nearest" });
+  }, [intent]);
 
   function requestAction(next: Exclude<Intent, null>) {
     setActionError(null);
@@ -119,7 +124,7 @@ export function AgreementViewDialog({ id, onClose, onEdit, onChanged, returnFocu
             {detail.reviewRestriction && <p className="rounded border border-amber-300 bg-amber-50 p-2 text-amber-900">{detail.reviewRestriction}</p>}
             {!detail.editable && detail.summary.status !== "ACTIVE" && <p className="text-muted-foreground">This record is read-only unless the action below applies.</p>}
           </section>
-          {intent && <section className="space-y-3 rounded-lg border p-3 text-sm">
+          {intent && <section ref={actionRef} className="space-y-3 rounded-lg border p-3 text-sm">
             <p>{intent === "submit" ? "Submit this agreement for independent review? Its fields will lock." : intent === "approve" ? "Approve this agreement? It will become Active and eligible for transactions." : intent === "reject" ? "Reject this agreement? The reason will remain in history and a replacement agreement may be created." : "Close this agreement? Closure requires all dependencies to be cleared."}</p>
             {intent === "close" && readinessLoading && <p role="status">Checking closure dependencies…</p>}
             {intent === "close" && readiness && <>
