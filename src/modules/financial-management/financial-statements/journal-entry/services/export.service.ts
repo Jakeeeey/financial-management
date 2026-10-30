@@ -3,6 +3,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { format } from "date-fns";
 import { JournalEntryGroup } from "../types";
+import { collectionReference } from "../utils/collection-reference";
 import { formatJournalAmount } from "../utils/formatters";
 
 const COMPANY_NAME = "MEN2 MARKETING AND DISTRIBUTION ENTERPRISE CORPORATION";
@@ -22,6 +23,8 @@ export const buildJournalExportData = (groups: JournalEntryGroup[]): ExportRow[]
   let totalCredit = 0;
 
   groups.forEach((group) => {
+    const cpNumber = collectionReference(group);
+    const reference = cpNumber ? `${group.jeNo}\nCP#: ${cpNumber}` : group.jeNo;
     let groupDebit = 0;
     let groupCredit = 0;
     const formattedDate = group.transactionDate ? format(new Date(group.transactionDate), "yyyy-MM-dd") : "";
@@ -35,9 +38,11 @@ export const buildJournalExportData = (groups: JournalEntryGroup[]): ExportRow[]
         cells: [
           index === 0 ? formattedDate : "",
           index === 0 ? group.sourceModule : "",
-          index === 0 ? group.jeNo : "",
+          index === 0 ? reference : "",
           entry.accountTitle || "N/A",
-          index === 0 ? group.description || "N/A" : `- ${entry.accountTitle || "N/A"} distribution`,
+          group.sourceModule === "Collection"
+            ? entry.description || group.description || "N/A"
+            : index === 0 ? group.description || "N/A" : `- ${entry.accountTitle || "N/A"} distribution`,
           entry.debit,
           entry.credit,
           "",
@@ -90,6 +95,8 @@ export const exportJournalToExcel = (
   ];
 
   const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+  // Keep the CP reference's second line visible when the workbook is opened.
+  worksheet["!rows"] = worksheetData.map(row => typeof row[2] === "string" && row[2].includes("\n") ? { hpt: 30 } : {});
   worksheet["!merges"] = [
     { s: { r: 0, c: 0 }, e: { r: 0, c: 7 } },
     { s: { r: 1, c: 0 }, e: { r: 1, c: 7 } },

@@ -1,4 +1,5 @@
 "use client";
+import { collectionReference } from "../utils/collection-reference";
 import { journalEntryType } from "../utils/entry-type";
 
 import {
@@ -200,6 +201,7 @@ export default function JournalEntryTable({
                       <TableCell rowSpan={group.entries.length} className="border-b border-border px-2 py-4 align-top"><Badge variant="outline" className="whitespace-nowrap [overflow-wrap:normal] shadow-sm">{journalEntryType(group.sourceModule) || "-"}</Badge></TableCell>
                       <TableCell rowSpan={group.entries.length} className="border-b border-border px-2 py-4 align-top">
                         <div className="flex min-w-0 items-start gap-2"><button type="button" aria-label={`Open details for ${group.jeNo}`} className="min-w-0 [overflow-wrap:anywhere] text-left font-mono font-semibold text-foreground hover:text-primary hover:underline focus-visible:outline-2 focus-visible:outline-primary" onClick={event => onDrillDown(group, event.currentTarget)}>{group.jeNo}</button>{group.isImbalanced && <AlertCircle className="mt-1 h-3.5 w-3.5 shrink-0 text-rose-500" aria-label="Imbalanced journal" />}</div>
+                        {collectionReference(group) && <p className="mt-1 text-xs text-muted-foreground [overflow-wrap:anywhere]">CP#: {collectionReference(group)}</p>}
                       </TableCell>
                     </>}
                     <TableCell className={cn(cellClass, "font-medium", creditLine && "pl-5 font-normal")}>{entry.accountTitle || entry.accountNumber || "-"}</TableCell>
@@ -222,7 +224,7 @@ export default function JournalEntryTable({
       <section aria-label="Journal entry register" className="min-w-0 space-y-4 @[1500px]:hidden">
         {groups.map(group => <article key={group.jeGroupCounter} aria-label={`Journal ${group.jeNo}`} className="min-w-0 rounded-xl border bg-background shadow-sm">
           <dl className="grid min-w-0 grid-cols-1 gap-4 border-b bg-muted/20 p-4 text-sm @sm:grid-cols-2 @3xl:grid-cols-3">
-            <div className="min-w-0"><dt className="text-xs text-muted-foreground">Ref / JE No.</dt><dd className="mt-1 flex min-w-0 items-start gap-2"><button type="button" className="min-w-0 text-left font-mono font-semibold text-primary [overflow-wrap:anywhere] hover:underline focus-visible:outline-2 focus-visible:outline-ring" aria-label={`Open details for ${group.jeNo}`} onClick={event=>onDrillDown(group,event.currentTarget)}>{group.jeNo}</button>{group.isImbalanced&&<AlertCircle aria-label="Imbalanced journal" className="mt-1 size-4 shrink-0 text-rose-500" />}</dd></div>
+            <div className="min-w-0"><dt className="text-xs text-muted-foreground">Ref / JE No.</dt><dd className="mt-1 flex min-w-0 items-start gap-2"><button type="button" className="min-w-0 text-left font-mono font-semibold text-primary [overflow-wrap:anywhere] hover:underline focus-visible:outline-2 focus-visible:outline-ring" aria-label={`Open details for ${group.jeNo}`} onClick={event=>onDrillDown(group,event.currentTarget)}>{group.jeNo}</button>{group.isImbalanced&&<AlertCircle aria-label="Imbalanced journal" className="mt-1 size-4 shrink-0 text-rose-500" />}</dd>{collectionReference(group) && <dd className="mt-1 text-xs text-muted-foreground [overflow-wrap:anywhere]">CP#: {collectionReference(group)}</dd>}</div>
             {[["Date",group.transactionDate ? format(new Date(group.transactionDate),"yyyy-MM-dd") : "-"],["Posting Date",group.postingDate ? format(new Date(group.postingDate),"yyyy-MM-dd") : "-"],["Type",journalEntryType(group.sourceModule)||"-"],["Source",group.sourceModule||"-"]].map(([label,value])=><div key={label} className="min-w-0"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 [overflow-wrap:anywhere]">{value}</dd></div>)}
             <div className="min-w-0"><dt className="text-xs text-muted-foreground">Status</dt><dd className="mt-1"><span className={cn("inline-flex max-w-full whitespace-normal rounded-full border px-3 py-0.5 text-xs [overflow-wrap:anywhere]",getStatusClasses((group.status||"").toLowerCase()))}>{group.status||"UNKNOWN"}</span></dd></div>
           </dl>
