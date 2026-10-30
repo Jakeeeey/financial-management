@@ -28,7 +28,7 @@ export function useJournalEntries() {
     // Pagination
     currentPage: context.currentPage,
     pageSize: context.pageSize,
-    urlRevision: context.urlRevision,
+    viewRevision: context.viewRevision,
     pageCount: context.pageCount,
     totalGroupCount: context.totalGroupCount,
     setCurrentPage: context.setCurrentPage,

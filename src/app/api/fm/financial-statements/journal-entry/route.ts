@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
 
   // Extract all filter parameters from query string
   const filters: FilterState = {
+    entryType: searchParams.get("entryType") || "All Entry Types",
     search: searchParams.get("search") || "",
     startDate: searchParams.get("startDate") || "2025-01-01",
     endDate: searchParams.get("endDate") || "2025-12-30",
@@ -52,7 +53,6 @@ export async function GET(request: NextRequest) {
         groupedParams.set("status", "Posted");
       }
       groupedParams.delete("showPostedOnly");
-      groupedParams.delete("entryType");
       const groupedResponse = await getGroupedJournalEntries(groupedParams, token);
       return NextResponse.json(groupedResponse);
     }

@@ -1,5 +1,6 @@
 "use client";
 
+import { CollectionSourceRecord } from "./components/CollectionSourceRecord";
 import React, {useCallback, useState} from "react";
 import {useDebounce} from "use-debounce";
 import {Plus, Search, Filter, RefreshCcw, ChevronsUpDown, Check as CheckIcon, FilterX, AlertTriangle} from "lucide-react";
@@ -70,6 +71,7 @@ export default function CollectionCashieringModule({currentUser}: ModuleProps) {
 
     return (
         <div className="flex flex-col gap-6 w-full max-w-7xl mx-auto animate-in fade-in duration-500">
+            <CollectionSourceRecord />
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight text-foreground">Collection Cashiering</h1>

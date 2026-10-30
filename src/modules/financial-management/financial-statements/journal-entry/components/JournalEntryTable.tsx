@@ -1,6 +1,6 @@
 "use client";
+import { journalEntryType } from "../utils/entry-type";
 
-import * as React from "react";
 import {
   AlertCircle,
   ArrowUpDown,
@@ -49,6 +49,22 @@ interface JournalEntryTableProps {
   onSort: (field: string) => void;
 }
 
+function journalLines(group: JournalEntryGroup) {
+  const entries = [...group.entries].sort((a, b) => Number(a.credit !== 0 && a.debit === 0) - Number(b.credit !== 0 && b.debit === 0));
+  let runningCents = 0;
+  return entries.map((entry, index) => {
+    const first = index === 0;
+    const last = index === entries.length - 1;
+    const creditLine = entry.credit !== 0 && entry.debit === 0;
+    const next = entries[index + 1];
+    const blockEnd = last || creditLine !== (next.credit !== 0 && next.debit === 0);
+    runningCents += Math.round(entry.debit * 100) - Math.round(entry.credit * 100);
+    return { entry, index, first, last, creditLine, blockEnd, balance: blockEnd ? (last ? group.balance : runningCents / 100) : null };
+  });
+}
+
+const headerClass = "sticky top-0 z-20 border-b bg-muted/95 px-2 py-3 text-sm font-semibold uppercase tracking-wide backdrop-blur";
+
 const sortFields = [
   { value: "date", label: "Transaction Date" },
   { value: "postingDate", label: "Posting Date" },
@@ -74,25 +90,9 @@ export default function JournalEntryTable({
   sortOrder,
   onSort,
 }: JournalEntryTableProps) {
-  const [expandedGroups, setExpandedGroups] = React.useState<Set<number>>(() => new Set());
-  const visibleGroupKey = groups.map((group) => group.jeGroupCounter).join(",");
-
-  React.useEffect(() => {
-    setExpandedGroups(new Set());
-  }, [currentPage, pageSize, visibleGroupKey]);
-
   const sortAnnouncement = !["date", "debit", "credit"].includes(sortField)
     ? `Sorted by ${sortFields.find((field) => field.value === sortField)?.label ?? sortField}, ${sortOrder === "asc" ? "ascending" : sortOrder === "desc" ? "descending" : "default order"}.`
     : "";
-
-  const toggleGroup = (groupId: number) => {
-    setExpandedGroups((current) => {
-      const next = new Set(current);
-      if (next.has(groupId)) next.delete(groupId);
-      else next.add(groupId);
-      return next;
-    });
-  };
 
   if (loading) {
     return (
@@ -111,7 +111,7 @@ export default function JournalEntryTable({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="@container min-w-0 space-y-4">
       <div className="flex flex-col items-start justify-between gap-4 rounded-xl border bg-background p-5 shadow-sm md:flex-row md:items-center">
         <div className="space-y-1">
           <h2 className="text-lg font-semibold tracking-tight text-foreground uppercase">Journal Entry Analysis</h2>
@@ -137,7 +137,7 @@ export default function JournalEntryTable({
           </div>
 
           <div className="flex items-center gap-2 rounded-lg border bg-background p-2">
-            <span className="whitespace-nowrap pl-1 text-xs font-medium text-muted-foreground">Sort by</span>
+            <span className="whitespace-normal pl-1 text-xs font-medium text-muted-foreground">Sort by</span>
             <Select value={sortField || "date"} onValueChange={onSort}>
               <SelectTrigger aria-label="Sort journal entries by" className="h-8 w-[220px] max-w-[58vw]">
                 <SelectValue />
@@ -163,185 +163,91 @@ export default function JournalEntryTable({
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
+      <div className="hidden rounded-xl border bg-background shadow-sm @[1500px]:block">
         <span className="sr-only" aria-live="polite" aria-atomic="true">{sortAnnouncement}</span>
-        <div role="region" aria-label="Journal entry table" tabIndex={0} className="relative max-h-[65vh] w-full overflow-auto">
-          <table className="w-full min-w-[1100px] border-separate border-spacing-0 text-sm">
+        <div role="region" aria-label="Journal entry table" tabIndex={0} className="relative max-h-[65vh] w-full overflow-y-auto">
+          <table className="w-full table-fixed border-separate border-spacing-0 text-sm [&_th]:whitespace-normal [&_td]:whitespace-normal [&_th]:[overflow-wrap:anywhere] [&_td]:[overflow-wrap:anywhere]">
             <caption className="sr-only">Journal entries. Activate sortable column headers to change sort order.</caption>
+            <colgroup>{[6,6,8,9,14,15,6,6,6,6,6,6,6].map((width,index)=><col key={index} style={{ width: `${width}%` }} />)}</colgroup>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="sticky left-0 top-0 z-30 w-[190px] min-w-[190px] border-b bg-muted/95 py-3 text-sm font-semibold uppercase tracking-wide backdrop-blur">
-                  Journal / Reference
-                </TableHead>
-                <SortableHeader label="Date" field="date" className="w-[125px]" sortField={sortField} sortOrder={sortOrder} onSort={onSort} />
-                <TableHead className="sticky top-0 z-20 w-[160px] border-b bg-muted/95 py-3 text-sm font-semibold uppercase tracking-wide backdrop-blur">
-                  Source
-                </TableHead>
-                <TableHead className="sticky top-0 z-20 min-w-[280px] border-b bg-muted/95 py-3 text-sm font-semibold uppercase tracking-wide backdrop-blur">
-                  Description
-                </TableHead>
-                <SortableHeader label="Debit" field="debit" className="w-[145px] text-right" sortField={sortField} sortOrder={sortOrder} onSort={onSort} />
-                <SortableHeader label="Credit" field="credit" className="w-[145px] text-right" sortField={sortField} sortOrder={sortOrder} onSort={onSort} />
-                <TableHead className="sticky top-0 z-20 w-[130px] border-b bg-muted/95 py-3 text-sm font-semibold uppercase tracking-wide backdrop-blur">
-                  Status
-                </TableHead>
-                <TableHead className="sticky top-0 z-20 w-[88px] border-b bg-muted/95 py-3 text-right text-sm font-semibold uppercase tracking-wide backdrop-blur">
-                  Actions
-                </TableHead>
+                <SortableHeader label="Date" field="date" className="" sortField={sortField} sortOrder={sortOrder} onSort={onSort} />
+                <SortableHeader label="Posting Date" field="postingDate" className="" sortField={sortField} sortOrder={sortOrder} onSort={onSort} />
+                <TableHead className={headerClass}>Type</TableHead>
+                <TableHead className={cn(headerClass, "")}>Ref / JE No.</TableHead>
+                <SortableHeader label="Account Title" field="accountTitle" className="" sortField={sortField} sortOrder={sortOrder} onSort={onSort} />
+                <TableHead className={cn(headerClass, "")}>Description / Narrative</TableHead>
+                <TableHead className={headerClass}>Division</TableHead>
+                <TableHead className={headerClass}>Department</TableHead>
+                <TableHead className={headerClass}>Source</TableHead>
+                <SortableHeader label="Debit" field="debit" className=" text-right" sortField={sortField} sortOrder={sortOrder} onSort={onSort} />
+                <SortableHeader label="Credit" field="credit" className=" text-right" sortField={sortField} sortOrder={sortOrder} onSort={onSort} />
+                <SortableHeader label="Balance" field="balance" className=" text-right" sortField={sortField} sortOrder={sortOrder} onSort={onSort} />
+                <TableHead className={headerClass}>Status</TableHead>
               </TableRow>
             </TableHeader>
-
             <TableBody>
               {groups.map((group) => {
-                const isExpanded = expandedGroups.has(group.jeGroupCounter);
                 const status = (group.status || "").trim();
                 const statusLower = status.toLowerCase();
-                const statusClasses = getStatusClasses(statusLower);
                 const isKnown = ["draft", "approved", "posted", "for review", "dispatched", "voided", "cancelled"].includes(statusLower);
-                const totalDebit = group.totalDebit;
-                const totalCredit = group.totalCredit;
-                const distributionId = `journal-distribution-${group.jeGroupCounter}`;
-
-                return (
-                  <React.Fragment key={group.jeGroupCounter}>
-                    <TableRow
-                      onClick={(event) => onDrillDown(group, event.currentTarget)}
-                      onKeyDown={(event) => {
-                        if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
-                          event.preventDefault();
-                          onDrillDown(group, event.currentTarget);
-                        }
-                      }}
-                      tabIndex={0}
-                      aria-label={`Open details for ${group.jeNo}`}
-                      className="group/summary cursor-pointer border-b border-border hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-[-2px]"
-                      title={`Open details for ${group.jeNo}`}
-                    >
-                      <TableCell className="sticky left-0 z-10 min-w-[190px] border-b border-border bg-background py-3 group-hover/summary:bg-muted/50">
-                        <div className="flex items-center gap-2">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 shrink-0"
-                            aria-label={`${isExpanded ? "Collapse" : "Expand"} accounting lines for ${group.jeNo}`}
-                            aria-expanded={isExpanded}
-                            aria-controls={isExpanded ? distributionId : undefined}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              toggleGroup(group.jeGroupCounter);
-                            }}
-                          >
-                            {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                          </Button>
-                          <span className="truncate font-mono text-sm font-semibold text-foreground group-hover/summary:text-primary" title={group.jeNo}>
-                            {group.jeNo}
-                          </span>
-                          {group.isImbalanced && <AlertCircle className="h-3.5 w-3.5 shrink-0 text-rose-500" aria-label="Imbalanced journal" />}
-                        </div>
+                return journalLines(group).map(({ entry, index, first, last, creditLine, blockEnd, balance }) => {
+                  const cellClass = cn("px-2 py-3", blockEnd ? "border-b border-border" : "");
+                  return <TableRow key={`${group.jeGroupCounter}-${index}`} className={cn("hover:bg-muted/30", creditLine && "text-muted-foreground")}>
+                    {first && <>
+                      <TableCell rowSpan={group.entries.length} className="border-b border-border px-2 py-4 align-top whitespace-normal">{group.transactionDate ? format(new Date(group.transactionDate), "yyyy-MM-dd") : "-"}</TableCell>
+                      <TableCell rowSpan={group.entries.length} className="border-b border-border px-2 py-4 align-top whitespace-normal text-muted-foreground">{group.postingDate ? format(new Date(group.postingDate), "yyyy-MM-dd") : "-"}</TableCell>
+                      <TableCell rowSpan={group.entries.length} className="border-b border-border px-2 py-4 align-top"><Badge variant="outline" className="whitespace-nowrap [overflow-wrap:normal] shadow-sm">{journalEntryType(group.sourceModule) || "-"}</Badge></TableCell>
+                      <TableCell rowSpan={group.entries.length} className="border-b border-border px-2 py-4 align-top">
+                        <div className="flex min-w-0 items-start gap-2"><button type="button" aria-label={`Open details for ${group.jeNo}`} className="min-w-0 [overflow-wrap:anywhere] text-left font-mono font-semibold text-foreground hover:text-primary hover:underline focus-visible:outline-2 focus-visible:outline-primary" onClick={event => onDrillDown(group, event.currentTarget)}>{group.jeNo}</button>{group.isImbalanced && <AlertCircle className="mt-1 h-3.5 w-3.5 shrink-0 text-rose-500" aria-label="Imbalanced journal" />}</div>
                       </TableCell>
-                      <TableCell className="border-b border-border py-3 font-medium text-foreground">
-                        {group.transactionDate ? format(new Date(group.transactionDate), "yyyy-MM-dd") : "-"}
-                      </TableCell>
-                      <TableCell className="border-b border-border py-3">
-                        <Badge variant="outline" className="max-w-[145px] truncate border-border px-2 py-0 text-xs font-medium shadow-sm" title={group.sourceModule || "-"}>
-                          {group.sourceModule || "-"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="max-w-[360px] border-b border-border py-3 text-muted-foreground">
-                        <span className="block truncate" title={group.description || "-"}>{group.description || "-"}</span>
-                      </TableCell>
-                      <TableCell className="border-b border-border py-3 text-right font-medium tabular-nums">
-                        {formatJournalAmount(totalDebit)}
-                      </TableCell>
-                      <TableCell className="border-b border-border py-3 text-right font-medium tabular-nums">
-                        {formatJournalAmount(totalCredit)}
-                      </TableCell>
-                      <TableCell className="border-b border-border py-3">
-                        <span className={cn("inline-flex items-center whitespace-nowrap rounded-full border px-3 py-0.5 text-xs font-medium", statusClasses)}>
-                          {isKnown ? status : status.toUpperCase() || "UNKNOWN"}
-                        </span>
-                      </TableCell>
-                      <TableCell className="border-b border-border py-3 text-right">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-7 px-2"
-                          aria-label={`View journal ${group.jeNo}`}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onDrillDown(group, event.currentTarget);
-                          }}
-                        >
-                          View
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-
-                    {isExpanded && (
-                      <TableRow>
-                        <TableCell id={distributionId} colSpan={8} className="border-b border-border bg-muted/20 p-0">
-                          <div className="px-4 py-4 sm:px-6">
-                            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                              Accounting distribution · {group.jeNo}
-                            </div>
-                            <p className="mb-3 text-xs text-muted-foreground">
-                              Amounts belong to this journal. Posted adjustments appear as separate journals.
-                            </p>
-                            {group.entries.length === 0 ? (
-                              <p className="py-3 text-sm text-muted-foreground">No accounting lines are available.</p>
-                            ) : (
-                              <div className="overflow-x-auto rounded-md border bg-background">
-                                <table className="w-full min-w-[620px] text-sm">
-                                  <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-                                    <tr>
-                                      <th scope="col" className="px-3 py-2 text-left font-semibold">Account No.</th>
-                                      <th scope="col" className="px-3 py-2 text-left font-semibold">Account</th>
-                                      <th scope="col" className="px-3 py-2 text-right font-semibold">Debit</th>
-                                      <th scope="col" className="px-3 py-2 text-right font-semibold">Credit</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {group.entries.map((entry, index) => (
-                                      <tr key={`${entry.coaId ?? entry.accountNumber ?? "line"}-${index}`} className="border-t border-border/60">
-                                        <td className="max-w-[160px] truncate px-3 py-2 font-mono text-muted-foreground" title={entry.accountNumber || "N/A"}>
-                                          {entry.accountNumber || "N/A"}
-                                        </td>
-                                        <td className="max-w-[360px] truncate px-3 py-2 font-medium" title={entry.accountTitle || "N/A"}>
-                                          {entry.accountTitle || "N/A"}
-                                        </td>
-                                        <td className="px-3 py-2 text-right tabular-nums">{formatJournalAmount(entry.debit)}</td>
-                                        <td className="px-3 py-2 text-right tabular-nums">{formatJournalAmount(entry.credit)}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </React.Fragment>
-                );
+                    </>}
+                    <TableCell className={cn(cellClass, "font-medium", creditLine && "pl-5 font-normal")}>{entry.accountTitle || entry.accountNumber || "-"}</TableCell>
+                    <TableCell className={cn(cellClass, "", creditLine && "italic")}><span className="block whitespace-normal [overflow-wrap:anywhere]" title={entry.description || group.description || "-"}>{entry.description || group.description || "-"}</span></TableCell>
+                    <TableCell className={cellClass}>{entry.divisionName || entry.division || "-"}</TableCell>
+                    <TableCell className={cellClass}>{entry.departmentName || entry.department || "-"}</TableCell>
+                    {first && <TableCell rowSpan={group.entries.length} className="border-b border-border px-2 py-4 align-top text-muted-foreground">{group.sourceModule || "-"}</TableCell>}
+                    <TableCell className={cn(cellClass, "text-right tabular-nums text-foreground")}>{entry.debit !== 0 ? formatJournalAmount(entry.debit) : ""}</TableCell>
+                    <TableCell className={cn(cellClass, "text-right tabular-nums text-foreground")}>{entry.credit !== 0 ? formatJournalAmount(entry.credit) : ""}</TableCell>
+                    <TableCell className={cn(cellClass, "text-right tabular-nums text-foreground", last && group.balance !== 0 && "font-semibold text-rose-600 dark:text-rose-400")}>{balance !== null ? formatJournalAmount(balance) : ""}</TableCell>
+                    {first && <TableCell rowSpan={group.entries.length} className="border-b border-border px-2 py-4 align-top"><span className={cn("inline-flex rounded-full border px-3 py-0.5 text-center text-xs font-medium", getStatusClasses(statusLower))}>{isKnown ? status : status.toUpperCase() || "UNKNOWN"}</span></TableCell>}
+                  </TableRow>;
+                });
               })}
             </TableBody>
           </table>
         </div>
       </div>
 
-      <div className="flex items-center justify-between px-2">
+      <section aria-label="Journal entry register" className="min-w-0 space-y-4 @[1500px]:hidden">
+        {groups.map(group => <article key={group.jeGroupCounter} aria-label={`Journal ${group.jeNo}`} className="min-w-0 rounded-xl border bg-background shadow-sm">
+          <dl className="grid min-w-0 grid-cols-1 gap-4 border-b bg-muted/20 p-4 text-sm @sm:grid-cols-2 @3xl:grid-cols-3">
+            <div className="min-w-0"><dt className="text-xs text-muted-foreground">Ref / JE No.</dt><dd className="mt-1 flex min-w-0 items-start gap-2"><button type="button" className="min-w-0 text-left font-mono font-semibold text-primary [overflow-wrap:anywhere] hover:underline focus-visible:outline-2 focus-visible:outline-ring" aria-label={`Open details for ${group.jeNo}`} onClick={event=>onDrillDown(group,event.currentTarget)}>{group.jeNo}</button>{group.isImbalanced&&<AlertCircle aria-label="Imbalanced journal" className="mt-1 size-4 shrink-0 text-rose-500" />}</dd></div>
+            {[["Date",group.transactionDate ? format(new Date(group.transactionDate),"yyyy-MM-dd") : "-"],["Posting Date",group.postingDate ? format(new Date(group.postingDate),"yyyy-MM-dd") : "-"],["Type",journalEntryType(group.sourceModule)||"-"],["Source",group.sourceModule||"-"]].map(([label,value])=><div key={label} className="min-w-0"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 [overflow-wrap:anywhere]">{value}</dd></div>)}
+            <div className="min-w-0"><dt className="text-xs text-muted-foreground">Status</dt><dd className="mt-1"><span className={cn("inline-flex max-w-full whitespace-normal rounded-full border px-3 py-0.5 text-xs [overflow-wrap:anywhere]",getStatusClasses((group.status||"").toLowerCase()))}>{group.status||"UNKNOWN"}</span></dd></div>
+          </dl>
+          <div className="divide-y">{journalLines(group).map(({entry,index,creditLine,last,balance})=><section key={index} aria-label={`Accounting line ${index+1}`} className="min-w-0 space-y-3 p-4 text-sm">
+            <dl className="grid min-w-0 grid-cols-1 gap-3 @xl:grid-cols-2">
+              <div className="min-w-0"><dt className="text-xs text-muted-foreground">Account Title</dt><dd className={cn("mt-1 font-medium [overflow-wrap:anywhere]",creditLine&&"pl-4 font-normal text-muted-foreground")}>{entry.accountTitle||entry.accountNumber||"-"}</dd></div>
+              <div className="min-w-0"><dt className="text-xs text-muted-foreground">Description / Narrative</dt><dd className={cn("mt-1 whitespace-pre-wrap [overflow-wrap:anywhere]",creditLine&&"italic text-muted-foreground")}>{entry.description||group.description||"-"}</dd></div>
+              {[["Division",entry.divisionName||entry.division||"-"],["Department",entry.departmentName||entry.department||"-"]].map(([label,value])=><div key={label} className="min-w-0"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 [overflow-wrap:anywhere]">{value}</dd></div>)}
+            </dl>
+            <dl className="grid min-w-0 grid-cols-1 gap-3 @md:grid-cols-3">{[["Debit",entry.debit!==0?formatJournalAmount(entry.debit):"-"],["Credit",entry.credit!==0?formatJournalAmount(entry.credit):"-"],["Balance",balance!==null?formatJournalAmount(balance):"-"]].map(([label,value])=><div key={label} className="min-w-0"><dt className="text-xs text-muted-foreground">{label}</dt><dd className={cn("mt-1 tabular-nums [overflow-wrap:anywhere]",label==="Balance"&&last&&group.balance!==0&&"font-semibold text-rose-600 dark:text-rose-400")}>{value}</dd></div>)}</dl>
+          </section>)}</div>
+        </article>)}
+      </section>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 px-2">
         <div className="flex-1 text-sm font-medium text-muted-foreground">
           {totalGroupCount === 0
             ? "Showing 0 of 0 journals."
             : `Showing ${currentPage * pageSize + 1}–${Math.min((currentPage + 1) * pageSize, totalGroupCount)} of ${totalGroupCount} ${totalGroupCount === 1 ? "journal" : "journals"}.`}
         </div>
-        <div className="flex items-center space-x-6 lg:space-x-8">
+        <div className="flex flex-wrap items-center gap-3 lg:gap-6">
           <div className="flex items-center space-x-2">
             <p className="text-sm font-medium">Rows per page</p>
             <Select value={`${pageSize}`} onValueChange={(value) => onPageSizeChange(Number(value))}>
-              <SelectTrigger className="h-8 w-[70px] rounded-lg">
+              <SelectTrigger aria-label="Rows per page" className="h-8 w-[70px] rounded-lg">
                 <SelectValue placeholder={pageSize} />
               </SelectTrigger>
               <SelectContent side="top">

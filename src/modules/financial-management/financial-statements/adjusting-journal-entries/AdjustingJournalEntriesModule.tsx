@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { useJournalSourceRecord, JournalSourceFeedback } from "@/modules/financial-management/financial-statements/journal-entry/components/JournalSourceRecord";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ChevronsLeft, ChevronsRight } from "lucide-react";
@@ -155,6 +156,15 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   const [reversal, setReversal] = React.useState<AjeReversalPreview | null>(null);
   const [reviewEntry, setReviewEntry] = React.useState<AdjustingEntry | null>(null);
   const [reviewDetails, setReviewDetails] = React.useState<AdjustingEntry | null>(null);
+  const source = useJournalSourceRecord<AdjustingEntry>("Adjusting Entry");
+  const sourceOpened = React.useRef<AdjustingEntry | null>(null);
+  const openSourceReview = React.useRef(openReview);
+  openSourceReview.current = openReview;
+  React.useEffect(() => {
+    if (source.record && sourceOpened.current !== source.record) { sourceOpened.current = source.record; openSourceReview.current(source.record); }
+    if (!source.id) sourceOpened.current = null;
+  }, [source.record, source.id]);
+
   const [reviewConfirmingPosting, setReviewConfirmingPosting] = React.useState(false);
   const [reviewConfirmingSubmission, setReviewConfirmingSubmission] = React.useState(false);
   const [reviewAttachments, setReviewAttachments] = React.useState<AjeAttachment[]>([]);
@@ -617,6 +627,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
     });
   }
   function closeReview() {
+    if (source.id) source.close();
     reviewDetailsRequestGeneration.current += 1;
     reviewAttachmentsRequestGeneration.current += 1;
     reviewAuditRequestGeneration.current += 1;
@@ -835,6 +846,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
       <div className="max-h-80 overflow-auto"><table className="w-full text-sm"><thead><tr><th className="p-2 text-left">Account</th><th className="p-2 text-right">Original</th><th className="p-2 text-right">Reversed</th><th className="p-2 text-right">Remaining</th></tr></thead><tbody>{reversal?.lines.map(d => <tr key={d.originalDetailId} className="border-t"><td className="p-2">{d.accountNumber} · {d.accountTitle}<p className="text-xs text-muted-foreground">{d.departmentName}</p></td><td className="p-2 text-right">{money(d.originalDebit + d.originalCredit)}</td><td className="p-2 text-right">{money(d.reversedAmount)}</td><td className="p-2 text-right">{money(d.remainingAmount)}</td></tr>)}</tbody></table></div>
       <DialogFooter><Button variant="outline" onClick={() => setReversal(null)}>Cancel</Button><Button variant="outline" disabled={!reversal?.lines.some(d => d.remainingAmount > 0)} onClick={() => createReversal("PARTIAL")}>Partial / remaining reversal</Button><Button disabled={!reversal?.canFullReverse} onClick={() => createReversal("FULL")}>Full reversal</Button></DialogFooter>
     </DialogContent></Dialog>
+    <JournalSourceFeedback source={source} />
     {(initialView === "creation" || initialView === "posting" || initialView === "summary") && reviewEntry !== null && <React.Suspense fallback={<Dialog open onOpenChange={open => { if (!open) closeReview(); }}>
       <DialogContent className="sm:max-w-5xl" onCloseAutoFocus={restoreReviewFocus}><DialogHeader><DialogTitle>{reviewEntry.jeNo || "Review adjusting entry"}</DialogTitle></DialogHeader>
         <p role="status" className="py-8 text-center text-sm text-muted-foreground">Loading review dialog…</p>

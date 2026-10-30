@@ -9,7 +9,7 @@ import {
   JournalEntryFilterOptions,
 } from "../types";
 import { toast } from "sonner";
-import { createDefaultFilterState, parseJournalEntryUrlState, serializeJournalEntryUrlState } from "../utils/filter-state";
+import { createDefaultFilterState, parseJournalEntryUrlState } from "../utils/filter-state";
 
 interface JournalEntryContextType {
   paginatedGroups: JournalEntryGroup[];
@@ -26,7 +26,7 @@ interface JournalEntryContextType {
   resetFilters: () => void;
   currentPage: number;
   pageSize: number;
-  urlRevision: number;
+  viewRevision: number;
   pageCount: number;
   totalGroupCount: number;
   setCurrentPage: (page: number) => void;
@@ -46,7 +46,7 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
   const router = useRouter();
   const searchParams = useSearchParams();
   const urlSearch = searchParams.toString();
-  const initialUrlState = React.useRef(parseJournalEntryUrlState(new URLSearchParams(urlSearch)));
+  const initialState = React.useRef(parseJournalEntryUrlState(new URLSearchParams()));
   const [paginatedGroups, setPaginatedGroups] = React.useState<JournalEntryGroup[]>([]);
   const [analytics, setAnalytics] = React.useState<AnalyticsSummary>({
     jeCount: 0,
@@ -68,47 +68,26 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
   const [pageCount, setPageCount] = React.useState(1);
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
-  const [currentPage, setCurrentPage] = React.useState(initialUrlState.current.page);
-  const [pageSize, setPageSize] = React.useState(initialUrlState.current.pageSize);
-  const [filters, setFilters] = React.useState<FilterState>(initialUrlState.current.filters);
-  const [urlRevision, setUrlRevision] = React.useState(0);
-  const lastObservedSearchRef = React.useRef(urlSearch);
-  const skipUrlWriteRef = React.useRef(false);
-  const initialUrlSyncRef = React.useRef(true);
+  const [currentPage, setCurrentPage] = React.useState(initialState.current.page);
+  const [pageSize, setPageSize] = React.useState(initialState.current.pageSize);
+  const [filters, setFilters] = React.useState<FilterState>(initialState.current.filters);
+  const [viewRevision, setViewRevision] = React.useState(0);
+  const initialized = React.useRef(false);
+  const [ready, setReady] = React.useState(false);
 
   React.useEffect(() => {
-    if (urlSearch === lastObservedSearchRef.current) return;
-
-    lastObservedSearchRef.current = urlSearch;
+    if (pathname !== "/fm/financial-statements/journal-entry") return;
+    if (initialized.current && !urlSearch) return;
+    initialized.current = true;
     const restored = parseJournalEntryUrlState(new URLSearchParams(urlSearch));
-    skipUrlWriteRef.current = true;
     setFilters(restored.filters);
     setCurrentPage(restored.page);
     setPageSize(restored.pageSize);
-    setUrlRevision((revision) => revision + 1);
-  }, [urlSearch]);
-
-  React.useEffect(() => {
-    if (skipUrlWriteRef.current) {
-      skipUrlWriteRef.current = false;
-      return;
-    }
-
-    const nextSearch = serializeJournalEntryUrlState(filters, currentPage, pageSize);
-    if (nextSearch === urlSearch) {
-      initialUrlSyncRef.current = false;
-      return;
-    }
-
-    lastObservedSearchRef.current = nextSearch;
-    const href = `${pathname}?${nextSearch}`;
-    if (initialUrlSyncRef.current) {
-      router.replace(href, { scroll: false });
-      initialUrlSyncRef.current = false;
-    } else {
-      router.push(href, { scroll: false });
-    }
-  }, [filters, currentPage, pageSize, pathname, router, urlSearch]);
+    lastFetchedQueryRef.current = "";
+    setViewRevision(revision => revision + 1);
+    setReady(true);
+    if (urlSearch) router.replace(pathname, { scroll: false });
+  }, [urlSearch, pathname, router]);
 
   React.useEffect(() => {
     let active = true;
@@ -149,7 +128,9 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
   }, []);
 
   const lastFetchedQueryRef = React.useRef<string>("");
+  const sourceScopeRef = React.useRef<string | null>(null);
   const fetchData = React.useCallback(async () => {
+    if (!ready) return;
     try {
       const query = new URLSearchParams();
       query.set("page", currentPage.toString());
@@ -187,7 +168,11 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
       setAnalytics(response.analytics);
       setTotalGroupCount(response.metadata.totalGroups);
       setPageCount(response.metadata.totalPages);
-      setUniqueSourceModules(["All Source Modules", ...(response.metadata.uniqueSourceModules || [])]);
+      const sourceScope = JSON.stringify([filters.startDate, filters.endDate, filters.accountNumber || ""]);
+      const sameSourceScope = sourceScopeRef.current === sourceScope;
+      sourceScopeRef.current = sourceScope;
+      const sources = (response.metadata.uniqueSourceModules || []).filter((source: unknown): source is string => typeof source === "string" && Boolean(source.trim()));
+      setUniqueSourceModules(current => ["All Source Modules", ...Array.from(new Set([...(sameSourceScope ? current.filter(source => source !== "All Source Modules") : []), ...sources])).sort()]);
       
       lastFetchedQueryRef.current = queryString;
     } catch (e: unknown) {
@@ -198,7 +183,7 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
     } finally {
       setIsLoading(false);
     }
-  }, [filters, currentPage, pageSize, paginatedGroups.length]);
+  }, [ready, filters, currentPage, pageSize, paginatedGroups.length]);
 
   React.useEffect(() => {
     fetchData();
@@ -229,7 +214,7 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
     resetFilters,
     currentPage,
     pageSize,
-    urlRevision,
+    viewRevision,
     pageCount,
     totalGroupCount,
     setCurrentPage,
@@ -247,7 +232,7 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
     fetchData, 
     currentPage, 
     pageSize, 
-    urlRevision,
+    viewRevision,
     pageCount, 
     totalGroupCount
   ]);

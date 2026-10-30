@@ -78,6 +78,10 @@ export default async function Page() {
     const token = cookieStore.get(COOKIE_NAME)?.value ?? null;
 
     const headerUser = buildHeaderUserFromToken(token);
+    const payload = token ? decodeJwtPayload(token) : null;
+    const identity = payload?.userId ?? payload?.UserId ?? payload?.sub;
+    const legacyStorageKey = typeof identity === "string" || typeof identity === "number"
+        ? `fm:journal-entry:view:v1:${encodeURIComponent(String(identity))}` : null;
 
     return (
         // ✅ UI ONLY: avoid page-level scroll container; prevent horizontal overflow
@@ -119,6 +123,7 @@ export default async function Page() {
 
             {/* ✅ UI ONLY: remove ScrollArea so the page doesn't scroll; the table card handles scrolling */}
             <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
+                {legacyStorageKey && <script dangerouslySetInnerHTML={{ __html: `try { sessionStorage.removeItem(${JSON.stringify(legacyStorageKey).replace(/</g, "\\u003c")}); } catch {}` }} />}
                 <JournalEntryModule />
             </main>
         </div>

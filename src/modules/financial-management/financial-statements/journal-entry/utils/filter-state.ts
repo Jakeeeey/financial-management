@@ -5,6 +5,7 @@ export function createDefaultFilterState(now = new Date()): FilterState {
   const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
   return {
+    entryType: "All Entry Types",
     search: "",
     startDate: formatLocalDate(firstDay),
     endDate: formatLocalDate(lastDay),
@@ -52,6 +53,7 @@ export function parseJournalEntryUrlState(params: URLSearchParams, now = new Dat
 
   const filters: FilterState = {
       ...defaults,
+      entryType: params.get("entryType") || "All Entry Types",
       search: params.get("search") ?? defaults.search,
       startDate: getDateParam(params.get("startDate"), defaults.startDate),
       endDate: getDateParam(params.get("endDate"), defaults.endDate),
@@ -92,6 +94,7 @@ export function serializeJournalEntryUrlState(filters: FilterState, page: number
   params.set("sortField", filters.sortField);
   if (filters.sortOrder) params.set("sortOrder", filters.sortOrder);
 
+  if (filters.entryType && filters.entryType !== "All Entry Types") params.set("entryType", filters.entryType);
   if (filters.search.trim()) params.set("search", filters.search.trim());
   if (filters.status !== "All Statuses") params.set("status", filters.status);
   if (filters.branch !== "All Branches") params.set("branch", filters.branch);
