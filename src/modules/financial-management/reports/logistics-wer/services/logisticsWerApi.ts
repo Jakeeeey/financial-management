@@ -141,6 +141,8 @@ interface DispatchApprovalWerPayables {
   overBudgetAmount?: unknown;
   budgetBalancesByCoa?: Array<{
     coaId?: unknown;
+    coaCode?: unknown;
+    coaTitle?: unknown;
     allocatedAmount?: unknown;
     reservedAmount?: unknown;
     remainingAmount?: unknown;
@@ -306,6 +308,8 @@ function mapDetails(data: DispatchApprovalResponse, sourcePlan?: LogisticsWerDis
     overBudgetAmount: asNullableNumber(werPayables?.overBudgetAmount),
     budgetBalancesByCoa: (werPayables?.budgetBalancesByCoa ?? []).map((balance): LogisticsWerCoaBudgetBalance => ({
       coaId: asNumber(balance.coaId),
+      coaCode: asNullableString(balance.coaCode),
+      coaTitle: asNullableString(balance.coaTitle),
       allocatedAmount: asNumber(balance.allocatedAmount),
       reservedAmount: asNumber(balance.reservedAmount),
       remainingAmount: asNumber(balance.remainingAmount),
@@ -433,6 +437,8 @@ export interface StagedReceipt {
 export interface PayableCoaOption {
   coaId: number;
   label: string;
+  coaCode?: string | null;
+  coaTitle?: string | null;
 }
 
 export interface BudgetClassificationInput {
@@ -628,9 +634,10 @@ export async function fetchPayableCoas(): Promise<PayableCoaOption[]> {
   const payload = await readJson<Array<{ coaId?: unknown; glCode?: unknown; accountTitle?: unknown }>>(response);
   return (Array.isArray(payload) ? payload : []).map((row) => {
     const coaId = asNumber(row.coaId);
-    const title = asString(row.accountTitle) || `COA ${coaId}`;
+    const coaTitle = asString(row.accountTitle);
+    const title = coaTitle || `COA ${coaId}`;
     const code = asString(row.glCode);
-    return { coaId, label: code ? `${code} · ${title}` : title };
+    return { coaId, label: code ? `${code} · ${title}` : title, coaCode: code || null, coaTitle: coaTitle || null };
   }).filter((row) => row.coaId > 0);
 }
 

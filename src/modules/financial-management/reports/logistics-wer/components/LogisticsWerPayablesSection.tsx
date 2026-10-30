@@ -1107,7 +1107,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
             <Plus className="size-3.5" /> Add New Entry Line Item
           </Button>
 
-          {variance && <ExpenseVarianceSummary variance={variance} />}
+          {variance && <ExpenseVarianceSummary variance={variance} accounts={coas} />}
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
             <span>
               Lines total: <strong className="text-foreground">{formatMoney(linesTotal)}</strong>

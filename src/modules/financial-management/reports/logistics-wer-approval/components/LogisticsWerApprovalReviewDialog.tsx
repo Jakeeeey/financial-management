@@ -142,7 +142,7 @@ export function LogisticsWerApprovalReviewDialog({
 
         {review && submission && (
           <div className="min-w-0 space-y-4">
-            {review.variance && <ExpenseVarianceSummary variance={review.variance} />}
+            {review.variance && <ExpenseVarianceSummary variance={review.variance} accounts={[...submission.lines, ...review.budgetByCoa]} />}
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {review.budgetByCoa.length > 0 ? review.budgetByCoa.map((budget) => {
                 const categoryLabel = [budget.coaCode, budget.coaTitle]
