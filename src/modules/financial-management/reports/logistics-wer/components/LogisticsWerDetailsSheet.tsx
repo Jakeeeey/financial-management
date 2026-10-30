@@ -1,5 +1,6 @@
 "use client";
 
+import { varianceCoaLabels } from "../utils/variance-coa-labels";
 import { WerCooldownBoundary } from "./WerCooldownBoundary";
 
 import { AlertCircle, Loader2 } from "lucide-react";
@@ -49,6 +50,7 @@ interface LogisticsWerDetailsSheetProps {
 }
 
 export function LogisticsWerDetailsSheet({ open, detail, loading, error, onOpenChange, onChanged }: LogisticsWerDetailsSheetProps) {
+  const accountLabels = varianceCoaLabels([...(detail?.budgetBalancesByCoa ?? []), ...(detail?.budgetLines ?? [])]);
   const payableSubmissions = detail?.submissions ?? [];
   const disbursementLineCount = payableSubmissions.reduce((total, submission) => total + submission.lineCount, 0);
   const totalDisbursements = payableSubmissions.reduce((total, submission) => total + submission.totalAmount, 0);
@@ -149,13 +151,10 @@ export function LogisticsWerDetailsSheet({ open, detail, loading, error, onOpenC
                       </TableHeader>
                       <TableBody>
                         {detail.budgetBalancesByCoa.map((balance) => {
-                          const lines = detail.budgetLines.filter((line) => line.coaId === balance.coaId);
-                          const label = lines[0]
-                            ? `${lines[0].coaCode ? `${lines[0].coaCode} · ` : ""}${lines[0].coaTitle || `COA ${balance.coaId}`}`
-                            : `COA ${balance.coaId}`;
+                          const label = accountLabels.get(balance.coaId) || `COA ${balance.coaId} (name unavailable)`;
                           return (
                             <TableRow key={balance.coaId}>
-                              <TableCell>{label}</TableCell>
+                              <TableCell className="whitespace-normal [overflow-wrap:anywhere]">{label}</TableCell>
                               <TableCell className="text-right">{formatMoney(balance.allocatedAmount)}</TableCell>
                               <TableCell className="text-right">{formatMoney(balance.reservedAmount)}</TableCell>
                               <TableCell className="text-right font-semibold">{formatMoney(balance.remainingAmount)}</TableCell>
@@ -210,7 +209,6 @@ export function LogisticsWerDetailsSheet({ open, detail, loading, error, onOpenC
                           <TableHead>Chart of Accounts</TableHead>
                           <TableHead className="text-right">Amount</TableHead>
                           <TableHead>Classification</TableHead>
-                          <TableHead className="w-24 text-right">Action</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -227,12 +225,12 @@ export function LogisticsWerDetailsSheet({ open, detail, loading, error, onOpenC
                               </TableCell>
                               <TableCell className="text-right font-medium">{formatMoney(line.amount)}</TableCell>
                               <TableCell>
-                                <Badge variant={isClassified ? "secondary" : "outline"}>
-                                  {isClassified ? "Classified" : "Needs classification"}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-right">
-                                {!isClassified && <BudgetClassificationEditor planId={detail.plan.id} line={line} disabled={(detail.plan.status || "").toLowerCase() !== "for clearance" || detail.isLiquidated === true} onSaved={() => onChanged?.()} />}
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge variant={isClassified ? "secondary" : "outline"}>
+                                    {isClassified ? "Classified" : "Needs classification"}
+                                  </Badge>
+                                  {!isClassified && <BudgetClassificationEditor planId={detail.plan.id} line={line} disabled={(detail.plan.status || "").toLowerCase() !== "for clearance" || detail.isLiquidated === true} onSaved={() => onChanged?.()} />}
+                                </div>
                               </TableCell>
 
                             </TableRow>

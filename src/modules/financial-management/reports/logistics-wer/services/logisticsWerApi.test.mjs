@@ -86,3 +86,13 @@ test("includes Department and per-line Division when saving a payable draft", as
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("retains names for expense-only COA balances even without allocation lines", async t => {
+  const row = { coaId: 139, coaCode: "1035", coaTitle: "New Expense Account", allocatedAmount: 0, reservedAmount: 300, remainingAmount: 0, overBudgetAmount: 300 };
+  t.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({ id: 2, docNo: "DP-2", budgets: [], werPayables: { budgetContextAvailable: true, budgetBalancesByCoa: [row] } }), { status: 200, headers: { "Content-Type": "application/json" } }));
+  const details = await fetchLogisticsWerDetails(2);
+  assert.equal(details.budgetLines.length, 0);
+  assert.deepEqual(details.budgetBalancesByCoa, [row]);
+  assert.equal(details.budgetContextAvailable, true);
+});

@@ -25,6 +25,8 @@ export interface LogisticsWerBudgetLine {
 
 export interface LogisticsWerCoaBudgetBalance {
   coaId: number;
+  coaCode?: string | null;
+  coaTitle?: string | null;
   allocatedAmount: number;
   reservedAmount: number;
   remainingAmount: number;
