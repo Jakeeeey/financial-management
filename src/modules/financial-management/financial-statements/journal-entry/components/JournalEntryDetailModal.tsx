@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { Link2 } from "lucide-react";
+import { collectionReference } from "../utils/collection-reference";
 import { sourceReferenceHref, type SourceDocument } from "../utils/source-reference";
 import { 
   Dialog, 
@@ -210,6 +211,7 @@ function JournalEntryDetailContent({ group, open, onOpenChange, onRestoreFocus }
             {/* ── PARAMETER CARDS ROW ── */}
             <div className="flex flex-wrap gap-2">
               <ParamCard label="JE No." value={group.jeNo} loading={isLoading} />
+              {collectionReference(group) && <ParamCard label="CP#" value={collectionReference(group)!} loading={isLoading} />}
               <StatusParamCard label="Status" value={group.status} loading={isLoading} />
               <ParamCard label="Type" value={group.sourceModule || "N/A"} loading={isLoading} />
               <ParamCard label="Division" value={group.division || "N/A"} loading={isLoading} />
@@ -267,7 +269,7 @@ function JournalEntryDetailContent({ group, open, onOpenChange, onRestoreFocus }
                               {e.accountTitle}
                             </TableCell>
                             <TableCell className="py-3 text-sm text-muted-foreground">
-                              <span className="block whitespace-normal break-words">{group.description}</span>
+                              <span className="block whitespace-normal break-words">{group.sourceModule === "Collection" ? e.description || group.description : group.description}</span>
                               {i === 0 && (
                                 <span className="mt-0.5 block whitespace-normal break-words text-xs italic text-muted-foreground/80">
                                   - {e.accountTitle} distribution
@@ -403,7 +405,7 @@ function JournalEntryDetailContent({ group, open, onOpenChange, onRestoreFocus }
                           key={`original-${index}`}
                           accountNumber={entry.accountNumber || "N/A"}
                           accountTitle={entry.accountTitle || "N/A"}
-                          description={`${group.description}${index === 0 ? ` — ${entry.accountTitle || "Account"} distribution` : ""}`}
+                          description={`${group.sourceModule === "Collection" ? entry.description || group.description : group.description}${index === 0 ? ` — ${entry.accountTitle || "Account"} distribution` : ""}`}
                           debit={entry.debit}
                           credit={entry.credit}
                         />
