@@ -131,3 +131,29 @@ test("audit summaries match Posting and preserve recorded reasons", () => {
   assert.equal(auditEventSummary(auditEvent(2, { action: "Posted" })), "Posted to the General Ledger");
   assert.equal(auditEventSummary(auditEvent(3, { action: "Edited", reason: "Corrected reference" })), "Corrected reference");
 });
+
+import { journalEntryType } from "../utils/entry-type";
+import { parseJournalEntryUrlState, serializeJournalEntryUrlState } from "../utils/filter-state";
+import { sourceReferenceHref } from "../utils/source-reference";
+
+test("entry types filter flat exports by actual source category and combine with source module", () => {
+  const rows = [line(), line({ sourceModule: "Collection" }), line({ sourceModule: "Disbursement" }), line({ sourceModule: "Adjusting Entry" })];
+  for (const [entryType, source] of [["Sales", "Sales Invoice"], ["Collection", "Collection"], ["Disbursement", "Disbursement"], ["Adjustment", "Adjusting Entry"]]) {
+    assert.equal(journalEntryType(source), entryType);
+    assert.deepEqual(filterJournalEntries(rows, { ...filters, entryType }).map(row => row.sourceModule), [source]);
+  }
+  assert.deepEqual(filterJournalEntries(rows, { ...filters, entryType: "Sales", sourceModule: "Collection" }), []);
+  const selected = { ...filters, entryType: "Adjustment", status: "Posted" };
+  assert.equal(parseJournalEntryUrlState(new URLSearchParams(serializeJournalEntryUrlState(selected, 2, 20))).filters.entryType, "Adjustment");
+  assert.equal(parseJournalEntryUrlState(new URLSearchParams("showPostedOnly=true")).filters.status, "Posted");
+});
+
+test("source navigation only permits resolved numeric records on known internal routes", () => {
+  assert.equal(sourceReferenceHref({ type: "Disbursement", id: 7, reference: "NT-007291", state: "RESOLVED", message: null }), "/fm/treasury/cash-issuance/ledger?sourceId=7");
+  for (const type of ["Disbursement", "Sales Invoice", "Collection", "Adjusting Entry"]) {
+    assert.match(sourceReferenceHref({ type, id: 7, reference: "REF", state: "RESOLVED", message: null })!, /^\/fm\/.*\?sourceId=7$/);
+  }
+  for (const state of ["MISSING", "AMBIGUOUS", "FORBIDDEN", "UNSUPPORTED"]) assert.equal(sourceReferenceHref({ type: "Disbursement", id: 7, reference: "REF", state, message: null }), null);
+  assert.equal(sourceReferenceHref({ type: "https://outside.invalid", id: 7, reference: "REF", state: "RESOLVED", message: null }), null);
+  assert.equal(sourceReferenceHref({ type: "Disbursement", id: -1, reference: "REF", state: "RESOLVED", message: null }), null);
+});

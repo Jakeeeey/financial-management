@@ -1,6 +1,9 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
+import { Link2 } from "lucide-react";
+import { sourceReferenceHref, type SourceDocument } from "../utils/source-reference";
 import { 
   Dialog, 
   DialogContent, 
@@ -41,6 +44,7 @@ interface DrillThroughContext {
   sourceReport: string;
   sourceLine: string;
   referenceLink: string;
+  sourceDocument?: SourceDocument | null;
   postedOnlyView: string;
 }
 
@@ -54,6 +58,8 @@ export default function JournalEntryDetailModal(props: JournalEntryDetailModalPr
 function JournalEntryDetailContent({ group, open, onOpenChange, onRestoreFocus }: JournalEntryDetailModalProps) {
   const [drillThrough, setDrillThrough] = React.useState<DrillThroughContext | null>(null);
   const [isLoading, setIsLoading] = React.useState(Boolean(open && group?.jeNo));
+  const [contextError, setContextError] = React.useState<string | null>(null);
+  const [contextRetry, setContextRetry] = React.useState(0);
   const [linkedAjes, setLinkedAjes] = React.useState<AdjustingEntry[]>([]);
   const [isLoadingAjes, setIsLoadingAjes] = React.useState(Boolean(open && group?.jeNo));
   const [linkedAjesError, setLinkedAjesError] = React.useState<string | null>(null);
@@ -62,27 +68,10 @@ function JournalEntryDetailContent({ group, open, onOpenChange, onRestoreFocus }
     if (open && group?.jeNo) {
       let isMounted = true;
       const controller = new AbortController();
-      setDrillThrough(null);
       setLinkedAjes([]);
       setLinkedAjesError(null);
-      setIsLoading(true);
       setIsLoadingAjes(true);
       
-      const fetchDrillDown = async () => {
-        try {
-          const res = await fetch(`/api/fm/financial-statements/journal-entry/drill-down?jeNo=${encodeURIComponent(group.jeNo)}`, { signal: controller.signal });
-          if (!res.ok) throw new Error("Failed to fetch drill-down context.");
-          const data = await res.json();
-          if (isMounted) {
-            setDrillThrough(data);
-          }
-        } catch (err) {
-          if (isMounted) console.error(err);
-        } finally {
-          if (isMounted) setIsLoading(false);
-        }
-      };
-
       const fetchLinkedAjes = async () => {
         try {
           const entries: AdjustingEntry[] = [];
@@ -108,15 +97,49 @@ function JournalEntryDetailContent({ group, open, onOpenChange, onRestoreFocus }
         }
       };
 
-      fetchDrillDown();
       fetchLinkedAjes();
       
       return () => { isMounted = false; controller.abort(); };
     } else {
-       setDrillThrough(null);
        setLinkedAjes([]);
     }
   }, [group, open]);
+
+  React.useEffect(() => {
+    if (!open || !group?.jeNo) return;
+    let active = true;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20000);
+    setDrillThrough(null);
+    setContextError(null);
+    setIsLoading(true);
+    const loadContext = async () => {
+      try {
+        const response = await fetch(`/api/fm/financial-statements/journal-entry/drill-down?${new URLSearchParams({ jeNo: group.jeNo })}`, { cache: "no-store", signal: controller.signal });
+        if (!response.ok) {
+          const message = response.status === 401 ? "Please sign in again to load journal context."
+            : response.status === 403 ? "You do not have access to journal context."
+            : response.status === 404 ? "Journal context was not found. The ERP API may need updating."
+            : response.status === 429 ? "Journal context is temporarily rate limited. Please retry shortly."
+            : "The ERP could not load journal context in time or is temporarily unavailable. Please retry.";
+          if (active) setContextError(message);
+          return;
+        }
+        const data = await response.json() as DrillThroughContext | null;
+        if (active) {
+          if (data) setDrillThrough(data);
+          else setContextError("Journal context was not found.");
+        }
+      } catch {
+        if (active) setContextError(controller.signal.aborted ? "Journal context timed out. Please retry." : "Unable to reach journal context. Please retry.");
+      } finally {
+        clearTimeout(timer);
+        if (active) setIsLoading(false);
+      }
+    };
+    void loadContext();
+    return () => { active = false; clearTimeout(timer); controller.abort(); };
+  }, [group?.jeNo, open, contextRetry]);
 
   if (!group) return null;
 
@@ -492,10 +515,12 @@ function JournalEntryDetailContent({ group, open, onOpenChange, onRestoreFocus }
                       <ContextRow label="Source Module:" value={drillThrough.sourceModule || "N/A"} />
                       <ContextRow label="Source Report:" value={drillThrough.sourceReport || "N/A"} />
                       <ContextRow label="Source Line:" value={drillThrough.sourceLine || "N/A"} bold />
-                      <ContextRow label="Source Reference:" value={drillThrough.referenceLink || "N/A"} />
+                      <div><dt className="text-xs font-medium text-muted-foreground">Reference Link:</dt><dd className="mt-0.5 break-words text-xs">
+                        {sourceReferenceHref(drillThrough.sourceDocument) ? <Link href={sourceReferenceHref(drillThrough.sourceDocument)!} className="inline-flex items-center gap-1 font-semibold text-primary hover:underline focus-visible:outline-2 focus-visible:outline-ring">{drillThrough.referenceLink}<Link2 aria-hidden="true" className="size-3 shrink-0" /></Link> : <><span>{drillThrough.referenceLink || "Not available"}</span><p className="mt-1 text-muted-foreground">{drillThrough.sourceDocument?.message || "Source navigation is not available."}</p></>}
+                      </dd></div>
                       <ContextRow label="Posted Only View:" value={drillThrough.postedOnlyView || "N/A"} />
                     </dl>
-                  ) : <p role="status" className="text-xs text-muted-foreground">Journal context unavailable.</p>}
+                  ) : <div className="space-y-2"><p role="alert" className="text-xs text-destructive">{contextError || "Journal context unavailable."}</p><Button type="button" size="sm" variant="outline" onClick={() => setContextRetry(value => value + 1)}>Retry journal context</Button></div>}
                 </div>
 
                 <JournalEntryAuditTrail journalNumber={group.sourceModule === "Adjusting Entry" || group.jeNo.toUpperCase().startsWith("AJE-") ? group.jeNo : null} open={open} />

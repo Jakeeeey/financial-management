@@ -2,9 +2,8 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { ChevronDown, FileDown, Loader2, Printer, X } from "lucide-react";
+import { FileDown, Loader2, Printer, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
@@ -56,13 +55,12 @@ function JournalEntryDashboard() {
     totalGroupCount,
     setCurrentPage,
     setPageSize,
-    urlRevision,
+    viewRevision,
   } = useJournalEntries();
 
   const [draftFilters, setDraftFilters] = React.useState(filters);
   const appliedFiltersRef = React.useRef(filters);
   appliedFiltersRef.current = filters;
-  const [isMoreFiltersOpen, setIsMoreFiltersOpen] = React.useState(false);
   const [selectedGroup, setSelectedGroup] = React.useState<JournalEntryGroup | null>(null);
   const [isDetailOpen, setIsDetailOpen] = React.useState(false);
   const [isExporting, setIsExporting] = React.useState<"PDF" | "Excel" | null>(null);
@@ -71,13 +69,7 @@ function JournalEntryDashboard() {
 
   React.useEffect(() => {
     setDraftFilters(appliedFiltersRef.current);
-  }, [urlRevision]);
-
-  React.useEffect(() => {
-    if (isMoreFiltersOpen) {
-      resultsScrollRef.current?.scrollTo({ top: 0 });
-    }
-  }, [isMoreFiltersOpen]);
+  }, [viewRevision]);
 
   const applyDraftFilters = () => {
     const normalizedFilters = normalizeFilterDates(draftFilters);
@@ -292,10 +284,7 @@ function JournalEntryDashboard() {
       <JournalEntryFilterToolbar
         filters={draftFilters}
         setFilters={setDraftFilters}
-        isMoreFiltersOpen={isMoreFiltersOpen}
-        statusOptions={statusOptions}
         hasPendingChanges={hasPendingChanges}
-        onToggleMoreFilters={() => setIsMoreFiltersOpen((open) => !open)}
         onApply={applyDraftFilters}
         onReset={resetAllFilters}
       />
@@ -305,10 +294,10 @@ function JournalEntryDashboard() {
           filters={draftFilters}
           setFilters={setDraftFilters}
           uniqueSourceModules={uniqueSourceModules}
+          statusOptions={statusOptions}
           filterOptions={filterOptions}
           filterOptionsLoading={filterOptionsLoading}
           filterOptionsError={filterOptionsError}
-          isOpen={isMoreFiltersOpen}
         />
 
         {/* Results remain vertically scrollable; the table owns horizontal scrolling. */}
@@ -335,36 +324,14 @@ function JournalEntryDashboard() {
           {/* Summary Stats */}
           <SummaryCards data={analytics} loading={isLoading} />
 
-          <Collapsible className="min-w-0">
-            <div className="rounded-lg border bg-card shadow-sm">
-              <CollapsibleTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="group flex h-auto w-full min-w-0 justify-between gap-4 rounded-lg px-4 py-3 text-left"
-                >
-                  <span className="flex min-w-0 items-center gap-3">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted">
-                      <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]:rotate-180" />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-sm font-semibold">More analytics</span>
-                      <span className="block break-words text-xs font-normal text-muted-foreground">
-                        Secondary metrics, status breakdown, and high-risk entries
-                      </span>
-                    </span>
-                  </span>
-                  <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">
-                    3 metrics · status · risk review
-                  </span>
-                </Button>
-              </CollapsibleTrigger>
+          <section aria-labelledby="journal-more-analytics" className="min-w-0 space-y-4">
+            <div className="rounded-lg border bg-card px-4 py-3 shadow-sm">
+              <h2 id="journal-more-analytics" className="text-sm font-semibold">More analytics</h2>
+              <p className="text-xs text-muted-foreground">Secondary metrics, status breakdown, and high-risk entries</p>
             </div>
-            <CollapsibleContent className="space-y-4 pt-4">
-              <SecondarySummaryCards data={analytics} loading={isLoading} />
-              {!isLoading && <RiskInsights data={analytics} onOpenJournal={openRiskJournal} />}
-            </CollapsibleContent>
-          </Collapsible>
+            <SecondarySummaryCards data={analytics} loading={isLoading} />
+            {!isLoading && <RiskInsights data={analytics} onOpenJournal={openRiskJournal} />}
+          </section>
 
           {/* Grouped Table with Loading State */}
           {isLoading ? (
@@ -400,7 +367,7 @@ function JournalEntryDashboard() {
   );
 }
 
-type AppliedFilterKey = "search" | "period" | "status" | "branch" | "division" | "department" | "sourceModule" | "coa" | "accountNumber";
+type AppliedFilterKey = "search" | "period" | "entryType" | "status" | "branch" | "division" | "department" | "sourceModule" | "coa" | "accountNumber";
 
 function getAppliedFilterChips(filters: FilterState, options: JournalEntryFilterOptions) {
   const chips: { key: AppliedFilterKey; label: string }[] = [];
@@ -435,6 +402,7 @@ function getAppliedFilterChips(filters: FilterState, options: JournalEntryFilter
   addLookupChip("branch", "All Branches", "Branch", options.branches);
   addLookupChip("division", "All Divisions", "Division", options.divisions);
   addLookupChip("department", "All Departments", "Department", options.departments);
+  if (filters.entryType && filters.entryType !== "All Entry Types") chips.push({ key: "entryType", label: `Type: ${filters.entryType}` });
   if (filters.sourceModule !== "All Source Modules") chips.push({ key: "sourceModule", label: `Source: ${filters.sourceModule}` });
   if (filters.coa !== "All Accounts") chips.push({ key: "coa", label: `Account: ${filters.coa}` });
   if (filters.accountNumber) chips.push({ key: "accountNumber", label: `Account no.: ${filters.accountNumber}` });

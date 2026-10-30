@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, ChevronDown, Filter, RotateCcw, Search } from "lucide-react";
+import { Calendar as CalendarIcon, RotateCcw, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -25,10 +25,7 @@ import { FilterState, PresetRange } from "../types";
 interface JournalEntryFilterToolbarProps {
   filters: FilterState;
   setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
-  isMoreFiltersOpen: boolean;
-  statusOptions: string[];
   hasPendingChanges: boolean;
-  onToggleMoreFilters: () => void;
   onApply: () => void;
   onReset: () => void;
 }
@@ -36,10 +33,7 @@ interface JournalEntryFilterToolbarProps {
 export default function JournalEntryFilterToolbar({
   filters,
   setFilters,
-  isMoreFiltersOpen,
-  statusOptions,
   hasPendingChanges,
-  onToggleMoreFilters,
   onApply,
   onReset,
 }: JournalEntryFilterToolbarProps) {
@@ -51,8 +45,8 @@ export default function JournalEntryFilterToolbar({
 
   return (
     <section aria-label="Journal entry filters" className="shrink-0 border-b bg-background px-3 py-3 sm:px-6">
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-[minmax(220px,1fr)_minmax(230px,300px)_minmax(150px,190px)_auto]">
-        <div className="col-span-2 min-w-0 space-y-1 xl:col-span-1">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(230px,300px)]">
+        <div className="min-w-0 space-y-1">
           <Label htmlFor="journal-entry-search" className="text-xs font-semibold text-muted-foreground">Search</Label>
           <div className="relative">
             <Search aria-hidden="true" className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -167,36 +161,12 @@ export default function JournalEntryFilterToolbar({
           </Popover>
         </div>
 
-        <div className="min-w-0 space-y-1">
-          <Label htmlFor="journal-entry-status" className="text-xs font-semibold text-muted-foreground">Status</Label>
-          <Select value={filters.status} onValueChange={(value) => updateFilter("status", value)}>
-            <SelectTrigger id="journal-entry-status" className="h-9 w-full min-w-0"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {Array.from(new Set(["All Statuses", "Posted", "Unposted", "Dispatched", "For Review", "Approved", "Draft", ...statusOptions])).map((status) => (
-                <SelectItem key={status} value={status}>{status}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="col-span-2 flex flex-wrap items-center justify-end gap-2 xl:col-span-4">
+        <div className="flex flex-wrap items-center justify-end gap-2 sm:col-span-2">
           {hasPendingChanges && (
             <span role="status" className="mr-auto text-xs font-medium text-amber-700 dark:text-amber-400">
               Filter changes are waiting for Apply.
             </span>
           )}
-          <Button
-            type="button"
-            variant="outline"
-            className="h-9"
-            aria-expanded={isMoreFiltersOpen}
-            aria-controls="journal-entry-advanced-filters"
-            onClick={onToggleMoreFilters}
-          >
-            <Filter aria-hidden="true" className="mr-2 h-4 w-4" />
-            {isMoreFiltersOpen ? "Hide filters" : "More filters"}
-            <ChevronDown aria-hidden="true" className={`ml-2 h-4 w-4 transition-transform ${isMoreFiltersOpen ? "rotate-180" : ""}`} />
-          </Button>
           <Button type="button" variant="outline" className="h-9" onClick={onReset}>
             <RotateCcw aria-hidden="true" className="mr-2 h-3.5 w-3.5" />
             Clear all

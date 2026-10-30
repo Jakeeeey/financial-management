@@ -118,19 +118,24 @@ export default function RiskInsights({ data, onOpenJournal }: RiskInsightsProps)
         <CardContent className="p-0">
           <div className="divide-y divide-rose-100/30 dark:divide-rose-900/30">
             {currentRiskItems.map((entry, idx) => (
-              <button
+              <div
                 key={entry.jeGroupCounter ?? `${entry.jeNo}-${idx}`}
-                type="button"
-                onClick={(event) => void handleOpenJournal(entry, event.currentTarget)}
-                disabled={openingEntryKey !== null}
-                aria-label={`Open journal entry ${entry.jeNo} details`}
-                aria-busy={openingEntryKey === entry.jeGroupCounter}
-                className="group flex w-full items-center justify-between gap-4 px-6 py-4 text-left transition-colors hover:bg-rose-50/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary disabled:cursor-wait disabled:opacity-70 dark:hover:bg-rose-900/20"
+                className="flex w-full items-center justify-between gap-4 px-6 py-4 text-left"
               >
-                <span className="flex min-w-0 flex-col items-start">
+                <div className="flex min-w-0 flex-col items-start">
                   <span className="truncate text-sm font-semibold text-muted-foreground">{entry.jeNo}</span>
-                  <span className="mt-1 text-xs text-muted-foreground">View journal details</span>
-                </span>
+                  <button
+                    type="button"
+                    onClick={(event) => void handleOpenJournal(entry, event.currentTarget)}
+                    disabled={openingEntryKey !== null}
+                    aria-label={`View journal details for ${entry.jeNo}`}
+                    aria-busy={openingEntryKey === entry.jeGroupCounter}
+                    className="mt-1 inline-flex items-center gap-1.5 rounded-sm text-xs text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-70"
+                  >
+                    View journal details
+                    {openingEntryKey === entry.jeGroupCounter && <LoaderCircle aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />}
+                  </button>
+                </div>
                 <span className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
                   {entry.riskReasons.map((reason) => {
                     const presentation = getRiskReasonPresentation(reason);
@@ -142,13 +147,8 @@ export default function RiskInsights({ data, onOpenJournal }: RiskInsightsProps)
                       </Badge>
                     );
                   })}
-                  {openingEntryKey === entry.jeGroupCounter ? (
-                    <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin text-rose-700" />
-                  ) : (
-                    <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-                  )}
                 </span>
-              </button>
+              </div>
             ))}
             
             {highRisk.length === 0 && (
