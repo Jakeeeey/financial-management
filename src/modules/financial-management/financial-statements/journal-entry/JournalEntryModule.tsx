@@ -6,8 +6,7 @@ import { FileDown, Loader2, Printer, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
-import { FilterState, HighRiskEntry, JournalEntryFilterOption, JournalEntryGroup, JournalEntryFilterOptions } from "./types";
+import { FilterState, HighRiskEntry, JournalEntryGroup } from "./types";
 import { useJournalEntries } from "./hooks/useJournalEntries";
 import { JournalEntryProvider } from "./providers/JournalEntryProvider";
 import { createDefaultFilterState, normalizeFilterDates } from "./utils/filter-state";
@@ -18,7 +17,7 @@ import JournalEntryFilterToolbar from "./components/JournalEntryFilterToolbar";
 import RiskInsights from "./components/RiskInsights";
 import JournalEntryTable from "./components/JournalEntryTable";
 import JournalEntryDetailModal from "./components/JournalEntryDetailModal";
-import { exportJournalToExcel, exportJournalToPdf } from "./services/export.service";
+import { getAppliedFilterChips, type AppliedFilterKey } from "./utils/applied-filter-chips";
 
 import { DataTableSkeleton } from "@/app/(financial-management)/fm/_components/DataTableSkeleton";
 import { ErrorPage } from "@/app/(financial-management)/fm/_components/ErrorPage";
@@ -104,77 +103,53 @@ function JournalEntryDashboard() {
     setCurrentPage(0);
   };
 
+  const exportControllerRef = React.useRef<AbortController | null>(null);
+  React.useEffect(() => () => {
+    exportControllerRef.current?.abort();
+    exportControllerRef.current = null;
+  }, []);
+
   const handleExport = async (type: "PDF" | "Excel") => {
-    if (isExporting) return;
-
+    if (exportControllerRef.current) return;
+    const controller = new AbortController();
+    exportControllerRef.current = controller;
     setIsExporting(type);
-    const formattedStart = format(new Date(filters.startDate), "MMM d, yyyy");
-    const formattedEnd = format(new Date(filters.endDate), "MMM d, yyyy");
-    const dateRangeText = `${formattedStart} to ${formattedEnd}`;
     const toastId = toast.loading(`Preparing ${type} export of all filtered journals...`);
-
     try {
       const query = new URLSearchParams();
       Object.entries(filters).forEach(([key, value]) => {
-        if (value !== undefined && value !== null) query.set(key, value.toString());
+        if (value !== undefined && value !== null) query.set(key, String(value));
       });
-      query.set("pageSize", "100000");
-
-      const allGroups: JournalEntryGroup[] = [];
-      let totalPages = 1;
-      let totalGroups = 0;
-
-      for (let page = 0; page < totalPages; page += 1) {
-        query.set("page", String(page));
-        const res = await fetch(`/api/fm/financial-statements/journal-entry?${query.toString()}`);
-        if (!res.ok) throw new Error("Failed to fetch data for export");
-
-        const response = await res.json() as {
-          data?: JournalEntryGroup[];
-          metadata?: { totalPages?: number; totalGroups?: number };
-        };
-        const metadata = response.metadata;
-        if (
-          !Array.isArray(response.data)
-          || !metadata
-          || !Number.isInteger(metadata.totalPages)
-          || !Number.isInteger(metadata.totalGroups)
-        ) {
-          throw new Error("The export response was incomplete.");
-        }
-
-        if (page === 0) {
-          totalPages = Math.max(0, metadata.totalPages ?? 0);
-          totalGroups = Math.max(0, Number(metadata.totalGroups ?? 0));
-        }
-
-        allGroups.push(...response.data);
-        toast.loading(`Preparing ${type} export: ${allGroups.length} of ${totalGroups} journals...`, { id: toastId });
+      const extension = type === "PDF" ? "pdf" : "xlsx";
+      query.set("format", extension);
+      query.set("timeZone", Intl.DateTimeFormat().resolvedOptions().timeZone);
+      const response = await fetch(`/api/fm/financial-statements/journal-entry/export?${query}`, { signal: controller.signal, cache: "no-store" });
+      if (!response.ok) {
+        const error = await response.json().catch(() => null);
+        throw new Error(error?.error || `Unable to export ${type}. Please retry.`);
       }
-
-      if (allGroups.length !== totalGroups) {
-        throw new Error("The export did not include all matching journals.");
+      const blob = await response.blob();
+      if (controller.signal.aborted) return;
+      const url = URL.createObjectURL(blob);
+      try {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `General_Journal_Export.${extension}`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      } finally {
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
       }
-
-      const activeFilters = getAppliedFilterChips(filters, filterOptions)
-        .filter((chip) => chip.key !== "period")
-        .map((chip) => chip.label);
-
-      toast.loading(`Generating ${type} report...`, { id: toastId });
-      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-
-      if (type === "Excel") {
-        exportJournalToExcel(allGroups, dateRangeText, "General_Journal_Export.xlsx", activeFilters);
-        toast.success("Excel exported successfully!", { id: toastId });
-      } else {
-        exportJournalToPdf(allGroups, dateRangeText, "General_Journal_Export.pdf", activeFilters);
-        toast.success("PDF exported successfully!", { id: toastId });
-      }
-    } catch (err) {
-      console.error("Export Error:", err);
-      toast.error(`Failed to export ${type}`, { id: toastId });
+      toast.success(`${type} exported successfully!`, { id: toastId });
+    } catch (error) {
+      if (!controller.signal.aborted) toast.error(error instanceof Error ? error.message : `Failed to export ${type}`, { id: toastId });
     } finally {
-      setIsExporting(null);
+      if (controller.signal.aborted) toast.dismiss(toastId);
+      if (exportControllerRef.current === controller) {
+        exportControllerRef.current = null;
+        setIsExporting(null);
+      }
     }
   };
 
@@ -373,48 +348,6 @@ function JournalEntryDashboard() {
       />
     </div>
   );
-}
-
-type AppliedFilterKey = "search" | "period" | "entryType" | "status" | "branch" | "division" | "department" | "sourceModule" | "coa" | "accountNumber";
-
-function getAppliedFilterChips(filters: FilterState, options: JournalEntryFilterOptions) {
-  const chips: { key: AppliedFilterKey; label: string }[] = [];
-  const now = new Date();
-  const currentMonthStart = format(new Date(now.getFullYear(), now.getMonth(), 1), "yyyy-MM-dd");
-  const currentMonthEnd = format(new Date(now.getFullYear(), now.getMonth() + 1, 0), "yyyy-MM-dd");
-  const isDefaultPeriod = filters.presetRange === "Monthly"
-    && filters.selectedMonth === now.getMonth()
-    && filters.selectedYear === now.getFullYear()
-    && filters.startDate.slice(0, 10) === currentMonthStart
-    && filters.endDate.slice(0, 10) === currentMonthEnd;
-
-  if (filters.search.trim()) chips.push({ key: "search", label: `Search: ${filters.search.trim()}` });
-  if (!isDefaultPeriod) {
-    const period = filters.presetRange === "Custom"
-      ? `${format(new Date(filters.startDate), "MMM d, yyyy")} – ${format(new Date(filters.endDate), "MMM d, yyyy")}`
-      : filters.presetRange === "Monthly"
-        ? format(new Date(filters.selectedYear, filters.selectedMonth, 1), "MMMM yyyy")
-        : filters.presetRange === "Quarterly"
-          ? `Q${filters.selectedQuarter} ${filters.selectedYear}`
-          : String(filters.selectedYear);
-    chips.push({ key: "period", label: `Period: ${period}` });
-  }
-  if (filters.status !== "All Statuses") chips.push({ key: "status", label: `Status: ${filters.status}` });
-
-  const addLookupChip = (key: "branch" | "division" | "department", allLabel: string, label: string, lookup: JournalEntryFilterOption[]) => {
-    if (filters[key] === allLabel) return;
-    const option = lookup.find((item) => item.id === filters[key]);
-    chips.push({ key, label: `${label}: ${option?.name ?? filters[key]}` });
-  };
-
-  addLookupChip("branch", "All Branches", "Branch", options.branches);
-  addLookupChip("division", "All Divisions", "Division", options.divisions);
-  addLookupChip("department", "All Departments", "Department", options.departments);
-  if (filters.entryType && filters.entryType !== "All Entry Types") chips.push({ key: "entryType", label: `Type: ${filters.entryType}` });
-  if (filters.sourceModule !== "All Source Modules") chips.push({ key: "sourceModule", label: `Source: ${filters.sourceModule}` });
-  if (filters.coa !== "All Accounts") chips.push({ key: "coa", label: `Account: ${filters.coa}` });
-  if (filters.accountNumber) chips.push({ key: "accountNumber", label: `Account no.: ${filters.accountNumber}` });
-  return chips;
 }
 
 // Inline Badge for local use if UI component is not globally exposed in index

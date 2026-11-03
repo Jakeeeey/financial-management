@@ -26,7 +26,6 @@ import {
 import { format } from "date-fns";
 import { ShieldCheck, Printer, FileDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { exportJournalToExcel, exportJournalToPdf } from "../services/export.service";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { adjustingJournalEntriesApi } from "../../adjusting-journal-entries/services/adjusting-journal-entries.api";
@@ -169,9 +168,10 @@ function JournalEntryDetailContent({ group, open, onOpenChange, onRestoreFocus }
               variant="outline" 
               size="sm" 
               className="h-9 text-sm font-semibold gap-1.5"
-              onClick={() => {
+              onClick={async () => {
                 try {
                   const dateStr = `Transaction Date: ${format(new Date(group.transactionDate), "MMMM d, yyyy")}`;
+                  const { exportJournalToPdf } = await import("../services/export.service");
                   exportJournalToPdf([group], dateStr, `Journal_Entry_${group.jeNo}.pdf`);
                   toast.success("PDF exported successfully!");
                 } catch {
@@ -184,9 +184,10 @@ function JournalEntryDetailContent({ group, open, onOpenChange, onRestoreFocus }
             <Button 
               size="sm" 
               className="h-9 text-sm font-semibold gap-1.5"
-              onClick={() => {
+              onClick={async () => {
                 try {
                   const dateStr = `Transaction Date: ${format(new Date(group.transactionDate), "MMMM d, yyyy")}`;
+                  const { exportJournalToExcel } = await import("../services/export.service");
                   exportJournalToExcel([group], dateStr, `Journal_Entry_${group.jeNo}.xlsx`);
                   toast.success("Excel exported successfully!");
                 } catch {
