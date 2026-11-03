@@ -38,7 +38,10 @@ export default function JournalEntryModule() {
 function JournalEntryDashboard() {
   const { 
     paginatedGroups,
-    analytics, 
+    analytics,
+    analyticsLoading,
+    analyticsError,
+    refreshAnalytics,
     filters, 
     setFilters, 
     uniqueSourceModules,
@@ -322,15 +325,20 @@ function JournalEntryDashboard() {
           )}
 
           {/* Summary Stats */}
-          <SummaryCards data={analytics} loading={isLoading} />
+          {analyticsError ? (
+            <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm">
+              <p>{analyticsError}</p>
+              <Button variant="outline" size="sm" onClick={() => void refreshAnalytics()}>Retry analytics</Button>
+            </div>
+          ) : <SummaryCards data={analytics} loading={analyticsLoading} />}
 
           <section aria-labelledby="journal-more-analytics" className="min-w-0 space-y-4">
             <div className="rounded-lg border bg-card px-4 py-3 shadow-sm">
               <h2 id="journal-more-analytics" className="text-sm font-semibold">More analytics</h2>
               <p className="text-xs text-muted-foreground">Secondary metrics, status breakdown, and high-risk entries</p>
             </div>
-            <SecondarySummaryCards data={analytics} loading={isLoading} />
-            {!isLoading && <RiskInsights data={analytics} onOpenJournal={openRiskJournal} />}
+            {!analyticsError && <SecondarySummaryCards data={analytics} loading={analyticsLoading} />}
+            {!analyticsLoading && !analyticsError && <RiskInsights data={analytics} onOpenJournal={openRiskJournal} />}
           </section>
 
           {/* Grouped Table with Loading State */}
