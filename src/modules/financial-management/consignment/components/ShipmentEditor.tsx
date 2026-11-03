@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { AlertCircle } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -31,7 +31,6 @@ export function ShipmentEditor({ initial, editing, onClose, onSaved, returnFocus
   const [preview, setPreview] = useState<ShipmentPreview | null>(null);
   const [previewStale, setPreviewStale] = useState(false);
   const [error, setError] = useState<ShipmentError | null>(null);
-  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [action, setAction] = useState<"save" | "preview" | "submit" | "reload" | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -52,7 +51,8 @@ export function ShipmentEditor({ initial, editing, onClose, onSaved, returnFocus
   const changed = () => {
     setDirty(true);
     setPreviewStale(Boolean(preview));
-    setNotice("");
+    toast.dismiss("shipment-preview-success");
+    if (preview && !previewStale) toast.warning("Preview is stale", { id: "shipment-preview-stale", description: "Refresh it after saving your changes." });
     setError(null);
   };
 
@@ -70,7 +70,6 @@ export function ShipmentEditor({ initial, editing, onClose, onSaved, returnFocus
     setBusy(true);
     setAction(nextAction);
     setError(null);
-    setNotice("");
     try {
       if (nextAction === "save") {
         const result = await saveShipment(saved?.summary.id ?? null, draft());
@@ -79,12 +78,15 @@ export function ShipmentEditor({ initial, editing, onClose, onSaved, returnFocus
         setDirty(false);
         setPreview(null);
         setPreviewStale(false);
-        setNotice("Shipment draft saved. No inventory or ledger changes were made.");
+        toast.dismiss("shipment-preview-stale");
+        toast.success("Draft saved", { description: "No inventory or ledger changes were made." });
         onSaved();
       } else if (nextAction === "preview") {
         const result = await previewShipment(draft());
         setPreview(result);
         setPreviewStale(false);
+        toast.dismiss("shipment-preview-stale");
+        toast.success("Preview refreshed", { id: "shipment-preview-success", duration: 3000 });
       } else if (saved) {
         const result = await submitShipment(saved.summary.id, saved.summary.version);
         setSaved(result);
@@ -92,7 +94,8 @@ export function ShipmentEditor({ initial, editing, onClose, onSaved, returnFocus
         setPreview(null);
         setPreviewStale(false);
         setDirty(false);
-        setNotice("Shipment submitted for independent review. No inventory or ledger changes were made.");
+        toast.dismiss("shipment-preview-stale");
+        toast.success("Shipment submitted", { description: "Status changed to Pending. No inventory or ledger changes were made." });
         onSaved();
       }
     } catch (cause) {
@@ -101,6 +104,13 @@ export function ShipmentEditor({ initial, editing, onClose, onSaved, returnFocus
       if (failure.preview) {
         setPreview(failure.preview);
         setPreviewStale(false);
+      }
+      if (failure.status === 409) {
+        toast.error("Shipment changed", { description: "Reload the saved shipment before continuing.", action: { label: "Reload", onClick: () => void reload() } });
+      } else if (Object.keys(failure.fieldErrors).length) {
+        toast.error("Check the shipment fields", { description: failure.message });
+      } else {
+        toast.error("Shipment action failed", { description: failure.message });
       }
       focusFailure(failure);
     } finally {
@@ -128,10 +138,12 @@ export function ShipmentEditor({ initial, editing, onClose, onSaved, returnFocus
       setDirty(false);
       setPreview(null);
       setPreviewStale(false);
-      setNotice("Saved shipment reloaded. Review the latest values before continuing.");
+      toast.dismiss("shipment-preview-stale");
+      toast.success("Saved shipment reloaded");
     } catch (cause) {
       const failure = cause instanceof ShipmentError ? cause : new ShipmentError("Unable to reload the saved shipment.", 503);
       setError(failure);
+      toast.error("Unable to reload shipment", { description: failure.message });
     } finally {
       running.current = false;
       setBusy(false);
@@ -169,9 +181,6 @@ export function ShipmentEditor({ initial, editing, onClose, onSaved, returnFocus
 
       <div className="min-h-0 min-w-0 space-y-5 overflow-y-auto px-4 py-4 sm:px-6">
         <ShipmentFormErrorSummary errors={error?.fieldErrors ?? {}} summaryRef={errorSummaryRef} />
-        {error && !Object.keys(error.fieldErrors).length && <div role="alert" aria-live="polite" className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"><AlertCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0" /><p>{error.message}</p></div>}
-        {notice && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">{notice}</p>}
-        {previewStale && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">The preview is stale. Refresh it after saving your changes.</p>}
         {readOnly && saved?.summary.status === "PENDING" && <p className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">This shipment is Pending. Open the Review action to post it as an independent reviewer.</p>}
 
         <section aria-labelledby="shipment-agreement-heading" className="space-y-4 rounded-lg border p-4">
@@ -233,7 +242,6 @@ export function ShipmentEditor({ initial, editing, onClose, onSaved, returnFocus
         <ShipmentPreviewPanel preview={preview} />
         {preview && <ShipmentBlockerPanel blockers={preview.blockers} onFocusField={focusShipmentField} />}
 
-        {error?.status === 409 && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/40 p-3 text-sm text-destructive"><p>This shipment changed while you were editing it.</p><Button size="sm" variant="outline" disabled={busy} onClick={() => void reload()}>Reload saved shipment</Button></div>}
       </div>
 
       <DialogFooter className="shrink-0 flex-wrap items-center gap-2 border-t px-4 py-4 sm:px-6">

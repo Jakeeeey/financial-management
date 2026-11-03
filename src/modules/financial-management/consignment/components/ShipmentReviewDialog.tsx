@@ -22,9 +22,9 @@ export function ShipmentReviewDialog({ initial, onClose, returnFocus, onChanged 
   const [preview, setPreview] = useState<ShipmentPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [loadingPreview, setLoadingPreview] = useState(initial.summary.status === "PENDING");
-  const [error, setError] = useState<ShipmentError | null>(null);
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
+  const [reasonError, setReasonError] = useState("");
   const [confirmChangedCosts, setConfirmChangedCosts] = useState(false);
   const requestId = useRef(crypto.randomUUID());
   const running = useRef(false);
@@ -36,12 +36,12 @@ export function ShipmentReviewDialog({ initial, onClose, returnFocus, onChanged 
       return;
     }
     setLoadingPreview(true);
-    setError(null);
     try {
       setPreview(await postingPreview(detail.summary.id));
+      toast.dismiss("shipment-posting-preview-error");
     } catch (cause) {
       const failure = cause instanceof ShipmentError ? cause : new ShipmentError("Unable to load the posting preview.", 503);
-      setError(failure);
+      toast.error("Unable to load posting preview", { id: "shipment-posting-preview-error", description: failure.message, action: { label: "Retry", onClick: () => void loadPreview() } });
       if (failure.preview) setPreview(failure.preview);
     } finally {
       setLoadingPreview(false);
@@ -54,7 +54,6 @@ export function ShipmentReviewDialog({ initial, onClose, returnFocus, onChanged 
     if (running.current || !preview) return;
     running.current = true;
     setBusy(true);
-    setError(null);
     try {
       const result = await postShipment(detail.summary.id, {
         version: detail.summary.version,
@@ -69,8 +68,10 @@ export function ShipmentReviewDialog({ initial, onClose, returnFocus, onChanged 
       onChanged();
     } catch (cause) {
       const failure = cause instanceof ShipmentError ? cause : new ShipmentError("The posting result is unknown. Check the shipment status before retrying.", 503);
-      setError(failure);
       if (failure.preview) setPreview(failure.preview);
+      if (failure.status === 409) toast.error("Shipment changed", { description: "Reload the posting preview before retrying.", action: { label: "Reload preview", onClick: () => void loadPreview() } });
+      else if (failure.status >= 500) toast.error("Posting status unknown", { description: "Check the shipment status before retrying.", action: { label: "Check status", onClick: () => void checkStatus() } });
+      else toast.error("Unable to post shipment", { description: failure.message });
     } finally {
       running.current = false;
       setBusy(false);
@@ -80,12 +81,13 @@ export function ShipmentReviewDialog({ initial, onClose, returnFocus, onChanged 
   const reject = async () => {
     if (running.current) return;
     if (!reason.trim() || reason.trim().length > 1000) {
-      setError(new ShipmentError("Enter a rejection reason of 1 to 1,000 characters.", 400, { reason: "A rejection reason is required." }));
+      setReasonError("Enter a rejection reason of 1 to 1,000 characters.");
+      document.getElementById("shipment-rejection-reason")?.focus();
       return;
     }
     running.current = true;
     setBusy(true);
-    setError(null);
+    setReasonError("");
     try {
       const result = await rejectShipment(detail.summary.id, detail.summary.version, reason.trim());
       setDetail(result);
@@ -95,8 +97,8 @@ export function ShipmentReviewDialog({ initial, onClose, returnFocus, onChanged 
       onChanged();
     } catch (cause) {
       const failure = cause instanceof ShipmentError ? cause : new ShipmentError("Unable to reject the shipment.", 503);
-      setError(failure);
       if (failure.preview) setPreview(failure.preview);
+      toast.error("Unable to reject shipment", { description: failure.message });
     } finally {
       running.current = false;
       setBusy(false);
@@ -114,11 +116,12 @@ export function ShipmentReviewDialog({ initial, onClose, returnFocus, onChanged 
         toast.success("The shipment is posted.");
         onChanged();
       } else {
-        setError(new ShipmentError("The shipment is still Pending. Refresh the preview before retrying.", 409));
+        toast.warning("Shipment is still Pending", { description: "Refresh the preview before retrying." });
         await loadPreview();
       }
     } catch (cause) {
-      setError(cause instanceof ShipmentError ? cause : new ShipmentError("Unable to check the shipment status.", 503));
+      const failure = cause instanceof ShipmentError ? cause : new ShipmentError("Unable to check the shipment status.", 503);
+      toast.error("Unable to check posting status", { description: failure.message });
     } finally {
       running.current = false;
       setBusy(false);
@@ -155,14 +158,6 @@ export function ShipmentReviewDialog({ initial, onClose, returnFocus, onChanged 
       </DialogHeader>
 
       <div className="min-h-0 min-w-0 space-y-5 overflow-y-auto px-4 py-4 sm:px-6">
-        {error && <div role="alert" aria-live="polite" className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
-          <p>{error.message}</p>
-          {Object.keys(error.fieldErrors).length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5">{Object.entries(error.fieldErrors).map(([field, message]) => <li key={field}>{field}: {message}</li>)}</ul>}
-          <div className="mt-2 flex flex-wrap gap-2">
-            {error.status === 409 && pending && <Button size="sm" variant="outline" disabled={busy} onClick={() => void loadPreview()}>Reload preview</Button>}
-            {error.status >= 500 && pending && <Button size="sm" variant="outline" disabled={busy} onClick={() => void checkStatus()}>Check posting status</Button>}
-          </div>
-        </div>}
         {detail.summary.reviewRestriction && <p role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">{detail.summary.reviewRestriction}</p>}
 
         <section aria-labelledby="shipment-workflow-heading" className="space-y-3">
@@ -203,17 +198,17 @@ export function ShipmentReviewDialog({ initial, onClose, returnFocus, onChanged 
 
         {rejecting && <section className="space-y-2 rounded-lg border border-destructive/40 p-4">
           <label htmlFor="shipment-rejection-reason" className="text-sm font-medium">Rejection reason</label>
-          <Input id="shipment-rejection-reason" value={reason} maxLength={1000} disabled={busy} onChange={event => setReason(event.target.value)} />
-          <p className="text-xs text-muted-foreground">{reason.length}/1000 characters</p>
+          <Input id="shipment-rejection-reason" value={reason} maxLength={1000} disabled={busy} aria-invalid={Boolean(reasonError)} aria-describedby="shipment-rejection-reason-help" onChange={event => { setReason(event.target.value); setReasonError(""); }} />
+          <p id="shipment-rejection-reason-help" className={`text-xs ${reasonError ? "text-destructive" : "text-muted-foreground"}`}>{reasonError || `${reason.length}/1000 characters`}</p>
         </section>}
       </div>
 
       <DialogFooter className="shrink-0 flex-wrap items-center gap-2 border-t px-4 py-4 sm:px-6">
-        <div className="mr-auto min-w-0 text-xs text-muted-foreground" aria-live="polite">{busy ? "Processing..." : postReason ?? (posted ? "Shipment posted successfully." : rejected ? "Shipment rejected." : "")}</div>
+        <div className="mr-auto min-w-0 text-xs text-muted-foreground" aria-live="polite">{busy ? "Processing..." : postReason ?? ""}</div>
         <Button variant="outline" disabled={busy} onClick={requestClose}>Close</Button>
         {posted && <p className="text-sm text-muted-foreground">Shared journal #{detail.summary.journalEntryId}</p>}
         {pending && !rejecting && <><Button variant="outline" disabled={busy || !detail.summary.canReject} onClick={() => setRejecting(true)}>Reject</Button><Button disabled={busy || Boolean(postReason)} title={postReason ?? undefined} onClick={() => void post()}>{busy ? "Posting..." : "Post shipment"}</Button></>}
-        {pending && rejecting && <><Button variant="outline" disabled={busy} onClick={() => { setRejecting(false); setError(null); }}>Cancel rejection</Button><Button variant="destructive" disabled={busy || !reason.trim()} onClick={() => void reject()}>{busy ? "Rejecting..." : "Confirm rejection"}</Button></>}
+        {pending && rejecting && <><Button variant="outline" disabled={busy} onClick={() => { setRejecting(false); setReasonError(""); }}>Cancel rejection</Button><Button variant="destructive" disabled={busy || !reason.trim()} onClick={() => void reject()}>{busy ? "Rejecting..." : "Confirm rejection"}</Button></>}
       </DialogFooter>
     </DialogContent>
   </Dialog>;
