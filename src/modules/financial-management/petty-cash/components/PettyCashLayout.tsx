@@ -9,6 +9,7 @@ import { NavUser } from "@/components/shared/app-sidebar/nav-user";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { PETTY_CASH_ROOT, PETTY_CASH_WORKSPACES, isPettyCashWorkspace, type PettyCashContext, type PettyCashWorkspaceKey } from "../types";
 import { loadPettyCashContext, PettyCashApiError } from "../providers/foundation.api";
+import PettyCashOnboardingModule from "../PettyCashOnboardingModule";
 
 const Context = createContext<PettyCashContext | null>(null);
 
@@ -35,13 +36,14 @@ function PettyCashPageAccess({ children }: { children: ReactNode }) {
     return () => controller.abort();
   }, [retry, router]);
   return <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
-    <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b px-4">
-      <div className="flex min-w-0 items-center gap-3"><SidebarTrigger /><Breadcrumb><BreadcrumbList>
-        <BreadcrumbItem><BreadcrumbLink asChild><Link href="/fm">FM</Link></BreadcrumbLink></BreadcrumbItem><BreadcrumbSeparator />
-        <BreadcrumbItem><BreadcrumbLink asChild><Link href={PETTY_CASH_ROOT}>Petty Cash</Link></BreadcrumbLink></BreadcrumbItem>
-        {isPettyCashWorkspace(key) && <><BreadcrumbSeparator /><BreadcrumbItem><BreadcrumbPage>{title}</BreadcrumbPage></BreadcrumbItem></>}
+    <header className="flex h-16 min-w-0 shrink-0 items-center justify-between gap-2 border-b bg-background px-3 sm:px-4">
+      <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3"><SidebarTrigger className="shrink-0" /><Breadcrumb className="min-w-0"><BreadcrumbList className="flex-nowrap overflow-hidden whitespace-nowrap">
+        <BreadcrumbItem className="hidden shrink-0 md:inline-flex"><BreadcrumbLink asChild><Link href="/fm">FM</Link></BreadcrumbLink></BreadcrumbItem><BreadcrumbSeparator className="hidden shrink-0 md:block" />
+        <BreadcrumbItem className="hidden shrink-0 sm:inline-flex"><BreadcrumbLink asChild><Link href={PETTY_CASH_ROOT}>Petty Cash</Link></BreadcrumbLink></BreadcrumbItem>
+        {isPettyCashWorkspace(key) && <><BreadcrumbSeparator className="hidden shrink-0 sm:block" /><BreadcrumbItem className="min-w-0 overflow-hidden"><BreadcrumbPage className="truncate" title={`Petty Cash / ${title}`}>{title}</BreadcrumbPage></BreadcrumbItem></>}
+        {!isPettyCashWorkspace(key) && <BreadcrumbItem className="sm:hidden"><BreadcrumbPage>Petty Cash</BreadcrumbPage></BreadcrumbItem>}
       </BreadcrumbList></Breadcrumb></div>
-      {context && <NavUser user={{ name: context.actorName, email: "" }} />}
+      {context && <div data-petty-cash-user className="w-36 max-w-[44vw] shrink-0 sm:w-56 [&_[data-slot=sidebar-menu-button]]:min-w-0 [&_[data-slot=sidebar-menu-button]>div]:min-w-0"><NavUser user={{ name: context.actorName, email: "" }} subsystemSlug="fm" /></div>}
     </header>
     <main className="min-h-0 min-w-0 flex-1 overflow-auto p-4 md:p-6" aria-busy={loading}>
       {loading ? <p role="status" className="text-sm text-muted-foreground">Loading Petty Cash access…</p> : error ?
@@ -61,6 +63,7 @@ export function PettyCashWorkspace({ workspace }: { workspace?: PettyCashWorkspa
   if (!workspace) return <div className="rounded-xl border p-6"><h1 className="text-2xl font-semibold">Petty Cash</h1>
     <p className="mt-2 text-muted-foreground" role="status">{first ? "Opening your workspace…" : "No Petty Cash submodules assigned. Ask your administrator to assign the required child modules."}</p></div>;
   if (!context.workspaces.some(item => item.key === workspace)) return <div role="alert" className="rounded-xl border p-6"><h1 className="text-xl font-semibold">Access denied</h1><p className="mt-2">You do not have access to this Petty Cash workspace.</p></div>;
+  if (workspace === "onboarding" && context.workspaces.find(item => item.key === workspace)?.capabilities.includes("READ_ONBOARDING")) return <PettyCashOnboardingModule />;
   return <section className="space-y-4"><div><h1 className="text-2xl font-semibold tracking-tight">{PETTY_CASH_WORKSPACES[workspace].title}</h1>
     <p className="mt-2 text-sm text-muted-foreground">{PETTY_CASH_WORKSPACES[workspace].description}</p></div>
     <div className="rounded-xl border bg-card p-5"><h2 className="font-medium">Foundation only</h2><p className="mt-2 text-sm text-muted-foreground">This workspace is registered and access is verified. Its operational workflow will be delivered in a later increment.</p></div>
