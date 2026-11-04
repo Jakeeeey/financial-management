@@ -20,11 +20,14 @@ const navigationSchema = z.object({
 });
 const workspaceSchema = z.object({
   key: z.string().refine(isPettyCashWorkspace), title: z.string(), path: z.string(),
-  stage: z.literal("FOUNDATION"), capabilities: z.array(z.string()).max(0),
-}).refine(item => item.path === `${PETTY_CASH_ROOT}/${item.key}`);
+  stage: z.enum(["FOUNDATION", "ONBOARDING"]),
+  capabilities: z.array(z.enum(["READ_ONBOARDING", "EDIT_SETTINGS", "MANAGE_PAYEE_PROFILES", "MANAGE_TAX_RULES"])).max(4),
+}).refine(item => item.path === `${PETTY_CASH_ROOT}/${item.key}`)
+  .refine(item => item.stage === "FOUNDATION" ? item.capabilities.length === 0
+    : item.key === "onboarding" && item.capabilities.includes("READ_ONBOARDING"));
 const contextSchema = z.object({
   actorId: z.number().int().positive(), actorName: z.string(), parent: navigationSchema,
-  workspaces: z.array(workspaceSchema).max(8), stage: z.literal("FOUNDATION"),
+  workspaces: z.array(workspaceSchema).max(8), stage: z.enum(["FOUNDATION", "ONBOARDING"]),
 });
 export type PettyCashContext = z.infer<typeof contextSchema>;
 export function parsePettyCashContext(value: unknown): PettyCashContext {
