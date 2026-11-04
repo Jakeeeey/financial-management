@@ -6,10 +6,11 @@ const messages: Record<number, string> = {
   400: "The Petty Cash request is invalid.", 401: "Your session expired. Please sign in again.",
   403: "You do not have access to this Petty Cash workspace.", 404: "Petty Cash resource not found.",
   409: "This record changed. Reload before trying again.", 429: "Too many requests. Please wait and retry.",
+  413: "File size exceeds the 5 MB limit.", 415: "Choose a JPG, PNG, or PDF file.",
 };
 
-export async function readPettyCash(path: string, init?: RequestInit) {
-  const upstream = await proxySpring(`/api/petty-cash/${path}`, { ...init, cache: "no-store", signal: AbortSignal.timeout(15_000) });
+export async function readPettyCash(path: string, init?: RequestInit, tokenOverride?: string) {
+  const upstream = await proxySpring(`/api/petty-cash/${path}`, { ...init, cache: "no-store", signal: init?.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000) }, tokenOverride);
   let body: unknown;
   try { body = await upstream.json(); } catch { body = null; }
   let status = upstream.status;

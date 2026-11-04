@@ -20,14 +20,17 @@ const navigationSchema = z.object({
 });
 const workspaceSchema = z.object({
   key: z.string().refine(isPettyCashWorkspace), title: z.string(), path: z.string(),
-  stage: z.enum(["FOUNDATION", "ONBOARDING"]),
-  capabilities: z.array(z.enum(["READ_ONBOARDING", "EDIT_SETTINGS", "MANAGE_PAYEE_PROFILES", "MANAGE_TAX_RULES", "SUBMIT_FUND_REQUEST"])).max(5),
+  stage: z.enum(["FOUNDATION", "ONBOARDING", "VOUCHER_DRAFTS", "FUND_APPROVAL", "FUND_MASTER"]),
+  capabilities: z.array(z.enum(["READ_ONBOARDING", "EDIT_SETTINGS", "MANAGE_PAYEE_PROFILES", "MANAGE_TAX_RULES", "SUBMIT_FUND_REQUEST", "EDIT_PENDING_FUNDS", "DELETE_PENDING_FUNDS", "READ_VOUCHER_DRAFTS", "EDIT_VOUCHER_DRAFTS", "READ_FUND_APPROVALS", "DECIDE_FUND_REQUESTS", "READ_FUND_MASTER"])).max(7),
 }).refine(item => item.path === `${PETTY_CASH_ROOT}/${item.key}`)
   .refine(item => item.stage === "FOUNDATION" ? item.capabilities.length === 0
-    : item.key === "onboarding" && item.capabilities.includes("READ_ONBOARDING"));
+    : item.stage === "ONBOARDING" ? item.key === "onboarding" && item.capabilities.includes("READ_ONBOARDING")
+      : item.stage === "VOUCHER_DRAFTS" ? item.key === "disbursement" && item.capabilities.includes("READ_VOUCHER_DRAFTS")
+        : item.stage === "FUND_APPROVAL" ? item.key === "onboarding-approval" && item.capabilities.includes("READ_FUND_APPROVALS")
+          : item.key === "master-list" && item.capabilities.includes("READ_FUND_MASTER"));
 const contextSchema = z.object({
   actorId: z.number().int().positive(), actorName: z.string(), parent: navigationSchema,
-  workspaces: z.array(workspaceSchema).max(8), stage: z.enum(["FOUNDATION", "ONBOARDING"]),
+  workspaces: z.array(workspaceSchema).max(8), stage: z.enum(["FOUNDATION", "ONBOARDING", "VOUCHER_DRAFTS"]),
 });
 export type PettyCashContext = z.infer<typeof contextSchema>;
 export function parsePettyCashContext(value: unknown): PettyCashContext {
