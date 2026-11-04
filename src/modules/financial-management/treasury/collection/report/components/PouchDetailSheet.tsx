@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { format, parseISO } from "date-fns";
 import {
+    AlertTriangle,
     ArrowRight,
     Banknote,
     CheckCircle2,
@@ -22,6 +23,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PouchReportDto } from "../hooks/useCollectionReport";
+import { usePouchCashBreakdown } from "../hooks/usePouchCashBreakdown";
 
 interface PouchDetailSheetProps {
     pouch: PouchReportDto | null;
@@ -49,6 +51,13 @@ export function PouchDetailSheet({ pouch, isOpen, onClose, onPrint, isPrinting =
         key: "invoiceNo",
         direction: "asc",
     });
+    const {
+        rows: cashBreakdownRows,
+        countedTotal: countedCashTotal,
+        isLoading: isCashBreakdownLoading,
+        error: cashBreakdownError,
+        retry: retryCashBreakdown,
+    } = usePouchCashBreakdown(pouch?.id ?? null, isOpen && Boolean(pouch));
 
     const handleSort = (key: SortKey) => {
         setSortConfig((previous) => ({
@@ -92,6 +101,10 @@ export function PouchDetailSheet({ pouch, isOpen, onClose, onPrint, isPrinting =
     const checks = pouch.checks ?? [];
     const variances = pouch.variances ?? [];
     const netVariance = pouch.overage - pouch.shortage;
+    const countedCashQuantity = cashBreakdownRows.every((row) => row.quantity != null)
+        ? cashBreakdownRows.reduce((total, row) => total + (row.quantity ?? 0), 0)
+        : null;
+    const cashBreakdownDifference = Math.abs(countedCashTotal - pouch.totalCash);
 
     return (
         <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -166,6 +179,83 @@ export function PouchDetailSheet({ pouch, isOpen, onClose, onPrint, isPrinting =
                                             <h3 className="text-xs font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-400">Physical Cash</h3>
                                         </div>
                                         <span className="font-mono text-2xl font-black tracking-tight text-emerald-700 dark:text-emerald-400">{formatMoney(pouch.totalCash)}</span>
+                                    </div>
+
+                                    <div className="border-t border-emerald-200/60 px-5 pb-5 pt-3 dark:border-emerald-900/40">
+                                        <div className="mb-2 flex items-center justify-between gap-3">
+                                            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700/80 dark:text-emerald-400/80">Cash Count Breakdown</p>
+                                            {!isCashBreakdownLoading && !cashBreakdownError && cashBreakdownRows.length > 0 && (
+                                                <span className="text-[10px] font-semibold text-muted-foreground">
+                                                    {cashBreakdownRows.length} denomination{cashBreakdownRows.length === 1 ? "" : "s"}
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        {isCashBreakdownLoading ? (
+                                            <div className="space-y-2 py-1" aria-label="Loading cash breakdown">
+                                                <div className="h-6 animate-pulse rounded-md bg-emerald-100/70 dark:bg-emerald-900/30" />
+                                                <div className="h-6 animate-pulse rounded-md bg-emerald-100/50 dark:bg-emerald-900/20" />
+                                            </div>
+                                        ) : cashBreakdownError ? (
+                                            <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 dark:border-amber-900/40 dark:bg-amber-950/20">
+                                                <span className="flex items-center gap-1.5 text-[11px] font-medium text-amber-700 dark:text-amber-400">
+                                                    <AlertTriangle size={13} /> Cash breakdown unavailable.
+                                                </span>
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-7 px-2 text-[10px] font-bold uppercase tracking-wider text-amber-700 hover:bg-amber-100 dark:text-amber-400"
+                                                    onClick={retryCashBreakdown}
+                                                >
+                                                    Retry
+                                                </Button>
+                                            </div>
+                                        ) : cashBreakdownRows.length === 0 ? (
+                                            <p className="rounded-lg border border-dashed border-emerald-200/70 bg-background/60 px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground dark:border-emerald-900/40">
+                                                {pouch.totalCash > 0
+                                                    ? "No denomination counts were recorded for this pouch. The reported physical cash total is shown above."
+                                                    : "No physical cash was recorded for this pouch."}
+                                            </p>
+                                        ) : (
+                                            <div className="overflow-hidden rounded-lg border border-emerald-200/60 bg-background/70 dark:border-emerald-900/40">
+                                                <table className="w-full border-collapse text-xs">
+                                                    <thead className="bg-emerald-50/70 dark:bg-emerald-950/20">
+                                                        <tr>
+                                                            <th className="py-1.5 pl-3 text-left text-[10px] font-bold uppercase tracking-wider text-emerald-700/80 dark:text-emerald-400/80">Denomination</th>
+                                                            <th className="py-1.5 text-right text-[10px] font-bold uppercase tracking-wider text-emerald-700/80 dark:text-emerald-400/80">Qty</th>
+                                                            <th className="py-1.5 pr-3 text-right text-[10px] font-bold uppercase tracking-wider text-emerald-700/80 dark:text-emerald-400/80">Amount</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {cashBreakdownRows.map((row) => (
+                                                            <tr key={row.key} className="border-t border-emerald-100/70 dark:border-emerald-900/30">
+                                                                <td className="py-1.5 pl-3 font-mono font-bold text-foreground">{row.denomination != null ? formatMoney(row.denomination) : "Cash entry"}</td>
+                                                                <td className="py-1.5 text-right font-mono text-muted-foreground">{row.quantity != null ? row.quantity.toLocaleString() : "\u2014"}</td>
+                                                                <td className="py-1.5 pr-3 text-right font-mono font-bold text-foreground">{formatMoney(row.amount)}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                    <tfoot className="border-t border-emerald-200/70 bg-emerald-50/50 dark:border-emerald-900/40 dark:bg-emerald-950/20">
+                                                        <tr>
+                                                            <td className="py-2 pl-3 text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-400">Total Counted</td>
+                                                            <td className="py-2 text-right font-mono text-[11px] font-bold text-emerald-700 dark:text-emerald-400">{countedCashQuantity != null ? countedCashQuantity.toLocaleString() : "\u2014"}</td>
+                                                            <td className="py-2 pr-3 text-right font-mono font-black text-emerald-700 dark:text-emerald-400">{formatMoney(countedCashTotal)}</td>
+                                                        </tr>
+                                                    </tfoot>
+                                                </table>
+                                            </div>
+                                        )}
+
+                                        {cashBreakdownRows.length > 0 && cashBreakdownDifference > 0.01 && (
+                                            <p className="mt-2 rounded-md border border-amber-200 bg-amber-50/70 px-2.5 py-1.5 text-[10px] font-medium text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-400">
+                                                Counted denominations differ from the reported physical cash by {formatMoney(cashBreakdownDifference)}.
+                                            </p>
+                                        )}
+
+                                        <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
+                                            Physical cash = sum of denomination amounts recorded during cashiering.
+                                        </p>
                                     </div>
                                 </Card>
 
