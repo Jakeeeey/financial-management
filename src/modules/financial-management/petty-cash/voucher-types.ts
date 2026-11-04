@@ -1,0 +1,10 @@
+import type { Choice } from "./onboarding-types";
+export type VoucherFund = { id: number; docNo: string; name: string; approvalDate: string; perVoucherLimit: string; approvalThreshold: string; expectedCash: string; version: number };
+export type VoucherLineInput = { key: string; documentType: string; receiptNo: string; expenseCoaId: number | null; gross: string; vatIncluded: boolean; vatRuleId: number | null; ewtRuleId: number | null };
+export type VoucherInput = { version: number; voucherId: number | null; fundId: number; payeeProfileId: number | null; date: string; particulars: string; lines: VoucherLineInput[]; previewToken?: string };
+export type VoucherAmounts = { gross: string; expenseBase: string; inputVat: string; ewt: string; netCash: string };
+export type VoucherLine = VoucherLineInput & { id: number; account: Choice; taxSnapshot: { vat: { id?: number; code?: string; rate?: string }; ewt: { id?: number; code?: string; rate?: string } }; amounts: VoucherAmounts };
+export type VoucherPreview = { token: string; fundId: number; payeeProfileId: number; payee: Choice; date: string; particulars: string; lines: VoucherLine[]; totals: VoucherAmounts };
+export type VoucherAttachment = { id: number; lineId: number; fileId: string; filename: string; mimeType: string; fileSize: number; sha256: string; state: "RESERVED" | "READY" | "REMOVED"; voucherVersion: number; stored: boolean };
+export type Voucher = { id: number; docNo: string; fundId: number; state: "DRAFT" | "DISCARDED"; version: number; createdAt: string; updatedAt: string; saved: VoucherPreview; attachments: VoucherAttachment[] };
+export const VOUCHER_DOCUMENTS = { INVOICE: "Invoice", OFFICIAL_RECEIPT: "Official receipt (supplementary)", ACKNOWLEDGEMENT: "Acknowledgement receipt", OTHER: "Other / no TIN" } as const;
