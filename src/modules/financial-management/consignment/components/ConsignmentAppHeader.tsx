@@ -15,6 +15,7 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 
 const WORKSPACE_TITLES: Record<string, string> = {
   shipments: "Shipments",
+  "stock-position": "Stock Position",
   policies: "Policies",
   consignees: "Consignees",
   "my-submissions": "My Submissions",
