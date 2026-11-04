@@ -12,7 +12,7 @@ import {
     DialogFooter
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Loader2, CheckCircle, FileText, User, Receipt, CreditCard, Layers, Printer, XCircle } from "lucide-react";
+import { Loader2, CheckCircle, FileText, User, Receipt, CreditCard, Layers, Printer, XCircle, FileSpreadsheet } from "lucide-react";
 import { fetchDetailedMemo, approveMemo, rejectMemo } from "../service";
 import { DetailedMemo, CompanyProfile } from "../types";
 import { toast } from "sonner";
@@ -26,9 +26,12 @@ interface ApprovalDetailModalProps {
     onOpenChange: (open: boolean) => void;
     onApproved?: () => void;
     readOnly?: boolean;
+    onExportExcel?: (id: number) => void;
+    exportingExcel?: boolean;
+    excelExportDisabled?: boolean;
 }
 
-export function ApprovalDetailModal({ memoId, open, onOpenChange, onApproved, readOnly = false }: ApprovalDetailModalProps) {
+export function ApprovalDetailModal({ memoId, open, onOpenChange, onApproved, readOnly = false, onExportExcel, exportingExcel = false, excelExportDisabled = false }: ApprovalDetailModalProps) {
     const [details, setDetails] = useState<DetailedMemo | null>(null);
     const [company, setCompany] = useState<CompanyProfile | null>(null);
     const [loading, setLoading] = useState(false);
@@ -300,6 +303,12 @@ export function ApprovalDetailModal({ memoId, open, onOpenChange, onApproved, re
                         >
                             <Printer className="h-4 w-4 mr-2" />
                             Print
+                        </Button>
+                    )}
+                    {onExportExcel && memoId !== null && (
+                        <Button variant="outline" onClick={() => onExportExcel(memoId)} disabled={loading || !details || excelExportDisabled} className="rounded-xl font-bold">
+                            {exportingExcel ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />}
+                            {exportingExcel ? "Exporting..." : "Export Excel"}
                         </Button>
                     )}
                     {(!readOnly && details?.header.status === "FOR APPROVAL") && (
