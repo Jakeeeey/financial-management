@@ -18,4 +18,10 @@ export type Profile = { id: number; version: number; supplierId: number; payeeKi
 export type TaxRule = { id: number; version: number; ruleKind: "VAT" | "EWT"; code: string; payeeKind: "INDIVIDUAL" | "CORPORATION" | "BOTH";
   rate: number; effectiveFrom: string; effectiveTo: string | null; documentTypes: string[]; state: "DRAFT" | "VERIFIED" | "RETIRED";
   sourceReference: string; verificationNote: string; verifiedBy: number | null; verifiedAt: string | null };
-export type Fund = { id: number; docNo: string; name: string | null; status: string; imprestAmount: number | null; perVoucherLimit: number | null; approvalThreshold: number | null; version: number };
+export type FundReference = { id: number; code: string; name: string };
+export type Fund = {
+  id: number; docNo: string; name: string | null; status: string; imprestAmount: number | null; perVoucherLimit: number | null; approvalThreshold: number | null;
+  expectedCash: number; version: number; createdAt: string; policyVersion: number | null;
+  branch: FundReference | null; department: FundReference | null; division: FundReference | null; custodian: FundReference | null;
+  requestedBy: FundReference | null; fundAccount: FundReference | null;
+};

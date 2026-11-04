@@ -32,9 +32,9 @@ function Choices({ label, resource, role, selected, onSelect }: { label: string;
       </CommandItem>)}
     </CommandGroup></CommandList>
     <div className="flex shrink-0 flex-wrap items-center gap-2 border-t p-2"><Button type="button" size="sm" variant="ghost" onClick={() => onSelect(null)}>Clear selection</Button>
-      {error ? <Button type="button" size="sm" variant="outline" onClick={refresh}>Retry choices</Button> : <>
+      {error ? <Button type="button" size="sm" variant="outline" onClick={refresh}>Retry choices</Button> : <div className="flex shrink-0 items-center gap-2 whitespace-nowrap">
         <Button type="button" aria-label="Previous choices" size="sm" variant="outline" disabled={loading || page === 1} onClick={() => setPage(value => value - 1)}>Previous</Button>
         <span className="text-xs">Page {page}</span><Button type="button" aria-label="Next choices" size="sm" variant="outline" disabled={loading || !data || page * data.pageSize >= data.total} onClick={() => setPage(value => value + 1)}>Next</Button>
-      </>}
+      </div>}
     </div></Command>;
 }

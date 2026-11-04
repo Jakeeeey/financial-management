@@ -21,7 +21,7 @@ const navigationSchema = z.object({
 const workspaceSchema = z.object({
   key: z.string().refine(isPettyCashWorkspace), title: z.string(), path: z.string(),
   stage: z.enum(["FOUNDATION", "ONBOARDING"]),
-  capabilities: z.array(z.enum(["READ_ONBOARDING", "EDIT_SETTINGS", "MANAGE_PAYEE_PROFILES", "MANAGE_TAX_RULES"])).max(4),
+  capabilities: z.array(z.enum(["READ_ONBOARDING", "EDIT_SETTINGS", "MANAGE_PAYEE_PROFILES", "MANAGE_TAX_RULES", "SUBMIT_FUND_REQUEST"])).max(5),
 }).refine(item => item.path === `${PETTY_CASH_ROOT}/${item.key}`)
   .refine(item => item.stage === "FOUNDATION" ? item.capabilities.length === 0
     : item.key === "onboarding" && item.capabilities.includes("READ_ONBOARDING"));
