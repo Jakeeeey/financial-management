@@ -47,5 +47,5 @@ export function useFundDecision() {
       setUncertain(unresolved); setError(failure); return null;
     } finally { active.current = false; setBusy(false); }
   }
-  return { run, busy, uncertain, error };
+  return { run, busy, uncertain, error, retry: () => pending.current ? run(pending.current.path, pending.current.payload) : Promise.resolve(null) };
 }

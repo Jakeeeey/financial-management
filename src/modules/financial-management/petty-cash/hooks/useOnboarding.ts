@@ -21,7 +21,7 @@ export function useOnboardingCommand() {
   const active = useRef(false); const identity = useRef<{ fingerprint: string; key: string } | null>(null);
   const failure = useRef<Error | null>(null);
   const [busy, setBusy] = useState(false); const [error, setError] = useState<Error | null>(null);
-  async function run<T>(path: string, method: "POST" | "PUT", payload: object): Promise<T | null> {
+  async function run<T>(path: string, method: "POST" | "PUT" | "PATCH", payload: object): Promise<T | null> {
     if (active.current) return null; active.current = true; failure.current = null; setBusy(true); setError(null);
     try {
       const fingerprint = JSON.stringify([path, method, payload]);

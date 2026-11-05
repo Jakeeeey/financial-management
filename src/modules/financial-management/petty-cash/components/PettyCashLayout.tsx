@@ -13,6 +13,7 @@ import { loadPettyCashContext, PettyCashApiError } from "../providers/foundation
 import PettyCashOnboardingModule from "../PettyCashOnboardingModule";
 import PettyCashDisbursementModule from "../PettyCashDisbursementModule";
 import PettyCashFundsModule from "../PettyCashFundsModule";
+import PettyCashOnboardingApprovalModule from "../PettyCashOnboardingApprovalModule";
 import type { PettyCashHeaderUser } from "../utils/headerUser";
 
 const Context = createContext<PettyCashContext | null>(null);
@@ -70,7 +71,8 @@ export function PettyCashWorkspace({ workspace }: { workspace?: PettyCashWorkspa
   const capabilities = context.workspaces.find(item => item.key === workspace)?.capabilities;
   if (workspace === "onboarding" && capabilities?.includes("READ_ONBOARDING")) return <PettyCashOnboardingModule requesterName={context.actorName} canSubmitFund={capabilities.includes("SUBMIT_FUND_REQUEST")} canEditFunds={capabilities.includes("EDIT_PENDING_FUNDS")} canDeleteFunds={capabilities.includes("DELETE_PENDING_FUNDS")} />;
   if (workspace === "disbursement" && capabilities?.includes("READ_VOUCHER_DRAFTS")) return <PettyCashDisbursementModule canEdit={capabilities.includes("EDIT_VOUCHER_DRAFTS")} />;
-  if (workspace === "onboarding-approval" && capabilities?.includes("READ_FUND_APPROVALS") || workspace === "master-list" && capabilities?.includes("READ_FUND_MASTER")) return <Suspense fallback={<p role="status">Loading funds...</p>}><PettyCashFundsModule workspace={workspace} canDecide={capabilities?.includes("DECIDE_FUND_REQUESTS")} /></Suspense>;
+  if (workspace === "onboarding-approval" && capabilities?.includes("READ_FUND_APPROVALS")) return <PettyCashOnboardingApprovalModule actorName={context.actorName} canDecide={capabilities.includes("DECIDE_FUND_REQUESTS")} />;
+  if (workspace === "master-list" && capabilities?.includes("READ_FUND_MASTER")) return <Suspense fallback={<p role="status">Loading funds...</p>}><PettyCashFundsModule /></Suspense>;
   return <section className="space-y-4"><div><h1 className="text-2xl font-semibold tracking-tight">{PETTY_CASH_WORKSPACES[workspace].title}</h1>
     <p className="mt-2 text-sm text-muted-foreground">{PETTY_CASH_WORKSPACES[workspace].description}</p></div>
     <div className="rounded-xl border bg-card p-5"><h2 className="font-medium">Foundation only</h2><p className="mt-2 text-sm text-muted-foreground">This workspace is registered and access is verified. Its operational workflow will be delivered in a later increment.</p></div>
