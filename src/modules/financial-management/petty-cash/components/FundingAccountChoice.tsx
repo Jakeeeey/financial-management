@@ -7,15 +7,15 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useFundRead } from "../hooks/useFunds";
 import type { Choice, Page } from "../onboarding-types";
 
-export function FundingAccountChoice({ selected, disabled, onSelect }: { selected: Choice | null; disabled: boolean; onSelect: (choice: Choice | null) => void }) {
-  const id = useId(), [open, setOpen] = useState(false);
+export function FundingAccountChoice({ selected, disabled, onSelect, error }: { selected: Choice | null; disabled: boolean; onSelect: (choice: Choice | null) => void; error?: string }) {
+  const id = useId(), [open, setOpen] = useState(false), errorId = error ? `${id}-error` : undefined;
   return <div className="min-w-0 space-y-2"><label id={id} className="text-sm font-medium">Funding cash / bank account</label>
     <Popover modal open={open} onOpenChange={setOpen}><PopoverTrigger asChild>
-      <Button type="button" variant="outline" role="combobox" aria-labelledby={id} aria-expanded={open} disabled={disabled} className="w-full min-w-0 justify-between font-normal">
+      <Button type="button" variant="outline" role="combobox" aria-labelledby={id} aria-expanded={open} aria-invalid={Boolean(error)} aria-describedby={errorId} disabled={disabled} className="w-full min-w-0 justify-between font-normal">
         <span className="truncate">{selected ? `${selected.code} · ${selected.name}` : "Select funding cash / bank account"}</span><ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
       </Button></PopoverTrigger><PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] max-w-[calc(100vw-2rem)] p-0">
         {open && <Choices selected={selected} onSelect={choice => { onSelect(choice); setOpen(false); }} />}
-      </PopoverContent></Popover>
+      </PopoverContent></Popover>{error && <p id={errorId} className="text-xs font-medium text-destructive">{error}</p>}
   </div>;
 }
 function Choices({ selected, onSelect }: { selected: Choice | null; onSelect: (choice: Choice | null) => void }) {

@@ -7,19 +7,19 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import type { Choice, Page } from "../onboarding-types";
 import { useOnboardingRead } from "../hooks/useOnboarding";
 
-export function OnboardingChoice({ label, resource, role = "EXPENSE", selected, disabled, onSelect }: {
-  label: string; resource: string; role?: string; selected: Choice | null; disabled?: boolean; onSelect: (choice: Choice | null) => void;
+export function OnboardingChoice({ label, resource, role = "EXPENSE", selected, disabled, onSelect, id, error }: {
+    label: string; resource: string; role?: string; selected: Choice | null; disabled?: boolean; onSelect: (choice: Choice | null) => void; id?: string; error?: string;
 }) {
-  const id = useId(); const [open, setOpen] = useState(false);
-  return <div className="min-w-0 space-y-2"><label id={`${id}-label`} className="text-sm font-medium">{label}</label>
+  const generatedId = useId(); const buttonId = id || `${generatedId}-button`, errorId = error ? `${buttonId}-error` : undefined; const [open, setOpen] = useState(false);
+  return <div className="min-w-0 space-y-2"><label id={`${generatedId}-label`} className="text-sm font-medium">{label}</label>
     <Popover modal open={open} onOpenChange={setOpen}><PopoverTrigger asChild>
-      <Button type="button" variant="outline" role="combobox" aria-labelledby={`${id}-label`} aria-expanded={open} disabled={disabled} className="w-full min-w-0 justify-between font-normal">
+      <Button id={buttonId} type="button" variant="outline" role="combobox" aria-labelledby={`${generatedId}-label`} aria-expanded={open} aria-invalid={Boolean(error)} aria-describedby={errorId} disabled={disabled} className="w-full min-w-0 justify-between font-normal">
         <span className="truncate">{selected ? `${selected.code} · ${selected.name}` : `Select ${label.toLowerCase()}`}</span><ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
       </Button></PopoverTrigger>
       <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] max-w-[calc(100vw-2rem)] p-0">
         {open && <Choices label={label} resource={resource} role={role} selected={selected} onSelect={value => { onSelect(value); setOpen(false); }} />}
       </PopoverContent>
-    </Popover>{selected?.reason && <p className="text-xs text-amber-800">{selected.reason}</p>}</div>;
+    </Popover>{error && <p id={errorId} className="text-xs font-medium text-destructive">{error}</p>}{selected?.reason && <p className="text-xs text-amber-800 dark:text-amber-300">{selected.reason}</p>}</div>;
 }
 function Choices({ label, resource, role, selected, onSelect }: { label: string; resource: string; role: string; selected: Choice | null; onSelect: (choice: Choice | null) => void }) {
   const [search, setSearch] = useState(""); const [page, setPage] = useState(1);
