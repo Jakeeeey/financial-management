@@ -66,6 +66,7 @@ export interface PostedAdjustmentTotals {
 export type PresetRange = "Monthly" | "Quarterly" | "Yearly" | "Custom";
 
 export interface FilterState {
+  entryType?: string;
   search: string;
   startDate: string;
   endDate: string;

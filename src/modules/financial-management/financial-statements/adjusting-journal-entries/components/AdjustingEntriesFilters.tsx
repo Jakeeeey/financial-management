@@ -22,11 +22,9 @@ type AdjustingEntriesFiltersProps = {
   startDate: string;
   endDate: string;
   status: string;
-  pageSize: number;
   filterDivisionId: string;
   filterDepartmentId: string;
   statusOptions: string[];
-  pageSizes: number[];
   filterDivisionOptions: LookupOption[];
   filterDepartmentOptions: LookupOption[];
   hasActiveFilters: boolean;
@@ -36,7 +34,6 @@ type AdjustingEntriesFiltersProps = {
   onStartDateChange: (value: string) => void;
   onEndDateChange: (value: string) => void;
   onStatusChange: (value: string) => void;
-  onPageSizeChange: (value: number) => void;
   onDivisionChange: (value: string) => void;
   onDepartmentChange: (value: string) => void;
   onClearFilters: () => void;
@@ -47,11 +44,9 @@ export function AdjustingEntriesFilters({
   startDate,
   endDate,
   status,
-  pageSize,
   filterDivisionId,
   filterDepartmentId,
   statusOptions,
-  pageSizes,
   filterDivisionOptions,
   filterDepartmentOptions,
   hasActiveFilters,
@@ -61,15 +56,14 @@ export function AdjustingEntriesFilters({
   onStartDateChange,
   onEndDateChange,
   onStatusChange,
-  onPageSizeChange,
   onDivisionChange,
   onDepartmentChange,
   onClearFilters,
 }: AdjustingEntriesFiltersProps) {
   return (
     <div className="space-y-3 rounded-md border bg-background p-3 shadow-sm">
-      <div className="grid gap-3 lg:grid-cols-12">
-      <div className="space-y-1.5 lg:col-span-5">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-12">
+      <div className="col-span-2 space-y-1.5 lg:col-span-5">
         <Label htmlFor="aje-search-filter" className="text-xs font-medium text-muted-foreground">Search</Label>
         <div className="relative min-w-0">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -82,7 +76,7 @@ export function AdjustingEntriesFilters({
           />
         </div>
       </div>
-      <div className="space-y-1.5 lg:col-span-2">
+      <div className="min-w-0 space-y-1.5 lg:col-span-2">
         <Label htmlFor="aje-start-date-filter" className="text-xs font-medium text-muted-foreground">Start Date</Label>
         <Input
           id="aje-start-date-filter"
@@ -92,7 +86,7 @@ export function AdjustingEntriesFilters({
           aria-label="Start date"
         />
       </div>
-      <div className="space-y-1.5 lg:col-span-2">
+      <div className="min-w-0 space-y-1.5 lg:col-span-2">
         <Label htmlFor="aje-end-date-filter" className="text-xs font-medium text-muted-foreground">End Date</Label>
         <Input
           id="aje-end-date-filter"
@@ -102,7 +96,7 @@ export function AdjustingEntriesFilters({
           aria-label="End date"
         />
       </div>
-      <div className="space-y-1.5 lg:col-span-3">
+      <div className="col-span-2 space-y-1.5 lg:col-span-3">
         <Label className="text-xs font-medium text-muted-foreground">Status</Label>
         <Select value={status} onValueChange={onStatusChange}>
           <SelectTrigger className="w-full">
@@ -126,13 +120,7 @@ export function AdjustingEntriesFilters({
             {moreFiltersCount > 0 && <span className="rounded-full bg-muted px-2 py-0.5 text-xs">{moreFiltersCount}</span>}
           </summary>
           <div className="grid gap-3 border-t pt-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-muted-foreground">Rows Per Page</Label>
-              <Select value={String(pageSize)} onValueChange={(value) => onPageSizeChange(Number(value))}>
-                <SelectTrigger className="w-full"><SelectValue placeholder="Rows" /></SelectTrigger>
-                <SelectContent>{pageSizes.map((size) => <SelectItem key={size} value={String(size)}>{size} rows</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
+
             <div className="space-y-1.5">
               <Label className="text-xs font-medium text-muted-foreground">Division</Label>
               <AjeSearchableSelect options={filterDivisionOptions} value={filterDivisionId} onValueChange={onDivisionChange} placeholder="All divisions" />

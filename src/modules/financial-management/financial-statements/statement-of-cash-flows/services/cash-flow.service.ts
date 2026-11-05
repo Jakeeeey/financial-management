@@ -2,12 +2,15 @@ import {
   CashFlowEntry,
   CashFlowResponse,
   CashFlowResponseSchema,
+  CashFlowTransactionDetails,
+  CashFlowTransactionDetailsSchema,
 } from "../types/cash-flow.schema";
 
 export interface FetchCashFlowParams {
   startDate: string;
   endDate: string;
   cashFlowActivity?: string; // "Operating" | "Investing" | "Financing" | null
+  signal?: AbortSignal;
 }
 
 /**
@@ -48,6 +51,7 @@ export async function getCashFlowStatement(
       method: "GET",
       headers,
       cache: "no-store",
+      signal: params.signal,
     });
 
     if (!response.ok) {
@@ -67,9 +71,42 @@ export async function getCashFlowStatement(
 
     return validated.data.data;
   } catch (error) {
-    console.error("Cash Flow Service Error:", error);
+    if (!params.signal?.aborted) console.error("Cash Flow Service Error:", error);
     throw error;
   }
+}
+
+export async function getCashFlowTransactionDetails(
+  journalEntryId: string,
+  sourceModule: string,
+  signal?: AbortSignal,
+): Promise<CashFlowTransactionDetails> {
+  const query = new URLSearchParams({ journalEntryId, sourceModule });
+  const response = await fetch(
+    `/api/fm/financial-statements/statement-of-cash-flow/transactions?${query.toString()}`,
+    { method: "GET", cache: "no-store", signal },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Unable to load journal details (${response.status}).`);
+  }
+
+  const parsed = CashFlowTransactionDetailsSchema.safeParse(await response.json());
+  if (!parsed.success) {
+    throw new Error("The journal details response was not in the expected format.");
+  }
+
+  return parsed.data;
+}
+
+export type CashFlowActivityCategory = "operating" | "investing" | "financing" | "other";
+
+export function classifyCashFlowActivity(activity: string | null | undefined): CashFlowActivityCategory {
+  const normalizedActivity = activity?.toLowerCase() || "";
+  if (normalizedActivity.includes("operating")) return "operating";
+  if (normalizedActivity.includes("investing")) return "investing";
+  if (normalizedActivity.includes("financing")) return "financing";
+  return "other";
 }
 
 /**
@@ -84,16 +121,7 @@ export function groupCashFlowEntries(entries: CashFlowEntry[]) {
   };
 
   entries.forEach((entry) => {
-    const activity = entry.cashFlowActivity?.toLowerCase() || "";
-    if (activity.includes("operating")) {
-      grouped.operating.push(entry);
-    } else if (activity.includes("investing")) {
-      grouped.investing.push(entry);
-    } else if (activity.includes("financing")) {
-      grouped.financing.push(entry);
-    } else {
-      grouped.other.push(entry);
-    }
+    grouped[classifyCashFlowActivity(entry.cashFlowActivity)].push(entry);
   });
 
   return grouped;
@@ -117,13 +145,26 @@ export function calculateCashFlowSummary(entries: CashFlowEntry[]) {
     (sum, entry) => sum + (entry.netCashFlow || 0),
     0
   );
+  const uncategorizedNetMovement = grouped.other.reduce(
+    (sum, entry) => sum + (entry.netCashFlow || 0),
+    0
+  );
 
   const netIncreaseInCash = operatingTotal + investingTotal + financingTotal;
+  const registerNetMovement = entries.reduce(
+    (sum, entry) => sum + (entry.netCashFlow || 0),
+    0
+  );
+  const reconciliationDifference = registerNetMovement - netIncreaseInCash;
 
   return {
     operatingActivities: operatingTotal,
     investingActivities: investingTotal,
     financingActivities: financingTotal,
     netIncreaseInCash,
+    uncategorizedCount: grouped.other.length,
+    uncategorizedNetMovement,
+    registerNetMovement,
+    reconciliationDifference,
   };
 }

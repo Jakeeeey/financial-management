@@ -2,15 +2,41 @@ import type { AjeAuditEvent } from "../types";
 
 export const balancedTolerance = 0.005;
 
+function pluralUnit(value: number, unit: string) {
+  return `${value} ${unit}${value === 1 ? "" : "s"}`;
+}
+
+export function formatQueueAgeLabel(status: "Submitted" | "Approved" | "Failed", elapsedMilliseconds: number, canRetry = true) {
+  const totalMinutes = Math.max(0, Math.floor(elapsedMilliseconds / 60_000));
+  const days = Math.floor(totalMinutes / 1_440);
+  const hours = Math.floor((totalMinutes % 1_440) / 60);
+  const minutes = totalMinutes % 60;
+  const duration = totalMinutes === 0 ? "less than a minute ago"
+    : days ? `${pluralUnit(days, "day")}${hours ? ` ${pluralUnit(hours, "hour")}` : ""} ago`
+    : hours ? `${pluralUnit(hours, "hour")}${minutes ? ` ${pluralUnit(minutes, "minute")}` : ""} ago`
+    : `${pluralUnit(minutes, "minute")} ago`;
+
+  if (status === "Submitted") return `Awaiting posting · Submitted ${duration}`;
+  if (status === "Approved") return `Awaiting posting · Approved ${duration}`;
+  return canRetry ? `Retry posting · Last attempt ${duration}` : `Posting failed · Last attempt ${duration}`;
+}
+
 export function auditEventSummary(event: AjeAuditEvent) {
   if (event.reason?.trim()) return event.reason.trim();
+  if (event.action === "Withdrawn") {
+    const destination = event.changes.find(change => change.field === "Status")?.after;
+    if (destination === "Draft") return "Withdrawn to Draft";
+    if (destination === "For Revision") return "Withdrawn for revision";
+    return "Submission withdrawn";
+  }
   const summaries: Record<string, string> = {
-    Created:"Draft created",
+    Created:"Adjusting entry created",
     Edited:"Journal details updated",
-    Submitted:"Submitted for approval",
+    Submitted:"Entry submitted",
     Approved:"Approved for posting",
     Rejected:"Returned for revision",
-    Withdrawn:"Withdrawn from approval",
+    "Returned for Revision":"Returned for revision",
+    "Workflow Migrated":"Workflow status updated",
     "Revision Started":"Revision started",
     Cancelled:"Entry cancelled",
     Posted:"Posted to the General Ledger",
@@ -55,6 +81,8 @@ export function statusBadgeClass(status: string) {
     case "Cancelled":
     case "Failed":
       return "border-red-500/30 bg-red-500/10 text-red-700";
+    case "For Revision":
+      return "border-amber-500/30 bg-amber-500/10 text-amber-800";
     case "Draft":
     case "Voided":
     default:

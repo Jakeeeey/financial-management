@@ -1,9 +1,5 @@
-import ConsignmentPageFrame from "@/modules/financial-management/consignment/components/ConsignmentPageFrame";
-import ConsignmentConsigneesModule from "@/modules/financial-management/consignment/operations/ConsignmentConsigneesModule";
+import ConsigneesModule from "@/modules/financial-management/consignment/ConsigneesModule";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-export default function ConsignmentConsigneesPage() {
-  return <ConsignmentPageFrame title="Consignees"><ConsignmentConsigneesModule /></ConsignmentPageFrame>;
+export default function Page() {
+  return <ConsigneesModule key="consignees" />;
 }

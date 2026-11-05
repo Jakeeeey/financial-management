@@ -1,0 +1,12 @@
+import type { Choice } from "./onboarding-types";
+export type ReplenishmentFund = { id: number; docNo: string; name: string; imprest: string; expectedCash: string; version: number; custodian: string };
+export type ReplenishmentLine = { account: Choice; departmentId: number | null; debit: string; credit: string };
+export type ReplenishmentVoucher = { id: number; version: number; revisionId: number; docNo: string; date: string; payee: string; receipts: string[]; gross: string; inputVat: string; ewt: string; netCash: string };
+export type ReplenishmentPreview = { fund: ReplenishmentFund; countedCash: string; variance: string; reimbursement: string; vouchers: ReplenishmentVoucher[]; lines: ReplenishmentLine[]; token: string; blockers: string[]; ready: boolean; date: string; company: Record<string, string> };
+export type ReplenishmentFile = { id: number; fileId: string; filename: string; mimeType: string; fileSize: number; sha256: string; state: string; voucherVersion: number; stored: boolean };
+export type ReplenishmentRequest = { id: number; docNo: string; fundId: number; state: string; version: number; countedCash: string | null; approverId: number | null; preparedBy: string; approver: string; submittedAt: string; decisionReason: string; snapshot: ReplenishmentPreview | null; attachments: ReplenishmentFile[] };
+export type AccrualPreview = { fund: ReplenishmentFund; periodEnd: string; reversalDate: string; amount: string; vouchers: ReplenishmentVoucher[]; lines: ReplenishmentLine[]; token: string; blockers: string[]; ready: boolean };
+export type PettyCashAccrual = { id: number; periodEnd: string; reversalDate: string; amount: string; journal: string; reversal: string; vouchers: string[]; preparedBy: string };
+export type ReplenishmentJournal = { id: number; number: string; accountingDate: string };
+export type ReplenishmentApprovalRow = { request: ReplenishmentRequest; decidedBy: string; decidedAt: string; journal: ReplenishmentJournal | null; assigned: boolean; canViewJournal: boolean };
+export type ReplenishmentReview = { row: ReplenishmentApprovalRow; accountingDate: string; reviewToken: string; blockers: string[]; canApprove: boolean; canReject: boolean; canAddDocuments: boolean; history: { action: string; occurredAt: string; reason: string | null; actorId: number; actorName: string }[]; receipts: { voucherId: number; documentType: string; receiptNo: string }[] };

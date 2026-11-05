@@ -151,6 +151,9 @@ export const adjustingJournalEntriesApi = {
     appendOptional(params, "sourceJeNo", query.sourceJeNo?.trim());
     appendOptional(params, "sort", query.sort);
     appendOptional(params, "accountTypeId", query.accountTypeId);
+    appendOptional(params, "workspace", query.workspace);
+    appendOptional(params, "unbalancedOnly", query.unbalancedOnly);
+    appendOptional(params, "queue", query.queue);
 
     const res = await fetchWithAuthRetry(`${BASE}?${params.toString()}`, { cache: "no-store", signal });
     const data = await parseResponse<AdjustingEntryPage & { page?: Partial<AdjustingEntryPage> }>(res, "Failed to load adjusting journal entries");
@@ -165,13 +168,14 @@ export const adjustingJournalEntriesApi = {
     appendOptional(params, "divisionId", query.divisionId);
     appendOptional(params, "departmentId", query.departmentId);
     appendOptional(params, "accountTypeId", query.accountTypeId);
+    appendOptional(params, "workspace", query.workspace);
 
     const res = await fetchWithAuthRetry(`${BASE}/summary?${params.toString()}`, { cache: "no-store", signal });
     return parseResponse<AdjustingEntrySummary>(res, "Failed to load adjusting entry summary");
   },
 
   async get(id: number): Promise<AdjustingEntry> {
-    const res = await fetchWithAuthRetry(`${BASE}/${id}`, { cache: "no-store" });
+    const res = await fetchWithAuthRetry(`${BASE}/${id}`, { cache: "no-store", signal: AbortSignal.timeout(15000) });
     return parseResponse<AdjustingEntry>(res, "Failed to load adjusting journal entry");
   },
 
@@ -257,7 +261,7 @@ export const adjustingJournalEntriesApi = {
   async access(): Promise<AjeAccess> { return request<AjeAccess>("/access"); },
   async accounts(): Promise<AjeAccount[]> { return request<AjeAccount[]>("/accounts"); },
   async command(id: number, action: AjeAction, version: number, reason?: string): Promise<AdjustingEntry> {
-    return request<AdjustingEntry>(`/${id}/${action}`, "POST", { version, reason });
+    return request<AdjustingEntry>(`/${id}/${action}`, "POST", { version, reason }, ["post", "retry"].includes(action) ? AbortSignal.timeout(60000) : undefined);
   },
   async reversalPreview(id: number): Promise<AjeReversalPreview> { return request<AjeReversalPreview>(`/${id}/reversal-preview`); },
   async period(): Promise<AjePeriod> { return request<AjePeriod>("/controls/period"); },

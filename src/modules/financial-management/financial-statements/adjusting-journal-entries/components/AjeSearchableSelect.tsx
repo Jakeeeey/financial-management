@@ -21,8 +21,10 @@ import { cn } from "@/lib/utils";
 
 import type { LookupOption } from "../types";
 
+type AjeSelectOption = LookupOption & { disabled?: boolean; disabledReason?: string };
+
 type AjeSearchableSelectProps = {
-  options: LookupOption[];
+  options: AjeSelectOption[];
   value?: string;
   onValueChange: (value: string) => void;
   placeholder?: string;
@@ -30,6 +32,7 @@ type AjeSearchableSelectProps = {
   className?: string;
   ariaInvalid?: boolean;
   ariaLabel?: string;
+  ariaDescribedBy?: string;
 };
 
 export function AjeSearchableSelect({
@@ -41,6 +44,7 @@ export function AjeSearchableSelect({
   className,
   ariaInvalid,
   ariaLabel,
+  ariaDescribedBy,
 }: AjeSearchableSelectProps) {
   const [open, setOpen] = React.useState(false);
   const selectedLabel = React.useMemo(
@@ -57,6 +61,7 @@ export function AjeSearchableSelect({
           aria-expanded={open}
           aria-invalid={ariaInvalid}
           aria-label={ariaLabel}
+          aria-describedby={ariaDescribedBy}
           className={cn("w-full justify-between", !value && "text-muted-foreground", className)}
           disabled={disabled}
         >
@@ -78,6 +83,8 @@ export function AjeSearchableSelect({
                 <CommandItem
                   key={option.value}
                   value={option.label}
+                  disabled={option.disabled}
+                  title={option.disabledReason}
                   onSelect={() => {
                     onValueChange(option.value);
                     setOpen(false);
@@ -89,7 +96,8 @@ export function AjeSearchableSelect({
                       value === option.value ? "opacity-100" : "opacity-0",
                     )}
                   />
-                  {option.label}
+                  <span className="truncate">{option.label}</span>
+                  {option.disabledReason && <span className="ml-auto shrink-0 text-xs text-muted-foreground">{option.disabledReason}</span>}
                 </CommandItem>
               ))}
             </CommandGroup>

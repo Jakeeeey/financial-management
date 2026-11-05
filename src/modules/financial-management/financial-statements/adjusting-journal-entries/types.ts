@@ -1,4 +1,4 @@
-export type AdjustingEntryStatus = "Draft" | "Submitted" | "Approved" | "Rejected" | "Posted" | "Cancelled" | "Failed" | "Voided";
+export type AdjustingEntryStatus = "Draft" | "For Revision" | "Submitted" | "Approved" | "Rejected" | "Posted" | "Cancelled" | "Failed" | "Voided";
 
 export type AdjustingEntryDetail = {
   id: number | null;
@@ -19,6 +19,7 @@ export type AdjustingEntry = {
   transactionDate: string;
   description: string;
   status: AdjustingEntryStatus;
+  finallyRejected?: boolean;
   reference: string | null;
   entryOrigin: "MANUAL" | "SYSTEM";
   entryKind: "ADJUSTMENT" | "REVERSAL";
@@ -26,6 +27,8 @@ export type AdjustingEntry = {
   originalEntryId: number | null;
   version: number;
   preparedBy: number | null;
+  preparedByName?: string | null;
+  preparedAt?: string | null;
   submittedBy: number | null;
   submittedByName: string | null;
   submittedAt: string | null;
@@ -68,6 +71,7 @@ export type AdjustingEntryPayload = {
   originalEntryId?: number | null;
   creationRequestKey?: string;
   version?: number;
+  saveAsDraft?: boolean;
   transactionDate: string;
   description: string;
   divisionId: number | null;
@@ -108,9 +112,11 @@ export type AjePrintReport = {
 
 export type AdjustingEntrySummary = {
   draft: number;
+  forRevision: number;
   posted: number;
   voided: number;
   imbalanced: number;
+  postedImbalanced: number;
   totalRecords: number;
   submitted: number;
   approved: number;
@@ -119,6 +125,9 @@ export type AdjustingEntrySummary = {
   failed: number;
   postedDebit: number;
   postedCredit: number;
+  awaitingMyReview: number;
+  readyForMeToPost: number;
+  myDrafts: number;
 };
 
 export type AdjustingEntrySourceTotals = {
@@ -168,9 +177,12 @@ export type AdjustingEntryQuery = {
   sourceJeNo?: string | null;
   sort?: string;
   accountTypeId?: number | null;
+  unbalancedOnly?: boolean;
+  workspace?: "creation" | "posting";
+  queue?: "all" | "awaiting-my-review" | "ready-for-me-to-post" | "my-drafts";
 };
 
-export type AdjustingEntrySummaryQuery = Pick<AdjustingEntryQuery, "search" | "startDate" | "endDate" | "divisionId" | "departmentId" | "accountTypeId">;
+export type AdjustingEntrySummaryQuery = Pick<AdjustingEntryQuery, "search" | "startDate" | "endDate" | "divisionId" | "departmentId" | "accountTypeId" | "workspace">;
 
 export type AdjustingEntrySourceJournal = {
   jeNo: string;
@@ -223,10 +235,10 @@ export type DepartmentLookup = {
 };
 
 export type AjeAccess = { userId: number; userName: string };
-export type AjeAction = "submit" | "approve" | "reject" | "withdraw" | "revise" | "cancel" | "post" | "retry";
+export type AjeAction = "submit" | "reject" | "reject-final" | "withdraw" | "revise" | "cancel" | "post" | "retry";
 export type AjeAccount = { id: number; label: string; accountTypeId: number | null; accountTypeName: string | null; departmentRequired: boolean };
 export type AjeAttachment = { id: number; entryId: number; fileId: string; filename: string; mimeType: string; fileSize: number; state: string; uploadedByName: string; uploadedAt: string };
 export type AjePeriod = { closedThroughDate: string | null; version: number; updatedByName: string | null; updatedAt: string | null };
-export type AjeAuditEvent = { id: number; entryId: number | null; journalNumber: string | null; actorUserId: number; actorName: string; action: string; status: string | null; occurredAt: string; reason: string | null; changes: Array<{ field: string; before: string | null; after: string | null; attachmentId?: number | null }>; currentTotalDebit: number | null; currentTotalCredit: number | null };
+export type AjeAuditEvent = { id: number; entryId: number | null; journalNumber: string | null; currentEntryAvailable: boolean; currentReference: string | null; originalJournalNumber: string | null; originalReference: string | null; actorUserId: number; actorName: string; action: string; status: string | null; occurredAt: string; reason: string | null; changes: Array<{ field: string; before: string | null; after: string | null; attachmentId?: number | null }>; currentTotalDebit: number | null; currentTotalCredit: number | null };
 export type AjeAuditPage = { content: AjeAuditEvent[]; totalPages: number; totalElements: number; number: number; first: boolean; last: boolean; dayCounts: Record<string, number> };
 export type AjeReversalPreview = { original: AdjustingEntry; canFullReverse: boolean; lines: Array<{ originalDetailId: number; coaId: number; accountNumber: string; accountTitle: string; departmentId: number | null; departmentName: string | null; description: string | null; originalDebit: number; originalCredit: number; reversedAmount: number; remainingAmount: number }> };

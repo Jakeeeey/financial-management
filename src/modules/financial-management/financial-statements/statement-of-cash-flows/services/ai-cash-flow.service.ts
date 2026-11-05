@@ -3,10 +3,17 @@ import { CashFlowEntry } from "../types/cash-flow.schema";
 export interface AIInsight {
   summary: string;
   healthStatus: "healthy" | "caution" | "critical";
+  healthRationale: string;
+  analysisSource: "ai" | "rules-based";
+  analyzedPeriod: {
+    startDate: string;
+    endDate: string;
+  };
+  generatedAt: string;
   keyFindings: string[];
   risks: string[];
   recommendations: string[];
-  trends: {
+  periodObservations: {
     operating: string;
     investing: string;
     financing: string;
@@ -32,7 +39,8 @@ export interface AIAnalysisRequest {
  * and returns structured insights.
  */
 export async function analyzeCashFlowWithAI(
-  data: AIAnalysisRequest
+  data: AIAnalysisRequest,
+  signal?: AbortSignal
 ): Promise<AIInsight> {
   const API_URL = "/api/fm/financial-statements/statement-of-cash-flow/ai-insights";
 
@@ -43,6 +51,7 @@ export async function analyzeCashFlowWithAI(
         "Content-Type": "application/json",
       },
       body: JSON.stringify(data),
+      signal,
     });
 
     if (!response.ok) {
@@ -53,6 +62,7 @@ export async function analyzeCashFlowWithAI(
     const result = await response.json();
     return result.data as AIInsight;
   } catch (error) {
+    if (signal?.aborted) throw error;
     console.error("AI Cash Flow Analysis Error:", error);
     throw error;
   }

@@ -1,5 +1,8 @@
 "use client";
 
+import { varianceCoaLabels } from "../utils/variance-coa-labels";
+import { WerCooldownBoundary } from "./WerCooldownBoundary";
+
 import { AlertCircle, Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -20,9 +23,8 @@ import {
 } from "@/components/ui/table";
 import type { LogisticsWerDispatchPlanDetail } from "../types";
 import { dispatchPlanStatusClassName, displayWerStatus } from "../utils/status";
-import { LogisticsWerPayablesSection } from "./LogisticsWerPayablesSection";
 import { BudgetClassificationEditor } from "./BudgetClassificationEditor";
-import { BudgetAllocationEditor } from "./BudgetAllocationEditor";
+import { LogisticsWerPayablesSection } from "./LogisticsWerPayablesSection";
 
 function formatMoney(value: number): string {
   return `₱${value.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -48,6 +50,7 @@ interface LogisticsWerDetailsSheetProps {
 }
 
 export function LogisticsWerDetailsSheet({ open, detail, loading, error, onOpenChange, onChanged }: LogisticsWerDetailsSheetProps) {
+  const accountLabels = varianceCoaLabels([...(detail?.budgetBalancesByCoa ?? []), ...(detail?.budgetLines ?? [])]);
   const payableSubmissions = detail?.submissions ?? [];
   const disbursementLineCount = payableSubmissions.reduce((total, submission) => total + submission.lineCount, 0);
   const totalDisbursements = payableSubmissions.reduce((total, submission) => total + submission.totalAmount, 0);
@@ -55,6 +58,7 @@ export function LogisticsWerDetailsSheet({ open, detail, loading, error, onOpenC
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-[min(96vw,1120px)] overflow-y-auto sm:max-w-[1120px]">
+        <WerCooldownBoundary>
         <SheetHeader className="border-b px-6 pb-4">
           <SheetTitle>Logistics WER details</SheetTitle>
           <SheetDescription>
@@ -118,7 +122,7 @@ export function LogisticsWerDetailsSheet({ open, detail, loading, error, onOpenC
                 <div>
                   <h3 className="font-semibold">Expense budget by COA</h3>
                   <p className="text-xs text-muted-foreground">
-                    WER submissions are reserved against the remaining amount for their own expense account.
+                    Pending and recorded expenses are compared with each account allocation. Variances require approval review.
                   </p>
                 </div>
                 {!detail.budgetContextAvailable ? (
@@ -131,7 +135,7 @@ export function LogisticsWerDetailsSheet({ open, detail, loading, error, onOpenC
                   </Alert>
                 ) : detail.budgetBalancesByCoa.length === 0 ? (
                   <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-                    No classified expense budgets are available for payable submissions.
+                    No classified expense allocations are recorded. Actual expenses can still be submitted for variance review.
                   </div>
                 ) : (
                   <div className="overflow-x-auto rounded-lg border">
@@ -147,13 +151,10 @@ export function LogisticsWerDetailsSheet({ open, detail, loading, error, onOpenC
                       </TableHeader>
                       <TableBody>
                         {detail.budgetBalancesByCoa.map((balance) => {
-                          const lines = detail.budgetLines.filter((line) => line.coaId === balance.coaId);
-                          const label = lines[0]
-                            ? `${lines[0].coaCode ? `${lines[0].coaCode} · ` : ""}${lines[0].coaTitle || `COA ${balance.coaId}`}`
-                            : `COA ${balance.coaId}`;
+                          const label = accountLabels.get(balance.coaId) || `COA ${balance.coaId} (name unavailable)`;
                           return (
                             <TableRow key={balance.coaId}>
-                              <TableCell>{label}</TableCell>
+                              <TableCell className="whitespace-normal [overflow-wrap:anywhere]">{label}</TableCell>
                               <TableCell className="text-right">{formatMoney(balance.allocatedAmount)}</TableCell>
                               <TableCell className="text-right">{formatMoney(balance.reservedAmount)}</TableCell>
                               <TableCell className="text-right font-semibold">{formatMoney(balance.remainingAmount)}</TableCell>
@@ -169,7 +170,7 @@ export function LogisticsWerDetailsSheet({ open, detail, loading, error, onOpenC
                 )}
                 {(detail.unclassifiedBudgetAmount ?? 0) > 0 && (
                   <p className="text-xs text-amber-700 dark:text-amber-300">
-                    {formatMoney(detail.unclassifiedBudgetAmount ?? 0)} is not available until its budget line is classified to a COA.
+                    {formatMoney(detail.unclassifiedBudgetAmount ?? 0)} has no completed COA classification. Actual expense submissions remain available for variance review.
                   </p>
                 )}
                 {(detail.unclassifiedReservedAmount ?? 0) > 0 && (
@@ -177,7 +178,7 @@ export function LogisticsWerDetailsSheet({ open, detail, loading, error, onOpenC
                     <AlertCircle className="size-4" />
                     <AlertTitle>Unclassified active reservation</AlertTitle>
                     <AlertDescription>
-                      {formatMoney(detail.unclassifiedReservedAmount ?? 0)} in submitted payables has no COA classification, so new submissions are blocked until it is resolved.
+                      {formatMoney(detail.unclassifiedReservedAmount ?? 0)} in submitted payables has no COA classification. Review these records; new actual expenses remain permitted.
                     </AlertDescription>
                   </Alert>
                 )}
@@ -188,15 +189,10 @@ export function LogisticsWerDetailsSheet({ open, detail, loading, error, onOpenC
                   <div>
                     <h3 className="font-semibold">Dispatch budget allocations</h3>
                     <p className="text-xs text-muted-foreground">
-                      Set the expense allowance by account. Payable submissions are checked against each account&apos;s available balance.
+                      Allocation amounts are fixed. Complete missing classifications below; classified lines are read-only. Payable submissions display variances against each account&apos;s allocation.
                     </p>
                   </div>
-                  <BudgetAllocationEditor
-                    planId={detail.plan.id}
-                    budgetLines={detail.budgetLines}
-                    disabled={(detail.plan.status || "").toLowerCase() !== "for clearance" || detail.isLiquidated === true}
-                    onSaved={() => onChanged?.()}
-                  />
+
                 </div>
 
                 {detail.budgetLines.length === 0 ? (
@@ -213,7 +209,6 @@ export function LogisticsWerDetailsSheet({ open, detail, loading, error, onOpenC
                           <TableHead>Chart of Accounts</TableHead>
                           <TableHead className="text-right">Amount</TableHead>
                           <TableHead>Classification</TableHead>
-                          <TableHead className="w-24 text-right">Action</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -230,18 +225,14 @@ export function LogisticsWerDetailsSheet({ open, detail, loading, error, onOpenC
                               </TableCell>
                               <TableCell className="text-right font-medium">{formatMoney(line.amount)}</TableCell>
                               <TableCell>
-                                <Badge variant={isClassified ? "secondary" : "outline"}>
-                                  {isClassified ? "Classified" : "Needs classification"}
-                                </Badge>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge variant={isClassified ? "secondary" : "outline"}>
+                                    {isClassified ? "Classified" : "Needs classification"}
+                                  </Badge>
+                                  {!isClassified && <BudgetClassificationEditor planId={detail.plan.id} line={line} disabled={(detail.plan.status || "").toLowerCase() !== "for clearance" || detail.isLiquidated === true} onSaved={() => onChanged?.()} />}
+                                </div>
                               </TableCell>
-                              <TableCell className="text-right">
-                                <BudgetClassificationEditor
-                                  planId={detail.plan.id}
-                                  line={line}
-                                  disabled={(detail.plan.status || "").toLowerCase() !== "for clearance" || detail.isLiquidated === true}
-                                  onSaved={() => onChanged?.()}
-                                />
-                              </TableCell>
+
                             </TableRow>
                           );
                         })}
@@ -308,6 +299,7 @@ export function LogisticsWerDetailsSheet({ open, detail, loading, error, onOpenC
             </>
           )}
         </div>
+      </WerCooldownBoundary>
       </SheetContent>
     </Sheet>
   );

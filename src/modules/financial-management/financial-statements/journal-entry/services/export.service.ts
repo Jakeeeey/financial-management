@@ -3,6 +3,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { format } from "date-fns";
 import { JournalEntryGroup } from "../types";
+import { collectionReference } from "../utils/collection-reference";
 import { formatJournalAmount } from "../utils/formatters";
 
 const COMPANY_NAME = "MEN2 MARKETING AND DISTRIBUTION ENTERPRISE CORPORATION";
@@ -16,15 +17,18 @@ type ExportRow = {
 };
 
 const roundMoney = (value: number) => Number(value.toFixed(2));
-export const buildJournalExportData = (groups: JournalEntryGroup[]): ExportRow[] => {
+export const buildJournalExportData = (groups: JournalEntryGroup[], timeZone?: string): ExportRow[] => {
   const rows: ExportRow[] = [];
+  const dateFormatter = timeZone ? new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }) : null;
   let totalDebit = 0;
   let totalCredit = 0;
 
   groups.forEach((group) => {
+    const cpNumber = collectionReference(group);
+    const reference = cpNumber ? `${group.jeNo}\nCP#: ${cpNumber}` : group.jeNo;
     let groupDebit = 0;
     let groupCredit = 0;
-    const formattedDate = group.transactionDate ? format(new Date(group.transactionDate), "yyyy-MM-dd") : "";
+    const formattedDate = group.transactionDate ? dateFormatter ? dateFormatter.format(new Date(group.transactionDate)) : format(new Date(group.transactionDate), "yyyy-MM-dd") : "";
 
     group.entries.forEach((entry, index) => {
       groupDebit += entry.debit;
@@ -35,9 +39,11 @@ export const buildJournalExportData = (groups: JournalEntryGroup[]): ExportRow[]
         cells: [
           index === 0 ? formattedDate : "",
           index === 0 ? group.sourceModule : "",
-          index === 0 ? group.jeNo : "",
+          index === 0 ? reference : "",
           entry.accountTitle || "N/A",
-          index === 0 ? group.description || "N/A" : `- ${entry.accountTitle || "N/A"} distribution`,
+          group.sourceModule === "Collection"
+            ? entry.description || group.description || "N/A"
+            : index === 0 ? group.description || "N/A" : `- ${entry.accountTitle || "N/A"} distribution`,
           entry.debit,
           entry.credit,
           "",
@@ -66,18 +72,20 @@ export const buildJournalExportData = (groups: JournalEntryGroup[]): ExportRow[]
   return rows;
 };
 
-export const exportJournalToExcel = (
+export const generateJournalExcel = (
   groups: JournalEntryGroup[],
   dateRangeText: string,
-  filename: string = "Journal_Entries.xlsx",
-  activeFilters?: string[]
+  activeFilters?: string[],
+  timeZone?: string,
 ) => {
-  const exportRows = buildJournalExportData(groups);
   const filterRows = activeFilters === undefined
     ? []
     : activeFilters.length > 0
       ? [["Applied filters:"], ...activeFilters.map((filter) => [`- ${filter}`])]
       : [["Applied filters: None"]];
+  const rowCount = 7 + filterRows.length + groups.reduce((count, group) => count + group.entries.length + 1, 0);
+  if (rowCount > 1048576) throw new Error("The export exceeds Excel's row limit. Please narrow the reporting date range.");
+  const exportRows = buildJournalExportData(groups, timeZone);
   const worksheetData = [
     [COMPANY_NAME],
     [REPORT_TITLE],
@@ -90,6 +98,8 @@ export const exportJournalToExcel = (
   ];
 
   const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+  // Keep the CP reference's second line visible when the workbook is opened.
+  worksheet["!rows"] = worksheetData.map(row => typeof row[2] === "string" && row[2].includes("\n") ? { hpt: 30 } : {});
   worksheet["!merges"] = [
     { s: { r: 0, c: 0 }, e: { r: 0, c: 7 } },
     { s: { r: 1, c: 0 }, e: { r: 1, c: 7 } },
@@ -119,17 +129,17 @@ export const exportJournalToExcel = (
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, "General Journal");
-  XLSX.writeFile(workbook, filename);
+  return new Uint8Array(XLSX.write(workbook, { type: typeof window === "undefined" ? "buffer" : "array", bookType: "xlsx", compression: true }));
 };
 
-export const exportJournalToPdf = (
+export const generateJournalPdf = (
   groups: JournalEntryGroup[],
   dateRangeText: string,
-  filename: string = "Journal_Entries.pdf",
-  activeFilters?: string[]
+  activeFilters?: string[],
+  timeZone?: string,
 ) => {
-  const doc = new jsPDF("landscape");
-  const exportRows = buildJournalExportData(groups);
+  const doc = new jsPDF({ orientation: "landscape", compress: true });
+  const exportRows = buildJournalExportData(groups, timeZone);
   const filterSummary = activeFilters?.length ? activeFilters.join(" | ") : "None";
   const formattedRows = exportRows.map(({ cells }) =>
     cells.map((cell, index) => (index >= 5 && typeof cell === "number" ? formatJournalAmount(cell).replace("₱", "PHP ") : cell))
@@ -158,6 +168,7 @@ export const exportJournalToPdf = (
 
   autoTable(doc, {
     startY: tableStartY,
+    margin: { left: 14, right: 14 },
     head: [["Transaction Date", "Type", "Ref No. / JE No.", "Account Title", "Description", "Debit", "Credit", "Debit–Credit Difference"]],
     body: formattedRows,
     theme: "grid",
@@ -189,5 +200,27 @@ export const exportJournalToPdf = (
     },
   });
 
-  doc.save(filename);
+  return new Uint8Array(doc.output("arraybuffer"));
 };
+
+function downloadJournal(bytes: Uint8Array, filename: string, type: string) {
+  const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type }));
+  try {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+}
+
+export function exportJournalToExcel(groups: JournalEntryGroup[], dateRangeText: string, filename = "Journal_Entries.xlsx", activeFilters?: string[]) {
+  downloadJournal(generateJournalExcel(groups, dateRangeText, activeFilters), filename, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+}
+
+export function exportJournalToPdf(groups: JournalEntryGroup[], dateRangeText: string, filename = "Journal_Entries.pdf", activeFilters?: string[]) {
+  downloadJournal(generateJournalPdf(groups, dateRangeText, activeFilters), filename, "application/pdf");
+}

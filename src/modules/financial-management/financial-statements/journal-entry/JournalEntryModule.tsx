@@ -2,13 +2,11 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { ChevronDown, FileDown, Loader2, Printer, X } from "lucide-react";
+import { FileDown, Loader2, Printer, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
-import { FilterState, HighRiskEntry, JournalEntryFilterOption, JournalEntryGroup, JournalEntryFilterOptions } from "./types";
+import { FilterState, HighRiskEntry, JournalEntryGroup } from "./types";
 import { useJournalEntries } from "./hooks/useJournalEntries";
 import { JournalEntryProvider } from "./providers/JournalEntryProvider";
 import { createDefaultFilterState, normalizeFilterDates } from "./utils/filter-state";
@@ -19,7 +17,7 @@ import JournalEntryFilterToolbar from "./components/JournalEntryFilterToolbar";
 import RiskInsights from "./components/RiskInsights";
 import JournalEntryTable from "./components/JournalEntryTable";
 import JournalEntryDetailModal from "./components/JournalEntryDetailModal";
-import { exportJournalToExcel, exportJournalToPdf } from "./services/export.service";
+import { getAppliedFilterChips, type AppliedFilterKey } from "./utils/applied-filter-chips";
 
 import { DataTableSkeleton } from "@/app/(financial-management)/fm/_components/DataTableSkeleton";
 import { ErrorPage } from "@/app/(financial-management)/fm/_components/ErrorPage";
@@ -39,7 +37,10 @@ export default function JournalEntryModule() {
 function JournalEntryDashboard() {
   const { 
     paginatedGroups,
-    analytics, 
+    analytics,
+    analyticsLoading,
+    analyticsError,
+    refreshAnalytics,
     filters, 
     setFilters, 
     uniqueSourceModules,
@@ -56,13 +57,12 @@ function JournalEntryDashboard() {
     totalGroupCount,
     setCurrentPage,
     setPageSize,
-    urlRevision,
+    viewRevision,
   } = useJournalEntries();
 
   const [draftFilters, setDraftFilters] = React.useState(filters);
   const appliedFiltersRef = React.useRef(filters);
   appliedFiltersRef.current = filters;
-  const [isMoreFiltersOpen, setIsMoreFiltersOpen] = React.useState(false);
   const [selectedGroup, setSelectedGroup] = React.useState<JournalEntryGroup | null>(null);
   const [isDetailOpen, setIsDetailOpen] = React.useState(false);
   const [isExporting, setIsExporting] = React.useState<"PDF" | "Excel" | null>(null);
@@ -71,13 +71,7 @@ function JournalEntryDashboard() {
 
   React.useEffect(() => {
     setDraftFilters(appliedFiltersRef.current);
-  }, [urlRevision]);
-
-  React.useEffect(() => {
-    if (isMoreFiltersOpen) {
-      resultsScrollRef.current?.scrollTo({ top: 0 });
-    }
-  }, [isMoreFiltersOpen]);
+  }, [viewRevision]);
 
   const applyDraftFilters = () => {
     const normalizedFilters = normalizeFilterDates(draftFilters);
@@ -109,77 +103,53 @@ function JournalEntryDashboard() {
     setCurrentPage(0);
   };
 
+  const exportControllerRef = React.useRef<AbortController | null>(null);
+  React.useEffect(() => () => {
+    exportControllerRef.current?.abort();
+    exportControllerRef.current = null;
+  }, []);
+
   const handleExport = async (type: "PDF" | "Excel") => {
-    if (isExporting) return;
-
+    if (exportControllerRef.current) return;
+    const controller = new AbortController();
+    exportControllerRef.current = controller;
     setIsExporting(type);
-    const formattedStart = format(new Date(filters.startDate), "MMM d, yyyy");
-    const formattedEnd = format(new Date(filters.endDate), "MMM d, yyyy");
-    const dateRangeText = `${formattedStart} to ${formattedEnd}`;
     const toastId = toast.loading(`Preparing ${type} export of all filtered journals...`);
-
     try {
       const query = new URLSearchParams();
       Object.entries(filters).forEach(([key, value]) => {
-        if (value !== undefined && value !== null) query.set(key, value.toString());
+        if (value !== undefined && value !== null) query.set(key, String(value));
       });
-      query.set("pageSize", "100000");
-
-      const allGroups: JournalEntryGroup[] = [];
-      let totalPages = 1;
-      let totalGroups = 0;
-
-      for (let page = 0; page < totalPages; page += 1) {
-        query.set("page", String(page));
-        const res = await fetch(`/api/fm/financial-statements/journal-entry?${query.toString()}`);
-        if (!res.ok) throw new Error("Failed to fetch data for export");
-
-        const response = await res.json() as {
-          data?: JournalEntryGroup[];
-          metadata?: { totalPages?: number; totalGroups?: number };
-        };
-        const metadata = response.metadata;
-        if (
-          !Array.isArray(response.data)
-          || !metadata
-          || !Number.isInteger(metadata.totalPages)
-          || !Number.isInteger(metadata.totalGroups)
-        ) {
-          throw new Error("The export response was incomplete.");
-        }
-
-        if (page === 0) {
-          totalPages = Math.max(0, metadata.totalPages ?? 0);
-          totalGroups = Math.max(0, Number(metadata.totalGroups ?? 0));
-        }
-
-        allGroups.push(...response.data);
-        toast.loading(`Preparing ${type} export: ${allGroups.length} of ${totalGroups} journals...`, { id: toastId });
+      const extension = type === "PDF" ? "pdf" : "xlsx";
+      query.set("format", extension);
+      query.set("timeZone", Intl.DateTimeFormat().resolvedOptions().timeZone);
+      const response = await fetch(`/api/fm/financial-statements/journal-entry/export?${query}`, { signal: controller.signal, cache: "no-store" });
+      if (!response.ok) {
+        const error = await response.json().catch(() => null);
+        throw new Error(error?.error || `Unable to export ${type}. Please retry.`);
       }
-
-      if (allGroups.length !== totalGroups) {
-        throw new Error("The export did not include all matching journals.");
+      const blob = await response.blob();
+      if (controller.signal.aborted) return;
+      const url = URL.createObjectURL(blob);
+      try {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `General_Journal_Export.${extension}`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      } finally {
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
       }
-
-      const activeFilters = getAppliedFilterChips(filters, filterOptions)
-        .filter((chip) => chip.key !== "period")
-        .map((chip) => chip.label);
-
-      toast.loading(`Generating ${type} report...`, { id: toastId });
-      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-
-      if (type === "Excel") {
-        exportJournalToExcel(allGroups, dateRangeText, "General_Journal_Export.xlsx", activeFilters);
-        toast.success("Excel exported successfully!", { id: toastId });
-      } else {
-        exportJournalToPdf(allGroups, dateRangeText, "General_Journal_Export.pdf", activeFilters);
-        toast.success("PDF exported successfully!", { id: toastId });
-      }
-    } catch (err) {
-      console.error("Export Error:", err);
-      toast.error(`Failed to export ${type}`, { id: toastId });
+      toast.success(`${type} exported successfully!`, { id: toastId });
+    } catch (error) {
+      if (!controller.signal.aborted) toast.error(error instanceof Error ? error.message : `Failed to export ${type}`, { id: toastId });
     } finally {
-      setIsExporting(null);
+      if (controller.signal.aborted) toast.dismiss(toastId);
+      if (exportControllerRef.current === controller) {
+        exportControllerRef.current = null;
+        setIsExporting(null);
+      }
     }
   };
 
@@ -292,10 +262,7 @@ function JournalEntryDashboard() {
       <JournalEntryFilterToolbar
         filters={draftFilters}
         setFilters={setDraftFilters}
-        isMoreFiltersOpen={isMoreFiltersOpen}
-        statusOptions={statusOptions}
         hasPendingChanges={hasPendingChanges}
-        onToggleMoreFilters={() => setIsMoreFiltersOpen((open) => !open)}
         onApply={applyDraftFilters}
         onReset={resetAllFilters}
       />
@@ -305,10 +272,10 @@ function JournalEntryDashboard() {
           filters={draftFilters}
           setFilters={setDraftFilters}
           uniqueSourceModules={uniqueSourceModules}
+          statusOptions={statusOptions}
           filterOptions={filterOptions}
           filterOptionsLoading={filterOptionsLoading}
           filterOptionsError={filterOptionsError}
-          isOpen={isMoreFiltersOpen}
         />
 
         {/* Results remain vertically scrollable; the table owns horizontal scrolling. */}
@@ -333,38 +300,21 @@ function JournalEntryDashboard() {
           )}
 
           {/* Summary Stats */}
-          <SummaryCards data={analytics} loading={isLoading} />
-
-          <Collapsible className="min-w-0">
-            <div className="rounded-lg border bg-card shadow-sm">
-              <CollapsibleTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="group flex h-auto w-full min-w-0 justify-between gap-4 rounded-lg px-4 py-3 text-left"
-                >
-                  <span className="flex min-w-0 items-center gap-3">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted">
-                      <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]:rotate-180" />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-sm font-semibold">More analytics</span>
-                      <span className="block break-words text-xs font-normal text-muted-foreground">
-                        Secondary metrics, status breakdown, and high-risk entries
-                      </span>
-                    </span>
-                  </span>
-                  <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">
-                    3 metrics · status · risk review
-                  </span>
-                </Button>
-              </CollapsibleTrigger>
+          {analyticsError ? (
+            <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm">
+              <p>{analyticsError}</p>
+              <Button variant="outline" size="sm" onClick={() => void refreshAnalytics()}>Retry analytics</Button>
             </div>
-            <CollapsibleContent className="space-y-4 pt-4">
-              <SecondarySummaryCards data={analytics} loading={isLoading} />
-              {!isLoading && <RiskInsights data={analytics} onOpenJournal={openRiskJournal} />}
-            </CollapsibleContent>
-          </Collapsible>
+          ) : <SummaryCards data={analytics} loading={analyticsLoading} />}
+
+          <section aria-labelledby="journal-more-analytics" className="min-w-0 space-y-4">
+            <div className="rounded-lg border bg-card px-4 py-3 shadow-sm">
+              <h2 id="journal-more-analytics" className="text-sm font-semibold">More analytics</h2>
+              <p className="text-xs text-muted-foreground">Secondary metrics, status breakdown, and high-risk entries</p>
+            </div>
+            {!analyticsError && <SecondarySummaryCards data={analytics} loading={analyticsLoading} />}
+            {!analyticsLoading && !analyticsError && <RiskInsights data={analytics} onOpenJournal={openRiskJournal} />}
+          </section>
 
           {/* Grouped Table with Loading State */}
           {isLoading ? (
@@ -398,47 +348,6 @@ function JournalEntryDashboard() {
       />
     </div>
   );
-}
-
-type AppliedFilterKey = "search" | "period" | "status" | "branch" | "division" | "department" | "sourceModule" | "coa" | "accountNumber";
-
-function getAppliedFilterChips(filters: FilterState, options: JournalEntryFilterOptions) {
-  const chips: { key: AppliedFilterKey; label: string }[] = [];
-  const now = new Date();
-  const currentMonthStart = format(new Date(now.getFullYear(), now.getMonth(), 1), "yyyy-MM-dd");
-  const currentMonthEnd = format(new Date(now.getFullYear(), now.getMonth() + 1, 0), "yyyy-MM-dd");
-  const isDefaultPeriod = filters.presetRange === "Monthly"
-    && filters.selectedMonth === now.getMonth()
-    && filters.selectedYear === now.getFullYear()
-    && filters.startDate.slice(0, 10) === currentMonthStart
-    && filters.endDate.slice(0, 10) === currentMonthEnd;
-
-  if (filters.search.trim()) chips.push({ key: "search", label: `Search: ${filters.search.trim()}` });
-  if (!isDefaultPeriod) {
-    const period = filters.presetRange === "Custom"
-      ? `${format(new Date(filters.startDate), "MMM d, yyyy")} – ${format(new Date(filters.endDate), "MMM d, yyyy")}`
-      : filters.presetRange === "Monthly"
-        ? format(new Date(filters.selectedYear, filters.selectedMonth, 1), "MMMM yyyy")
-        : filters.presetRange === "Quarterly"
-          ? `Q${filters.selectedQuarter} ${filters.selectedYear}`
-          : String(filters.selectedYear);
-    chips.push({ key: "period", label: `Period: ${period}` });
-  }
-  if (filters.status !== "All Statuses") chips.push({ key: "status", label: `Status: ${filters.status}` });
-
-  const addLookupChip = (key: "branch" | "division" | "department", allLabel: string, label: string, lookup: JournalEntryFilterOption[]) => {
-    if (filters[key] === allLabel) return;
-    const option = lookup.find((item) => item.id === filters[key]);
-    chips.push({ key, label: `${label}: ${option?.name ?? filters[key]}` });
-  };
-
-  addLookupChip("branch", "All Branches", "Branch", options.branches);
-  addLookupChip("division", "All Divisions", "Division", options.divisions);
-  addLookupChip("department", "All Departments", "Department", options.departments);
-  if (filters.sourceModule !== "All Source Modules") chips.push({ key: "sourceModule", label: `Source: ${filters.sourceModule}` });
-  if (filters.coa !== "All Accounts") chips.push({ key: "coa", label: `Account: ${filters.coa}` });
-  if (filters.accountNumber) chips.push({ key: "accountNumber", label: `Account no.: ${filters.accountNumber}` });
-  return chips;
 }
 
 // Inline Badge for local use if UI component is not globally exposed in index

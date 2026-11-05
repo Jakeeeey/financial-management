@@ -633,7 +633,7 @@ export function useSettlement(pouchId: string | number, activeInvoiceId: number 
 
         setAllocations(prev => {
             const filtered = prev.filter(a => !(a.invoiceId === invoiceId && a.sourceTempId === sourceId));
-            const safeInput = Math.abs(amountInput);
+            const safeInput = Number.isFinite(amountInput) ? Math.max(0, amountInput) : 0;
 
             if (safeInput > 0.009) {
                 const combinedSources = [...wallet, ...credits];
@@ -770,7 +770,22 @@ export function useSettlement(pouchId: string | number, activeInvoiceId: number 
         );
     };
 
+    const validateReturnAllocations = () => {
+        for (const allocation of allocations.filter(item => item.allocationType === "RETURN")) {
+            const source = credits.find(item => item.id === allocation.sourceTempId && item.type === "RETURN");
+            const sourceAllocations = allocations.filter(item => item.sourceTempId === allocation.sourceTempId);
+            const total = sourceAllocations.reduce((sum, item) => sum + item.amountApplied, 0);
+            if (!source || sourceAllocations.some(item => !Number.isFinite(item.amountApplied) || item.amountApplied < 0)
+                || Math.round(total * 100) > Math.round(source.originalAmount * 100)) {
+                toast.error(`The allocation for ${source?.label || "this sales return"} exceeds its available return amount. Update the allocation before continuing.`);
+                return false;
+            }
+        }
+        return true;
+    };
+
     const savePartialSettlement = async (): Promise<boolean> => {
+        if (!validateReturnAllocations()) return false;
         if (!hasPartialChanges) {
             toast.error("Add settlement progress before saving a partial settlement.");
             return false;
@@ -850,6 +865,7 @@ export function useSettlement(pouchId: string | number, activeInvoiceId: number 
     };
 
     const submitSettlement = async (): Promise<boolean> => {
+        if (!validateReturnAllocations()) return false;
         try {
             const invalidInvoiceLinkedAdjustment = findInvalidInvoiceLinkedAdjustment();
             if (invalidInvoiceLinkedAdjustment) {

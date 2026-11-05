@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getBalanceSheet } from "@/modules/financial-management/financial-statements/statement-of-financial-position/services/balance-sheet.service";
+import {
+  createDefaultBalanceSheetFilters,
+  getBalanceSheetTodayDate,
+} from "@/modules/financial-management/financial-statements/statement-of-financial-position/utils/report-state";
 
 export const dynamic = "force-dynamic";
 
@@ -10,15 +14,18 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
+  const defaultFilters = createDefaultBalanceSheetFilters(getBalanceSheetTodayDate());
 
-  const startDate = searchParams.get("startDate") || "2026-01-01";
-  const endDate = searchParams.get("endDate") || "2026-12-31";
-  const status = searchParams.get("status") || undefined;
-  const includeComparison = searchParams.get("includeComparison") === "true";
+  const startDate = searchParams.get("startDate") || defaultFilters.startDate;
+  const endDate = searchParams.get("endDate") || defaultFilters.endDate;
+  const status = searchParams.get("status") || defaultFilters.status;
+  const includeComparison = searchParams.has("includeComparison")
+    ? searchParams.get("includeComparison") === "true"
+    : defaultFilters.includeComparison;
   const divisionName = searchParams.get("divisionName") || undefined;
   const departmentName = searchParams.get("departmentName") || undefined;
-  const comparisonStartDate = searchParams.get("comparisonStartDate") || undefined;
-  const comparisonEndDate = searchParams.get("comparisonEndDate") || undefined;
+  const comparisonStartDate = searchParams.get("comparisonStartDate") || defaultFilters.comparisonStartDate;
+  const comparisonEndDate = searchParams.get("comparisonEndDate") || defaultFilters.comparisonEndDate;
 
   const cookieStore = await cookies();
   const token = cookieStore.get("vos_access_token")?.value;

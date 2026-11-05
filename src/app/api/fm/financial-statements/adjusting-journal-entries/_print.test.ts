@@ -49,8 +49,8 @@ test("individual PDFs render signed PHP amounts using built-in fonts", async () 
 
 test("summary PDFs preserve authoritative large decimal totals and negative signs", async () => {
   const { joinedText } = inspectPdf(await summaryPdf(report({ totalDebit: "9007199254740993.21", totalCredit: "-1234.50" }),
-    new URLSearchParams("status=Posted&sort=lastActivity,desc"), company));
-  for (const value of ["Adjusting Journal Entries Summary", "PHP 9,007,199,254,740,993.21", "-PHP 1,234.50", "Status / queue: Posted"]) {
+    new URLSearchParams("workspace=posting&status=Posted&sort=lastActivity,desc"), company));
+  for (const value of ["Adjusting Journal Entries Summary", "PHP 9,007,199,254,740,993.21", "-PHP 1,234.50", "Status: Posted", "Workspace: posting"]) {
     assert.ok(joinedText.includes(value.replace(/\s+/g, "")), value);
   }
 });

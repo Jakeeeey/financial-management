@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   calculateBudgetBalances,
+  calculateExpenseVariance,
   findBudgetAllocationOverages,
   findBudgetRequestOverages,
   splitReservationSources,
@@ -113,4 +114,36 @@ test("budget allocations cannot be reduced below reserved amounts for their COA"
     [{ coaId: 10, allocatedAmount: 379.99, reservedAmount: 380, shortfall: 0.01 }],
   );
   assert.deepEqual(findBudgetAllocationOverages([{ coaId: 10, amount: 380 }], current.byCoa), []);
+});
+
+
+test("actual expense variance aggregates duplicate COAs and flags unbudgeted spending", () => {
+  const budget = calculateBudgetBalances([{ coaId: 10, amount: 900 }, { coaId: 20, amount: 150 }], []);
+  const variance = calculateExpenseVariance([{ coaId: 10, amount: 400 }, { coaId: 10, amount: 600 }, { coaId: 30, amount: 600 }], budget.byCoa, budget.allocatedBudget, 0);
+  assert.equal(variance.actualAmount, 1600);
+  assert.equal(variance.netVariance, 550);
+  assert.equal(variance.requiresAcknowledgment, true);
+  assert.equal(variance.byCoa[0].overAmount, 100);
+  assert.equal(variance.byCoa[1].unbudgeted, true);
+});
+
+test("approval excludes its own reservation while retaining other commitments", () => {
+  const lines = [{ coaId: 10, amount: 100 }];
+  const budget = calculateBudgetBalances([{ coaId: 10, amount: 150 }], [...lines, { coaId: 10, amount: 20 }]);
+  const variance = calculateExpenseVariance(lines, budget.byCoa, budget.allocatedBudget, budget.reservedAmount, lines);
+  assert.equal(variance.projectedActualAmount, 120);
+  assert.equal(variance.otherCommittedAmount, 20);
+  assert.equal(variance.netVariance, -30);
+  assert.equal(variance.requiresAcknowledgment, false);
+});
+
+test("per-account variance requires review even when total allocation is sufficient", () => {
+  const budget = calculateBudgetBalances([{ coaId: 10, amount: 200 }], []);
+  assert.equal(calculateExpenseVariance([{ coaId: 20, amount: 50 }], budget.byCoa, 200, 0).requiresAcknowledgment, true);
+});
+
+test("zero allocation and exact cent amounts remain valid actual expenses", () => {
+  const variance = calculateExpenseVariance([{ coaId: 10, amount: 0.1 }, { coaId: 10, amount: 0.2 }], [], 0, 0);
+  assert.equal(variance.netVariance, 0.3);
+  assert.equal(variance.byCoa[0].requestedAmount, 0.3);
 });

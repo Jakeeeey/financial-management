@@ -1,3 +1,4 @@
+import { publicWerFailure, werFailureStatus, WerDependencyError } from "../../../_errors";
 import { NextRequest, NextResponse } from "next/server";
 import {
   BudgetContextError,
@@ -47,11 +48,13 @@ export async function PATCH(
   }
   const body = rawBody as Record<string, unknown>;
 
+  if (Object.keys(body).some(key => !["coaId", "remarks"].includes(key))) return error("Only COA and remarks may be supplied. Budget amounts are fixed.", 400);
   const coaId = Number(body.coaId);
   const remarks = asTrimmedString(body.remarks);
   if (!Number.isInteger(coaId) || coaId <= 0) {
     return error("Select a valid chart-of-accounts entry.", 400);
   }
+  if (remarks.length > 1000) return error("Remarks must not exceed 1000 characters.", 400);
   if (!remarks) {
     return error("Remarks are required to classify a budget line.", 400);
   }
@@ -71,6 +74,8 @@ export async function PATCH(
       ]);
       const line = budgetLines.find((budgetLine) => budgetLine.id === lineId);
       if (!line) return error("Budget line was not found for this dispatch plan.", 404);
+
+      if (line.classified) return error("This budget line is already classified and is read-only.", 409);
 
       const proposedByCoa = new Map(
         current.budgetBalancesByCoa.map((balance) => [balance.coaId, balance.allocatedAmount]),
@@ -101,8 +106,8 @@ export async function PATCH(
   } catch (requestError) {
     console.error("[Logistics WER] Budget classification failed:", requestError);
     if (requestError instanceof BudgetContextError) {
-      return error(`Budget classification was blocked because reservations could not be verified: ${requestError.message}`, 503);
+      return error("Budget classification was blocked because reservations could not be verified. Please refresh and try again.", 503);
     }
-    return error(requestError instanceof Error ? requestError.message : "Unable to classify the budget line.", 502);
+    return NextResponse.json(publicWerFailure(requestError, "unknown"), { status: requestError instanceof WerDependencyError ? werFailureStatus(requestError) : 502 });
   }
 }

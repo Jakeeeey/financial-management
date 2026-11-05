@@ -1,3 +1,7 @@
+import { retryAfterSeconds } from "@/modules/financial-management/reports/logistics-wer/utils/retry-after";
+import { countDirectusRequest, observeWerOperation } from "./_request";
+import { dependencyFromResponse, WerDependencyError } from "./_errors";
+import { formatManilaWallClock, serializeManilaTimestamp } from "./_timestamps";
 import { NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
@@ -66,6 +70,9 @@ export interface DraftReceiptRow {
 }
 
 export interface SupplierEligibility {
+  departmentId?: number | null;
+  departmentName?: string | null;
+  departmentError?: string | null;
   eligible: boolean;
   driverId: number | null;
   supplierId: number | null;
@@ -129,19 +136,31 @@ export async function directusFetch<T>(path: string, init?: RequestInit): Promis
   if (!DIRECTUS_URL) throw new Error("NEXT_PUBLIC_API_BASE_URL is not configured");
   if (!DIRECTUS_TOKEN) throw new Error("DIRECTUS_STATIC_TOKEN is not configured");
 
-  const response = await fetch(`${DIRECTUS_URL}${path.startsWith("/") ? "" : "/"}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${DIRECTUS_TOKEN}`,
-      Accept: "application/json",
-      ...(init?.headers || {}),
-    },
-    cache: "no-store",
-  });
-
+  const requestId = countDirectusRequest();
+  const started = Date.now();
+  let response: Response;
+  try {
+    response = await fetch(`${DIRECTUS_URL}${path.startsWith("/") ? "" : "/"}${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${DIRECTUS_TOKEN}`,
+        Accept: "application/json",
+        ...(init?.headers || {}),
+      },
+      cache: "no-store",
+    });
+  } catch (cause) {
+    console.error("[WER dependency]", { operation: init?.method ?? "GET", path: path.split("?")[0], durationMs: Date.now() - started, cause });
+    throw new WerDependencyError(503, "NETWORK_ERROR", undefined, requestId);
+  }
   const body = await response.text();
   if (!response.ok) {
-    throw new Error(`Directus request failed (${response.status}): ${body || response.statusText}`);
+    let code: string | null = null;
+    try { code = JSON.parse(body)?.errors?.[0]?.extensions?.code ?? null; } catch { /* Non-JSON dependency response. */ }
+    const retryAfter = response.status === 429 ? retryAfterSeconds(response.headers.get("Retry-After")) : Number(response.headers.get("Retry-After"));
+    const failure = new WerDependencyError(response.status, code, (retryAfter ?? 0) > 0 ? retryAfter : undefined, requestId);
+    console.error("[WER dependency]", { requestId: failure.requestId, operation: init?.method ?? "GET", path: path.split("?")[0], upstreamStatus: response.status, code, retryAfterSeconds: failure.retryAfterSeconds, durationMs: Date.now() - started, body });
+    throw failure;
   }
   if (!body.trim()) return {} as T;
   return JSON.parse(body) as T;
@@ -190,7 +209,30 @@ export async function requireSessionUserId(request: NextRequest): Promise<number
 }
 
 /** Resolve the assigned driver to one active supplier account via suppliers.user_id. */
-export async function resolveDriverSupplier(driverId: number | null): Promise<SupplierEligibility> {
+export async function resolveDriverDepartment(driverId: number | null): Promise<{ departmentId: number | null; departmentName: string | null; departmentError: string | null }> {
+  const unavailable = (message: string) => ({ departmentId: null, departmentName: null, departmentError: message });
+  if (!driverId) return unavailable("No driver is assigned. Assign a driver before submission.");
+  try {
+    const employee = await directusFetch<DirectusList<{ user_department?: unknown }>>(`/items/user?filter[user_id][_eq]=${driverId}&fields=user_department&limit=2`);
+    if (employee.data?.length !== 1) return unavailable("The assigned driver employee record is unavailable.");
+    const departmentId = asNullableNumber(employee.data[0].user_department);
+    if (!departmentId || !Number.isInteger(departmentId) || departmentId <= 0) return unavailable("The driver has no assigned department. Correct the employee assignment before submission.");
+    const departments = await directusFetch<DirectusList<{ department_name?: unknown }>>(`/items/department?filter[department_id][_eq]=${departmentId}&fields=department_name&limit=2`);
+    const departmentName = asString(departments.data?.[0]?.department_name);
+    if (departments.data?.length !== 1 || !departmentName) return unavailable("The assigned department is unavailable. Correct the employee assignment before submission.");
+    return { departmentId, departmentName, departmentError: null };
+  } catch (cause) {
+    if (cause instanceof WerDependencyError && cause.upstreamStatus === 429) throw cause;
+    return unavailable("Driver department lookup failed. Retry before submitting.");
+  }
+}
+
+export async function resolveDriverSupplier(driverId: number | null, assignedDepartment?: Awaited<ReturnType<typeof resolveDriverDepartment>>): Promise<SupplierEligibility> {
+  const [supplier, department] = await Promise.all([resolveDriverSupplierAccount(driverId), assignedDepartment ?? resolveDriverDepartment(driverId)]);
+  return { ...supplier, ...department };
+}
+
+async function resolveDriverSupplierAccount(driverId: number | null): Promise<SupplierEligibility> {
   const base: SupplierEligibility = {
     eligible: false,
     driverId,
@@ -341,9 +383,9 @@ export async function getPlanDraftSummaries(planId: number): Promise<DraftSubmis
       status: asString(row.status) || null,
       totalAmount: asNumber(row.total_amount),
       submittedBy: asNullableNumber(row.submitted_by),
-      submittedAt: asString(row.submitted_at) || null,
+      submittedAt: serializeManilaTimestamp(row.submitted_at),
       decidedBy: asNullableNumber(row.decided_by),
-      decidedAt: asString(row.decided_at) || null,
+      decidedAt: serializeManilaTimestamp(row.decided_at),
       decisionRemarks: asString(row.decision_remarks) || null,
       disbursementId: asNullableNumber(row.disbursement_id),
       disbursementDocNo: null,
@@ -403,9 +445,9 @@ export async function getPlanSubmission(submissionId: number): Promise<{ planId:
       status: asString(row.status) || null,
       totalAmount: asNumber(row.total_amount),
       submittedBy: asNullableNumber(row.submitted_by),
-      submittedAt: asString(row.submitted_at) || null,
+      submittedAt: serializeManilaTimestamp(row.submitted_at),
       decidedBy: asNullableNumber(row.decided_by),
-      decidedAt: asString(row.decided_at) || null,
+      decidedAt: serializeManilaTimestamp(row.decided_at),
       decisionRemarks: asString(row.decision_remarks) || null,
       disbursementId: asNullableNumber(row.disbursement_id),
       idempotencyKey: asString(row.idempotency_key) || null,
@@ -514,7 +556,7 @@ async function getSpringBudgetLines(planId: number): Promise<DispatchBudgetLine[
   }
   const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
   if (!response.ok) {
-    throw new Error(`Unable to verify dispatch budget (HTTP ${response.status}).`);
+    throw dependencyFromResponse(response, "spring");
   }
   if (!Array.isArray(payload?.budgets)) {
     throw new Error("Dispatch approval response did not include budget lines.");
@@ -607,19 +649,23 @@ async function getReservationLines(submissions: DraftAccountingSummary[]): Promi
 }
 
 /** Compute the plan balance and compact payable summaries with batched reads. */
-export async function getPlanFinancialContext(
+export function getPlanFinancialContext(planId: number, includeSubmissionSummaries = true, springBudgetLines?: unknown): Promise<PlanFinancialContext> {
+  return observeWerOperation("plan-financial-context", () => loadPlanFinancialContext(planId, includeSubmissionSummaries, springBudgetLines));
+}
+
+async function loadPlanFinancialContext(
   planId: number,
   includeSubmissionSummaries = true,
   springBudgetLines?: unknown,
 ): Promise<PlanFinancialContext> {
-  const [plan, submissions, accountingRows, budgetLines] = await Promise.all([
+  const [plan, submissions, budgetLines] = await Promise.all([
     getPlanBaseline(planId),
     includeSubmissionSummaries
       ? getPlanDraftSummaries(planId)
-      : Promise.resolve([] as DraftSubmissionSummary[]),
-    getPlanDraftAccountingRows(planId),
+      : getPlanDraftAccountingRows(planId),
     springBudgetLines === undefined ? getSpringBudgetLines(planId) : normalizeSpringBudgetLines(springBudgetLines),
   ]);
+  const accountingRows = submissions;
   const disbursementIds = Array.from(new Set(
     accountingRows.map((submission) => submission.disbursementId).filter((id): id is number => Boolean(id)),
   ));
@@ -710,10 +756,10 @@ export async function markWerPlanLiquidatedIfSettled(draftId: number): Promise<v
  * active submitted drafts reserve, and an approved draft counts once
  * via its resulting disbursement instead of its draft total.
  */
-export async function getPlanRemaining(planId: number): Promise<PlanRemaining> {
+export async function getPlanRemaining(planId: number, baseline?: PlanBaseline): Promise<PlanRemaining> {
   try {
     const [plan, submissions, budgetLines] = await Promise.all([
-      getPlanBaseline(planId),
+      baseline ?? getPlanBaseline(planId),
       getPlanDraftAccountingRows(planId),
       getSpringBudgetLines(planId),
     ]);
@@ -730,7 +776,8 @@ export async function getPlanRemaining(planId: number): Promise<PlanRemaining> {
       budgetBalancesByCoa: balances.byCoa,
     };
   } catch (error) {
-    throw new BudgetContextError(error instanceof Error ? error.message : "Unable to verify the dispatch expense budget.");
+    if (error instanceof WerDependencyError) throw error;
+    throw new BudgetContextError("Unable to verify the dispatch expense budget.");
   }
 }
 
@@ -750,16 +797,17 @@ export async function withPlanLock<T>(planId: number, task: () => Promise<T>): P
   const current = new Promise<void>((resolve) => {
     release = resolve;
   });
-  planLocks.set(planId, previous.then(() => current));
+  const queued = previous.then(() => current);
+  planLocks.set(planId, queued);
   await previous;
   try {
-    return await task();
+    return await observeWerOperation("plan-mutation-or-reconciliation", task);
   } finally {
     release();
-    if (planLocks.get(planId) === current) planLocks.delete(planId);
+    if (planLocks.get(planId) === queued) planLocks.delete(planId);
   }
 }
 
 export function manilaTimestamp(date: Date = new Date()): string {
-  return date.toISOString();
+  return formatManilaWallClock(date);
 }

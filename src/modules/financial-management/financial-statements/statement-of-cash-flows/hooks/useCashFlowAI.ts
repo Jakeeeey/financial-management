@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import {
   AIInsight,
@@ -18,6 +18,8 @@ interface UseCashFlowAIOptions {
   };
   startDate: string;
   endDate: string;
+  reportGeneratedAt: string | null;
+  canAnalyze: boolean;
 }
 
 export function useCashFlowAI({
@@ -25,60 +27,98 @@ export function useCashFlowAI({
   summary,
   startDate,
   endDate,
+  reportGeneratedAt,
+  canAnalyze,
 }: UseCashFlowAIOptions) {
-  const [insight, setInsight] = useState<AIInsight | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [hasRun, setHasRun] = useState(false);
+  const [insightState, setInsightState] = useState<{
+    snapshotKey: string;
+    insight: AIInsight;
+  } | null>(null);
+  const [analyzingSnapshotKey, setAnalyzingSnapshotKey] = useState<string | null>(null);
+  const [errorState, setErrorState] = useState<{
+    snapshotKey: string;
+    message: string;
+  } | null>(null);
 
-  // Use refs to avoid recreating the analyze callback on every data change
-  const entriesRef = useRef(entries);
-  const summaryRef = useRef(summary);
-  const startDateRef = useRef(startDate);
-  const endDateRef = useRef(endDate);
+  const snapshotKey = `${reportGeneratedAt ?? "unloaded"}|${startDate}|${endDate}`;
+  const insight = insightState?.snapshotKey === snapshotKey ? insightState.insight : null;
+  const isAnalyzing = analyzingSnapshotKey === snapshotKey;
+  const error = errorState?.snapshotKey === snapshotKey ? errorState.message : null;
+  const hasRun = insight !== null;
+  const latestSnapshotKeyRef = useRef(snapshotKey);
+  const previousSnapshotKeyRef = useRef(snapshotKey);
+  const requestControllerRef = useRef<AbortController | null>(null);
+  const requestIdRef = useRef(0);
+  latestSnapshotKeyRef.current = snapshotKey;
 
-  entriesRef.current = entries;
-  summaryRef.current = summary;
-  startDateRef.current = startDate;
-  endDateRef.current = endDate;
+  useEffect(() => {
+    if (previousSnapshotKeyRef.current === snapshotKey) return;
+
+    previousSnapshotKeyRef.current = snapshotKey;
+    requestIdRef.current += 1;
+    requestControllerRef.current?.abort();
+    requestControllerRef.current = null;
+    setInsightState(null);
+    setErrorState(null);
+    setAnalyzingSnapshotKey(null);
+  }, [snapshotKey]);
+
+  useEffect(() => () => requestControllerRef.current?.abort(), []);
 
   const analyze = useCallback(async () => {
-    const currentEntries = entriesRef.current;
-    if (currentEntries.length === 0) {
+    if (!canAnalyze) return;
+    if (entries.length === 0) {
       toast.error("No cash flow data to analyze");
       return;
     }
 
-    setIsAnalyzing(true);
-    setError(null);
+    requestControllerRef.current?.abort();
+    const controller = new AbortController();
+    requestControllerRef.current = controller;
+    const requestId = ++requestIdRef.current;
+    const requestedSnapshotKey = snapshotKey;
+    setAnalyzingSnapshotKey(requestedSnapshotKey);
+    setErrorState(null);
 
     try {
       const result = await analyzeCashFlowWithAI({
-        entries: currentEntries,
-        summary: summaryRef.current,
-        period: {
-          startDate: startDateRef.current,
-          endDate: endDateRef.current,
-        },
-      });
+        entries,
+        summary,
+        period: { startDate, endDate },
+      }, controller.signal);
 
-      setInsight(result);
-      setHasRun(true);
-      toast.success("AI analysis complete");
+      if (
+        controller.signal.aborted ||
+        requestId !== requestIdRef.current ||
+        latestSnapshotKeyRef.current !== requestedSnapshotKey
+      ) return;
+      setInsightState({ snapshotKey: requestedSnapshotKey, insight: result });
+      toast.success("Cash flow analysis complete");
     } catch (err) {
+      if (
+        controller.signal.aborted ||
+        requestId !== requestIdRef.current ||
+        latestSnapshotKeyRef.current !== requestedSnapshotKey
+      ) return;
       const errorMessage =
         err instanceof Error ? err.message : "Failed to analyze cash flow data";
-      setError(errorMessage);
+      setErrorState({ snapshotKey: requestedSnapshotKey, message: errorMessage });
       toast.error(errorMessage);
     } finally {
-      setIsAnalyzing(false);
+      if (requestId === requestIdRef.current) {
+        requestControllerRef.current = null;
+        setAnalyzingSnapshotKey(null);
+      }
     }
-  }, []); // Stable reference — never recreates
+  }, [canAnalyze, entries, endDate, snapshotKey, startDate, summary]);
 
   const reset = useCallback(() => {
-    setInsight(null);
-    setError(null);
-    setHasRun(false);
+    requestIdRef.current += 1;
+    requestControllerRef.current?.abort();
+    requestControllerRef.current = null;
+    setInsightState(null);
+    setErrorState(null);
+    setAnalyzingSnapshotKey(null);
   }, []);
 
   return {
