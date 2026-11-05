@@ -1,24 +1,29 @@
 "use client";
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Choice, MasterLinks, Page } from "./onboarding-types";
 import { useOnboardingRead } from "./hooks/useOnboarding";
 import { OnboardingPayees } from "./components/OnboardingPayees";
 import { OnboardingSettings } from "./components/OnboardingSettings";
 import { OnboardingFunds } from "./components/OnboardingFunds";
+import { OnboardingTaxAccounts } from "./components/OnboardingTaxAccounts";
 import { ErrorBox, Paging } from "./components/OnboardingCommon";
 
-export default function PettyCashOnboardingModule({ requesterName, canSubmitFund, canEditFunds, canDeleteFunds }: { requesterName: string; canSubmitFund: boolean; canEditFunds: boolean; canDeleteFunds: boolean }) {
+export default function PettyCashOnboardingModule({ requesterName, canSubmitFund, canEditFunds, canDeleteFunds, canEditSettings }: { requesterName: string; canSubmitFund: boolean; canEditFunds: boolean; canDeleteFunds: boolean; canEditSettings: boolean }) {
   const links = useOnboardingRead<MasterLinks>("master-links");
-  return <section className="space-y-5"><div><h1 className="text-2xl font-semibold tracking-tight">Onboarding</h1><p className="mt-2 text-sm text-muted-foreground">Request new funds and maintain the lists used by Petty Cash. A new fund stays inactive until it is approved.</p></div>
+  const [taxAccountsOpen, setTaxAccountsOpen] = useState(false), [settingsRevision, setSettingsRevision] = useState(0), [taxAccountsSaved, setTaxAccountsSaved] = useState(false);
+  return <section className="space-y-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-semibold tracking-tight">Onboarding</h1><p className="mt-2 text-sm text-muted-foreground">Request new funds and maintain the lists used by Petty Cash. A new fund stays inactive until it is approved.</p></div>{canEditSettings && <Button variant="outline" onClick={() => { setTaxAccountsSaved(false); setTaxAccountsOpen(true); }}>Configure tax accounts</Button>}</div>
+    {taxAccountsSaved && <p role="status" className="text-sm">Tax accounts saved.</p>}
     <ErrorBox error={links.error} retry={links.refresh} />
     <Tabs defaultValue="funds"><TabsList className="h-auto w-fit max-w-full flex-wrap justify-start gap-1">
       <TabsTrigger value="funds">Fund requests</TabsTrigger><TabsTrigger value="payees">Payees</TabsTrigger><TabsTrigger value="departments">Departments</TabsTrigger><TabsTrigger value="personnel">Personnel</TabsTrigger><TabsTrigger value="settings">Company</TabsTrigger>
     </TabsList>
-      <TabsContent value="funds"><OnboardingFunds requesterName={requesterName} canSubmit={canSubmitFund} canEdit={canEditFunds} canDelete={canDeleteFunds} /></TabsContent><TabsContent value="payees"><OnboardingPayees links={links.data} /></TabsContent>
+      <TabsContent value="funds"><OnboardingFunds key={settingsRevision} requesterName={requesterName} canSubmit={canSubmitFund} canEdit={canEditFunds} canDelete={canDeleteFunds} /></TabsContent><TabsContent value="payees"><OnboardingPayees links={links.data} /></TabsContent>
       <TabsContent value="departments"><SharedMaster resource="departments" /></TabsContent><TabsContent value="personnel"><SharedMaster resource="personnel" /></TabsContent>
-      <TabsContent value="settings"><OnboardingSettings /></TabsContent>
+      <TabsContent value="settings"><OnboardingSettings key={settingsRevision} /></TabsContent>
     </Tabs>
+    {canEditSettings && taxAccountsOpen && <OnboardingTaxAccounts onClose={() => setTaxAccountsOpen(false)} onSaved={() => { setTaxAccountsOpen(false); setTaxAccountsSaved(true); setSettingsRevision(value => value + 1); }} />}
   </section>;
 }
 function SharedMaster({ resource }: { resource: "departments" | "personnel" }) {
