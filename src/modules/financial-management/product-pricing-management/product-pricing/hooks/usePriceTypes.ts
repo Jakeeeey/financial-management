@@ -5,7 +5,8 @@ import type { PriceType } from "../types";
 import * as api from "../providers/pricingApi";
 import { applyLoadError } from "../../shared/loadErrorState";
 
-export function usePriceTypes() {
+export function usePriceTypes(options?: { includeInactive?: boolean }) {
+    const includeInactive = options?.includeInactive ?? false;
     const [loading, setLoading] = React.useState(true);
     const [priceTypes, setPriceTypes] = React.useState<PriceType[]>([]);
     const [error, setError] = React.useState<string | null>(null);
@@ -19,7 +20,7 @@ export function usePriceTypes() {
                 setLoading(true);
                 setError(null);
 
-                const res = await api.getPriceTypes();
+                const res = await api.getPriceTypes({ includeInactive });
                 if (!mounted) return;
 
                 setPriceTypes(res.data ?? []);
@@ -35,7 +36,7 @@ export function usePriceTypes() {
         return () => {
             mounted = false;
         };
-    }, []);
+    }, [includeInactive]);
 
     return { loading, error, unauthorized, priceTypes };
 }

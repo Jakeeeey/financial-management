@@ -9,5 +9,5 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  return proxySpring(buildSpringItemPath(id, "post"), { method: "POST" });
+  return proxySpring(buildSpringItemPath(id, "post"), { method: "POST", body: await request.text() });
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { useJournalSourceRecord, JournalSourceFeedback } from "@/modules/financial-management/financial-statements/journal-entry/components/JournalSourceRecord";
 import React, { useState } from "react";
 import { useCashIssuance } from "./hooks/useCashIssuance";
 import { CashIssuanceTable } from "./components/CashIssuanceTable";
@@ -41,6 +42,7 @@ interface CashIssuanceModuleProps {
 }
 
 export default function CashIssuanceModule({ initialSubModule = "preparation" }: CashIssuanceModuleProps) {
+    const source = useJournalSourceRecord<Disbursement>("Disbursement");
     const initialStatusFilter = SUBMODULE_STATUS_FILTERS[initialSubModule];
     const {
         data, loading, page, setPage, size, changeSize, totalPages,
@@ -384,7 +386,7 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
                                             <TabsTrigger value="All" className="rounded-lg text-[10px] font-black uppercase tracking-widest data-[state=active]:bg-background data-[state=active]:shadow-sm px-4">All Types</TabsTrigger>
                                             <TabsTrigger value="Trade" className="rounded-lg text-[10px] font-black uppercase tracking-widest data-[state=active]:bg-background data-[state=active]:shadow-sm px-4">Trade</TabsTrigger>
                                             <TabsTrigger value="Non-Trade" className="rounded-lg text-[10px] font-black uppercase tracking-widest data-[state=active]:bg-background data-[state=active]:shadow-sm px-4">Non-Trade</TabsTrigger>
-                                            <TabsTrigger value="WER" className="rounded-lg text-[10px] font-black uppercase tracking-widest data-[state=active]:bg-background data-[state=active]:shadow-sm px-4">WER</TabsTrigger>
+                                            <TabsTrigger value="WER" className="rounded-lg text-[10px] font-black uppercase tracking-widest data-[state=active]:bg-background data-[state=active]:shadow-sm px-4">Logistics WER</TabsTrigger>
                                         </TabsList>
                                     </div>
 
@@ -467,6 +469,8 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
                 loading={actionLoading}
             />
 
+            <JournalSourceFeedback source={source} />
+            {source.record && <CashIssuanceViewDialog open onOpenChange={open => { if (!open) source.close(); }} disbursement={source.record} onUpdateStatus={async () => ({ success: false })} loading={false} subModule="all" readOnly />}
             <CashIssuanceViewDialog
                 open={isViewOpen}
                 onOpenChange={setIsViewOpen}

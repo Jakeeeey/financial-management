@@ -130,6 +130,7 @@ export async function POST(req: NextRequest) {
         priceTypeParams.set("limit", "-1");
         priceTypeParams.set("fields", "price_type_id,price_type_name,sort");
         priceTypeParams.set("sort", "sort,price_type_id");
+        priceTypeParams.set("filter[is_active][_eq]", "1");
 
         const priceTypeUrl = `${DIRECTUS_URL}/items/${PRICE_TYPES}?${priceTypeParams.toString()}`;
         const priceTypeJson = await fetchDirectus<{ data: PriceTypeRow[] }>(priceTypeUrl);
@@ -152,8 +153,12 @@ export async function POST(req: NextRequest) {
         for (const line of lines) {
             if (!idToTier.has(Number(line.price_type_id))) {
                 return NextResponse.json(
-                    { error: `price_type_id not found: ${line.price_type_id}` },
-                    { status: 400 },
+                    {
+                        error: `Price type is inactive or does not exist: ${line.price_type_id}`,
+                        code: "INACTIVE_PRICE_TYPE",
+                        price_type_id: line.price_type_id,
+                    },
+                    { status: 409 },
                 );
             }
         }

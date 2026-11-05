@@ -1,0 +1,176 @@
+export interface LogisticsWerDispatchPlan {
+  id: number;
+  docNo: string;
+  dispatchDate: string | null;
+  timeOfDispatch: string | null;
+  driverName: string | null;
+  vehicleName: string | null;
+  status: string | null;
+  remarks: string | null;
+  amount: number;
+  allocatedExpenseBudget?: number | null;
+  isLiquidated?: boolean | null;
+}
+
+export type LogisticsWerDispatchPlanSummary = LogisticsWerDispatchPlan;
+
+export interface LogisticsWerBudgetLine {
+  id: number;
+  coaId: number | null;
+  coaCode: string | null;
+  coaTitle: string | null;
+  remarks: string | null;
+  amount: number;
+}
+
+export interface LogisticsWerCoaBudgetBalance {
+  coaId: number;
+  coaCode?: string | null;
+  coaTitle?: string | null;
+  allocatedAmount: number;
+  reservedAmount: number;
+  remainingAmount: number;
+  overBudgetAmount: number;
+}
+
+export interface LogisticsWerStaff {
+  userId: number | null;
+  name: string;
+  role: string | null;
+}
+
+export interface LogisticsWerStopItem {
+  name: string;
+  quantity: number;
+  unit: string | null;
+  amount: number;
+  brand: string | null;
+  category: string | null;
+  supplier: string | null;
+}
+
+export interface LogisticsWerStop {
+  type: string;
+  name: string;
+  documentNo: string | null;
+  documentAmount: number;
+  sequence: number | null;
+  distance: number | null;
+  status: string | null;
+  remarks: string | null;
+  date: string | null;
+  items: LogisticsWerStopItem[];
+}
+
+export interface LogisticsWerReportPage {
+  budgetSummaryError?: string | null;
+  content: LogisticsWerDispatchPlanSummary[];
+  number: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  range: {
+    startDate: string;
+    endDate: string;
+  };
+}
+
+export interface LogisticsWerDispatchPlanDetail {
+  plan: LogisticsWerDispatchPlan;
+  budgetLines: LogisticsWerBudgetLine[];
+  staff: LogisticsWerStaff[];
+  stops: LogisticsWerStop[];
+  budgetTotal: number;
+  supplierEligibility?: LogisticsWerSupplierEligibility | null;
+  dispatchPlanValue?: number | null;
+  reservedAmount?: number | null;
+  remainingAmount?: number | null;
+  budgetContextAvailable: boolean;
+  budgetContextError?: string | null;
+  allocatedExpenseBudget?: number | null;
+  unclassifiedBudgetAmount?: number | null;
+  unclassifiedReservedAmount?: number | null;
+  overBudgetAmount?: number | null;
+  budgetBalancesByCoa: LogisticsWerCoaBudgetBalance[];
+  isLiquidated?: boolean | null;
+  submissions?: LogisticsWerPayableSubmissionSummary[];
+}
+
+export interface LogisticsWerSupplierEligibility {
+  departmentId?: number | null;
+  departmentName?: string | null;
+  departmentError?: string | null;
+  eligible: boolean;
+  driverId: number | null;
+  supplierId: number | null;
+  supplierName: string | null;
+  reason: string | null;
+}
+
+export interface LogisticsWerPayableReceipt {
+  id: number;
+  fileId: string | null;
+}
+
+export interface LogisticsWerPayableSubmissionLineDetails {
+  id: number;
+  lineNo: number | null;
+  amount: number;
+  referenceNo: string | null;
+  date: string | null;
+  coaId: number | null;
+  divisionId: number | null;
+  remarks: string | null;
+  receipts: LogisticsWerPayableReceipt[];
+}
+
+export interface LogisticsWerPayableSubmissionDetails {
+  submissionId: number;
+  departmentId: number | null;
+  canEdit: boolean;
+  lines: LogisticsWerPayableSubmissionLineDetails[];
+}
+
+export interface LogisticsWerPayableLine {
+  id: number;
+  lineNo: number | null;
+  amount: number;
+  referenceNo: string | null;
+  remarks: string | null;
+  date: string | null;
+  coaId: number | null;
+  divisionId: number | null;
+  coaCode?: string | null;
+  coaTitle?: string | null;
+  receipts: LogisticsWerPayableReceipt[];
+}
+
+export interface LogisticsWerPayableSubmission {
+  id: number;
+  departmentId: number | null;
+  status: string | null;
+  totalAmount: number;
+  submittedBy: number | null;
+  submittedAt: string | null;
+  decidedBy: number | null;
+  decidedAt: string | null;
+  decisionRemarks: string | null;
+  disbursementId: number | null;
+  treasuryStatus: string | null;
+  idempotencyKey: string | null;
+  lines: LogisticsWerPayableLine[];
+}
+
+export interface LogisticsWerPayableSubmissionSummary {
+  submittedAt?: string | null;
+  decidedAt?: string | null;
+  id: number;
+  status: string | null;
+  totalAmount: number;
+  decisionRemarks: string | null;
+  disbursementId: number | null;
+  disbursementDocNo: string | null;
+  treasuryStatus: string | null;
+  lineCount: number;
+  receiptCount: number;
+}

@@ -4,6 +4,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { MemoReportButton } from "../supplier-memos/components/MemoActions";
 import { useSupplierDebitMemo, useSuppliers, useChartOfAccounts } from "./hooks/useSupplierDebitMemo";
 import { StatsCards }     from "./components/StatsCards";
 import { MemoFiltersBar } from "./components/MemoFilters";
@@ -46,11 +47,14 @@ export default function SupplierDebitMemoModule() {
     <div className="p-4 md:p-6 bg-background text-foreground min-h-screen space-y-6 w-full box-border overflow-hidden">
 
       {/* Page Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Supplier Debit Memo</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Manage and track supplier debit memos
-        </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Supplier Debit Memo</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Manage and track supplier debit memos
+          </p>
+        </div>
+        <MemoReportButton api="/api/fm/accounting/supplier-debit-memo" filters={filters} disabled={loading || Boolean(error)} />
       </div>
 
       {/* Filters row — New Debit Memo button is inside, far right */}
@@ -74,6 +78,9 @@ export default function SupplierDebitMemoModule() {
         error={error}
         suppliers={suppliers}
         accounts={accounts}
+        search={filters.search}
+        onSearch={value => updateFilter("search", value)}
+        onChanged={() => void refetch()}
       />
 
       {/* Add Modal overlay */}

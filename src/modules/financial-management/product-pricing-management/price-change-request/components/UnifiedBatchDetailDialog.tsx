@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import {
     Dialog,
     DialogContent,
@@ -18,10 +19,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { cn } from "@/lib/utils";
 
 import type { UnifiedBatchDetail, UnifiedBatchLine } from "../types";
-import { getUnifiedBatch } from "../providers/pcrApi";
+import { getUnifiedBatch, priceSnapshotConflictsFromError } from "../providers/pcrApi";
 import { BatchDecisionSummaryFields } from "./BatchDecisionSummaryFields";
 import { DecisionConfirmationDialog } from "./DecisionConfirmationDialog";
 import { RejectDialog } from "./RejectDialog";
+import {
+    formatPriceSnapshotConflictMessage,
+    PriceSnapshotConflictPanel,
+} from "./PriceSnapshotConflictPanel";
 import { decisionUserLabel } from "../utils/labels";
 import { displayPcrStatus, pcrApproveButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
@@ -35,6 +40,7 @@ type Props = {
     onReject?: (headerId: number, reason: string) => Promise<void> | void;
     onApplyScheduledNow?: (headerId: number) => Promise<void> | void;
     onRetryApplication?: (headerId: number) => Promise<void> | void;
+    onForceApply?: (headerId: number) => Promise<void> | void;
 };
 
 function money(value: number | null | undefined) {
@@ -92,6 +98,45 @@ function buildLineSummary(lines: UnifiedBatchLine[]) {
 }
 
 type LineSummary = ReturnType<typeof buildLineSummary>;
+
+function BatchApplicationProgress({
+    summary,
+    fallbackTotal,
+}: {
+    summary?: UnifiedBatchDetail["application_summary"];
+    fallbackTotal: number;
+}) {
+    const total = Math.max(0, summary?.total ?? fallbackTotal);
+    const applied = Math.min(total, Math.max(0, summary?.applied ?? 0));
+    const remaining = Math.max(0, total - applied);
+    const failed = Math.min(remaining, Math.max(0, summary?.failed ?? 0));
+    const applying = Math.max(0, summary?.applying ?? 0);
+    const percentage = total > 0 ? (applied / total) * 100 : 0;
+
+    return (
+        <div className="space-y-2 rounded-md border bg-muted/30 p-3 text-sm" role="status" aria-live="polite">
+            <div className="flex items-center gap-2 font-medium">
+                <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                Applying batch lines
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+                <span>{applied.toLocaleString()} of {total.toLocaleString()} lines applied</span>
+                <span>{remaining.toLocaleString()} remaining</span>
+            </div>
+            <Progress
+                value={percentage}
+                aria-label="Batch application progress"
+                aria-valuetext={`${applied} of ${total} lines applied; ${remaining} remaining`}
+            />
+            {failed > 0 || applying > 0 ? (
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                    {applying > 0 ? <span>{applying.toLocaleString()} currently applying</span> : null}
+                    {failed > 0 ? <span>{failed.toLocaleString()} failed; included in remaining</span> : null}
+                </div>
+            ) : null}
+        </div>
+    );
+}
 
 function LineTable({
     lines,
@@ -190,16 +235,20 @@ export function UnifiedBatchDetailDialog({
     onReject,
     onApplyScheduledNow,
     onRetryApplication,
+    onForceApply,
 }: Props) {
     const [detail, setDetail] = React.useState<UnifiedBatchDetail | null>(null);
     const [loading, setLoading] = React.useState(false);
     const [confirmingApprove, setConfirmingApprove] = React.useState(false);
     const [rejecting, setRejecting] = React.useState(false);
+    const [approvalConflicts, setApprovalConflicts] = React.useState<UnifiedBatchDetail["conflicts"]>([]);
+    const [applicationActionActive, setApplicationActionActive] = React.useState(false);
 
     React.useEffect(() => {
         let cancelled = false;
         if (!open || !batchId) {
             setDetail(null);
+            setApprovalConflicts([]);
             return;
         }
 
@@ -220,31 +269,138 @@ export function UnifiedBatchDetailDialog({
         };
     }, [batchId, open]);
 
+    const isApplying = applicationActionActive ||
+        String(detail?.application_status ?? "").toUpperCase() === "APPLYING" ||
+        (detail?.application_summary?.applying ?? 0) > 0;
+
+    React.useEffect(() => {
+        if (!open || !batchId || !isApplying) return;
+
+        let cancelled = false;
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        const refreshProgress = async () => {
+            try {
+                const result = await getUnifiedBatch(batchId);
+                if (!cancelled) setDetail(result.data);
+            } catch {
+                // Keep the last successful counts while the approval action reports its own errors.
+            }
+
+            if (!cancelled) timeout = setTimeout(() => void refreshProgress(), 1200);
+        };
+
+        void refreshProgress();
+        return () => {
+            cancelled = true;
+            if (timeout) clearTimeout(timeout);
+        };
+    }, [batchId, isApplying, open]);
+
     const isPending = detail?.status === "PENDING";
     const canAct = !readOnly && isPending && Boolean(onApprove && onReject) && !loading;
     const isScheduled = detail?.status === "APPROVED" && detail.application_status === "SCHEDULED";
     const canApplyScheduledNow = !readOnly && isScheduled && Boolean(onApplyScheduledNow) && !loading && !acting;
-    const canRetry = !readOnly && detail?.application_status === "FAILED" && Boolean(detail.retryable) && Boolean(onRetryApplication) && !loading && !acting;
+    const conflicts = React.useMemo(() => {
+        const values = [...(detail?.conflicts ?? []), ...(approvalConflicts ?? [])];
+        const seen = new Set<string>();
+        return values.filter((conflict) => {
+            const key = `${conflict.request_id}:${conflict.product_id}:${conflict.price_type_id}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }, [approvalConflicts, detail?.conflicts]);
+    const canRetry = !readOnly && detail?.application_status === "FAILED" && conflicts.length === 0 && Boolean(detail.retryable) && Boolean(onRetryApplication) && !loading && !acting;
     const displayStatus = detail ? displayPcrStatus(detail.status, detail.application_status, detail.effective_at) : "";
     const lines = React.useMemo(
         () => [...(detail?.price_details ?? []), ...(detail?.cost_details ?? [])],
         [detail?.cost_details, detail?.price_details],
     );
     const lineSummary = React.useMemo(() => buildLineSummary(lines), [lines]);
+    const conflictLabels = React.useMemo(
+        () => Object.fromEntries(
+            lines
+                .filter((line) => line.kind === "price_type" && line.price_type_id != null)
+                .map((line) => [
+                    `${line.product_id}:${line.price_type_id}`,
+                    {
+                        product_name: line.product_name,
+                        product_code: line.product_code,
+                        price_type_name: line.price_type_name,
+                        unit_name: line.unit_name,
+                    },
+                ]),
+        ),
+        [lines],
+    );
+    const applicationError = detail?.application_error
+        ? formatPriceSnapshotConflictMessage(detail.application_error, conflictLabels)
+        : null;
 
     const handleRetryApplication = async () => {
         if (!batchId || !onRetryApplication) return;
-        await onRetryApplication(batchId);
-        const result = await getUnifiedBatch(batchId);
-        setDetail(result.data);
+        setApplicationActionActive(true);
+        try {
+            await onRetryApplication(batchId);
+            const result = await getUnifiedBatch(batchId);
+            setDetail(result.data);
+        } finally {
+            setApplicationActionActive(false);
+        }
     };
 
     const handleApplyScheduledNow = async () => {
         if (!batchId || !onApplyScheduledNow) return;
-        await onApplyScheduledNow(batchId);
-        const result = await getUnifiedBatch(batchId);
-        setDetail(result.data);
+        setApplicationActionActive(true);
+        try {
+            await onApplyScheduledNow(batchId);
+            const result = await getUnifiedBatch(batchId);
+            setDetail(result.data);
+        } finally {
+            setApplicationActionActive(false);
+        }
     };
+
+    const handleApprove = async (effectiveAt?: string | null) => {
+        if (!batchId || !onApprove) return;
+        const effectiveTime = effectiveAt ? new Date(effectiveAt).getTime() : Number.NaN;
+        const applyImmediately = !effectiveAt || (Number.isFinite(effectiveTime) && effectiveTime <= Date.now());
+        if (applyImmediately) setApplicationActionActive(true);
+        try {
+            await onApprove(batchId, effectiveAt);
+            setConfirmingApprove(false);
+            onOpenChange(false);
+        } catch (error: unknown) {
+            const nextConflicts = priceSnapshotConflictsFromError(error);
+            if (nextConflicts.length > 0) {
+                setApprovalConflicts(nextConflicts);
+                setConfirmingApprove(false);
+                return;
+            }
+            throw error;
+        } finally {
+            setApplicationActionActive(false);
+        }
+    };
+
+    const handleForceApply = async () => {
+        if (!batchId || !onForceApply) return;
+        setApplicationActionActive(true);
+        try {
+            await onForceApply(batchId);
+            setApprovalConflicts([]);
+            onOpenChange(false);
+        } finally {
+            setApplicationActionActive(false);
+        }
+    };
+
+    const progressContent = isApplying ? (
+        <BatchApplicationProgress
+            summary={detail?.application_summary}
+            fallbackTotal={lines.length}
+        />
+    ) : undefined;
 
     return (
         <>
@@ -302,15 +458,37 @@ export function UnifiedBatchDetailDialog({
                                 <BatchDecisionSummaryFields detail={detail} />
                             </div>
 
-                            {detail.application_error ? (
-                                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
-                                    <div className="font-medium">Application issue</div>
-                                    <div className="mt-1">{detail.application_error}</div>
-                                    {detail.application_attempts != null ? (
+                            {progressContent}
+
+                            {applicationError ? (
+                               <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+                                   <div className="font-medium">Application issue</div>
+                                    <div className="mt-1 break-words">{applicationError}</div>
+                                   {detail.application_attempts != null ? (
                                         <div className="mt-1 text-xs">Attempts: {detail.application_attempts}</div>
                                     ) : null}
                                 </div>
                             ) : null}
+
+                            {detail.application_summary && detail.application_summary.failed > 0 ? (
+                                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+                                    <div className="font-medium">
+                                        {detail.application_summary.partial ? "Partially applied" : "Application failed"}
+                                    </div>
+                                    <div className="mt-1">
+                                        {detail.application_summary.applied} of {detail.application_summary.total} line(s) applied; {detail.application_summary.failed} failed.
+                                    </div>
+                                </div>
+                            ) : null}
+
+                            <PriceSnapshotConflictPanel
+                                conflicts={conflicts}
+                                recordLabel={`PCB-${detail.header_id}`}
+                                labels={conflictLabels}
+                                forceApplying={acting}
+                                progressContent={progressContent}
+                                onForceApply={onForceApply ? handleForceApply : undefined}
+                            />
 
                             <LineTable lines={lines} supplierName={detail.supplier_name} summary={lineSummary} />
                         </div>
@@ -348,12 +526,11 @@ export function UnifiedBatchDetailDialog({
                 recordLabel={`PCB-${batchId ?? ""}`}
                 loading={acting}
                 description="Approve the complete batch, including all Price Type and List Cost lines?"
+                progressContent={progressContent}
                 onOpenChange={setConfirmingApprove}
                 onConfirm={async (effectiveAt) => {
                     if (!batchId || !onApprove) return;
-                    await onApprove(batchId, effectiveAt);
-                    setConfirmingApprove(false);
-                    onOpenChange(false);
+                    await handleApprove(effectiveAt);
                 }}
             />
 

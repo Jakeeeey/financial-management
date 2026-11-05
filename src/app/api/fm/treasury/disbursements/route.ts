@@ -7,6 +7,7 @@ import {
 } from "./_purchase-order-eligibility";
 import { findMissingPayableDivisionError, findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "./_payable-split-integrity";
 import { acquireMemoCapLock, validateSupplierMemoCaps } from "./_memo-cap-integrity";
+import { isEffectivelyActivePayee } from "../_payee-status";
 import { isPettyCashBankAccount, validatePaymentLine } from "./_payment-method";
 import {
     acquireDocumentNumberLock,
@@ -75,10 +76,7 @@ export type DisbursementRow = {
     fund_source_id?: unknown;
     status?: unknown;
     supporting_documents_url?: unknown;
-};
-
-type DisbursementDraftDocRow = {
-    doc_no?: unknown;
+    source_type?: unknown;
 };
 
 export type DisbursementPaymentState =
@@ -211,6 +209,30 @@ function asNumber(value: unknown) {
     if (value == null || value === "") return undefined;
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+async function validateActivePayee(payeeId: number): Promise<{ status: number; message: string } | null> {
+    const response = await fetch(`${DIRECTUS_URL}/items/suppliers/${payeeId}?fields=id,isActive`, {
+        headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+        cache: "no-store",
+    });
+
+    if (response.status === 404) {
+        return { status: 404, message: "Payee was not found." };
+    }
+    if (!response.ok) {
+        throw new Error(`Unable to verify payee status (${response.status}).`);
+    }
+
+    const payload = await response.json() as { data?: { isActive?: unknown } };
+    if (!isEffectivelyActivePayee(payload.data?.isActive)) {
+        return {
+            status: 409,
+            message: "Inactive payees cannot be used for new transactions.",
+        };
+    }
+
+    return null;
 }
 
 export function relationId(
@@ -422,22 +444,9 @@ async function getSupplierIds(search: string) {
         .filter((id): id is number => Boolean(id));
 }
 
-async function getWerDocumentNumbers() {
-    const res = await directusFetch<DirectusList<DisbursementDraftDocRow>>(
-        "/items/disbursement_draft?fields=doc_no&limit=-1",
-    );
-
-    return Array.from(new Set(
-        (res.data ?? [])
-            .map((row) => asString(row.doc_no).trim().toUpperCase())
-            .filter(Boolean),
-    ));
-}
-
 function buildDisbursementParams(
     searchParams: URLSearchParams,
     supplierIds: number[],
-    werDocumentNumbers: string[] = [],
 ) {
     const page = normalizePage(searchParams.get("page"));
     const size = normalizeSize(searchParams.get("size"));
@@ -486,6 +495,7 @@ function buildDisbursementParams(
             "department_id.department_name",
             "fund_source_id",
             "supporting_documents_url",
+            "source_type",
             "status",
         ].join(","),
     );
@@ -496,7 +506,7 @@ function buildDisbursementParams(
         filterIndex = appendFilter(params, filterIndex, "transaction_type", "_eq", "2");
     }
     if (source.trim().toUpperCase() === "WER") {
-        filterIndex = appendFilter(params, filterIndex, "doc_no", "_in", werDocumentNumbers.join(","));
+        filterIndex = appendFilter(params, filterIndex, "source_type", "_eq", "LOGISTICS_WER");
     }
     if (status && status !== "All") {
         const op = status.includes(",") ? "_in" : "_eq";
@@ -770,6 +780,7 @@ export function normalizeDisbursement(
         fundSourceId: asNumber(row.fund_source_id),
         status,
         supportingDocumentsUrl: asString(row.supporting_documents_url),
+        sourceType: asString(row.source_type) || null,
         payables,
         payments,
     };
@@ -937,22 +948,7 @@ export async function GET(request: NextRequest) {
             });
         }
 
-        const source = searchParams.get("source")?.trim().toUpperCase() || "";
-        const werDocumentNumbers = source === "WER"
-            ? await getWerDocumentNumbers()
-            : [];
-
-        if (source === "WER" && werDocumentNumbers.length === 0) {
-            return NextResponse.json({
-                content: [],
-                totalElements: 0,
-                totalPages: 0,
-                number: normalizePage(searchParams.get("page")),
-                size: normalizeSize(searchParams.get("size")),
-            });
-        }
-
-        const query = buildDisbursementParams(searchParams, supplierIds, werDocumentNumbers);
+        const query = buildDisbursementParams(searchParams, supplierIds);
         const disbursementsRes = await directusFetch<DirectusList<DisbursementRow>>(
             `/items/disbursement?${query.params.toString()}`,
         );
@@ -1069,14 +1065,27 @@ export async function POST(request: NextRequest) {
                 : line
         );
 
-        releaseMemoCapLock = await acquireMemoCapLock(payableLinesInput);
-
         // 1. Fetch payee supplier type to determine prefix (Trade / Non-Trade)
         if (!body.payeeId) {
             return NextResponse.json({ message: "Payee (Supplier ID) is required." }, { status: 400 });
         }
 
-        const memoCapError = await validateSupplierMemoCaps(Number(body.payeeId), requestedPayables);
+        const payeeId = Number(body.payeeId);
+        if (!Number.isInteger(payeeId) || payeeId <= 0) {
+            return NextResponse.json({ message: "Payee (Supplier ID) is invalid." }, { status: 400 });
+        }
+
+        const payeeValidationError = await validateActivePayee(payeeId);
+        if (payeeValidationError) {
+            return NextResponse.json(
+                { message: payeeValidationError.message },
+                { status: payeeValidationError.status },
+            );
+        }
+
+        releaseMemoCapLock = await acquireMemoCapLock(payableLinesInput);
+
+        const memoCapError = await validateSupplierMemoCaps(payeeId, requestedPayables);
         if (memoCapError) {
             return NextResponse.json({
                 message: memoCapError.isLocked
@@ -1097,7 +1106,7 @@ export async function POST(request: NextRequest) {
 
         const taggedPoReferences = await findTaggedPurchaseOrderReferences(
             requestedPayables.map((line) => line.referenceNo),
-            Number(body.payeeId),
+            payeeId,
         );
         if (taggedPoReferences.length > 0) {
             return NextResponse.json({
@@ -1109,7 +1118,7 @@ export async function POST(request: NextRequest) {
 
         const unpostedPoReferences = await findUnpostedPurchaseOrderReferences(
             requestedPayables.map((line) => line.referenceNo),
-            Number(body.payeeId),
+            payeeId,
         );
         if (unpostedPoReferences.length > 0) {
             return NextResponse.json({
@@ -1121,7 +1130,7 @@ export async function POST(request: NextRequest) {
 
         const incomingCanonical = canonicalizeDisbursementPayload({
             transactionTypeId,
-            payeeId: body.payeeId,
+            payeeId,
             remarks: body.remarks,
             totalAmount: body.totalAmount,
             transactionDate: body.transactionDate,
@@ -1146,7 +1155,7 @@ export async function POST(request: NextRequest) {
             const headerPayload = {
                 doc_no: docNoForCreation,
                 transaction_type: transactionTypeId,
-                payee: Number(body.payeeId),
+                payee: payeeId,
                 remarks: body.remarks || "",
                 total_amount: Number(body.totalAmount) || 0,
                 paid_amount: calculatedPaidAmount,

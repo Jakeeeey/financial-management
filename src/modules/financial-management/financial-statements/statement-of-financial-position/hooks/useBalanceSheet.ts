@@ -20,16 +20,21 @@ export function useBalanceSheet() {
     comparisonEntries: context.comparisonEntries,
     summary: context.summary,
     comparisonSummary: context.comparisonSummary,
+    comparisonStatus: context.comparisonStatus,
 
     // State
     filters: context.filters,
+    appliedFilters: context.appliedFilters,
+    hasPendingChanges: context.hasPendingChanges,
     setFilters: context.setFilters,
     isLoading: context.isLoading,
-    isInitialLoad: context.isInitialLoad,
+    reportStatus: context.reportStatus,
+    lastUpdated: context.lastUpdated,
     error: context.error,
 
     // Actions
     refresh: context.refresh,
     resetFilters: context.resetFilters,
+    removeAppliedFilter: context.removeAppliedFilter,
   };
 }

@@ -56,11 +56,11 @@ export function BudgetLifecycleModal({ budgetId, budgetNo, isOpen, onClose }: Bu
   const latestLog = lifecycle[lifecycle.length - 1];
   const contextLog = referenceLog || latestLog;
   const displayValue = (value?: string | null) => {
-    if (!value || value === "â€”") return "-";
+    if (!value || value === "—" || value === "â€”") return "-";
     return value;
   };
   const coaContext = contextLog
-    ? `${contextLog.gl_code && contextLog.gl_code !== "â€”" ? `${contextLog.gl_code} - ` : ""}${displayValue(contextLog.coa_name)}`
+    ? `${contextLog.gl_code && contextLog.gl_code !== "—" && contextLog.gl_code !== "â€”" ? `${contextLog.gl_code} - ` : ""}${displayValue(contextLog.coa_name)}`
     : "-";
 
   return (

@@ -2,38 +2,43 @@ import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DataTable } from "@/components/ui/new-data-table";
 import { ColumnDef } from "@tanstack/react-table";
+import { Button } from "@/components/ui/button";
 import { FinancialAccount } from "../types";
 import { useBalanceSheet } from "../hooks/useBalanceSheet";
-import { DrillDownEntry } from "../types/balance-sheet.schema";
+import { BalanceSheetDrillDownResponse, DrillDownEntry } from "../types/balance-sheet.schema";
 import { Card, CardContent } from "@/components/ui/card";
-import { format } from "date-fns";
 
 interface Props {
     account: FinancialAccount | null;
     isOpen: boolean;
     onOpenChange: (open: boolean) => void;
+    invokingElementRef: { current: HTMLButtonElement | null };
 }
 
-export function DrillDownModal({ account, isOpen, onOpenChange }: Props) {
-    const { filters } = useBalanceSheet();
-    const [data, setData] = useState<DrillDownEntry[]>([]);
+export function DrillDownModal({ account, isOpen, onOpenChange, invokingElementRef }: Props) {
+    const { appliedFilters } = useBalanceSheet();
+    const [data, setData] = useState<BalanceSheetDrillDownResponse | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [retryCount, setRetryCount] = useState(0);
 
     useEffect(() => {
-        if (!isOpen || !account) return;
+        if (!isOpen || !account || !appliedFilters) return;
 
         let isMounted = true;
         const fetchData = async () => {
             setIsLoading(true);
             setError(null);
-            setData([]);
+            setData(null);
             try {
                 const query = new URLSearchParams({
-                    glCode: account.code,
-                    startDate: filters.startDate,
-                    endDate: filters.endDate,
+                    coaId: String(account.coaId ?? Number(account.id)),
+                    startDate: appliedFilters.startDate,
+                    endDate: appliedFilters.endDate,
+                    status: appliedFilters.status,
                 });
+                if (appliedFilters.divisionName) query.set("divisionName", appliedFilters.divisionName);
+                if (appliedFilters.departmentName) query.set("departmentName", appliedFilters.departmentName);
                 const res = await fetch(`/api/fm/financial-statements/balance-sheet/drill-down?${query.toString()}`);
                 if (!res.ok) {
                     throw new Error("Failed to fetch drill-down data");
@@ -41,8 +46,7 @@ export function DrillDownModal({ account, isOpen, onOpenChange }: Props) {
                 const result = await res.json();
 
                 if (isMounted) {
-                    // Assuming result is DrillDownEntry[]
-                    setData(Array.isArray(result) ? result : []);
+                    setData(result as BalanceSheetDrillDownResponse);
                 }
             } catch (err: unknown) {
                 if (isMounted) setError(err instanceof Error ? err.message : "An error occurred");
@@ -55,14 +59,35 @@ export function DrillDownModal({ account, isOpen, onOpenChange }: Props) {
         return () => {
             isMounted = false;
         };
-    }, [isOpen, account, filters.startDate, filters.endDate]);
+    }, [isOpen, account, appliedFilters, retryCount]);
 
-    const formatCurrency = (val: number | undefined) => {
-        if (val === undefined) return "₱0.00";
-        // Show absolute magnitude as requested (remove '-' signs)
-        const absoluteValue = Math.abs(val);
-        return `₱${absoluteValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const formatCurrency = (val: number | null | undefined) => {
+        if (val === null || val === undefined) return "—";
+        const magnitude = Math.abs(val).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return val < 0 ? `-₱${magnitude}` : `₱${magnitude}`;
     };
+
+    const formatReportDate = (value?: string) => value
+        ? new Intl.DateTimeFormat("en-PH", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })
+            .format(new Date(`${value}T00:00:00Z`))
+        : "date unavailable";
+
+    const formatTransactionDate = (value: string) => {
+        try {
+            return new Intl.DateTimeFormat("en-PH", {
+                dateStyle: "medium",
+                timeStyle: "short",
+                timeZone: "Asia/Manila",
+            }).format(new Date(value));
+        } catch {
+            return value;
+        }
+    };
+
+    const formatScopeValue = (value: string) => value || "All";
+    const reportDifference = data && account
+        ? Math.round((account.currentPeriod - data.closingBalance) * 100) / 100
+        : null;
 
     const columns: ColumnDef<DrillDownEntry>[] = [
         {
@@ -78,15 +103,7 @@ export function DrillDownModal({ account, isOpen, onOpenChange }: Props) {
         {
             accessorKey: "date",
             header: "Date",
-            cell: ({ row }) => {
-                const dateStr = row.original.date;
-                try {
-                    const dateObj = new Date(dateStr);
-                    return <span className="text-muted-foreground font-medium">{format(dateObj, "yyyy-MM-dd")}</span>;
-                } catch {
-                    return <span className="text-muted-foreground font-medium">{dateStr}</span>;
-                }
-            }
+            cell: ({ row }) => <span className="text-muted-foreground font-medium">{formatTransactionDate(row.original.date)}</span>
         },
         {
             accessorKey: "description",
@@ -107,7 +124,15 @@ export function DrillDownModal({ account, isOpen, onOpenChange }: Props) {
     return (
         <Dialog open={isOpen} onOpenChange={onOpenChange}>
             {/* 1. Modal constrained to viewport (`max-h-[90vh]`), uses `flex flex-col` to control internal layout instead of grid */}
-            <DialogContent className="!max-w-[1200px] w-[95vw] sm:max-w-[1200px] p-6 gap-4 bg-card border shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+            <DialogContent
+                onCloseAutoFocus={(event) => {
+                    event.preventDefault();
+                    if (invokingElementRef.current?.isConnected) {
+                        invokingElementRef.current.focus();
+                    }
+                }}
+                className="!max-w-[1200px] w-[95vw] sm:max-w-[1200px] p-6 gap-4 bg-card border shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
+            >
                 <DialogHeader className="flex flex-row items-center justify-between space-y-0 pb-0 shrink-0">
                     <DialogTitle className="text-3xl font-bold tracking-tight">
                         {account?.account || "Account Details"}
@@ -115,26 +140,52 @@ export function DrillDownModal({ account, isOpen, onOpenChange }: Props) {
                 </DialogHeader>
 
                 {/* Summary Section - `shrink-0` ensures this fixed header doesn't get crushed when table grows */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start shrink-0">
+                <div className="grid shrink-0 grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     <Card className="shadow-none border bg-muted/5 transition-colors hover:bg-muted/10">
                         <CardContent className="p-4 flex flex-col gap-1">
-                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Current Balance</span>
+                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Statement balance as of {formatReportDate(appliedFilters?.endDate)}</span>
                             <span className="text-2xl font-black tracking-tighter">{formatCurrency(account?.currentPeriod)}</span>
                         </CardContent>
                     </Card>
                     <Card className="shadow-none border bg-muted/5 transition-colors hover:bg-muted/10">
                         <CardContent className="p-4 flex flex-col gap-1">
-                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Prior Balance</span>
-                            <span className="text-2xl font-black tracking-tighter">{formatCurrency(account?.priorPeriod)}</span>
+                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Opening balance before {formatReportDate(appliedFilters?.startDate)}</span>
+                            <span className="text-2xl font-black tracking-tighter">{formatCurrency(data?.openingBalance)}</span>
                         </CardContent>
                     </Card>
                     <Card className="shadow-none border bg-muted/5 transition-colors hover:bg-muted/10">
                         <CardContent className="p-4 flex flex-col gap-1">
-                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Variance</span>
-                            <span className="text-2xl font-black tracking-tighter">{formatCurrency(account?.variance)}</span>
+                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Net movement · {formatReportDate(appliedFilters?.startDate)} to {formatReportDate(appliedFilters?.endDate)}</span>
+                            <span className="text-2xl font-black tracking-tighter">{formatCurrency(data?.periodMovement)}</span>
+                            <span className="text-xs text-muted-foreground">All transactions matching the applied scope</span>
+                        </CardContent>
+                    </Card>
+                    <Card className="shadow-none border bg-muted/5 transition-colors hover:bg-muted/10">
+                        <CardContent className="p-4 flex flex-col gap-1">
+                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Ledger balance as of {formatReportDate(appliedFilters?.endDate)}</span>
+                            <span className="text-2xl font-black tracking-tighter">{formatCurrency(data?.closingBalance)}</span>
+                        </CardContent>
+                    </Card>
+                    <Card className="shadow-none border bg-muted/5 transition-colors hover:bg-muted/10">
+                        <CardContent className="p-4 flex flex-col gap-1">
+                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Reconciliation difference</span>
+                            <span className="text-2xl font-black tracking-tighter">{formatCurrency(data?.reconciliationDifference)}</span>
+                            <span className="text-xs text-muted-foreground">Closing balance minus opening balance and net movement</span>
                         </CardContent>
                     </Card>
                 </div>
+
+                {appliedFilters && (
+                    <p className="shrink-0 text-xs text-muted-foreground">
+                        Applied scope: {appliedFilters.status || "All statuses"} · Division {formatScopeValue(appliedFilters.divisionName)} · Department {formatScopeValue(appliedFilters.departmentName)}
+                    </p>
+                )}
+
+                {reportDifference !== null && Math.abs(reportDifference) >= 0.005 && (
+                    <p role="status" className="shrink-0 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700">
+                        The inspected ledger balance differs from the displayed statement balance by {formatCurrency(reportDifference)}.
+                    </p>
+                )}
 
                 {/* Main Table - `flex-1 overflow-y-auto` restricts height and enables smooth internal-level scrolling */}
                 <div className="mt-0 flex-1 overflow-y-auto min-h-0 pr-2 pb-2 scrollbar-thin">
@@ -146,16 +197,19 @@ export function DrillDownModal({ account, isOpen, onOpenChange }: Props) {
                             </div>
                         </div>
                     ) : error ? (
-                        <div className="h-[300px] flex items-center justify-center text-destructive border rounded-xl bg-destructive/5">
+                        <div className="h-[300px] flex flex-col items-center justify-center gap-3 text-destructive border rounded-xl bg-destructive/5">
                             <span className="text-sm font-bold">{error}</span>
+                            <Button type="button" variant="outline" onClick={() => setRetryCount(count => count + 1)}>
+                                Retry inspection
+                            </Button>
                         </div>
                     ) : (
                         <DataTable
                             columns={columns}
-                            data={data}
+                            data={data?.transactions ?? []}
                             searchKey="description"
                             emptyTitle="No transactions found"
-                            emptyDescription="There are no transactions for this account in the selected period."
+                            emptyDescription="There are no transactions for this account in the applied activity range."
                         />
                     )}
                 </div>

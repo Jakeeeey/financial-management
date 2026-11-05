@@ -34,7 +34,7 @@ export function POTable({ data, loading, error }: POTableProps) {
   if (!data.length) {
     return (
       <div className="rounded-md border p-8 text-center text-sm text-muted-foreground">
-        No purchase orders found.
+        No procurement summaries found.
       </div>
     );
   }
@@ -56,7 +56,7 @@ export function POTable({ data, loading, error }: POTableProps) {
             <TableRow
               key={po.id ?? po.purchase_order_id}
               className="cursor-pointer hover:bg-muted/50"
-              onClick={() => router.push(`/fm/procurement/purchase-order/${po.id ?? po.purchase_order_id}`)}
+              onClick={() => router.push(`/fm/procurement/procurement-summary/${po.id ?? po.purchase_order_id}`)}
             >
               <TableCell className="font-medium truncate max-w-[180px]">{po.purchase_order_no || "—"}</TableCell>
               <TableCell className="text-muted-foreground truncate max-w-[300px]">{(po as unknown as Record<string, unknown>)._supplier_name as string || "—"}</TableCell>

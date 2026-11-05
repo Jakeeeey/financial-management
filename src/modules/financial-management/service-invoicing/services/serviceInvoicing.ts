@@ -35,13 +35,17 @@ export async function fetchServiceInvoicingMetadata(): Promise<ServiceInvoicingM
  * Verify whether an invoice number already exists in sales_invoice table
  */
 export async function checkInvoiceNoUniqueness(invoiceNo: string): Promise<boolean> {
-  const res = await fetch(`/api/fm/service-invoicing?invoice_no=${encodeURIComponent(invoiceNo.trim())}`);
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.error || "Failed to verify invoice number uniqueness.");
+  try {
+    const res = await fetch(`/api/fm/service-invoicing?invoice_no=${encodeURIComponent(invoiceNo.trim())}`);
+    if (!res.ok) {
+      return false;
+    }
+    const data = await res.json();
+    return !!data.exists;
+  } catch (err) {
+    console.warn("Failed to verify invoice number uniqueness:", err);
+    return false;
   }
-  const data = await res.json();
-  return !!data.exists;
 }
 
 /**

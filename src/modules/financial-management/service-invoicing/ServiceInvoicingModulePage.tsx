@@ -582,10 +582,12 @@ export default function ServiceInvoicingModulePage() {
     return selectedList.reduce((sum, item) => sum + item.amountApplied, 0);
   }, [selectedList]);
 
-  // Sync gross amount to total applied sum on selections change
+  // Sync gross amount to total applied sum only when child invoices are selected
   useEffect(() => {
-    setGrossAmount(totalAppliedSum.toString());
-  }, [totalAppliedSum]);
+    if (selectedList.length > 0) {
+      setGrossAmount(totalAppliedSum.toString());
+    }
+  }, [totalAppliedSum, selectedList.length]);
 
   const calculatedNet = useMemo(() => {
     const gross = Number(grossAmount) || 0;
@@ -599,6 +601,9 @@ export default function ServiceInvoicingModulePage() {
       return sum + (inv ? Number(inv.total_amount || 0) : 0);
     }, 0);
   }, [selectedList, childInvoices]);
+
+  const isAmountRequiredMissing = selectedList.length === 0 && (Number(grossAmount) <= 0 || isNaN(Number(grossAmount)));
+  const isSubmitDisabled = submitting || isAmountRequiredMissing;
 
   // Submit consolidated parent service invoice
   const handleSubmit = async () => {
@@ -620,8 +625,11 @@ export default function ServiceInvoicingModulePage() {
     if (!selectedInvoiceType) {
       return toast.error("Please select an Invoice Type.");
     }
-    if (selectedList.length === 0) {
-      return toast.error("Please select at least one sales invoice to consolidate.");
+    if (selectedList.length === 0 && Number(grossAmount) <= 0) {
+      return toast.error("Please enter a Gross Amount greater than 0 before saving.");
+    }
+    if (Number(grossAmount) <= 0) {
+      return toast.error("Please enter a Gross Amount greater than 0.");
     }
 
     setSubmitting(true);
@@ -647,7 +655,7 @@ export default function ServiceInvoicingModulePage() {
         invoice_type: Number(selectedInvoiceType),
         invoice_date: new Date(invoiceDate).toISOString(),
         due_date: new Date(dueDate).toISOString(),
-        dispatch_date: latestDispatchDate ? new Date(latestDispatchDate).toISOString() : null,
+        dispatch_date: latestDispatchDate ? new Date(latestDispatchDate).toISOString() : new Date(invoiceDate).toISOString(),
         gross_amount: Number(grossAmount) || 0,
         discount_amount: Number(discountAmount) || 0,
         net_amount: calculatedNet,
@@ -877,6 +885,7 @@ export default function ServiceInvoicingModulePage() {
                 <div className="flex justify-between items-center">
                   <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                     <Calendar className="w-3.5 h-3.5 text-indigo-500"/> Select Child Invoices to Consolidate
+                    <span className="text-[9px] font-normal text-muted-foreground/80 lowercase">(optional)</span>
                   </label>
                   {selectedCustomer && (
                     <Badge variant="secondary" className="font-mono text-[9px] bg-indigo-50 dark:bg-indigo-950/20 text-indigo-700 dark:text-indigo-400 border-indigo-200/50">
@@ -901,7 +910,7 @@ export default function ServiceInvoicingModulePage() {
                     <AlertCircle className="w-5 h-5 text-indigo-500 mx-auto" />
                     <p className="text-xs font-bold text-foreground uppercase tracking-widest">No unlinked invoices found.</p>
                     <p className="text-[10px] text-muted-foreground font-semibold">
-                      All invoices for this customer have already been linked or consolidated.
+                      All invoices for this customer have already been linked or consolidated. You can still save a standalone consolidation by entering the gross amount on the right.
                     </p>
                   </div>
                 ) : (
@@ -1002,10 +1011,10 @@ export default function ServiceInvoicingModulePage() {
               
               <CardContent className="p-5 space-y-4">
                 
-                <div className="flex justify-between items-center text-xs border-b border-border/40 pb-2">
-                  <span className="font-bold text-muted-foreground uppercase">Selected Invoices</span>
-                  <Badge variant="secondary" className="font-mono font-bold text-indigo-700 bg-indigo-50 dark:bg-indigo-950/30">
-                    {selectedList.length} Invoices
+                <div className="flex justify-between items-center text-xs border-b border-border/40 pb-2 gap-2">
+                  <span className="font-bold text-muted-foreground uppercase whitespace-nowrap">Selected</span>
+                  <Badge variant="secondary" className="font-mono font-bold text-indigo-700 bg-indigo-50 dark:bg-indigo-950/30 text-[10px] whitespace-nowrap">
+                    {selectedList.length === 0 ? "Standalone (0)" : `${selectedList.length} ${selectedList.length === 1 ? 'Invoice' : 'Invoices'}`}
                   </Badge>
                 </div>
 
@@ -1018,12 +1027,21 @@ export default function ServiceInvoicingModulePage() {
 
                 <div className="space-y-3 pt-2">
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Gross Amount (₱)</label>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+                      <span>Gross Amount (₱)</span>
+                      {selectedList.length === 0 && Number(grossAmount) <= 0 && (
+                        <span className="text-[9px] font-bold text-destructive">Required</span>
+                      )}
+                    </label>
                     <Input
                       type="number"
                       value={grossAmount}
                       onChange={(e) => setGrossAmount(e.target.value)}
-                      className="h-9 text-xs font-bold text-foreground bg-background shadow-none rounded-lg"
+                      placeholder="0.00"
+                      className={cn(
+                        "h-9 text-xs font-bold text-foreground bg-background shadow-none rounded-lg transition-colors",
+                        selectedList.length === 0 && Number(grossAmount) <= 0 ? "border-amber-500/60 focus-visible:ring-amber-500/30" : ""
+                      )}
                     />
                   </div>
 
@@ -1048,21 +1066,36 @@ export default function ServiceInvoicingModulePage() {
                       Net = Gross - Discount. This represents the final parent invoice net total.
                     </p>
                   </div>
+
+                  {selectedList.length === 0 && (
+                    Number(grossAmount) <= 0 ? (
+                      <div className="bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 p-2.5 rounded-xl text-[10px] font-semibold flex items-center gap-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                        <span>Enter an amount above ₱0.00 to save without child invoices.</span>
+                      </div>
+                    ) : (
+                      <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400 p-2.5 rounded-xl text-[10px] font-semibold flex items-center gap-1.5">
+                        <Check className="w-3.5 h-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                        <span>Ready to save standalone consolidation.</span>
+                      </div>
+                    )
+                  )}
                 </div>
 
                 <Button
                   onClick={handleSubmit}
-                  disabled={submitting || selectedList.length === 0}
-                  className="w-full h-11 text-xs font-black uppercase tracking-widest transition-all active:scale-95 shadow-md bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 rounded-xl"
+                  disabled={isSubmitDisabled}
+                  className="w-full h-11 text-xs font-black uppercase tracking-wider transition-all active:scale-95 shadow-md bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 disabled:cursor-not-allowed rounded-xl flex items-center justify-center gap-2 px-3"
                 >
                   {submitting ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                      Processing...
+                      <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                      <span>Processing...</span>
                     </>
                   ) : (
                     <>
-                      Save Consolidation <ArrowRight className="w-4 h-4 ml-2" />
+                      <span>{selectedList.length === 0 ? "Save Standalone" : "Save Consolidation"}</span>
+                      <ArrowRight className="w-4 h-4 shrink-0" />
                     </>
                   )}
                 </Button>
@@ -1133,6 +1166,11 @@ export default function ServiceInvoicingModulePage() {
                           <Badge variant="outline" className="text-[9px] font-mono text-emerald-700 bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200">
                             {parent.transaction_status || "Onboarded"}
                           </Badge>
+                          {(!parent.children || parent.children.length === 0) && (
+                            <Badge variant="outline" className="text-[9px] font-mono text-muted-foreground border-border/60">
+                              Standalone (0 Linked)
+                            </Badge>
+                          )}
                         </div>
                         <div className="text-[10px] font-bold text-muted-foreground uppercase flex flex-wrap gap-x-3 gap-y-1">
                           <span className="flex items-center gap-1"><User size={10} /> Salesman: {salesm ? salesm.salesman_name : `ID: ${parent.salesman_id}`}</span>
@@ -1162,36 +1200,44 @@ export default function ServiceInvoicingModulePage() {
                     {/* Child Invoices Expansion Sub-table */}
                     {isExpanded && (
                       <div className="px-5 pb-5 pt-1 border-t border-border/30 bg-muted/5 animate-in slide-in-from-top-1 duration-200">
-                        <div className="rounded-xl border border-border/50 bg-background overflow-hidden mt-2">
-                          <Table>
-                            <TableHeader className="bg-muted/50">
-                              <TableRow className="border-border">
-                                <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Child Invoice No</TableHead>
-                                <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Invoice Date</TableHead>
-                                <TableHead className="text-[9px] font-black uppercase tracking-widest text-right text-muted-foreground">Original Amount</TableHead>
-                                <TableHead className="text-[9px] font-black uppercase tracking-widest text-right text-indigo-600 dark:text-indigo-400">Consolidated Share</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {parent.children.map((child: HistoryChildInvoice) => (
-                                <TableRow key={child.mapping_id} className="border-border hover:bg-muted/10 transition-colors">
-                                  <TableCell className="p-2.5 text-xs font-bold text-foreground">
-                                    {child.child_invoice_no}
-                                  </TableCell>
-                                  <TableCell className="p-2.5 text-[10px] font-bold text-muted-foreground font-mono">
-                                    {formatInvoiceDate(child.child_date)}
-                                  </TableCell>
-                                  <TableCell className="p-2.5 text-xs font-bold text-right text-foreground">
-                                    ₱{Number(child.child_total_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                  </TableCell>
-                                  <TableCell className="p-2.5 text-xs font-black text-right text-indigo-600 dark:text-indigo-400">
-                                    ₱{Number(child.amount_applied || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                  </TableCell>
+                        {(!parent.children || parent.children.length === 0) ? (
+                          <div className="rounded-xl border border-dashed border-border/60 bg-background/50 p-4 text-center mt-2">
+                            <p className="text-xs font-semibold text-muted-foreground">
+                              No child sales invoices linked to this service invoice.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="rounded-xl border border-border/50 bg-background overflow-hidden mt-2">
+                            <Table>
+                              <TableHeader className="bg-muted/50">
+                                <TableRow className="border-border">
+                                  <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Child Invoice No</TableHead>
+                                  <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Invoice Date</TableHead>
+                                  <TableHead className="text-[9px] font-black uppercase tracking-widest text-right text-muted-foreground">Original Amount</TableHead>
+                                  <TableHead className="text-[9px] font-black uppercase tracking-widest text-right text-indigo-600 dark:text-indigo-400">Consolidated Share</TableHead>
                                 </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
+                              </TableHeader>
+                              <TableBody>
+                                {parent.children.map((child: HistoryChildInvoice) => (
+                                  <TableRow key={child.mapping_id} className="border-border hover:bg-muted/10 transition-colors">
+                                    <TableCell className="p-2.5 text-xs font-bold text-foreground">
+                                      {child.child_invoice_no}
+                                    </TableCell>
+                                    <TableCell className="p-2.5 text-[10px] font-bold text-muted-foreground font-mono">
+                                      {formatInvoiceDate(child.child_date)}
+                                    </TableCell>
+                                    <TableCell className="p-2.5 text-xs font-bold text-right text-foreground">
+                                      ₱{Number(child.child_total_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                    </TableCell>
+                                    <TableCell className="p-2.5 text-xs font-black text-right text-indigo-600 dark:text-indigo-400">
+                                      ₱{Number(child.amount_applied || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        )}
                       </div>
                     )}
                   </Card>

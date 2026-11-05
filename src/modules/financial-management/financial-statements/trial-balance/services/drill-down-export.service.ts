@@ -1,21 +1,9 @@
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
 import { TrialBalanceDrillDownItem } from "../types/trial-balance.schema";
+import { PERIOD_ACTIVITY_NOTE, PESO_NUMBER_FORMAT } from "../utils/money";
 
 const COMPANY_NAME = process.env.NEXT_PUBLIC_COMPANY_NAME || "MEN2 MARKETING AND DISTRIBUTION ENTERPRISE CORPORATION";
-
-const formatNumber = (val: number) => {
-  if (val === 0) return "0.00";
-  return new Intl.NumberFormat("en-PH", {
-    style: "decimal",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(val);
-};
-
-const round = (val: number): number => {
-  return Math.round((val + Number.EPSILON) * 100) / 100;
-};
 
 interface DrillDownExportOptions {
   items: TrialBalanceDrillDownItem[];
@@ -26,14 +14,14 @@ interface DrillDownExportOptions {
 }
 
 const buildRows = (items: TrialBalanceDrillDownItem[]) => {
-  let totalDebit = 0;
-  let totalCredit = 0;
+  let totalDebitCentavos = 0;
+  let totalCreditCentavos = 0;
 
   const rows = items.map((item) => {
-    const debit = Number(item.debit || 0);
-    const credit = Number(item.credit || 0);
-    totalDebit = round(totalDebit + debit);
-    totalCredit = round(totalCredit + credit);
+    const debit = Number(item.debit ?? 0);
+    const credit = Number(item.credit ?? 0);
+    totalDebitCentavos += Math.round(debit * 100);
+    totalCreditCentavos += Math.round(credit * 100);
 
     return [
       item.journalEntryId || "",
@@ -46,13 +34,13 @@ const buildRows = (items: TrialBalanceDrillDownItem[]) => {
     ];
   });
 
-  rows.push(["TOTAL", "", "", totalDebit, totalCredit, "", ""]);
+  rows.push(["TOTAL", "", "", totalDebitCentavos / 100, totalCreditCentavos / 100, "", ""]);
   return rows;
 };
 
-const HEADERS = ["Journal ID", "Date", "Description", "Debit", "Credit", "Source", "Posted By"];
+const HEADERS = ["Journal ID", "Date", "Description", "Debit amount (PHP)", "Credit amount (PHP)", "Source", "Posted By"];
 
-export const exportDrillDownToExcel = (opts: DrillDownExportOptions) => {
+const buildWorksheet = (opts: DrillDownExportOptions, numberFormat: string) => {
   const { items, glCode, accountTitle, startDate, endDate } = opts;
   const dateRangeText = `${format(new Date(startDate), "MMM d, yyyy")} to ${format(new Date(endDate), "MMM d, yyyy")}`;
   const rows = buildRows(items);
@@ -61,6 +49,7 @@ export const exportDrillDownToExcel = (opts: DrillDownExportOptions) => {
     [COMPANY_NAME],
     [`TRIAL BALANCE DRILL DOWN — ${glCode} ${accountTitle}`],
     [dateRangeText],
+    [PERIOD_ACTIVITY_NOTE],
     [],
     HEADERS,
     ...rows,
@@ -72,58 +61,40 @@ export const exportDrillDownToExcel = (opts: DrillDownExportOptions) => {
     { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } },
     { s: { r: 1, c: 0 }, e: { r: 1, c: 6 } },
     { s: { r: 2, c: 0 }, e: { r: 2, c: 6 } },
+    { s: { r: 3, c: 0 }, e: { r: 3, c: 6 } },
   ];
+  const headerRow = worksheetData.findIndex(row => row[0] === "Journal ID");
+  for (let row = headerRow + 1; row < worksheetData.length; row++) {
+    for (const column of [3, 4]) ws[XLSX.utils.encode_cell({ r: row, c: column })].z = numberFormat;
+  }
 
   ws["!cols"] = [
     { wch: 18 }, // Journal ID
     { wch: 14 }, // Date
     { wch: 40 }, // Description
-    { wch: 16 }, // Debit
-    { wch: 16 }, // Credit
+    { wch: 24 }, // Debit amount
+    { wch: 24 }, // Credit amount
     { wch: 16 }, // Source
     { wch: 16 }, // Posted By
   ];
+  return ws;
+};
 
+export const exportDrillDownToExcel = (opts: DrillDownExportOptions) => {
+  const ws = buildWorksheet(opts, PESO_NUMBER_FORMAT);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Drill Down");
-  XLSX.writeFile(wb, `DrillDown_${glCode}_${format(new Date(), "yyyyMMdd")}.xlsx`);
+  XLSX.writeFile(wb, `DrillDown_${opts.glCode}_${format(new Date(), "yyyyMMdd")}.xlsx`);
 };
 
 export const exportDrillDownToCSV = (opts: DrillDownExportOptions) => {
-  const { items, glCode } = opts;
-
-  const csvRows: string[] = [];
-  csvRows.push(HEADERS.join(","));
-
-  items.forEach((item) => {
-    const debit = Number(item.debit || 0);
-    const credit = Number(item.credit || 0);
-    const row = [
-      `"${item.journalEntryId || ""}"`,
-      `"${item.date ? format(new Date(item.date), "yyyy-MM-dd") : ""}"`,
-      `"${(item.description || "").replace(/"/g, '""')}"`,
-      formatNumber(debit),
-      formatNumber(credit),
-      `"${item.source || ""}"`,
-      `"${item.postedBy ?? ""}"`,
-    ];
-    csvRows.push(row.join(","));
-  });
-
-  // Add totals
-  let totalDebit = 0;
-  let totalCredit = 0;
-  items.forEach((item) => {
-    totalDebit = round(totalDebit + Number(item.debit || 0));
-    totalCredit = round(totalCredit + Number(item.credit || 0));
-  });
-  csvRows.push(`"TOTAL","","",${formatNumber(totalDebit)},${formatNumber(totalCredit)},"",""`);
-
-  const blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const ws = buildWorksheet(opts, "0.00");
+  const csv = XLSX.utils.sheet_to_csv(ws);
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `DrillDown_${glCode}_${format(new Date(), "yyyyMMdd")}.csv`;
+  link.download = `DrillDown_${opts.glCode}_${format(new Date(), "yyyyMMdd")}.csv`;
   link.click();
   URL.revokeObjectURL(url);
 };

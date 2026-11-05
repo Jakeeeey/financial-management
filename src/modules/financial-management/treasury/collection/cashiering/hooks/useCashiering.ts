@@ -5,7 +5,7 @@ import { fetchProvider } from "../../providers/fetchProvider";
 import { toast } from "sonner";
 import {
     CurrentUser, CollectionSummary, Salesman, Bank, Denomination,
-    COA, PaymentMethod, Customer, UnpaidInvoice, CheckDetail, UserDto,
+    COA, PaymentMethod, Customer, UnpaidInvoice, CheckDetail, CollectorOption,
     PaginatedCollectionResponse
 } from "../../types";
 
@@ -27,13 +27,20 @@ interface ModalLookupData {
     coas: COA[];
     paymentMethods: PaymentMethod[];
     customers: Customer[];
-    users: UserDto[];
+    users: CollectorOption[];
+}
+
+interface CollectorOptionResponse {
+    id: number;
+    firstName: string | null;
+    lastName: string | null;
 }
 
 interface PouchDetailResponse {
     id: number;
     salesmanId: number;
     collectedBy?: number; // 🚀 Added for hydration
+    collectedByName?: string;
     crNo?: string;        // 🚀 Added for hydration
     collectionDate: string;
     remarks: string;
@@ -122,7 +129,8 @@ export function useCashiering(
     const [totalPages, setTotalPages] = useState(0);
     const [currentPage, setCurrentPage] = useState(1);
     const [salesmen, setSalesmen] = useState<Salesman[]>([]);
-    const [users, setUsers] = useState<UserDto[]>([]); // 🚀 NEW: Users state
+    const [users, setUsers] = useState<CollectorOption[]>([]);
+    const [collectorLookupError, setCollectorLookupError] = useState<string | null>(null);
     const [banks, setBanks] = useState<Bank[]>([]);
     const [coas, setCoas] = useState<COA[]>([]);
     const [denominationMaster, setDenominationMaster] = useState<Denomination[]>([]);
@@ -135,6 +143,7 @@ export function useCashiering(
 
     const [salesmanId, setSalesmanId] = useState<string>("");
     const [collectedBy, setCollectedBy] = useState<string>(""); // 🚀 NEW: Collected By state
+    const [collectedByName, setCollectedByName] = useState<string>("");
     const [crNo, setCrNo] = useState<string>("");               // 🚀 NEW: CR No. state
     const [collectionDate, setCollectionDate] = useState<string>(new Date().toISOString().split('T')[0]);
     const [remarks, setRemarks] = useState<string>("");
@@ -223,15 +232,33 @@ export function useCashiering(
 
         const request = (async (): Promise<ModalLookupData> => {
             setIsLookupsLoading(true);
+            setCollectorLookupError(null);
             try {
-                const [banksData, denomData, coasData, pmData, custData, usersData] = await Promise.all([
+                const collectorOptionsRequest = fetchProvider.getOrThrow<CollectorOptionResponse[]>(
+                    "/api/fm/treasury/collections/collector-options",
+                ).catch(error => {
+                    console.error("Could not load collector options:", error);
+                    return null;
+                });
+                const [banksData, denomData, coasData, pmData, custData, collectorOptions] = await Promise.all([
                     fetchProvider.get<Bank[]>("/api/fm/treasury/bank-names"),
                     fetchProvider.get<Denomination[]>("/api/fm/treasury/denominations"),
                     fetchProvider.get<COA[]>("/api/fm/treasury/coas"),
                     fetchProvider.get<PaymentMethod[]>("/api/fm/treasury/payment-methods"),
                     fetchProvider.get<Customer[]>("/api/fm/treasury/customers"),
-                    fetchProvider.get<UserDto[]>("/api/fm/treasury/users"),
+                    collectorOptionsRequest,
                 ]);
+
+                const collectorLookupErrorMessage = collectorOptions === null
+                    ? "Unable to load collectors. Retry."
+                    : null;
+                const usersData: CollectorOption[] = (collectorOptions || []).map(option => ({
+                    id: option.id,
+                    name: [option.firstName, option.lastName]
+                        .map(name => name?.trim())
+                        .filter((name): name is string => Boolean(name))
+                        .join(" ") || `User #${option.id}`,
+                }));
 
                 const data: ModalLookupData = {
                     banks: banksData || [],
@@ -243,12 +270,7 @@ export function useCashiering(
                         pm.methodId !== 1 && pm.methodName.toLowerCase() !== "cash"
                     ),
                     customers: custData || [],
-                    users: (usersData || []).map(u => ({
-                        id: u.id,
-                        firstName: u.firstName,
-                        lastName: u.lastName,
-                        name: `${u.firstName || ""} ${u.lastName || ""}`.trim(),
-                    })),
+                    users: usersData,
                 };
 
                 setBanks(data.banks);
@@ -257,10 +279,11 @@ export function useCashiering(
                 setPaymentMethods(data.paymentMethods);
                 setCustomers(data.customers);
                 setUsers(data.users);
+                setCollectorLookupError(collectorLookupErrorMessage);
                 setDenominations(data.denominationMaster.reduce<Record<number, number>>(
                     (acc, denomination) => ({...acc, [denomination.id]: 0}), {}
                 ));
-                modalLookupsCache.current = data;
+                if (!collectorLookupErrorMessage) modalLookupsCache.current = data;
                 return data;
             } finally {
                 setIsLookupsLoading(false);
@@ -342,6 +365,7 @@ export function useCashiering(
 
                 // 🚀 Hydrate the new fields if backend returns them
                 setCollectedBy(pouch.collectedBy ? pouch.collectedBy.toString() : "");
+                setCollectedByName(pouch.collectedByName || "");
                 setCrNo(pouch.crNo || "");
 
                 setCollectionDate(pouch.collectionDate.split('T')[0]);
@@ -486,6 +510,8 @@ export function useCashiering(
         setSubmissionError(null);
         setSalesmanId("");
         setCollectedBy(""); // 🚀 Reset
+        setCollectedByName("");
+        setCollectorLookupError(null);
         setCrNo("");        // 🚀 Reset
         setRemarks("");
         setDenominations(denominationMaster.reduce<Record<number, number>>((acc, d) => ({ ...acc, [d.id]: 0 }), {}));
@@ -588,7 +614,7 @@ export function useCashiering(
     return {
         isSheetOpen, setIsSheetOpen, isSheetLoading, isLookupsLoading, isSubmitting, submissionError, listError,
         masterList, totalElements, totalPages, currentPage, salesmen, isLoading, salesmanId, setSalesmanId,
-        users, collectedBy, setCollectedBy, crNo, setCrNo, // 🚀 Expose the new states to the component!
+        users, collectorLookupError, collectedBy, setCollectedBy, collectedByName, crNo, setCrNo,
         collectionDate, setCollectionDate, remarks, setRemarks, denominations, handleDenomChange,
         denominationMaster, checks, banks, coas, paymentMethods, customers, customerInvoices, routeInvoices,
         addCheck, updateCheck, handlePaymentMethodSelect, handleCustomerSelect, handleInvoiceSelect, removeCheck, totalCash,

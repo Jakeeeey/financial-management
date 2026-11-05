@@ -14,11 +14,13 @@ function extractErrorMessage(parsed: unknown, fallback: string): string {
 
 export class ApiHttpError extends Error {
     readonly status: number;
+    readonly payload: unknown;
 
-    constructor(message: string, status: number) {
+    constructor(message: string, status: number, payload?: unknown) {
         super(message);
         this.name = "ApiHttpError";
         this.status = status;
+        this.payload = payload;
     }
 }
 
@@ -35,6 +37,7 @@ export async function readApiResponse<T>(res: Response): Promise<T> {
 
     if (!res.ok) {
         let message = `Request failed (${res.status})`;
+        let payload: unknown;
 
         if (text) {
             const trimmed = text.trimStart();
@@ -42,15 +45,15 @@ export async function readApiResponse<T>(res: Response): Promise<T> {
                 message = `Request failed (${res.status}): API route was not found`;
             } else {
                 try {
-                    const parsed: unknown = JSON.parse(text);
-                    message = extractErrorMessage(parsed, message);
+                    payload = JSON.parse(text);
+                    message = extractErrorMessage(payload, message);
                 } catch {
                     message = text;
                 }
             }
         }
 
-        throw new ApiHttpError(message, res.status);
+        throw new ApiHttpError(message, res.status, payload);
     }
 
     return text ? (JSON.parse(text) as T) : ({} as T);

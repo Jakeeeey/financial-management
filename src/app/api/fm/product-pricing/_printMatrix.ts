@@ -184,8 +184,9 @@ export async function fetchServerPriceTypes(): Promise<ServerPriceType[]> {
 
     const params = new URLSearchParams();
     params.set("limit", "-1");
-    params.set("fields", "price_type_id,price_type_name,sort");
+    params.set("fields", "price_type_id,price_type_name,sort,is_active");
     params.set("sort", "sort,price_type_id");
+    params.set("filter[is_active][_eq]", "1");
 
     const url = `${DIRECTUS_URL}/items/${PRICE_TYPES}?${params.toString()}`;
     const json = await fetchDirectus<{ data: DirectusPriceTypeRow[] }>(url);

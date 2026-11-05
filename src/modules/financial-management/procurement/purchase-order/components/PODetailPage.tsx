@@ -50,7 +50,7 @@ export default function PODetailPage() {
     return (
       <div className="space-y-4">
         <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          {error || "Purchase order not found."}
+          {error || "Procurement summary not found."}
         </div>
         <Button variant="outline" size="sm" onClick={() => router.back()}>
           <ArrowLeft className="h-4 w-4 mr-1" /> Go Back
@@ -65,7 +65,7 @@ export default function PODetailPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between">
-        <Button variant="ghost" size="sm" onClick={() => router.push("/fm/procurement/purchase-order")}>
+        <Button variant="ghost" size="sm" onClick={() => router.push("/fm/procurement/procurement-summary")}>
           <ArrowLeft className="h-4 w-4 mr-1" /> Back to List
         </Button>
         <div className="flex items-center gap-2">

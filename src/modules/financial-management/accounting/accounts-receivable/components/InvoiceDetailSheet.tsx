@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { 
     FileText, Calendar, CreditCard, Tag, 
     User, Briefcase, Building2, Layers, Loader2, AlertCircle,
-    Receipt, RotateCcw, Sparkles, Copy, Check, Wallet
+    Receipt, RotateCcw, Sparkles, Copy, Check, Wallet, Truck
 } from "lucide-react";
 import { formatPeso, formatDate, getInvoiceRiskScore, generateCollectionTemplate } from "../utils";
 import type { Invoice } from "../types";
@@ -359,6 +359,14 @@ export function InvoiceDetailSheet({ invoice, open, onOpenChange }: InvoiceDetai
                                     </span>
                                     <p className="text-xs font-bold text-foreground font-mono">
                                         {formatDate(invoice.invoiceDate)}
+                                    </p>
+                                </div>
+                                <div className="space-y-1 hover:bg-muted/10 p-1 rounded-md transition-colors">
+                                    <span className="text-[9px] font-extrabold uppercase text-muted-foreground/80 tracking-widest flex items-center gap-1.5">
+                                        <Truck className="w-3.5 h-3.5 text-primary/70" /> Delivery Date
+                                    </span>
+                                    <p className="text-xs font-bold text-foreground font-mono">
+                                        {formatDate(invoice.deliveryDate)}
                                     </p>
                                 </div>
                                 <div className="space-y-1 hover:bg-muted/10 p-1 rounded-md transition-colors">

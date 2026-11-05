@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getTrialBalanceDrillDown } from "@/modules/financial-management/financial-statements/trial-balance/services/trial-balance.service";
+import { getCurrentTrialBalanceMonth } from "@/modules/financial-management/financial-statements/trial-balance/utils/periods";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 /**
  * Proxy API route for the Trial Balance drill-down endpoint.
@@ -10,8 +14,15 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
 
   const glCode = searchParams.get("glCode");
-  const startDate = searchParams.get("startDate") || "2025-01-01";
-  const endDate = searchParams.get("endDate") || "2025-12-30";
+  const defaultRange = getCurrentTrialBalanceMonth();
+  const startDate = searchParams.get("startDate") || defaultRange.startDate;
+  const endDate = searchParams.get("endDate") || defaultRange.endDate;
+  const postedOnly = searchParams.get("postedOnly") === "true";
+  const status = searchParams.get("status") || undefined;
+  const division = searchParams.get("division") || undefined;
+  const department = searchParams.get("department") || undefined;
+  const accountType = searchParams.get("accountType") || undefined;
+  const sourceModule = searchParams.getAll("sourceModule");
 
   if (!glCode) {
     return NextResponse.json(
@@ -25,7 +36,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const data = await getTrialBalanceDrillDown(
-      { glCode, startDate, endDate },
+      { glCode, startDate, endDate, status, postedOnly, division, department, accountType, sourceModule },
       token
     );
     return NextResponse.json(data);

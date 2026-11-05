@@ -1,0 +1,1150 @@
+"use client";
+
+import { WerRateLimitError } from "../services/wer-requests";
+import { RECEIPT_ACCEPT, RECEIPT_GUIDANCE, validateReceiptFile } from "../utils/receipt-upload";
+import { ExpenseVarianceSummary } from "./ExpenseVarianceSummary";
+
+import { Fragment, useEffect, useRef, useState } from "react";
+import { v4 as generateUuid } from "uuid";
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Copy, Loader2, Paperclip, Plus, Trash2, X } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { todayManilaDate, formatWerTimestamp } from "../utils/date";
+import { displayWerStatus } from "../utils/status";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { WerCoaCombobox } from "./WerCoaCombobox";
+import { WerOrganizationCombobox } from "./WerOrganizationCombobox";
+import { getStatusColor } from "@/modules/financial-management/treasury/disbursement/utils/disbursement-utils";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
+import type {
+  LogisticsWerDispatchPlanDetail,
+  LogisticsWerPayableSubmissionLineDetails,
+  LogisticsWerPayableSubmissionSummary,
+} from "../types";
+import { calculateExpenseVariance } from "../utils/budget-balances";
+import { canRunPayableAction, hasCompletePayableOrganization, isPayableFormDirty, validatePayableLines } from "../utils/payable-validation";
+import {
+  WerActionError,
+  reconcilePayable,
+  deletePayableReceipt,
+  fetchPayableDivisions,
+  fetchPayableSubmissionDetails,
+  fetchPayableCoas,
+  savePayableDraft,
+  submitPayable,
+  updatePayableSubmission,
+  uploadPayableReceipt,
+  withdrawPayableSubmission,
+  type PayableCoaOption,
+  type PayableDivisionOption,
+  type PayableLineInput,
+  type StagedReceipt,
+} from "../services/logisticsWerApi";
+
+function formatMoney(value: number | null | undefined): string {
+  return `₱${Number(value ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function formatLineDate(value: string | null): string {
+  if (!value) return "\u2014";
+  const date = new Date(`${value.slice(0, 10)}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) ? "\u2014" : new Intl.DateTimeFormat("en-PH", {
+    timeZone: "UTC", month: "short", day: "numeric", year: "numeric",
+  }).format(date);
+}
+
+function submissionBadgeClassName(status: string | null): string {
+  switch ((status || "").toLowerCase()) {
+    case "approved":
+      return "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+    case "submitted":
+      return "border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300";
+    case "returned":
+      return "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+    case "rejected":
+    case "withdrawn":
+      return "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300";
+    default:
+      return "border-muted-foreground/30 bg-muted/40 text-muted-foreground";
+  }
+}
+
+function receiptViewHref(fileId: string | null): string | null {
+  if (!fileId) return null;
+  return `/api/fm/treasury/disbursements/attachments/${encodeURIComponent(fileId)}`;
+}
+
+interface EditableLine {
+  key: number;
+  id: number | null;
+  amount: string;
+  referenceNo: string;
+  remarks: string;
+  date: string;
+  coaId: string;
+  divisionId: string;
+  receipts: StagedReceipt[];
+}
+
+
+function emptyLine(key: number): EditableLine {
+  return { key, id: null, amount: "", referenceNo: "", remarks: "", date: todayManilaDate(), coaId: "", divisionId: "", receipts: [] };
+}
+
+function editableLinesFromDetails(lines: LogisticsWerPayableSubmissionLineDetails[]): EditableLine[] {
+  return lines.map((line) => ({
+    key: line.id,
+    id: line.id,
+    amount: String(line.amount),
+    referenceNo: line.referenceNo || "",
+    remarks: line.remarks || "",
+    date: line.date || "",
+    coaId: line.coaId ? String(line.coaId) : "",
+    divisionId: line.divisionId ? String(line.divisionId) : "",
+    receipts: line.receipts.flatMap((receipt) => receipt.fileId ? [{ fileId: receipt.fileId, fileName: null }] : []),
+  }));
+}
+
+function nextLineKey(current: EditableLine[]): number {
+  return Math.max(0, ...current.map((item) => item.key)) + 1;
+}
+
+interface LogisticsWerPayablesSectionProps {
+  planId: number;
+  planStatus: string | null;
+  detail: LogisticsWerDispatchPlanDetail;
+  onChanged: () => Promise<void> | void;
+}
+
+export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChanged }: LogisticsWerPayablesSectionProps) {
+  const [initialLines, setInitialLines] = useState<EditableLine[]>(() => [emptyLine(1)]);
+  const [lines, setLines] = useState<EditableLine[]>(initialLines);
+  const [coas, setCoas] = useState<PayableCoaOption[]>([]);
+  const [divisions, setDivisions] = useState<PayableDivisionOption[]>([]);
+  const [organizationOptionsLoaded, setOrganizationOptionsLoaded] = useState(false);
+  const [organizationOptionsError, setOrganizationOptionsError] = useState<string | null>(null);
+  const [initialDepartmentId, setInitialDepartmentId] = useState("");
+  const [, setDepartmentId] = useState("");
+  const [coasError, setCoasError] = useState<string | null>(null);
+  const [coasLoaded, setCoasLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const actionInProgress = useRef(false);
+  const creationKey = useRef<string | null>(null);
+  const [pendingOutcome, setPendingOutcome] = useState<{ submissionId?: number; idempotencyKey?: string } | null>(null);
+  const [checkingStatus, setCheckingStatus] = useState(false);
+  const [refreshWarning, setRefreshWarning] = useState<string | null>(null);
+  const uploadInProgress = useRef(false);
+  const [receiptErrors, setReceiptErrors] = useState<Record<number, string | undefined>>({});
+  const [uploadingKey, setUploadingKey] = useState<number | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [withdrawingId, setWithdrawingId] = useState<number | null>(null);
+  const [editingSubmissionId, setEditingSubmissionId] = useState<number | null>(null);
+  const [editingSubmissionStatus, setEditingSubmissionStatus] = useState<string | null>(null);
+  const [loadingEditId, setLoadingEditId] = useState<number | null>(null);
+  const [expandedSubmissionIds, setExpandedSubmissionIds] = useState<Set<number>>(() => new Set());
+  const [submissionDetails, setSubmissionDetails] = useState<Record<number, LogisticsWerPayableSubmissionLineDetails[]>>({});
+  const [submissionDetailsLoading, setSubmissionDetailsLoading] = useState<Record<number, boolean>>({});
+  const [submissionDetailsErrors, setSubmissionDetailsErrors] = useState<Record<number, string>>({});
+
+  const eligibility = detail.supplierEligibility ?? null;
+  const submissions = detail.submissions ?? [];
+  const isForClearance = (planStatus || "").toLowerCase() === "for clearance";
+
+  useEffect(() => {
+    if ((!isForClearance && submissions.length === 0) || coasLoaded) return;
+    let active = true;
+    fetchPayableCoas()
+      .then((options) => {
+        if (active) {
+          setCoas(options);
+          setCoasLoaded(true);
+        }
+      })
+      .catch((loadError) => {
+        if (active) {
+          setCoasError(loadError instanceof Error ? loadError.message : "Unable to load chart of accounts.");
+          setCoasLoaded(true);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [coasLoaded, isForClearance, submissions.length]);
+
+  useEffect(() => {
+    if ((!isForClearance && submissions.length === 0) || organizationOptionsLoaded) return;
+    let active = true;
+    Promise.all([fetchPayableDivisions()])
+      .then(([divisionOptions]) => {
+        if (!active) return;
+        setDivisions(divisionOptions);
+      })
+      .catch((loadError) => {
+        if (active) setOrganizationOptionsError(loadError instanceof Error ? loadError.message : "Unable to load departments and divisions.");
+      })
+      .finally(() => {
+        if (active) setOrganizationOptionsLoaded(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isForClearance, organizationOptionsLoaded, submissions.length]);
+
+  const loadSubmissionDetails = async (submissionId: number) => {
+    if (
+      Object.prototype.hasOwnProperty.call(submissionDetails, submissionId)
+      || submissionDetailsLoading[submissionId]
+    ) return;
+    setSubmissionDetailsLoading((current) => ({ ...current, [submissionId]: true }));
+    setSubmissionDetailsErrors((current) => {
+      const next = { ...current };
+      delete next[submissionId];
+      return next;
+    });
+    try {
+      const details = await fetchPayableSubmissionDetails(planId, submissionId);
+      setSubmissionDetails((current) => ({ ...current, [submissionId]: details.lines }));
+    } catch (loadError) {
+      setSubmissionDetailsErrors((current) => ({
+        ...current,
+        [submissionId]: loadError instanceof Error ? loadError.message : "Unable to load submission details.",
+      }));
+    } finally {
+      setSubmissionDetailsLoading((current) => ({ ...current, [submissionId]: false }));
+    }
+  };
+
+  const toggleSubmissionDetails = (submissionId: number) => {
+    const opening = !expandedSubmissionIds.has(submissionId);
+    setExpandedSubmissionIds((current) => {
+      const next = new Set(current);
+      if (next.has(submissionId)) next.delete(submissionId);
+      else next.add(submissionId);
+      return next;
+    });
+    if (opening) void loadSubmissionDetails(submissionId);
+  };
+
+  const handleEditSubmission = async (submissionId: number, status: string) => {
+    if ((isPayableFormDirty(lines, initialLines) || String(eligibility?.departmentId ?? "") !== initialDepartmentId)
+      && !window.confirm("Discard the unsaved new payable and edit this submission?")) {
+      return;
+    }
+    setFormError(null);
+    setNotice(null);
+    setLoadingEditId(submissionId);
+    try {
+      const details = await fetchPayableSubmissionDetails(planId, submissionId);
+      if (!details.canEdit) {
+        throw new Error("Only the original submitter can edit this draft or returned payable.");
+      }
+      if (details.lines.length === 0) throw new Error("This submission has no payable lines to edit.");
+      const editableLines = editableLinesFromDetails(details.lines);
+      const editableDepartmentId = details.departmentId ? String(details.departmentId) : "";
+      setInitialLines(editableLines);
+      setLines(editableLines);
+      setInitialDepartmentId(editableDepartmentId);
+      setDepartmentId(editableDepartmentId);
+      setEditingSubmissionId(submissionId);
+      setEditingSubmissionStatus(status);
+    } catch (editError) {
+      setFormError(editError instanceof Error ? editError.message : "Unable to load the payable submission.");
+    } finally {
+      setLoadingEditId(null);
+    }
+  };
+
+  const cancelSubmissionEdit = async () => {
+    const initialFileIds = new Set(initialLines.flatMap((line) => line.receipts.map((receipt) => receipt.fileId)));
+    const newlyStagedFileIds = Array.from(new Set(
+      lines.flatMap((line) => line.receipts.map((receipt) => receipt.fileId).filter((fileId) => !initialFileIds.has(fileId))),
+    ));
+    try {
+      await Promise.all(newlyStagedFileIds.map((fileId) => deletePayableReceipt(planId, fileId)));
+    } catch (cancelError) {
+      setFormError(cancelError instanceof Error ? cancelError.message : "Unable to discard newly uploaded receipts.");
+      return;
+    }
+    const pristineLines = [emptyLine(1)];
+    setInitialLines(pristineLines);
+    setLines(pristineLines);
+    setInitialDepartmentId("");
+    setDepartmentId("");
+    setEditingSubmissionId(null);
+    setEditingSubmissionStatus(null);
+    setFormError(null);
+    setNotice(null);
+  };
+
+  const updateLine = (key: number, patch: Partial<EditableLine>) => {
+    setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)));
+  };
+
+  const addLine = () => {
+    setLines((current) => [...current, emptyLine(nextLineKey(current))]);
+  };
+
+  const linesTotal = lines.reduce((sum, line) => {
+    const amount = Number(line.amount);
+    return sum + (Number.isFinite(amount) && amount > 0 ? amount : 0);
+  }, 0);
+  const requestLines = lines.flatMap((line) => {
+    const amount = Number(line.amount);
+    if (!Number.isFinite(amount) || amount <= 0) return [];
+    const coaId = line.coaId ? Number(line.coaId) : null;
+    return [{ amount, coaId: Number.isInteger(coaId) && Number(coaId) > 0 ? Number(coaId) : null }];
+  });
+  const variance = detail.budgetContextAvailable
+    ? calculateExpenseVariance(requestLines, detail.budgetBalancesByCoa, detail.allocatedExpenseBudget ?? 0, detail.reservedAmount ?? 0)
+    : null;
+  const submissionBlocked = !detail.budgetContextAvailable || !eligibility?.eligible || pendingOutcome !== null;
+
+  const buildPayload = (): PayableLineInput[] => lines.map((line) => ({
+    ...(line.id === null ? {} : { id: line.id }),
+    amount: Number(line.amount),
+    referenceNo: line.referenceNo.trim() || null,
+    remarks: line.remarks.trim() || null,
+    date: line.date || null,
+    coaId: line.coaId ? Number(line.coaId) : null,
+    divisionId: line.divisionId ? Number(line.divisionId) : null,
+    receiptFileIds: line.receipts.map((receipt) => receipt.fileId),
+  }));
+
+  const isDirty = isPayableFormDirty(lines, initialLines) || String(eligibility?.departmentId ?? "") !== initialDepartmentId;
+  const payload = buildPayload();
+  const draftValidation = validatePayableLines(payload, false);
+  const submitValidation = validatePayableLines(payload, true, true);
+  const selectedDepartmentId = eligibility?.departmentId ?? null;
+  const organizationValid = hasCompletePayableOrganization(selectedDepartmentId, payload);
+  const departmentValid = selectedDepartmentId !== null && Number.isInteger(selectedDepartmentId) && selectedDepartmentId > 0;
+  const draftActionEnabled = canRunPayableAction("save-draft", {
+    dirty: isDirty,
+    valid: draftValidation.valid,
+    busy: busy || pendingOutcome !== null || withdrawingId !== null,
+    uploading: uploadingKey !== null,
+    submissionBlocked,
+  });
+  const submitActionEnabled = canRunPayableAction("submit", {
+    dirty: isDirty || editingSubmissionId !== null,
+    valid: submitValidation.valid && organizationValid,
+    busy: busy || pendingOutcome !== null || withdrawingId !== null,
+    uploading: uploadingKey !== null,
+    submissionBlocked,
+  });
+
+  const refreshAfterAction = async () => {
+    setRefreshWarning(null);
+    try { await onChanged(); }
+    catch { setRefreshWarning("Your action was saved, but the list could not be refreshed. Please refresh the page data before taking another action."); }
+  };
+
+  const handleAction = async (kind: "save-draft" | "submit") => {
+    if (actionInProgress.current || pendingOutcome) return;
+    const dirty = isPayableFormDirty(lines, initialLines) || String(eligibility?.departmentId ?? "") !== initialDepartmentId;
+    const actionDirty = dirty || (kind === "submit" && editingSubmissionId !== null);
+    if (kind === "submit" && !departmentValid) {
+      if (actionDirty && !busy && uploadingKey === null) {
+        setNotice(null);
+        setFormError("Select a department before submitting payables.");
+      }
+      return;
+    }
+    const validation = validatePayableLines(buildPayload(), kind === "submit", kind === "submit");
+    if (!validation.valid) {
+      if (actionDirty && !busy && uploadingKey === null) {
+        setNotice(null);
+        setFormError(validation.error);
+      }
+      return;
+    }
+    if (!canRunPayableAction(kind, {
+      dirty: actionDirty,
+      valid: validation.valid,
+      busy,
+      uploading: uploadingKey !== null,
+      submissionBlocked,
+    })) return;
+
+    setFormError(null);
+    setNotice(null);
+    setBusy(true);
+    actionInProgress.current = true;
+    try {
+      const idempotencyKey = creationKey.current ?? generateUuid();
+      creationKey.current = idempotencyKey;
+      const submission = editingSubmissionId !== null
+        ? await updatePayableSubmission(planId, editingSubmissionId, kind, selectedDepartmentId, validation.lines)
+        : kind === "submit"
+          ? await submitPayable(planId, selectedDepartmentId, validation.lines, idempotencyKey)
+          : await savePayableDraft(planId, selectedDepartmentId, validation.lines, idempotencyKey);
+      creationKey.current = null;
+      if (editingSubmissionId !== null && kind === "save-draft") {
+        const updatedLines = editableLinesFromDetails(submission.lines);
+        const updatedDepartmentId = submission.departmentId ? String(submission.departmentId) : "";
+        setInitialLines(updatedLines);
+        setLines(updatedLines);
+        setInitialDepartmentId(updatedDepartmentId);
+        setDepartmentId(updatedDepartmentId);
+        setSubmissionDetails((current) => ({
+          ...current,
+          [submission.id]: submission.lines,
+        }));
+        setNotice(`Changes saved to ${editingSubmissionStatus === "draft" ? "draft" : "returned submission"} #${submission.id}.`);
+        await refreshAfterAction();
+        return;
+      }
+      if (editingSubmissionId !== null) {
+        setSubmissionDetails((current) => ({ ...current, [submission.id]: submission.lines }));
+      }
+      setNotice(editingSubmissionId !== null
+        ? editingSubmissionStatus === "draft"
+          ? `Submission #${submission.id} recorded for QA approval.`
+          : `Submission #${submission.id} resubmitted for QA approval.`
+        : kind === "submit"
+          ? `Submission #${submission.id} recorded for QA approval.`
+          : `Draft #${submission.id} saved.`);
+      const pristineLines = [emptyLine(1)];
+      setInitialLines(pristineLines);
+      setLines(pristineLines);
+      setInitialDepartmentId("");
+      setDepartmentId("");
+      setEditingSubmissionId(null);
+      setEditingSubmissionStatus(null);
+      await refreshAfterAction();
+    } catch (actionError) {
+      const outcome = actionError instanceof WerActionError || actionError instanceof WerRateLimitError ? actionError.outcome : "unknown";
+      if (outcome !== "not_applied") {
+        setPendingOutcome(editingSubmissionId ? { submissionId: editingSubmissionId } : { idempotencyKey: creationKey.current ?? undefined });
+      }
+      if (outcome === "applied") setNotice("Your action was saved. Refresh the submission status to load the result.");
+      else setFormError(actionError instanceof Error ? actionError.message : "The action outcome is unknown. Refresh the submission status before trying again.");
+    } finally {
+      actionInProgress.current = false;
+      setBusy(false);
+    }
+  };
+
+  const handleAttach = async (key: number, file: File | undefined) => {
+    if (!file || uploadInProgress.current || busy) return;
+    const validation = validateReceiptFile(file);
+    setReceiptErrors((current) => ({ ...current, [key]: validation?.message }));
+    if (validation) return;
+    uploadInProgress.current = true;
+    setUploadingKey(key);
+    try {
+      const staged = await uploadPayableReceipt(planId, file);
+      setLines((current) => current.map((line) => (
+        line.key === key ? { ...line, receipts: [...line.receipts, staged] } : line
+      )));
+    } catch (uploadError) {
+      setReceiptErrors((current) => ({ ...current, [key]: uploadError instanceof Error ? uploadError.message : "Unable to upload the receipt. Please try again." }));
+    } finally {
+      uploadInProgress.current = false;
+      setUploadingKey(null);
+    }
+  };
+
+  const handleDetach = async (key: number, fileId: string) => {
+    setFormError(null);
+    const persistedFileIds = new Set(initialLines.flatMap((line) => line.receipts.map((receipt) => receipt.fileId)));
+    if (editingSubmissionId !== null && persistedFileIds.has(fileId)) {
+      setLines((current) => current.map((line) => (
+        line.key === key ? { ...line, receipts: line.receipts.filter((receipt) => receipt.fileId !== fileId) } : line
+      )));
+      return;
+    }
+    try {
+      await deletePayableReceipt(planId, fileId);
+      setLines((current) => current.map((line) => (
+        line.key === key ? { ...line, receipts: line.receipts.filter((receipt) => receipt.fileId !== fileId) } : line
+      )));
+    } catch (detachError) {
+      setFormError(detachError instanceof Error ? detachError.message : "Unable to remove the receipt.");
+    }
+  };
+
+  const handleWithdraw = async (submission: LogisticsWerPayableSubmissionSummary) => {
+    if (actionInProgress.current || pendingOutcome) return;
+    if (!window.confirm(`Withdraw submission #${submission.id}? Its reservation will be released.`)) return;
+    actionInProgress.current = true;
+    setFormError(null);
+    setWithdrawingId(submission.id);
+    try {
+      await withdrawPayableSubmission(planId, submission.id);
+      setNotice(`Submission #${submission.id} withdrawn; its reservation was released.`);
+      await refreshAfterAction();
+    } catch (withdrawError) {
+      const outcome = withdrawError instanceof WerActionError || withdrawError instanceof WerRateLimitError ? withdrawError.outcome : "unknown";
+      if (outcome !== "not_applied") setPendingOutcome({ submissionId: submission.id });
+      if (outcome === "applied") setNotice("Withdrawal saved. Refresh the submission status to load the result.");
+      else setFormError(withdrawError instanceof Error ? withdrawError.message : "Unable to confirm withdrawal. Refresh submission status.");
+    } finally {
+      actionInProgress.current = false;
+      setWithdrawingId(null);
+    }
+  };
+
+  const checkSubmissionStatus = async () => {
+    if (!pendingOutcome || actionInProgress.current) return;
+    actionInProgress.current = true;
+    setCheckingStatus(true);
+    try {
+      const saved = await reconcilePayable(planId, pendingOutcome);
+      if (saved) {
+        if (["draft", "returned"].includes((saved.status || "").toLowerCase())) {
+          const savedLines = editableLinesFromDetails(saved.lines);
+          setLines(savedLines);
+          setInitialLines(savedLines);
+          setEditingSubmissionId(saved.id);
+          setEditingSubmissionStatus(saved.status);
+          setInitialDepartmentId(String(saved.departmentId ?? ""));
+          setNotice(`Saved submission #${saved.id} is ${saved.status}. Review its saved values before editing.`);
+        } else {
+          if (pendingOutcome.idempotencyKey || pendingOutcome.submissionId === editingSubmissionId) {
+            const empty = [emptyLine(1)];
+            setLines(empty);
+            setInitialLines(empty);
+            setEditingSubmissionId(null);
+            setEditingSubmissionStatus(null);
+          }
+          setNotice(`Submission #${saved.id} is ${saved.status}. The status has been checked.`);
+        }
+        creationKey.current = null;
+      } else {
+        setNotice("No saved submission was found. You may retry; the original request key will be reused.");
+      }
+      setPendingOutcome(null);
+      setFormError(null);
+      await refreshAfterAction();
+    } catch (statusError) {
+      setFormError(statusError instanceof Error ? statusError.message : "The service is still unavailable. Your entries have been kept. Please refresh the submission status again later.");
+    } finally {
+      actionInProgress.current = false;
+      setCheckingStatus(false);
+    }
+  };
+
+  return (
+    <section className="space-y-4">
+      <div>
+        <h3 className="flex items-center gap-2 font-semibold">
+          Logistics payables
+          {detail.isLiquidated && (
+            <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+              Liquidated
+            </Badge>
+          )}
+        </h3>
+        <p className="text-xs text-muted-foreground">
+          Submitted payables and actual approved disbursement lines consume the budget for their selected COA.
+        </p>
+      </div>
+
+      {eligibility ? (
+        eligibility.eligible ? (
+          <Alert className="border-emerald-500/40 bg-emerald-500/5">
+            <CheckCircle2 className="size-4 text-emerald-600" />
+            <AlertTitle>Driver supplier eligible</AlertTitle>
+            <AlertDescription>
+              {eligibility.supplierName || `Supplier #${eligibility.supplierId ?? "?"}`} is the active supplier linked to this driver.
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <Alert variant="destructive">
+            <AlertCircle className="size-4" />
+            <AlertTitle>Payable submission blocked</AlertTitle>
+            <AlertDescription>{eligibility.reason || "The assigned driver has no eligible supplier account."}</AlertDescription>
+          </Alert>
+        )
+      ) : (
+        <Alert>
+          <AlertCircle className="size-4" />
+          <AlertTitle>Eligibility unavailable</AlertTitle>
+          <AlertDescription>Supplier eligibility could not be resolved for this dispatch plan.</AlertDescription>
+        </Alert>
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-xl border bg-card p-3">
+          <p className="text-xs text-muted-foreground">Dispatch plan value</p>
+          <p className="mt-1 text-lg font-semibold">{formatMoney(detail.dispatchPlanValue ?? detail.plan.amount)}</p>
+        </div>
+        <div className="rounded-xl border bg-card p-3">
+          <p className="text-xs text-muted-foreground">Allocated expense budget</p>
+          <p className="mt-1 text-lg font-semibold">
+            {detail.budgetContextAvailable ? formatMoney(detail.allocatedExpenseBudget) : "Unavailable"}
+          </p>
+        </div>
+        <div className="rounded-xl border bg-card p-3">
+          <p className="text-xs text-muted-foreground">Reserved payables</p>
+          <p className="mt-1 text-lg font-semibold">
+            {detail.budgetContextAvailable ? formatMoney(detail.reservedAmount) : "Unavailable"}
+          </p>
+        </div>
+        <div className="rounded-xl border bg-card p-3">
+          <p className="text-xs text-muted-foreground">Available expense budget</p>
+          <p className="mt-1 text-lg font-semibold">
+            {detail.budgetContextAvailable ? formatMoney(detail.remainingAmount) : "Unavailable"}
+          </p>
+        </div>
+      </div>
+
+      {detail.budgetContextAvailable && (detail.unclassifiedBudgetAmount ?? 0) > 0 && (
+        <Alert>
+          <AlertCircle className="size-4" />
+          <AlertTitle>Budget classification required</AlertTitle>
+          <AlertDescription>
+            {formatMoney(detail.unclassifiedBudgetAmount)} has no completed COA classification. Actual expenses can still be submitted for variance review.
+          </AlertDescription>
+        </Alert>
+      )}
+      {!detail.budgetContextAvailable && (
+        <Alert variant="destructive">
+          <AlertCircle className="size-4" />
+          <AlertTitle>Submission blocked</AlertTitle>
+          <AlertDescription>
+            {detail.budgetContextError || "The expense budget and current reservations could not be verified. You can save a draft, but submission is unavailable."}
+          </AlertDescription>
+        </Alert>
+      )}
+      {(detail.overBudgetAmount ?? 0) > 0 && (
+        <Alert className="border-amber-300 bg-amber-50/30">
+          <AlertCircle className="size-4" />
+          <AlertTitle>Existing expense budget overage</AlertTitle>
+          <AlertDescription>
+            Active or recorded payables exceed the allocated budget by {formatMoney(detail.overBudgetAmount)} across one or more COAs. Additional actual expenses can be submitted for variance review.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <div className="overflow-x-auto rounded-lg border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-10"><span className="sr-only">Details</span></TableHead>
+              <TableHead className="w-20">Submission</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Total</TableHead>
+              <TableHead>Lines / receipts</TableHead>
+              <TableHead>Disbursement</TableHead>
+              <TableHead>Treasury Status</TableHead>
+              <TableHead className="text-right">Action</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {submissions.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={8} className="py-6 text-center text-xs text-muted-foreground">
+                  No payable submissions recorded for this dispatch plan. Use the form below to record the first payable.
+                </TableCell>
+              </TableRow>
+            ) : submissions.map((submission) => {
+              const status = (submission.status || "").toLowerCase();
+              const expanded = expandedSubmissionIds.has(submission.id);
+              const detailsId = `wer-submission-${submission.id}-details`;
+              const submissionLines = submissionDetails[submission.id];
+              const treasuryStatus = submission.disbursementId
+                ? submission.treasuryStatus || "Unavailable"
+                : "Not created";
+              return (
+                <Fragment key={submission.id}>
+                <TableRow>
+                  <TableCell>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label={`${expanded ? "Collapse" : "Expand"} details for submission #${submission.id}`}
+                      aria-expanded={expanded}
+                      aria-controls={expanded ? detailsId : undefined}
+                      onClick={() => toggleSubmissionDetails(submission.id)}
+                    >
+                      {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                    </Button>
+                  </TableCell>
+                  <TableCell className="font-semibold">#{submission.id}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={submissionBadgeClassName(submission.status)}>
+                      {displayWerStatus(submission.status)}
+                    </Badge>
+                    {submission.submittedAt && <p className="mt-1 text-xs text-muted-foreground">Submitted: {formatWerTimestamp(submission.submittedAt)}</p>}
+                    {submission.decidedAt && <p className="mt-1 text-xs text-muted-foreground">Decided: {formatWerTimestamp(submission.decidedAt)}</p>}
+                    {submission.decisionRemarks && (
+                      <p className="mt-1 max-w-48 truncate text-[11px] text-muted-foreground" title={submission.decisionRemarks}>
+                        {submission.decisionRemarks}
+                      </p>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right font-medium">{formatMoney(submission.totalAmount)}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {submission.lineCount} line(s) · {submission.receiptCount} receipt(s)
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    {submission.disbursementDocNo || "—"}
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant="outline"
+                      className={`text-[9px] font-black uppercase ${getStatusColor(treasuryStatus)}`}
+                    >
+                      {treasuryStatus}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {(status === "draft" || status === "returned") && isForClearance && !detail.isLiquidated && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={editingSubmissionId !== null || loadingEditId !== null || busy || uploadingKey !== null || pendingOutcome !== null || withdrawingId !== null}
+                        onClick={() => void handleEditSubmission(submission.id, status)}
+                      >
+                        {loadingEditId === submission.id ? "Loading…" : "Edit"}
+                      </Button>
+                    )}
+                    {status === "submitted" && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={withdrawingId !== null || busy || pendingOutcome !== null}
+                        onClick={() => void handleWithdraw(submission)}
+                      >
+                        {withdrawingId === submission.id ? "Withdrawing…" : "Withdraw"}
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+                {expanded && (
+                  <TableRow>
+                    <TableCell colSpan={8} className="bg-muted/20 p-3">
+                      <div id={detailsId} role="region" aria-label={`Line items for submission #${submission.id}`}>
+                        {submissionDetailsLoading[submission.id] ? (
+                          <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                            <Loader2 className="size-4 animate-spin" /> Loading line items...
+                          </div>
+                        ) : submissionDetailsErrors[submission.id] ? (
+                          <Alert variant="destructive">
+                            <AlertCircle className="size-4" />
+                            <AlertTitle>Unable to load submission details</AlertTitle>
+                            <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+                              <span>{submissionDetailsErrors[submission.id]}</span>
+                              <Button type="button" variant="outline" size="sm" onClick={() => void loadSubmissionDetails(submission.id)}>
+                                Retry
+                              </Button>
+                            </AlertDescription>
+                          </Alert>
+                        ) : submissionLines?.length === 0 ? (
+                          <p className="py-4 text-sm text-muted-foreground">This submission has no line items.</p>
+                        ) : submissionLines ? (
+                          <div className="w-0 min-w-full overflow-x-auto rounded-md border bg-background">
+                            <Table className="min-w-[1000px] table-fixed">
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="w-16">Line</TableHead>
+                                  <TableHead className="w-32">Date</TableHead>
+                                  <TableHead className="w-48">COA Account</TableHead>
+                                  <TableHead className="w-36">Division</TableHead>
+                                  <TableHead className="w-32 text-right">Amount</TableHead>
+                                  <TableHead>Remarks</TableHead>
+                                  <TableHead className="w-32">Receipts</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {submissionLines.map((line, index) => {
+                                  const coaLabel = line.coaId
+                                    ? coas.find((option) => option.coaId === line.coaId)?.label || `COA #${line.coaId}`
+                                    : "Not assigned";
+                                  return (
+                                    <TableRow key={line.id}>
+                                      <TableCell>{line.lineNo ?? index + 1}</TableCell>
+                                      <TableCell>{formatLineDate(line.date)}</TableCell>
+                                      <TableCell className="whitespace-normal break-words">{coaLabel}</TableCell>
+                                      <TableCell className="whitespace-normal break-words">{line.divisionId
+                                        ? divisions.find((division) => division.divisionId === line.divisionId)?.divisionName || `Division #${line.divisionId}`
+                                        : "\u2014"}</TableCell>
+                                      <TableCell className="text-right font-medium">{formatMoney(line.amount)}</TableCell>
+                                      <TableCell className="whitespace-pre-wrap [overflow-wrap:anywhere]">{line.remarks || "—"}</TableCell>
+                                      <TableCell>
+                                        {line.receipts.length === 0 ? (
+                                          <span className="text-muted-foreground">—</span>
+                                        ) : (
+                                          <div className="flex flex-wrap gap-2">
+                                            {line.receipts.map((receipt) => {
+                                              const href = receiptViewHref(receipt.fileId);
+                                              return href ? (
+                                                <a
+                                                  key={receipt.id}
+                                                  href={href}
+                                                  target="_blank"
+                                                  rel="noreferrer"
+                                                  className="inline-flex items-center gap-1 text-xs text-primary underline"
+                                                >
+                                                  <Paperclip className="size-3.5" /> Receipt #{receipt.id}
+                                                </a>
+                                              ) : (
+                                                <span key={receipt.id} className="text-xs text-muted-foreground">
+                                                  Receipt #{receipt.id} unavailable
+                                                </span>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        ) : null}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )}
+                </Fragment>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
+
+      {refreshWarning && <Alert><AlertTitle>Refresh unavailable</AlertTitle><AlertDescription>{refreshWarning}</AlertDescription></Alert>}
+      {pendingOutcome && <Alert>
+        <AlertTitle>Submission status needs confirmation</AlertTitle>
+        <AlertDescription>Check the saved result before taking another action.
+          <Button type="button" variant="outline" size="sm" disabled={checkingStatus} onClick={() => void checkSubmissionStatus()}>{checkingStatus ? "Checking status..." : "Refresh status"}</Button>
+        </AlertDescription>
+      </Alert>}
+      {formError && (
+        <Alert variant="destructive">
+          <AlertCircle className="size-4" />
+          <AlertTitle>Payable action failed</AlertTitle>
+          <AlertDescription>{formError}</AlertDescription>
+        </Alert>
+      )}
+
+      {!isForClearance ? (
+        <Alert>
+          <AlertCircle className="size-4" />
+          <AlertTitle>Read-only</AlertTitle>
+          <AlertDescription>
+            New payables can only be recorded while the plan is in For Clearance state. Posted plans are read-only.
+          </AlertDescription>
+        </Alert>
+      ) : detail.isLiquidated ? (
+        <Alert className="border-emerald-500/40 bg-emerald-500/5">
+          <CheckCircle2 className="size-4 text-emerald-600" />
+          <AlertTitle>Liquidated</AlertTitle>
+          <AlertDescription>All payables for this dispatch plan have been released. No new submissions are accepted.</AlertDescription>
+        </Alert>
+      ) : !eligibility?.eligible && editingSubmissionId === null ? (
+        <Alert variant="destructive">
+          <AlertCircle className="size-4" />
+          <AlertTitle>Entry disabled</AlertTitle>
+          <AlertDescription>Resolve driver supplier eligibility before recording payables.</AlertDescription>
+        </Alert>
+      ) : (
+        <div className="space-y-3 rounded-xl border p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h4 className="text-sm font-semibold">
+                {editingSubmissionId !== null
+                  ? `${editingSubmissionStatus === "draft" ? "Edit Draft" : "Edit Returned"} Submission #${editingSubmissionId}`
+                  : "New Payable Line Entries"}
+              </h4>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {editingSubmissionId !== null
+                  ? "Correct the line items, save your changes, or submit the same record for approval."
+                  : "Configure financial account allocation, date references, amounts, and attachment proofs."}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {editingSubmissionId !== null && (
+                <Button type="button" variant="outline" size="sm" disabled={busy || uploadingKey !== null || pendingOutcome !== null} onClick={() => void cancelSubmissionEdit()}>
+                  Cancel
+                </Button>
+              )}
+              <Button type="button" variant="outline" size="sm" onClick={addLine}>
+                <Plus className="size-3.5" /> Add Line
+              </Button>
+            </div>
+          </div>
+          {editingSubmissionId !== null && submissions.find((submission) => submission.id === editingSubmissionId)?.decisionRemarks && (
+            <Alert>
+              <AlertCircle className="size-4" />
+              <AlertTitle>Reviewer feedback</AlertTitle>
+              <AlertDescription>
+                {submissions.find((submission) => submission.id === editingSubmissionId)?.decisionRemarks}
+              </AlertDescription>
+            </Alert>
+          )}
+          {editingSubmissionId !== null && !eligibility?.eligible && (
+            <Alert variant="destructive">
+              <AlertCircle className="size-4" />
+              <AlertTitle>Resubmission blocked</AlertTitle>
+              <AlertDescription>{eligibility?.reason || "Supplier eligibility is unavailable."} You can save your corrections, but the payable cannot be resubmitted yet.</AlertDescription>
+            </Alert>
+          )}
+          {coasError && (
+            <p className="text-xs text-muted-foreground">Chart of accounts unavailable: {coasError}. A COA is still required per line before submitting.</p>
+          )}
+
+          <div className="max-w-xl space-y-1">
+            <Label htmlFor="wer-payable-department">Department *</Label>
+            <input id="wer-payable-department" readOnly value={eligibility?.departmentName || "Department unavailable"} className="h-10 w-full rounded-md border bg-muted/30 px-3 text-sm" />
+            <p className="text-[11px] text-muted-foreground">Department follows the assigned driver/payee.</p>
+            {eligibility?.departmentError && <p role="alert" className="text-xs text-destructive">{eligibility.departmentError} <Button type="button" variant="outline" size="sm" onClick={() => void onChanged()}>Retry department</Button></p>}
+            {editingSubmissionId && initialDepartmentId !== String(eligibility?.departmentId ?? "") && <p role="status" className="text-xs text-amber-700">Driver department differs from the saved draft. Save the updated draft before submitting.</p>}
+            {organizationOptionsError && (
+              <p className="text-[11px] text-destructive">Department and division options unavailable: {organizationOptionsError}</p>
+            )}
+          </div>
+
+          {lines.map((line, index) => (
+            <div key={line.key} className="space-y-3 rounded-lg border bg-muted/20 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="secondary" className="text-[10px]">Line {index + 1}</Badge>
+                  <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+                    {formatMoney(Number.isFinite(Number(line.amount)) ? Number(line.amount) : 0)}
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon-xs"
+                    aria-label="Duplicate line"
+                    title="Duplicate line"
+                    onClick={() => {
+                      setLines((current) => {
+                        const position = current.findIndex((item) => item.key === line.key);
+                        // Receipts are intentionally not copied: each attachment
+                        // belongs to exactly one payable line.
+                        const copy: EditableLine = {
+                          key: Math.max(0, ...current.map((item) => item.key)) + 1,
+                          id: null,
+                          amount: line.amount,
+                          referenceNo: line.referenceNo,
+                          remarks: line.remarks,
+                          date: line.date,
+                          coaId: line.coaId,
+                          divisionId: line.divisionId,
+                          receipts: [],
+                        };
+                        const nextLines = [...current];
+                        nextLines.splice(position + 1, 0, copy);
+                        return nextLines;
+                      });
+                    }}
+                  >
+                    <Copy className="size-3" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon-xs"
+                    aria-label="Remove line"
+                    title="Remove line"
+                    disabled={lines.length <= 1}
+                    onClick={() => setLines((current) => current.filter((item) => item.key !== line.key))}
+                  >
+                    <Trash2 className="size-3" />
+                  </Button>
+                </div>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+                <div className="space-y-1">
+                  <Label>Reference No. (Optional)</Label>
+                  <Input
+                    value={line.referenceNo}
+                    onChange={(event) => updateLine(line.key, { referenceNo: event.target.value })}
+                    placeholder="Optional"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="whitespace-nowrap" title="Chart of Accounts (COA), required to submit">
+                    Chart of Accounts *
+                  </Label>
+                  <WerCoaCombobox
+                    value={line.coaId}
+                    options={coas}
+                    onValueChange={(value) => updateLine(line.key, { coaId: value })}
+                  />
+                  {line.coaId && detail.budgetContextAvailable && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Available for this COA: {formatMoney(
+                        detail.budgetBalancesByCoa.find((balance) => balance.coaId === Number(line.coaId))?.remainingAmount ?? 0,
+                      )}
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor={`wer-payable-division-${line.key}`}>Division *</Label>
+                  <WerOrganizationCombobox
+                    id={`wer-payable-division-${line.key}`}
+                    value={line.divisionId}
+                    onValueChange={(value) => updateLine(line.key, { divisionId: value })}
+                    options={divisions.map((division) => ({
+                      value: String(division.divisionId),
+                      label: division.divisionName,
+                    }))}
+                    placeholder="Select division"
+                    searchLabel="divisions"
+                    disabled={!organizationOptionsLoaded || busy}
+                  />
+                  <p className="text-[11px] text-muted-foreground">Required for submission; optional while saving a draft.</p>
+                </div>
+                <div className="space-y-1">
+                  <Label>Date</Label>
+                  <Input
+                    type="date"
+                    value={line.date}
+                    onChange={(event) => updateLine(line.key, { date: event.target.value })}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Amount (₱) *</Label>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">₱</span>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={line.amount}
+                      onChange={(event) => updateLine(line.key, { amount: event.target.value })}
+                      placeholder="0.00"
+                      className="pl-7"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1 sm:col-span-2 lg:col-span-3">
+                  <Label>Remarks (Optional)</Label>
+                  <Textarea
+                    value={line.remarks}
+                    onChange={(event) => updateLine(line.key, { remarks: event.target.value })}
+                    placeholder="Optional"
+                    className="min-h-9"
+                  />
+                </div>
+                <div className="space-y-1 sm:col-span-2 lg:col-span-2">
+                  <Label>File Upload / Attachments</Label>
+                  <div className="flex min-h-9 flex-wrap items-center gap-2 rounded-md border border-dashed bg-background px-2 py-1.5 focus-within:ring-2 focus-within:ring-ring/50">
+                    {line.receipts.length === 0 && (
+                      <span className="text-xs text-muted-foreground">No files attached</span>
+                    )}
+                    {line.receipts.map((receipt) => {
+                      const href = receiptViewHref(receipt.fileId);
+                      return (
+                        <span key={receipt.fileId} className="inline-flex max-w-full items-center gap-1 rounded-md border bg-card px-2 py-1 text-xs">
+                          <Paperclip className="size-3 shrink-0 text-muted-foreground" />
+                          {href ? (
+                            <a href={href} target="_blank" rel="noreferrer" className="max-w-40 truncate underline">
+                              {receipt.fileName || receipt.fileId}
+                            </a>
+                          ) : (
+                            <span className="max-w-40 truncate">{receipt.fileName || receipt.fileId}</span>
+                          )}
+                          <button
+                            type="button"
+                            aria-label="Remove receipt"
+                            className="text-muted-foreground hover:text-foreground"
+                            onClick={() => void handleDetach(line.key, receipt.fileId)}
+                          >
+                            <X className="size-3.5" />
+                          </button>
+                        </span>
+                      );
+                    })}
+                    <label
+                      className={`ml-auto inline-flex shrink-0 items-center gap-1 text-xs font-medium ${
+                        uploadingKey !== null || busy ? "cursor-not-allowed opacity-50" : "cursor-pointer text-primary hover:underline"
+                      }`}
+                    >
+                      <Paperclip className="size-3.5" />
+                      {line.receipts.length > 0 ? "Add file" : "Choose file"}
+                      <Input
+                        type="file"
+                        aria-label="Upload receipt"
+                        className="sr-only"
+                        accept={RECEIPT_ACCEPT}
+                        aria-describedby={`wer-receipt-guidance-${line.key}${receiptErrors[line.key] ? ` wer-receipt-error-${line.key}` : ""}`}
+                        aria-invalid={Boolean(receiptErrors[line.key])}
+                        disabled={uploadingKey !== null || busy}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          event.target.value = "";
+                          void handleAttach(line.key, file);
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <p id={`wer-receipt-guidance-${line.key}`} className="text-xs text-muted-foreground">{RECEIPT_GUIDANCE}</p>
+                  {receiptErrors[line.key] && <p id={`wer-receipt-error-${line.key}`} role="alert" className="text-xs text-destructive">{receiptErrors[line.key]}</p>}
+                  {uploadingKey === line.key && (
+                    <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Loader2 className="size-3 animate-spin" /> Uploading receipt…
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+
+          <Button type="button" variant="outline" className="h-10 w-full border-dashed text-xs" onClick={addLine}>
+            <Plus className="size-3.5" /> Add New Entry Line Item
+          </Button>
+
+          {variance && <ExpenseVarianceSummary variance={variance} accounts={coas} />}
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+            <span>
+              Lines total: <strong className="text-foreground">{formatMoney(linesTotal)}</strong>
+            </span>
+            <span>
+              Available expense budget: <strong className="text-foreground">
+                {detail.budgetContextAvailable ? formatMoney(detail.remainingAmount) : "Unavailable"}
+              </strong>
+            </span>
+          </div>
+          {notice && (
+            <Alert className="border-emerald-500/40 bg-emerald-500/5">
+              <CheckCircle2 className="size-4 text-emerald-600" />
+              <AlertTitle>Saved</AlertTitle>
+              <AlertDescription>{notice}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!draftActionEnabled}
+              onClick={() => void handleAction("save-draft")}
+            >
+              {busy ? "Saving…" : editingSubmissionId !== null ? "Save Changes" : "Save Draft"}
+            </Button>
+            <Button
+              type="button"
+              disabled={!submitActionEnabled}
+              onClick={() => void handleAction("submit")}
+            >
+              {busy ? "Submitting…" : editingSubmissionId !== null ? "Resubmit for Approval" : "Submit for Approval"}
+            </Button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}

@@ -12,12 +12,13 @@ import {
     DialogFooter
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Loader2, CheckCircle, FileText, User, Receipt, CreditCard, Layers, Printer, XCircle } from "lucide-react";
+import { Loader2, CheckCircle, FileText, User, Receipt, CreditCard, Layers, Printer, XCircle, FileSpreadsheet } from "lucide-react";
 import { fetchDetailedMemo, approveMemo, rejectMemo } from "../service";
 import { DetailedMemo, CompanyProfile } from "../types";
 import { toast } from "sonner";
 import { PrintMemoSettingsDialog } from "./PrintMemoSettingsDialog";
 import { Textarea } from "@/components/ui/textarea";
+import { RelatedTransactionDetailDialog, type RelatedMemoReference } from "./RelatedTransactionDetailDialog";
 
 interface ApprovalDetailModalProps {
     memoId: number | null;
@@ -25,14 +26,18 @@ interface ApprovalDetailModalProps {
     onOpenChange: (open: boolean) => void;
     onApproved?: () => void;
     readOnly?: boolean;
+    onExportExcel?: (id: number) => void;
+    exportingExcel?: boolean;
+    excelExportDisabled?: boolean;
 }
 
-export function ApprovalDetailModal({ memoId, open, onOpenChange, onApproved, readOnly = false }: ApprovalDetailModalProps) {
+export function ApprovalDetailModal({ memoId, open, onOpenChange, onApproved, readOnly = false, onExportExcel, exportingExcel = false, excelExportDisabled = false }: ApprovalDetailModalProps) {
     const [details, setDetails] = useState<DetailedMemo | null>(null);
     const [company, setCompany] = useState<CompanyProfile | null>(null);
     const [loading, setLoading] = useState(false);
     const [approving, setApproving] = useState(false);
     const [printSettingsOpen, setPrintSettingsOpen] = useState(false);
+    const [selectedReference, setSelectedReference] = useState<RelatedMemoReference | null>(null);
     
     // Rejection state
     const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
@@ -49,6 +54,10 @@ export function ApprovalDetailModal({ memoId, open, onOpenChange, onApproved, re
                 })
                 .catch(err => console.error("Failed to fetch company profile:", err));
         }
+    }, [open]);
+
+    useEffect(() => {
+        if (!open) setSelectedReference(null);
     }, [open]);
 
     useEffect(() => {
@@ -124,6 +133,48 @@ export function ApprovalDetailModal({ memoId, open, onOpenChange, onApproved, re
 
     const formatCurrency = (val: number) => 
         new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val);
+
+    const canOpenRelatedDetails = Number(details?.header.applied_amount ?? 0) > 0;
+    const renderRelatedReferences = (
+        references: Array<{ id: number | null; number: string | null; type: RelatedMemoReference["type"] }>,
+    ) => {
+        const availableReferences = references.flatMap((reference) => {
+            const number = reference.number?.trim();
+            return number ? [{ ...reference, number }] : [];
+        });
+        if (availableReferences.length === 0) return "-";
+
+        return (
+            <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+                {availableReferences.map((reference, index) => {
+                    const { number } = reference;
+                    const referenceId = reference.id;
+                    return (
+                        <React.Fragment key={`${reference.type}-${reference.id ?? number}-${index}`}>
+                            {index > 0 && <span className="text-slate-400">,</span>}
+                            {canOpenRelatedDetails && referenceId !== null && referenceId > 0 ? (
+                                <Button
+                                    type="button"
+                                    variant="link"
+                                    className="h-auto p-0 font-bold text-blue-700 underline underline-offset-2"
+                                    onClick={() => setSelectedReference({
+                                        type: reference.type,
+                                        id: referenceId,
+                                        number,
+                                        customerName: details?.header.customer_id.customer_name,
+                                    })}
+                                >
+                                    {number}
+                                </Button>
+                            ) : (
+                                <span>{number}</span>
+                            )}
+                        </React.Fragment>
+                    );
+                })}
+            </span>
+        );
+    };
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -213,6 +264,20 @@ export function ApprovalDetailModal({ memoId, open, onOpenChange, onApproved, re
                                         <DetailItem label="GL Account" value={details.header.chart_of_account.account_title} />
                                         <DetailItem label="Reason / Remarks" value={details.header.reason || "No reason provided"} />
                                         <DetailItem label="Date Created" value={new Date(details.header.created_at).toLocaleString()} />
+                                        <DetailItem label="CP#" value={renderRelatedReferences(
+                                            (details.collections ?? []).map(collection => ({
+                                                id: collection.collection_id?.id ?? null,
+                                                number: collection.collection_id?.docNo ?? null,
+                                                type: "collection" as const,
+                                            })),
+                                        )} />
+                                        <DetailItem label="Invoice No." value={renderRelatedReferences(
+                                            (details.invoices ?? []).map(invoice => ({
+                                                id: invoice.invoice_id?.invoice_id ?? null,
+                                                number: invoice.invoice_id?.invoice_no ?? null,
+                                                type: "invoice" as const,
+                                            })),
+                                        )} />
                                     </div>
                                 </div>
                             </div>
@@ -238,6 +303,12 @@ export function ApprovalDetailModal({ memoId, open, onOpenChange, onApproved, re
                         >
                             <Printer className="h-4 w-4 mr-2" />
                             Print
+                        </Button>
+                    )}
+                    {onExportExcel && memoId !== null && (
+                        <Button variant="outline" onClick={() => onExportExcel(memoId)} disabled={loading || !details || excelExportDisabled} className="rounded-xl font-bold">
+                            {exportingExcel ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />}
+                            {exportingExcel ? "Exporting..." : "Export Excel"}
                         </Button>
                     )}
                     {(!readOnly && details?.header.status === "FOR APPROVAL") && (
@@ -277,6 +348,13 @@ export function ApprovalDetailModal({ memoId, open, onOpenChange, onApproved, re
                     company={company}
                 />
             )}
+            <RelatedTransactionDetailDialog
+                reference={selectedReference}
+                open={selectedReference !== null}
+                onOpenChange={(isOpen) => {
+                    if (!isOpen) setSelectedReference(null);
+                }}
+            />
 
             {/* Rejection Remarks Dialog */}
             <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
@@ -363,7 +441,7 @@ export function ApprovalDetailModal({ memoId, open, onOpenChange, onApproved, re
     );
 }
 
-function DetailItem({ label, value }: { label: string; value: string }) {
+function DetailItem({ label, value }: { label: string; value: React.ReactNode }) {
     return (
         <div className="space-y-1">
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{label}</p>

@@ -31,6 +31,11 @@ function displayCustomer(value: string | null | undefined): string {
     return customer && !/^chk-/i.test(customer) ? customer : "N/A";
 }
 
+function getSignedAdjustmentAmount(adjustment: SettlementPrintableWalletItem): number {
+    const amount = Math.abs(Number(adjustment.originalAmount) || 0);
+    return adjustment.type === "ADJUSTMENT" && adjustment.balanceTypeId === 1 ? -amount : amount;
+}
+
 export function printSettlementReceiptA4(
     wallet: readonly SettlementPrintableWalletItem[],
     allocations: readonly SettlementAllocation[],
@@ -114,16 +119,17 @@ export function printSettlementReceiptA4(
     const adjustmentRowsHtml = adjustments.map(adj => {
         const alloc = allocations.find(a => a.sourceTempId === adj.id);
         const refNo = alloc ? alloc.invoiceNo : "—";
+        const signedAmount = getSignedAdjustmentAmount(adj);
         return `
             <tr>
                 <td class="bold">${esc(adj.type === "EWT" ? "EWT Adjustment" : adj.label)}</td>
                 <td>${esc(displayCustomer(adj.customerName))}</td>
                 <td class="font-mono">${esc(refNo)}</td>
-                <td class="num bold">${esc(fmtNum(adj.originalAmount))}</td>
+                <td class="num bold">${esc(fmtNum(signedAmount))}</td>
             </tr>
         `;
     }).join("");
-    const totalAdjustments = adjustments.reduce((sum, a) => sum + a.originalAmount, 0);
+    const totalAdjustments = adjustments.reduce((sum, adjustment) => sum + getSignedAdjustmentAmount(adjustment), 0);
 
     const html = `
 <!DOCTYPE html>

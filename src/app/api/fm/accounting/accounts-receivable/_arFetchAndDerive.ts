@@ -30,6 +30,7 @@ export interface ARRow {
   dispatchDate: string | null;
   paymentStatus: string;
   transactionStatus: string;
+  arStatus?: 'Due' | 'Overdue' | '—';
   grossAmount: number;
   discountAmount: number;
   netReceivable: number;
@@ -44,6 +45,7 @@ export interface ARRow {
   branch: string;
   salesman: string;
   salesmanCode: string;
+  supplierCode: string;
   division: string;
   salesType: number | null;
   isPosted: boolean;
@@ -89,6 +91,8 @@ export interface ARFilterOptions {
   salesmen: string[];
   divisions: string[];
   operations: { value: string; label: string }[];
+  transactionStatuses: string[];
+  arStatuses: string[];
 }
 
 export interface ARFullPayload {
@@ -117,6 +121,8 @@ export interface ARTableFilters {
   operation?: string;
   agingRange?: string;
   search?: string;
+  arStatus?: string;
+  transactionStatus?: string;
 }
 
 export interface CustomerGroupRow {
@@ -151,6 +157,8 @@ interface DivisionRow { division_id: number; division_name: string; }
 interface OperationRow { id: number; operation_name: string; operation_code: string | null; }
 interface CollectionRow { id: number; salesman_id: number | null; totalAmount: number | null; }
 interface CollectionInvoiceRow { collection_id: number; invoice_id: number; amount: number; }
+interface SalesOrderLookupRow { order_no: string; supplier_id: { id: number; supplier_name: string; supplier_shortcut: string | null } | null; }
+interface SupplierLookupRow { id: number; supplier_name: string; supplier_shortcut: string | null; }
 
 const DIRECTUS_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
 const DIRECTUS_STATIC_TOKEN = (process.env.DIRECTUS_STATIC_TOKEN || '').trim();
@@ -232,10 +240,16 @@ export function computeDerivedStatus(
   lookups: StatusLookupData
 ): string {
   const dbStatus = (dbTransactionStatus || '').trim();
+  const upperStatus = dbStatus.toUpperCase();
   if (
     dbStatus === 'Cancellation Requested' ||
-    dbStatus === 'Cancelled' ||
-    dbStatus === 'CANCELLED'
+    upperStatus === 'CANCELLED' ||
+    upperStatus.startsWith('CANCELLED -') ||
+    upperStatus.includes('OLD INVOICE') ||
+    upperStatus === 'VOID' ||
+    upperStatus === 'VOIDED' ||
+    upperStatus === 'NOT FULFILLED' ||
+    upperStatus === 'NOT_FULFILLED'
   ) {
     return dbStatus;
   }
@@ -440,12 +454,17 @@ function deriveMetricsFromRows(
 }
 
 function buildFilterOptions(rows: ARRow[], operationData: OperationBreakdown[]): ARFilterOptions {
+  const transactionStatuses = Array.from(
+    new Set(rows.map(r => r.transactionStatus).filter(Boolean))
+  ).sort();
   return {
     customers: Array.from(new Set(rows.map(r => r.customerName))).sort(),
     clusters: Array.from(new Set(rows.map(r => r.cluster).filter(c => c && c !== 'Unassigned'))).sort(),
     salesmen: Array.from(new Set(rows.map(r => r.salesman).filter(s => s && s !== 'Unknown'))).sort(),
     divisions: Array.from(new Set(rows.map(r => r.division).filter(d => d && d !== '—'))).sort(),
     operations: operationData.map(op => ({ value: String(op.id), label: op.name })),
+    transactionStatuses,
+    arStatuses: ['Due', 'Overdue'],
   };
 }
 
@@ -469,6 +488,12 @@ export function applyARFilters(rows: ARRow[], filters: ARTableFilters): ARRow[] 
     if (filters.salesman && row.salesman !== filters.salesman) return false;
     if (filters.division && row.division !== filters.division) return false;
     if (filters.operation && String(row.salesType) !== String(filters.operation)) return false;
+    if (filters.arStatus) {
+      const isOverdue = row.daysOverdue !== null && row.daysOverdue >= 0 && row.outstandingBalance > 0;
+      const rowArStatus = row.arStatus ?? (isOverdue ? 'Overdue' : (row.dispatchDate ? 'Due' : '—'));
+      if (rowArStatus !== filters.arStatus) return false;
+    }
+    if (filters.transactionStatus && row.transactionStatus !== filters.transactionStatus) return false;
     if (filters.agingRange) {
       const overdueDays = row.daysOverdue;
       if (overdueDays === null || overdueDays < 0) return false;
@@ -482,6 +507,7 @@ export function applyARFilters(rows: ARRow[], filters: ARTableFilters): ARRow[] 
         row.invoiceNo.toLowerCase().includes(q) ||
         row.customerName.toLowerCase().includes(q) ||
         row.salesman.toLowerCase().includes(q) ||
+        row.supplierCode.toLowerCase().includes(q) ||
         row.division.toLowerCase().includes(q) ||
         row.customerCode.toLowerCase().includes(q) ||
         (row.invoiceDate || '').toLowerCase().includes(q) ||
@@ -539,9 +565,11 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
   ].join(',');
 
   const invoiceFilter =
-    `filter[payment_status][_nin]=Paid,Fully Paid` +
+    `filter[payment_status][_nin]=Paid,Fully Paid,Void,VOID,Cancelled,CANCELLED,Cancelled%20-%20Old%20Invoice,CANCELLED%20-%20OLD%20INVOICE` +
     `&filter[_or][0][isPosted][_null]=true` +
-    `&filter[_or][1][isPosted][_eq]=false`;
+    `&filter[_or][1][isPosted][_eq]=false` +
+    `&filter[_and][0][_or][0][transaction_status][_nin]=Cancelled,CANCELLED,Void,VOID,void,Not%20Fulfilled,NOT%20FULFILLED,Cancelled%20-%20Old%20Invoice,CANCELLED%20-%20OLD%20INVOICE,cancelled%20-%20old%20invoice` +
+    `&filter[_and][0][_or][1][transaction_status][_null]=true`;
 
   const collectionUrl = `${DIRECTUS_URL}/items/collection?limit=-1&fields=id,salesman_id,totalAmount&filter[isPosted][_neq]=true&filter[isCancelled][_neq]=true`;
 
@@ -555,7 +583,7 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
     return {
       rows: [], operationData: [], agingData: deriveAgingData([]),
       salesmanData: [], metrics: deriveMetricsFromRows([], emptyPool),
-      filterOptions: { customers: [], clusters: [], salesmen: [], divisions: [], operations: [] },
+      filterOptions: { customers: [], clusters: [], salesmen: [], divisions: [], operations: [], transactionStatuses: [], arStatuses: ['Due', 'Overdue'] },
       salesmanUnposted: {}, sourceInvoiceCount: 0, ...emptyPool,
     };
   }
@@ -564,11 +592,12 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
   const customerCodes = Array.from(new Set(invoices.map(inv => inv.customer_code).filter((c): c is string => !!c)));
   const salesmanIds = Array.from(new Set(invoices.map(inv => inv.salesman_id).filter((s): s is number => typeof s === 'number')));
   const salesTypeIds = Array.from(new Set(invoices.map(inv => inv.sales_type).filter((s): s is number => typeof s === 'number')));
+  const orderNos = Array.from(new Set(invoices.map(inv => (inv.order_id || '').trim()).filter((o): o is string => !!o)));
   const unpostedPouchIds = unpostedCollections.map(c => c.id);
 
   const [
     payments, returns_, memos, unfulfilled, customers, salesmen, operations, unpostedInvoiceAllocs, clusters, areas,
-    dispatchInvoices, transmittalDetails, counteredInvoices, collectionInvoices
+    dispatchInvoices, transmittalDetails, counteredInvoices, collectionInvoices, salesOrders, suppliers
   ] =
     await Promise.all([
       fetchAllChunked<PaymentRow>(`${DIRECTUS_URL}/items/sales_invoice_payments?limit=-1&fields=invoice_id,paid_amount`, 'invoice_id', invoiceIds),
@@ -589,6 +618,8 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
       fetchAllChunked<any>(`${DIRECTUS_URL}/items/document_transmittal_details?limit=-1&fields=invoice_id,receivedAt,document_transmittal_id.receivedAt`, 'invoice_id', invoiceIds).catch(() => []),
       fetchAllChunked<any>(`${DIRECTUS_URL}/items/countered_invoices?limit=-1&fields=invoice_id,countered_date`, 'invoice_id', invoiceIds).catch(() => []),
       fetchAllChunked<any>(`${DIRECTUS_URL}/items/collection_invoices?limit=-1&fields=invoice_id,collection_id.isPosted,collection_id.isCancelled`, 'invoice_id', invoiceIds).catch(() => []),
+      fetchAllChunked<SalesOrderLookupRow>(`${DIRECTUS_URL}/items/sales_order?limit=-1&fields=order_no,supplier_id.id,supplier_id.supplier_name,supplier_id.supplier_shortcut`, 'order_no', orderNos).catch(() => [] as SalesOrderLookupRow[]),
+      fetchAll<SupplierLookupRow>(`${DIRECTUS_URL}/items/suppliers?limit=-1&fields=id,supplier_name,supplier_shortcut`).catch(() => [] as SupplierLookupRow[]),
     ]);
 
   const divisionIds = Array.from(new Set(salesmen.map(s => s.division_id).filter((d): d is number => typeof d === 'number')));
@@ -607,6 +638,27 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
   for (const cust of customers) {
     const cId = findClusterForCustomer(cust.province, cust.city, cust.brgy, areaIndex);
     customerClusterMap.set(cust.customer_code, cId ? (clusterNameMap.get(cId) || 'Unassigned') : 'Unassigned');
+  }
+
+  const salesOrderSupplierMap = new Map<string, string>();
+  for (const so of salesOrders) {
+    const shortcut = so.supplier_id?.supplier_shortcut?.trim();
+    if (so.order_no && shortcut) {
+      salesOrderSupplierMap.set(so.order_no.trim(), shortcut);
+    }
+  }
+
+  const allSupplierShortcuts = Array.from(
+    new Set(
+      suppliers
+        .map(s => (s.supplier_shortcut || '').trim())
+        .filter(Boolean)
+    )
+  ).sort((a, b) => b.length - a.length);
+
+  if (allSupplierShortcuts.some(s => s.toUpperCase() === 'EPII') && !allSupplierShortcuts.some(s => s.toUpperCase() === 'EPI')) {
+    allSupplierShortcuts.push('EPI');
+    allSupplierShortcuts.sort((a, b) => b.length - a.length);
   }
 
   const paymentAgg = new Map<number, number>();
@@ -633,7 +685,22 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
   const rows: ARRow[] = [];
   for (const inv of invoices) {
     if (parseBit(inv.isPosted)) continue;
-    if ((inv.transaction_status || '').trim().toUpperCase() === 'CANCELLED') continue;
+    const txStatus = (inv.transaction_status || '').trim().toUpperCase();
+    const payStatus = (inv.payment_status || '').trim().toUpperCase();
+    if (
+      txStatus === 'CANCELLED' ||
+      txStatus.startsWith('CANCELLED -') ||
+      txStatus.includes('OLD INVOICE') ||
+      txStatus === 'VOID' ||
+      txStatus === 'VOIDED' ||
+      txStatus === 'NOT FULFILLED' ||
+      txStatus === 'NOT_FULFILLED' ||
+      payStatus === 'VOID' ||
+      payStatus === 'VOIDED' ||
+      payStatus === 'CANCELLED' ||
+      payStatus.startsWith('CANCELLED -') ||
+      payStatus.includes('OLD INVOICE')
+    ) continue;
 
     const grossAmount = Number(inv.gross_amount) || 0;
     const discountAmount = Number(inv.discount_amount) || 0;
@@ -646,13 +713,65 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
     const outstandingBalance = Math.max(0, netReceivable - returnAmount - creditMemos + debitMemos - unfulfilledAmount - totalPaid);
     if (outstandingBalance <= 0) continue;
 
+    // Calculate credit terms in days between invoice_date and due_date if available
+    let termDays = 0;
+    if (inv.due_date && inv.invoice_date) {
+      const invD = new Date(inv.invoice_date);
+      const dueD = new Date(inv.due_date);
+      if (!isNaN(invD.getTime()) && !isNaN(dueD.getTime())) {
+        termDays = Math.max(0, Math.round((dueD.getTime() - invD.getTime()) / (1000 * 60 * 60 * 24)));
+      }
+    }
+
+    // Due date should be based on the delivery / dispatch date, falling back to due_date if dispatch_date is missing
+    let calculatedDueDate: string | null = inv.due_date;
+    const deliveryDateStr = inv.dispatch_date || null;
+    if (deliveryDateStr) {
+      const delD = new Date(deliveryDateStr);
+      if (!isNaN(delD.getTime())) {
+        const newDueD = new Date(delD.getTime());
+        newDueD.setDate(newDueD.getDate() + termDays);
+        calculatedDueDate = newDueD.toISOString();
+      }
+    }
+
     let daysOverdue: number | null = null;
-    if (inv.due_date) {
-      const due = new Date(inv.due_date);
-      if (!isNaN(due.getTime())) { due.setHours(0, 0, 0, 0); daysOverdue = Math.floor((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24)); }
+    if (calculatedDueDate) {
+      const due = new Date(calculatedDueDate);
+      if (!isNaN(due.getTime())) {
+        due.setHours(0, 0, 0, 0);
+        daysOverdue = Math.floor((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+      }
     }
 
     const sm = inv.salesman_id ? salesmanMap.get(inv.salesman_id) : null;
+    const cleanOrderId = (inv.order_id || '').trim();
+    let supplierCode = salesOrderSupplierMap.get(cleanOrderId) || '';
+
+    if (!supplierCode && cleanOrderId) {
+      const upperOrder = cleanOrderId.toUpperCase();
+      for (const sc of allSupplierShortcuts) {
+        if (upperOrder.startsWith(sc.toUpperCase())) {
+          supplierCode = sc;
+          break;
+        }
+      }
+    }
+
+    if (!supplierCode && inv.invoice_no) {
+      const upperInvNo = inv.invoice_no.trim().toUpperCase();
+      for (const sc of allSupplierShortcuts) {
+        if (upperInvNo.startsWith(sc.toUpperCase())) {
+          supplierCode = sc;
+          break;
+        }
+      }
+    }
+
+    if (!supplierCode) {
+      supplierCode = '—';
+    }
+
     rows.push({
       invoiceId: inv.invoice_id,
       invoiceNo: inv.invoice_no,
@@ -660,7 +779,7 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
       customerName: customerMap.get(inv.customer_code || '') || inv.customer_code || '—',
       customerCode: inv.customer_code || '',
       invoiceDate: inv.invoice_date,
-      calculatedDueDate: inv.due_date,
+      calculatedDueDate,
       dispatchDate: inv.dispatch_date,
       paymentStatus: inv.payment_status || 'Unpaid',
       transactionStatus: computeDerivedStatus(
@@ -673,8 +792,12 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
       grossAmount, discountAmount, netReceivable, returnAmount, unfulfilledAmount,
       appliedCreditMemos: creditMemos, appliedDebitMemos: debitMemos, totalPaid, outstandingBalance,
       unpostedCollectionAmount: unpostedAgg.get(inv.invoice_id) || 0, daysOverdue,
+      arStatus: (daysOverdue !== null && daysOverdue >= 0 && outstandingBalance > 0)
+        ? 'Overdue'
+        : (inv.dispatch_date ? 'Due' : '—'),
       branch: inv.branch_id?.branch_name || 'Unknown',
       salesman: sm?.name || 'Unknown', salesmanCode: sm?.code || '—',
+      supplierCode,
       division: sm?.division || '—', salesType: inv.sales_type ?? null, isPosted: false,
       cluster: customerClusterMap.get(inv.customer_code || '') || 'Unassigned',
     });
@@ -699,7 +822,7 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
   const operationData = Array.from(operationAgg.values()).sort((a, b) => b.totalOutstanding - a.totalOutstanding);
 
   const totalUnpostedPool = unpostedCollections.reduce((sum, c) => sum + (Number(c.totalAmount) || 0), 0);
-  const activeInvoiceIds = new Set(invoices.map(i => i.invoice_id));
+  const activeInvoiceIds = new Set(rows.map(r => r.invoiceId));
   let unpostedAllocationsActive = 0, unpostedAllocationsPaid = 0;
   for (const alloc of unpostedInvoiceAllocs) {
     if (activeInvoiceIds.has(alloc.invoice_id)) unpostedAllocationsActive += Number(alloc.amount) || 0;

@@ -114,7 +114,7 @@ function ApprovalStateBadge({ group }: { group: ApprovalAwareGroup }) {
 
   if (group.can_act) {
     return (
-      <Badge className="w-fit rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/40">
+      <Badge className="w-fit rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/40">
         <CheckCircle2 className="mr-1 h-3 w-3" />
         Ready for Approval
       </Badge>

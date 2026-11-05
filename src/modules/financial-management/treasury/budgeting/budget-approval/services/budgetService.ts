@@ -77,9 +77,10 @@ export const budgetApprovalService = {
     const res = await fetchProxy<{ data: RawApprovalBudgetItem[]; meta?: { filter_count: number } }>(`${API_PROXY}?${query.toString()}`);
     const rawData = res.data || [];
     
-    // Fetch attachments manually since Directus O2M relationship might not be configured
+    // Fetch attachments & feedbacks manually
     const budgetIds = rawData.map(b => b.id).filter(Boolean);
     const attachmentsMap: Record<string, RawApprovalAttachment[]> = {};
+    const feedbacksMap: Record<string, Array<{ id: string | number; status: string; feedback: string; voted_by_name: string; voted_at: string }>> = {};
     let attachmentLoadFailed = false;
     
     if (budgetIds.length > 0) {
@@ -102,6 +103,34 @@ export const budgetApprovalService = {
         attachmentLoadFailed = true;
         console.error("Failed to fetch budget attachments for approval list:", err);
       }
+
+      try {
+        const fbQuery = new URLSearchParams({
+          collection: "budget_approval_feedback",
+          "filter[budget_id][_in]": budgetIds.join(","),
+          fields: "id,budget_id,status,feedback,voted_at,voted_by.user_fname,voted_by.user_lname",
+          sort: "-voted_at",
+          limit: "-1"
+        });
+        const fbRes = await fetchProxy<{ data: Array<{ id: string | number; budget_id: string | number; status?: string; feedback?: string; voted_at?: string; voted_by?: { user_fname?: string; user_lname?: string } | null }> }>(`${API_PROXY}?${fbQuery.toString()}`);
+        if (fbRes?.data) {
+          fbRes.data.forEach(fb => {
+            const bId = String(fb.budget_id);
+            if (!feedbacksMap[bId]) feedbacksMap[bId] = [];
+            const userObj = fb.voted_by;
+            const name = userObj ? `${userObj.user_fname || ""} ${userObj.user_lname || ""}`.trim() : "System Evaluator";
+            feedbacksMap[bId].push({
+              id: fb.id,
+              status: fb.status || "Approved",
+              feedback: fb.feedback || "",
+              voted_by_name: name,
+              voted_at: fb.voted_at || "",
+            });
+          });
+        }
+      } catch (err) {
+        console.error("Failed to fetch budget feedbacks for approval list:", err);
+      }
     }
     
     const validatedData: Budget[] = [];
@@ -121,12 +150,17 @@ export const budgetApprovalService = {
         if (monthIndex !== -1) monthNum = monthIndex + 1;
       }
 
+      const MONTH_NAMES = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+      ];
+
       const mapped = {
         id: item.id,
         budget_no: item.budget_no || "—",
         year: item.year ? Number(item.year) : null,
         month: isNaN(monthNum) ? null : monthNum, 
-        month_name: item.month_name || (typeof item.month === 'string' && isNaN(Number(item.month)) ? item.month : "—"),
+        month_name: item.month_name || (!isNaN(monthNum) && monthNum >= 1 && monthNum <= 12 ? MONTH_NAMES[monthNum - 1] : (typeof item.month === 'string' ? item.month : "—")),
         amount: Number(item.amount || 0),
         status: item.status,
         entry_type: item.entry_type || "original",
@@ -146,6 +180,7 @@ export const budgetApprovalService = {
           file_type: att.file_type,
           file_size: att.file_size,
         })),
+        feedbacks: feedbacksMap[String(item.id)] || [],
       };
 
       const parsed = BudgetApprovalItemSchema.safeParse(mapped);

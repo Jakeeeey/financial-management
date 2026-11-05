@@ -5,6 +5,41 @@ export const runtime = "nodejs";
 const DIRECTUS_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "");
 const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "";
 
+function sortedCombo(valueIds: number[]): number[] {
+  return [...valueIds].sort((a, b) => a - b);
+}
+
+function sameCombo(a: number[], b: number[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((v, i) => v === b[i]);
+}
+
+function resolveUomId(raw: unknown): number | null {
+  if (typeof raw === "number") return raw;
+  if (raw && typeof raw === "object") {
+    const unitId = (raw as Record<string, unknown>).unit_id;
+    if (typeof unitId === "number") return unitId;
+  }
+  return null;
+}
+
+async function resolveVariantValueIds(variantId: number): Promise<number[]> {
+  const relParams = new URLSearchParams({
+    "filter[item_variant_id][_eq]": String(variantId),
+    fields: "item_attribute_value_id",
+    limit: "-1",
+  });
+  const relRes = await fetch(
+    `${DIRECTUS_URL}/items/item_attribute_value_item_variant_rel?${relParams.toString()}`,
+    { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }
+  );
+  if (!relRes.ok) return [];
+  const relJson = await relRes.json();
+  return ((relJson.data || []) as Record<string, unknown>[])
+    .map((rel) => (typeof rel.item_attribute_value_id === "number" ? rel.item_attribute_value_id : 0))
+    .filter((v) => v > 0);
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -73,41 +108,50 @@ export async function PATCH(
     const { item_tmpl_id, name, uom_id, list_price, sku, active, valueIds } = parsed.data;
     const trimmedName = name?.trim();
 
-    if (trimmedName || item_tmpl_id !== undefined || uom_id !== undefined) {
-      const curRes = await fetch(`${DIRECTUS_URL}/items/item_variant/${id}?fields=item_tmpl_id,uom_id`, {
+    if (trimmedName !== undefined || item_tmpl_id !== undefined || uom_id !== undefined || valueIds !== undefined) {
+      const curRes = await fetch(`${DIRECTUS_URL}/items/item_variant/${id}?fields=item_tmpl_id,name,uom_id`, {
         headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
         cache: "no-store",
       });
       if (curRes.ok) {
         const curJson = await curRes.json();
-        const cur = (curJson.data || {}) as { item_tmpl_id?: number; uom_id?: number | null };
+        const cur = (curJson.data || {}) as { item_tmpl_id?: number; name?: string; uom_id?: number | null };
         const effTmplId = item_tmpl_id ?? cur.item_tmpl_id ?? null;
-        const effUomId = uom_id !== undefined ? uom_id : (cur.uom_id ?? null);
-        const effName = trimmedName ?? null;
+        const effUomId = uom_id !== undefined ? (uom_id ?? null) : (cur.uom_id ?? null);
+        const effNameKey = (trimmedName ?? cur.name ?? "").trim().toLowerCase();
+        const effCombo = sortedCombo(
+          valueIds ?? (await resolveVariantValueIds(Number(id)).catch(() => []))
+        );
 
-        if (effTmplId != null && effName) {
-          const dupParams = new URLSearchParams({
+        if (effTmplId != null) {
+          const sibParams = new URLSearchParams({
             fields: "id,name,uom_id",
             limit: "-1",
-            filter: JSON.stringify({
-              _and: [
-                { item_tmpl_id: { _eq: effTmplId } },
-                { name: { _icontains: effName } },
-              ],
-            }),
+            filter: JSON.stringify({ item_tmpl_id: { _eq: effTmplId } }),
           });
-          const dupRes = await fetch(`${DIRECTUS_URL}/items/item_variant?${dupParams.toString()}`, {
+          const sibRes = await fetch(`${DIRECTUS_URL}/items/item_variant?${sibParams.toString()}`, {
             headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
             cache: "no-store",
           });
-          if (dupRes.ok) {
-            const dupJson = await dupRes.json();
-            const existing = (dupJson.data || []) as { id: number; name: string; uom_id: number | null }[];
-            if (existing.some((v) => v.id !== Number(id) && v.name.toLowerCase() === effName.toLowerCase() && v.uom_id === effUomId)) {
-              return NextResponse.json(
-                { ok: false, message: "A variant with this name and UOM already exists" },
-                { status: 409 }
-              );
+          if (sibRes.ok) {
+            const sibJson = await sibRes.json();
+            const siblings = (sibJson.data || []) as { id: number; name?: unknown; uom_id?: unknown }[];
+            for (const sib of siblings) {
+              if (sib.id === Number(id)) continue;
+              if (resolveUomId(sib.uom_id) !== effUomId) continue;
+              if (typeof sib.name === "string" && sib.name.trim().toLowerCase() === effNameKey) {
+                return NextResponse.json(
+                  { ok: false, message: "A variant with this name and UOM already exists" },
+                  { status: 409 }
+                );
+              }
+              const sibCombo = sortedCombo(await resolveVariantValueIds(sib.id).catch(() => []));
+              if (sameCombo(sibCombo, effCombo)) {
+                return NextResponse.json(
+                  { ok: false, message: "A variant with this attribute combination and UOM already exists" },
+                  { status: 409 }
+                );
+              }
             }
           }
         }
@@ -198,6 +242,39 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
+    const curRes = await fetch(`${DIRECTUS_URL}/items/item_variant/${id}?fields=id,item_tmpl_id`, {
+      headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+      cache: "no-store",
+    });
+    if (curRes.status === 404) {
+      return NextResponse.json({ ok: false, message: "Variant not found" }, { status: 404 });
+    }
+    if (curRes.ok) {
+      const curJson = await curRes.json();
+      const tmplId = (curJson.data as { item_tmpl_id?: number })?.item_tmpl_id;
+      if (typeof tmplId === "number") {
+        const countParams = new URLSearchParams({
+          fields: "id",
+          limit: "-1",
+          meta: "total_count",
+          filter: JSON.stringify({ item_tmpl_id: { _eq: tmplId } }),
+        });
+        const countRes = await fetch(`${DIRECTUS_URL}/items/item_variant?${countParams.toString()}`, {
+          headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+          cache: "no-store",
+        });
+        if (countRes.ok) {
+          const countJson = await countRes.json();
+          const total: number = countJson.meta?.total_count ?? (countJson.data || []).length;
+          if (total <= 1) {
+            return NextResponse.json(
+              { ok: false, message: "Each item needs at least one variant" },
+              { status: 400 }
+            );
+          }
+        }
+      }
+    }
     const res = await fetch(`${DIRECTUS_URL}/items/item_variant/${id}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },

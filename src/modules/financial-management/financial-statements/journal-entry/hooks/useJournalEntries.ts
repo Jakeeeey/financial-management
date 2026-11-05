@@ -14,7 +14,13 @@ export function useJournalEntries() {
     paginatedGroups: context.paginatedGroups,
     groups: context.paginatedGroups,
     analytics: context.analytics,
+    analyticsLoading: context.analyticsLoading,
+    analyticsError: context.analyticsError,
+    refreshAnalytics: context.refreshAnalytics,
     uniqueSourceModules: context.uniqueSourceModules,
+    filterOptions: context.filterOptions,
+    filterOptionsLoading: context.filterOptionsLoading,
+    filterOptionsError: context.filterOptionsError,
     
     // State
     filters: context.filters,
@@ -25,6 +31,7 @@ export function useJournalEntries() {
     // Pagination
     currentPage: context.currentPage,
     pageSize: context.pageSize,
+    viewRevision: context.viewRevision,
     pageCount: context.pageCount,
     totalGroupCount: context.totalGroupCount,
     setCurrentPage: context.setCurrentPage,

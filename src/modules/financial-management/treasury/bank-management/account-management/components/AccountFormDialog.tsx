@@ -24,6 +24,7 @@ import { FieldError, RequiredMark, TextField } from "./FormFields";
 import { PsgcSelect } from "./PsgcSelect";
 
 type PsgcLoadingState = {
+  regions: boolean;
   provinces: boolean;
   cities: boolean;
   barangays: boolean;
@@ -43,9 +44,11 @@ type AccountFormDialogProps = {
   bankNameSaving: boolean;
   accountTypeError?: string | null;
   accountTypeSaving: boolean;
+  regionOptions: PsgcOption[];
   provinceOptions: PsgcOption[];
   cityOptions: PsgcOption[];
   barangayOptions: PsgcOption[];
+  hideProvince: boolean;
   psgcLoading: PsgcLoadingState;
   onOpenChange: (open: boolean) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -54,6 +57,7 @@ type AccountFormDialogProps = {
   onAccountTypeChange: (value: string) => void;
   onCreateBankName: (value: string) => void;
   onCreateAccountType: (value: string) => void;
+  onSelectRegion: (option: PsgcOption) => void;
   onSelectProvince: (option: PsgcOption) => void;
   onSelectCity: (option: PsgcOption) => void;
   onSelectBarangay: (option: PsgcOption) => void;
@@ -74,9 +78,11 @@ export function AccountFormDialog({
   bankNameSaving,
   accountTypeError,
   accountTypeSaving,
+  regionOptions,
   provinceOptions,
   cityOptions,
   barangayOptions,
+  hideProvince,
   psgcLoading,
   onOpenChange,
   onSubmit,
@@ -85,6 +91,7 @@ export function AccountFormDialog({
   onAccountTypeChange,
   onCreateBankName,
   onCreateAccountType,
+  onSelectRegion,
   onSelectProvince,
   onSelectCity,
   onSelectBarangay,
@@ -221,22 +228,50 @@ export function AccountFormDialog({
                   error={formErrors.branch}
                   onChange={onValueChange}
                 />
-                <div className="grid min-w-0 gap-1.5" data-invalid={Boolean(formErrors.province) || undefined}>
+                <div className="md:col-span-2">
+                  <TextField
+                    id="country"
+                    label="Country"
+                    value={formValues.country}
+                    disabled={saving}
+                    error={formErrors.country}
+                    onChange={onValueChange}
+                  />
+                </div>
+                <div className="grid min-w-0 gap-1.5" data-invalid={Boolean(formErrors.region) || undefined}>
                   <Label>
-                    Province <RequiredMark />
+                    Region
                   </Label>
                   <PsgcSelect
-                    options={provinceOptions}
-                    value={formValues.province}
-                    disabled={saving || psgcLoading.provinces || provinceOptions.length === 0}
-                    loading={psgcLoading.provinces}
-                    placeholder="Select province"
-                    searchPlaceholder="Search province..."
-                    emptyText="No provinces found."
-                    onSelect={onSelectProvince}
+                    options={regionOptions}
+                    value={formValues.region}
+                    disabled={saving || psgcLoading.regions || regionOptions.length === 0}
+                    loading={psgcLoading.regions}
+                    placeholder="Select region"
+                    searchPlaceholder="Search region..."
+                    emptyText="No regions found."
+                    onSelect={onSelectRegion}
                   />
-                  <FieldError message={formErrors.province} />
+                  <FieldError message={formErrors.region} />
                 </div>
+                {hideProvince ? null : (
+                  <div className="grid min-w-0 gap-1.5" data-invalid={Boolean(formErrors.province) || undefined}>
+                    <Label>
+                      Province <RequiredMark />
+                    </Label>
+                    <PsgcSelect
+                      options={provinceOptions}
+                      value={formValues.province}
+                      disabled={saving || psgcLoading.provinces || !formValues.region || provinceOptions.length === 0}
+                      loading={psgcLoading.provinces}
+                      placeholder={formValues.region ? "Select province" : "Select region first"}
+                      searchPlaceholder="Search province..."
+                      emptyText="No provinces found."
+                      onSelect={onSelectProvince}
+                    />
+                    <FieldError message={formErrors.province} />
+                  </div>
+                )}
                 <div className="grid min-w-0 gap-1.5" data-invalid={Boolean(formErrors.city) || undefined}>
                   <Label>
                     City / Municipality <RequiredMark />
@@ -244,7 +279,7 @@ export function AccountFormDialog({
                   <PsgcSelect
                     options={cityOptions}
                     value={formValues.city}
-                    disabled={saving || psgcLoading.cities || cityOptions.length === 0}
+                    disabled={saving || psgcLoading.cities || (!hideProvince && !formValues.province) || cityOptions.length === 0}
                     loading={psgcLoading.cities}
                     placeholder="Select city or municipality"
                     searchPlaceholder="Search city or municipality..."
@@ -270,6 +305,80 @@ export function AccountFormDialog({
                   />
                   <FieldError message={formErrors.baranggay} />
                 </div>
+                <TextField
+                  id="house_no"
+                  label="House No."
+                  value={formValues.house_no}
+                  disabled={saving}
+                  error={formErrors.house_no}
+                  onChange={onValueChange}
+                />
+                <TextField
+                  id="unit_building"
+                  label="Unit / Building"
+                  value={formValues.unit_building}
+                  disabled={saving}
+                  error={formErrors.unit_building}
+                  onChange={onValueChange}
+                />
+                <TextField
+                  id="street"
+                  label="Street"
+                  value={formValues.street}
+                  disabled={saving}
+                  error={formErrors.street}
+                  onChange={onValueChange}
+                />
+                <TextField
+                  id="subdivision"
+                  label="Subdivision"
+                  value={formValues.subdivision}
+                  disabled={saving}
+                  error={formErrors.subdivision}
+                  onChange={onValueChange}
+                />
+                <TextField
+                  id="block"
+                  label="Block"
+                  value={formValues.block}
+                  disabled={saving}
+                  error={formErrors.block}
+                  onChange={onValueChange}
+                />
+                <TextField
+                  id="lot"
+                  label="Lot"
+                  value={formValues.lot}
+                  disabled={saving}
+                  error={formErrors.lot}
+                  onChange={onValueChange}
+                />
+                <TextField
+                  id="phase"
+                  label="Phase"
+                  value={formValues.phase}
+                  disabled={saving}
+                  error={formErrors.phase}
+                  onChange={onValueChange}
+                />
+                <TextField
+                  id="purok_sitio"
+                  label="Purok / Sitio"
+                  value={formValues.purok_sitio}
+                  disabled={saving}
+                  error={formErrors.purok_sitio}
+                  onChange={onValueChange}
+                />
+                <TextField
+                  id="zip_code"
+                  label="Zip Code"
+                  value={formValues.zip_code}
+                  disabled={saving}
+                  inputMode="numeric"
+                  maxLength={10}
+                  error={formErrors.zip_code}
+                  onChange={onValueChange}
+                />
               </div>
             </section>
 

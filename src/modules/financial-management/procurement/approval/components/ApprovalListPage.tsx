@@ -12,7 +12,8 @@ export default function ApprovalListPage() {
   const router = useRouter();
   const [procurementNo, setProcurementNo] = React.useState("");
   const [debouncedProcurementNo, setDebouncedProcurementNo] = React.useState("");
-  const [status, setStatus] = React.useState("all");
+  const [status] = React.useState("pending");
+  const [page, setPage] = React.useState(1);
   const [supplierLabel, setSupplierLabel] = React.useState<string | null>(null);
   const [dateFrom, setDateFrom] = React.useState<string | null>(null);
   const [dateTo, setDateTo] = React.useState<string | null>(null);
@@ -29,10 +30,10 @@ export default function ApprovalListPage() {
       supplier_name: supplierLabel || undefined,
       date_from: dateFrom || undefined,
       date_to: dateTo || undefined,
-      page: 1,
-      pageSize: 50,
+      page,
+      pageSize: 10,
     }),
-    [debouncedProcurementNo, status, supplierLabel, dateFrom, dateTo]
+    [debouncedProcurementNo, status, supplierLabel, dateFrom, dateTo, page]
   );
 
   const { rows, total, loading, error, reload } = usePRList(query);
@@ -66,14 +67,12 @@ export default function ApprovalListPage() {
 
       <PRFilters
         procurementNo={procurementNo}
-        status={status}
         supplierLabel={supplierLabel}
         dateFrom={dateFrom}
         dateTo={dateTo}
-        onProcurementNoChange={setProcurementNo}
-        onStatusChange={setStatus}
-        onSupplierChange={(_id, label) => { setSupplierLabel(label); }}
-        onDateChange={(from, to) => { setDateFrom(from); setDateTo(to); }}
+        onProcurementNoChange={(v) => { setProcurementNo(v); setPage(1); }}
+        onSupplierChange={(_id, label) => { setSupplierLabel(label); setPage(1); }}
+        onDateChange={(from, to) => { setDateFrom(from); setDateTo(to); setPage(1); }}
         tableSupplierOptions={tableSupplierOptions}
       />
 
@@ -82,6 +81,9 @@ export default function ApprovalListPage() {
         loading={loading}
         error={error}
         total={total}
+        page={page}
+        pageSize={10}
+        onPageChange={setPage}
         onView={(id) => router.push(`/fm/procurement/approval/${id}`)}
       />
     </div>

@@ -1,22 +1,10 @@
+import type { SupplierMemo } from "../supplier-memos/types";
 // src/modules/financial-management/accounting/supplier-credit-memo/types.ts
 
-export type MemoStatus = "Available" | "Applied";
+export type MemoStatus = "Available" | "Applied" | "USED" | "CANCELLED";
 
 // Matches exact field names returned by Spring /items/suppliers_memo
-export interface SupplierCreditMemo {
-  id:               number;
-  memo_number:      string;
-  type:             number;
-  supplier_id:      number;
-  date:             string;       // "YYYY-MM-DD"
-  amount:           string;       // decimal comes as string from Spring
-  reason:           string | null;
-  status:           string;
-  chart_of_account: number;
-  created_at:       string;
-  updated_at:       string;
-  encoder_id:       number | null;
-}
+export type SupplierCreditMemo = SupplierMemo;
 
 export interface Supplier {
   id:                 number;

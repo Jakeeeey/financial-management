@@ -15,7 +15,10 @@ import {
     FilterX,
     Filter,
     Layers,
-    Database
+    Database,
+    Pencil,
+    FileSpreadsheet,
+    Loader2
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -27,9 +30,11 @@ import {
 } from "../service";
 import { MemoApprovalRow, Supplier, Customer, Salesman, ChartOfAccount } from "../types";
 import { ApprovalDetailModal } from "./ApprovalDetailModal";
+import { CustomerMemoEditDialog } from "./CustomerMemoEditDialog";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { MultiSearchableSelect } from "./MultiSearchableSelect";
+import { useMemoExcelExport } from "../hooks/useMemoExcelExport";
 import {
     Pagination,
     PaginationContent,
@@ -67,6 +72,8 @@ export default function CustomersMemoListModule() {
 
     const [selectedMemoId, setSelectedMemoId] = useState<number | null>(null);
     const [detailOpen, setDetailOpen] = useState(false);
+    const [editingMemo, setEditingMemo] = useState<MemoApprovalRow | null>(null);
+    const { exporting, exportSummary, exportMemo } = useMemoExcelExport();
 
     const loadData = async () => {
         setLoading(true);
@@ -94,10 +101,13 @@ export default function CustomersMemoListModule() {
         loadData();
     }, []);
 
+    const normalizedSearchQuery = searchQuery.trim().toLowerCase();
     const filteredMemos = memos.filter(m => {
         const matchesSearch =
-            m.memo_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            m.customer_id.customer_name.toLowerCase().includes(searchQuery.toLowerCase());
+            m.memo_number.toLowerCase().includes(normalizedSearchQuery) ||
+            m.customer_id.customer_name.toLowerCase().includes(normalizedSearchQuery) ||
+            (m.cpNumbers ?? []).some(number => number.toLowerCase().includes(normalizedSearchQuery)) ||
+            (m.invoiceNumbers ?? []).some(number => number.toLowerCase().includes(normalizedSearchQuery));
 
         const matchesSupplier = filterSupplier.length === 0 || filterSupplier.includes(String(m.supplier_id?.id || ""));
         const matchesCustomer = filterCustomer.length === 0 || filterCustomer.includes(String(m.customer_id?.id || ""));
@@ -153,6 +163,20 @@ export default function CustomersMemoListModule() {
 
     const uniqueStatuses = Array.from(new Set(memos.map(m => m.status)));
 
+    const handleSummaryExport = () => {
+        const filters = [
+            `Type: ${activeTab === "all" ? "All Memos" : activeTab === "credit" ? "Credit" : "Debit"}`,
+            normalizedSearchQuery ? `Search: ${searchQuery.trim()}` : "",
+            filterSupplier.length ? `Suppliers: ${suppliers.filter(row => filterSupplier.includes(String(row.id))).map(row => row.supplier_name).join(", ")}` : "",
+            filterCustomer.length ? `Customers: ${customers.filter(row => filterCustomer.includes(String(row.id))).map(row => row.customer_name).join(", ")}` : "",
+            filterSalesman.length ? `Salesmen: ${salesmen.filter(row => filterSalesman.includes(String(row.id))).map(row => `${row.salesman_code} · ${row.salesman_name}`).join(", ")}` : "",
+            filterStatus.length ? `Statuses: ${filterStatus.join(", ")}` : "",
+            filterCOA.length ? `COA: ${coas.filter(row => filterCOA.includes(String(row.coa_id))).map(row => `${row.gl_code} · ${row.account_title}`).join(", ")}` : "",
+            filterDateFrom ? `Created from: ${filterDateFrom}` : "", filterDateTo ? `Created through: ${filterDateTo}` : "",
+        ].filter(Boolean);
+        void exportSummary(filteredMemos.map(memo => memo.id), filters);
+    };
+
     if (loading && memos.length === 0) {
         return (
             <div className="p-8 space-y-6 min-h-screen bg-slate-50">
@@ -192,11 +216,16 @@ export default function CustomersMemoListModule() {
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3 bg-white p-2 rounded-[2rem] shadow-xl shadow-slate-200/40 border border-slate-100 ring-4 ring-slate-50">
+                <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-[2rem] shadow-xl shadow-slate-200/40 border border-slate-100 ring-4 ring-slate-50">
+                    <Button variant="outline" onClick={handleSummaryExport} disabled={loading || !filteredMemos.length || exporting !== null} className="h-14 rounded-[1.5rem]">
+                        {exporting === "summary" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />}
+                        {exporting === "summary" ? "Exporting summary..." : "Export Excel Summary"}
+                    </Button>
                     <div className="relative group">
                         <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-300 group-focus-within:text-blue-600 transition-colors" />
                         <Input
-                            placeholder="Find record..."
+                            aria-label="Search memo, customer, CP, or invoice number"
+                            placeholder="Memo, customer, CP#, or invoice no."
                             value={searchQuery}
                             onChange={e => setSearchQuery(e.target.value)}
                             className="pl-12 h-14 w-[350px] rounded-[1.5rem] border-none bg-slate-50/50 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition-all font-bold text-sm text-slate-700"
@@ -414,7 +443,7 @@ export default function CustomersMemoListModule() {
                                     <TableHead className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400/80 min-w-[220px]">Customer & Salesman Representative</TableHead>
                                     <TableHead className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400/80 min-w-[200px]">COA & Remarks</TableHead>
                                     <TableHead className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400/80 min-w-[160px]">Memo Amount</TableHead>
-                                    <TableHead className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400/80 text-right pr-12 min-w-[160px]">Action</TableHead>
+                                    <TableHead className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400/80 text-right pr-12 min-w-[230px]">Action</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -493,15 +522,27 @@ export default function CustomersMemoListModule() {
                                             </div>
                                         </TableCell>
                                         <TableCell className="text-right pr-12">
-                                            <Button
-                                                onClick={() => {
-                                                    setSelectedMemoId(memo.id);
-                                                    setDetailOpen(true);
-                                                }}
-                                                className="bg-white border-2 border-slate-100 hover:border-blue-500 hover:bg-blue-50 hover:text-blue-700 rounded-[1.25rem] h-12 px-6 font-black text-xs uppercase tracking-[0.2em] text-slate-600 shadow-sm transition-all duration-500 active:scale-90 flex items-center gap-2 ml-auto"
-                                            >
-                                                Details
-                                            </Button>
+                                            <div className="flex justify-end gap-2">
+                                                {memo.type === 1 && memo.status === "FOR APPROVAL" && (
+                                                    <Button
+                                                        variant="outline"
+                                                        onClick={() => setEditingMemo(memo)}
+                                                        className="h-12 rounded-[1.25rem] border-2 border-amber-100 px-4 text-xs font-black uppercase tracking-[0.15em] text-amber-700 shadow-sm transition-all hover:border-amber-400 hover:bg-amber-50"
+                                                    >
+                                                        <Pencil className="mr-2 h-4 w-4" />
+                                                        Edit
+                                                    </Button>
+                                                )}
+                                                <Button
+                                                    onClick={() => {
+                                                        setSelectedMemoId(memo.id);
+                                                        setDetailOpen(true);
+                                                    }}
+                                                    className="bg-white border-2 border-slate-100 hover:border-blue-500 hover:bg-blue-50 hover:text-blue-700 rounded-[1.25rem] h-12 px-6 font-black text-xs uppercase tracking-[0.2em] text-slate-600 shadow-sm transition-all duration-500 active:scale-90 flex items-center gap-2"
+                                                >
+                                                    Details
+                                                </Button>
+                                            </div>
                                         </TableCell>
                                     </TableRow>
                                 ))}
@@ -582,6 +623,24 @@ export default function CustomersMemoListModule() {
                 open={detailOpen}
                 onOpenChange={setDetailOpen}
                 readOnly={true}
+                onExportExcel={id => void exportMemo(id)}
+                exportingExcel={exporting === selectedMemoId && exporting !== null}
+                excelExportDisabled={exporting !== null}
+            />
+            <CustomerMemoEditDialog
+                memo={editingMemo}
+                open={editingMemo !== null}
+                onOpenChange={(open) => {
+                    if (!open) setEditingMemo(null);
+                }}
+                suppliers={suppliers}
+                customers={customers}
+                salesmen={salesmen}
+                coas={coas}
+                onSaved={() => {
+                    setEditingMemo(null);
+                    void loadData();
+                }}
             />
         </div>
     );

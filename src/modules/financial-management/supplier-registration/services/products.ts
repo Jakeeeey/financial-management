@@ -14,10 +14,19 @@ const getHeaders = () => ({
   Authorization: `Bearer ${process.env.DIRECTUS_STATIC_TOKEN}`,
 });
 
+let unitsMapCache: Record<number, string> | null = null;
+let unitsMapCacheTime = 0;
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 /**
- * Fetch units mapping
+ * Fetch units mapping (with in-memory caching)
  */
 export async function fetchUnitsMap(): Promise<Record<number, string>> {
+  const now = Date.now();
+  if (unitsMapCache && now - unitsMapCacheTime < CACHE_TTL_MS) {
+    return unitsMapCache;
+  }
+
   try {
     const response = await fetch(`${API_BASE}/units?limit=-1&fields=*`, {
       method: "GET",
@@ -26,7 +35,7 @@ export async function fetchUnitsMap(): Promise<Record<number, string>> {
     });
     if (!response.ok) {
       console.error("Failed to fetch units:", response.status, response.statusText);
-      return {};
+      return unitsMapCache || {};
     }
     const result = await response.json();
     const map: Record<number, string> = {};
@@ -36,10 +45,12 @@ export async function fetchUnitsMap(): Promise<Record<number, string>> {
         map[id] = u.unit_name;
       }
     }
+    unitsMapCache = map;
+    unitsMapCacheTime = now;
     return map;
   } catch (error) {
     console.error("Error fetching units:", error);
-    return {};
+    return unitsMapCache || {};
   }
 }
 

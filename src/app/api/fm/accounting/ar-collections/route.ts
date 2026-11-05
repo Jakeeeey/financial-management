@@ -195,7 +195,7 @@ export async function GET(request: NextRequest) {
 
     // 2. Fetch Outstanding Invoices with Server-side Pagination & Filtering
     // We will build a query to retrieve only the required invoices for the current page
-    let directusFilter = `filter[payment_status][_nin]=Paid,Fully Paid&filter[_or][0][isPosted][_null]=true&filter[_or][1][isPosted][_eq]=false`;
+    let directusFilter = `filter[payment_status][_nin]=Paid,Fully Paid,Void,VOID,Cancelled,CANCELLED,Cancelled%20-%20Old%20Invoice,CANCELLED%20-%20OLD%20INVOICE&filter[_or][0][isPosted][_null]=true&filter[_or][1][isPosted][_eq]=false&filter[_and][0][_or][0][transaction_status][_nin]=Cancelled,CANCELLED,Void,VOID,void,Not%20Fulfilled,NOT%20FULFILLED,Cancelled%20-%20Old%20Invoice,CANCELLED%20-%20OLD%20INVOICE,cancelled%20-%20old%20invoice&filter[_and][0][_or][1][transaction_status][_null]=true`;
 
     // A. Apply Salesman filter
     if (salesman !== 'all') {
@@ -335,7 +335,17 @@ export async function GET(request: NextRequest) {
     today.setHours(0, 0, 0, 0);
 
     // Build the final merged rows list
-    const mergedRows = rawInvoices.map((inv: any) => {
+    const mergedRows = rawInvoices
+      .filter((inv: any) => {
+        const tx = (inv.transaction_status || '').trim().toUpperCase();
+        const pay = (inv.payment_status || '').trim().toUpperCase();
+        if (tx === 'NOT FULFILLED' || tx === 'NOT_FULFILLED') return false;
+        if (tx === 'CANCELLED' || tx.startsWith('CANCELLED -') || tx.includes('OLD INVOICE')) return false;
+        if (tx === 'VOID' || tx === 'VOIDED') return false;
+        if (pay === 'VOID' || pay === 'VOIDED' || pay === 'CANCELLED' || pay.startsWith('CANCELLED -') || pay.includes('OLD INVOICE')) return false;
+        return true;
+      })
+      .map((inv: any) => {
       const grossAmount = Number(inv.gross_amount) || 0;
       const discountAmount = Number(inv.discount_amount) || 0;
       const netReceivable = grossAmount - discountAmount;
@@ -343,9 +353,29 @@ export async function GET(request: NextRequest) {
       const totalPaid = paymentAgg.get(inv.invoice_id) || 0;
       const outstanding = Math.max(0, netReceivable - returnAmount - totalPaid);
 
+      // Calculate terms in days between invoice_date and due_date if available
+      let termDays = 0;
+      if (inv.due_date && inv.invoice_date) {
+        const invD = new Date(inv.invoice_date);
+        const dueD = new Date(inv.due_date);
+        if (!isNaN(invD.getTime()) && !isNaN(dueD.getTime())) {
+          termDays = Math.max(0, Math.round((dueD.getTime() - invD.getTime()) / (1000 * 60 * 60 * 24)));
+        }
+      }
+
+      let calculatedDueDate: string | null = inv.due_date;
+      if (inv.dispatch_date) {
+        const delD = new Date(inv.dispatch_date);
+        if (!isNaN(delD.getTime())) {
+          const newDue = new Date(delD.getTime());
+          newDue.setDate(newDue.getDate() + termDays);
+          calculatedDueDate = newDue.toISOString();
+        }
+      }
+
       let daysOverdue: number | null = null;
-      if (inv.due_date) {
-        const due = new Date(inv.due_date);
+      if (calculatedDueDate) {
+        const due = new Date(calculatedDueDate);
         if (!isNaN(due.getTime())) {
           due.setHours(0, 0, 0, 0);
           daysOverdue = Math.floor((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
@@ -360,7 +390,7 @@ export async function GET(request: NextRequest) {
         customer: customerMap.get(inv.customer_code || '') || inv.customer_code || '—',
         customerCode: inv.customer_code || '',
         invoiceDate: inv.invoice_date,
-        due: inv.due_date,
+        due: calculatedDueDate,
         netReceivable,
         totalPaid,
         outstanding,
@@ -519,14 +549,22 @@ export async function POST(request: NextRequest) {
     let rawInvoices: any[] = [];
     if (DIRECTUS_URL && DIRECTUS_STATIC_TOKEN) {
       try {
-        const fields = 'invoice_id,invoice_no,customer_code,salesman_id,gross_amount,discount_amount';
-        const directusFilter = `filter[salesman_id][_eq]=${resolvedSalesmanId}&filter[payment_status][_neq]=Paid`;
+        const fields = 'invoice_id,invoice_no,customer_code,salesman_id,gross_amount,discount_amount,transaction_status,payment_status';
+        const directusFilter = `filter[salesman_id][_eq]=${resolvedSalesmanId}&filter[payment_status][_nin]=Paid,Fully Paid,Void,VOID,Cancelled,CANCELLED,Cancelled%20-%20Old%20Invoice,CANCELLED%20-%20OLD%20INVOICE&filter[transaction_status][_nin]=Cancelled,CANCELLED,Void,VOID,void,Not%20Fulfilled,NOT%20FULFILLED,Cancelled%20-%20Old%20Invoice,CANCELLED%20-%20OLD%20INVOICE,cancelled%20-%20old%20invoice`;
         const resInv = await fetch(`${DIRECTUS_URL}/items/sales_invoice?fields=${fields}&${directusFilter}&limit=200`, {
           headers: { Authorization: `Bearer ${DIRECTUS_STATIC_TOKEN}` }
         });
         if (resInv.ok) {
           const jsonInv = await resInv.json();
-          rawInvoices = jsonInv.data || [];
+          rawInvoices = (jsonInv.data || []).filter((inv: any) => {
+            const tx = (inv.transaction_status || '').trim().toUpperCase();
+            const pay = (inv.payment_status || '').trim().toUpperCase();
+            if (tx === 'NOT FULFILLED' || tx === 'NOT_FULFILLED') return false;
+            if (tx === 'CANCELLED' || tx.startsWith('CANCELLED -') || tx.includes('OLD INVOICE')) return false;
+            if (tx === 'VOID' || tx === 'VOIDED') return false;
+            if (pay === 'VOID' || pay === 'VOIDED' || pay === 'CANCELLED' || pay.startsWith('CANCELLED -') || pay.includes('OLD INVOICE')) return false;
+            return true;
+          });
         }
       } catch (err) {
         console.error('[Collections API] Failed to fetch outstanding invoices in POST:', err);

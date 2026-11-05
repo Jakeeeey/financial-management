@@ -31,6 +31,8 @@ export interface RawInvoiceRow {
   transactionStatus?: string | null;
   cluster?: string;
   salesmanCode?: string | null;
+  supplierCode?: string | null;
+  arStatus?: 'Due' | 'Overdue' | '—';
   // Fallback aliases
   id?: string;
   invoice_number?: string;
@@ -69,6 +71,7 @@ export interface Invoice {
   deliveryDate: string;
   arStatus: 'Due' | 'Overdue' | '—';
   salesmanCode: string;
+  supplierCode: string;
   paymentStatus: string;
   transactionStatus: string;
   cluster: string;
@@ -123,6 +126,8 @@ export interface ARFilterOptions {
   salesmen: string[];
   divisions: string[];
   operations: { value: string; label: string }[];
+  transactionStatuses?: string[];
+  arStatuses?: string[];
 }
 
 export interface ARMetricsSummary {
@@ -149,6 +154,8 @@ export interface ARTableFilters {
   operation?: string;
   agingRange?: string;
   search?: string;
+  arStatus?: string;
+  transactionStatus?: string;
 }
 
 export interface ARTableSort {

@@ -20,7 +20,7 @@ interface POFiltersProps {
 
 export function POFilters({ search, onSearchChange, status, onStatusChange }: POFiltersProps) {
   return (
-    <div className="flex flex-col lg:flex-row items-end gap-3">
+    <div className="flex flex-wrap items-end gap-3">
       <div className="w-full sm:w-72">
         <label className="text-xs font-medium text-muted-foreground mb-1 block">PO No.</label>
         <Input
@@ -30,9 +30,8 @@ export function POFilters({ search, onSearchChange, status, onStatusChange }: PO
           className="h-9 w-full"
         />
       </div>
-          <div className="flex items-end gap-2 ml-auto w-full lg:w-auto">
-        <div className="w-full lg:w-44 shrink-0">
-          <label className="text-xs font-medium text-muted-foreground mb-1 block">Status</label>
+      <div className="w-full lg:w-44 shrink-0">
+        <label className="text-xs font-medium text-muted-foreground mb-1 block">Status</label>
           <Select value={status} onValueChange={onStatusChange}>
             <SelectTrigger className="h-9 w-full">
               <SelectValue placeholder="All Statuses" />
@@ -43,7 +42,6 @@ export function POFilters({ search, onSearchChange, status, onStatusChange }: PO
               ))}
             </SelectContent>
           </Select>
-        </div>
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import {
+import type {
   Payee,
   PayeesResponse,
 } from "../types/payee.schema";
@@ -43,15 +43,39 @@ function normalizeSupplierType(value: unknown): "TRADE" | "NON-TRADE" {
 /**
  * Enforces Single Table Inheritance rules for Treasury payees.
  */
-function normalizePayeePayload(data: Partial<Payee>): Partial<Payee> {
+function normalizeIsActive(value: unknown): 0 | 1 {
+  if (value === true || value === 1 || value === "1") return 1;
+  if (value === false || value === 0 || value === "0") return 0;
+  throw new Error("Payee status must be Active (1) or Inactive (0).");
+}
+
+function normalizePayeePayload(
+  data: Partial<Payee>,
+  mode: "create" | "update",
+): Partial<Payee> {
   const supplierType = normalizeSupplierType(data.supplier_type);
+  const status = mode === "create"
+    ? { isActive: 1 as const }
+      : data.isActive === undefined
+        ? {}
+        : { isActive: normalizeIsActive(data.isActive) };
+
+  if (mode === "update") {
+    return {
+      ...data,
+      ...status,
+      ...(data.supplier_type === undefined
+        ? {}
+        : { supplier_type: supplierType }),
+    };
+  }
 
   if (supplierType === "TRADE") {
     return {
       ...data,
       supplier_type: "TRADE",
       contact_person: data.contact_person || data.supplier_name || "",
-      isActive: 1,
+      ...status,
       nonBuy: false,
     };
   }
@@ -62,8 +86,15 @@ function normalizePayeePayload(data: Partial<Payee>): Partial<Payee> {
     supplier_name: data.supplier_name,
     supplier_type: "NON-TRADE",
     contact_person: data.contact_person || data.supplier_name || "",
-    isActive: 1,
+    ...status,
     nonBuy: true,
+  };
+}
+
+function normalizePayeeRecord(data: Payee): Payee {
+  return {
+    ...data,
+    isActive: data.isActive == null ? 1 : normalizeIsActive(data.isActive),
   };
 }
 
@@ -91,7 +122,7 @@ export async function fetchAllPayees(): Promise<Payee[]> {
     }
 
     const result: PayeesResponse = await response.json();
-    return result.data || [];
+    return (result.data || []).map(normalizePayeeRecord);
   } catch (error) {
     console.error("Error fetching payees:", error);
     throw error;
@@ -114,7 +145,7 @@ export async function fetchPayeeById(id: number): Promise<Payee> {
     }
 
     const result = await response.json();
-    return result.data;
+    return normalizePayeeRecord(result.data);
   } catch (error) {
     console.error(`Error fetching payee ${id}:`, error);
     throw error;
@@ -128,7 +159,7 @@ export async function createPayee(
   data: Partial<Payee>,
 ): Promise<Payee> {
   try {
-    const payload = normalizePayeePayload(data);
+    const payload = normalizePayeePayload(data, "create");
     
     const response = await fetch(`${API_BASE}/suppliers`, {
       method: "POST",
@@ -144,7 +175,7 @@ export async function createPayee(
     }
 
     const result = await response.json();
-    return result.data;
+    return normalizePayeeRecord(result.data);
   } catch (error) {
     console.error("Error creating payee:", error);
     throw error;
@@ -159,7 +190,7 @@ export async function updatePayee(
   data: Partial<Payee>,
 ): Promise<Payee> {
   try {
-    const payload = normalizePayeePayload(data);
+    const payload = normalizePayeePayload(data, "update");
     const response = await fetch(`${API_BASE}/suppliers/${id}`, {
       method: "PATCH",
       headers: getHeaders(),
@@ -174,7 +205,7 @@ export async function updatePayee(
     }
 
     const result = await response.json();
-    return result.data;
+    return normalizePayeeRecord(result.data);
   } catch (error) {
     console.error(`Error updating payee ${id}:`, error);
     throw error;
@@ -215,7 +246,7 @@ export async function searchPayees(query: string): Promise<Payee[]> {
     }
 
     const result: PayeesResponse = await response.json();
-    return result.data || [];
+    return (result.data || []).map(normalizePayeeRecord);
   } catch (error) {
     console.error("Error searching payees:", error);
     throw error;

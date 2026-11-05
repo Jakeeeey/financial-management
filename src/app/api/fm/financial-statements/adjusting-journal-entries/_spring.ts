@@ -26,7 +26,7 @@ export function buildSpringListPath(searchParams: URLSearchParams) {
   return query ? `${SPRING_RESOURCE}?${query}` : SPRING_RESOURCE;
 }
 
-export function buildSpringItemPath(id: string, action?: "post" | "void") {
+export function buildSpringItemPath(id: string, action?: string) {
   const encoded = encodeURIComponent(id);
   return action ? `${SPRING_RESOURCE}/${encoded}/${action}` : `${SPRING_RESOURCE}/${encoded}`;
 }
@@ -113,6 +113,7 @@ function attachRefreshedCookies(response: NextResponse, refreshed: RefreshedToke
 async function fetchSpring(path: string, token: string, init?: RequestInit) {
   return fetch(`${getSpringBaseUrl()}${path}`, {
     ...init,
+    signal: init?.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(/\/(post|retry)$/.test(path) ? 60000 : 15000)]) : AbortSignal.timeout(/\/(post|retry)$/.test(path) ? 60000 : 15000),
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "application/json",
@@ -123,10 +124,15 @@ async function fetchSpring(path: string, token: string, init?: RequestInit) {
   });
 }
 
-export async function proxySpring(path: string, init?: RequestInit) {
+export function refreshedAccessToken(response: Response) {
+  const cookie = response.headers.getSetCookie().find((value) => value.startsWith(`${COOKIE_NAME}=`));
+  return cookie?.split(";")[0].slice(COOKIE_NAME.length + 1);
+}
+
+export async function proxySpring(path: string, init?: RequestInit, tokenOverride?: string) {
   const cookieStore = await cookies();
   const refreshToken = cookieStore.get(REFRESH_COOKIE_NAME)?.value;
-  let token = cookieStore.get(COOKIE_NAME)?.value;
+  let token = tokenOverride || cookieStore.get(COOKIE_NAME)?.value;
   let refreshed: RefreshedToken | null = null;
 
   try {
@@ -152,6 +158,18 @@ export async function proxySpring(path: string, init?: RequestInit) {
     }
 
     const contentType = springRes.headers.get("content-type") || "application/json";
+    if (springRes.ok && (contentType.includes("text/csv") || contentType.includes("text/html"))) {
+      const response = new NextResponse(springRes.body, {
+        status: springRes.status,
+        headers: {
+          "Content-Type": contentType,
+          "Content-Disposition": springRes.headers.get("content-disposition") || "inline",
+          "Cache-Control": "no-store",
+        },
+      });
+      attachRefreshedCookies(response, refreshed);
+      return response;
+    }
     const text = await springRes.text();
 
     const response = springRes.status === 401 && !text
@@ -163,6 +181,7 @@ export async function proxySpring(path: string, init?: RequestInit) {
         status: springRes.status,
         headers: text ? { "Content-Type": contentType } : undefined,
       });
+    if (springRes.headers.has("Retry-After")) response.headers.set("Retry-After", springRes.headers.get("Retry-After")!);
     attachRefreshedCookies(response, refreshed);
     return response;
   } catch (error) {

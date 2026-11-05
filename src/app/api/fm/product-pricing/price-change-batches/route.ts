@@ -158,6 +158,17 @@ export async function POST(req: NextRequest) {
 
         const plan = await normalizeBatchCreateLines(lines);
 
+        if (plan.inactivePriceTypeIds.length > 0) {
+            return NextResponse.json(
+                {
+                    error: "One or more selected price types are inactive. Refresh the price list and try again.",
+                    code: "INACTIVE_PRICE_TYPE",
+                    price_type_ids: plan.inactivePriceTypeIds,
+                },
+                { status: 409 },
+            );
+        }
+
         if (plan.linesToCreate.length === 0) {
             return NextResponse.json(
                 {

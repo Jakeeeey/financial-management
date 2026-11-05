@@ -29,5 +29,5 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  return proxySpring(buildSpringItemPath(id), { method: "DELETE" });
+  return proxySpring(buildSpringItemPath(id), { method: "DELETE", body: await request.text() });
 }

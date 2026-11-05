@@ -388,6 +388,7 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
         && Math.abs(cartBalanceTotals.difference) <= SETTLEMENT_BALANCE_TOLERANCE;
     const isPouchBalanced = Math.abs(remainingToAllocate) <= 0.01;
     const isCommitReady = isPouchBalanced && isCartBalanced;
+    const canRecordOverage = cartInvoices.length > 0 && isCartBalanced && remainingToAllocate > 0.01;
     const cartBalanceMessage = underAllocatedInvoice
         ? `Invoice ${underAllocatedInvoice.invoiceNo} still has ₱${(
             getInvoiceRequiredBalance(underAllocatedInvoice)
@@ -396,10 +397,13 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
         : overAllocatedInvoice
             ? `The allocation for ${overAllocatedInvoice.invoiceNo} exceeds its remaining balance.`
             : `Settlement cart is not balanced. ₱${Math.abs(cartBalanceTotals.difference).toLocaleString(undefined, { minimumFractionDigits: 2 })} remains unallocated.`;
+    const pouchBalanceMessage = canRecordOverage
+        ? `₱${remainingToAllocate.toLocaleString(undefined, { minimumFractionDigits: 2 })} overage remains. Record it as an Overage (Dr) adjustment before committing.`
+        : "Cannot commit: the pouch allocation is not balanced.";
 
     const handleMasterSave = async () => {
         if (!isCommitReady) {
-            toast.error(!isCartBalanced ? `Cannot commit: ${cartBalanceMessage}` : "Cannot commit: the pouch allocation is not balanced.");
+            toast.error(!isCartBalanced ? `Cannot commit: ${cartBalanceMessage}` : pouchBalanceMessage);
             return;
         }
 
@@ -553,15 +557,15 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
                         <span className="text-sm font-black font-mono text-emerald-600 truncate leading-none">₱{totalAllocated.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
                     </div>
                     <div className="flex flex-col pr-1 shrink-0">
-                        <span className="text-[8px] font-black uppercase tracking-tighter text-muted-foreground leading-none mb-0.5">Unallocated</span>
+                        <span className="text-[8px] font-black uppercase tracking-tighter text-muted-foreground leading-none mb-0.5">{canRecordOverage ? "Overage to Record" : "Unallocated"}</span>
                         <span className={`text-sm font-black font-mono truncate leading-none ${Math.abs(remainingToAllocate) < 0.01 ? 'text-muted-foreground' : 'text-orange-500'}`}>₱{remainingToAllocate.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
                     </div>
                 </div>
 
                 <div className="flex items-center gap-2 w-full lg:w-auto shrink-0">
                     {!isPosted && Math.abs(remainingToAllocate) > 0.01 && (
-                        <Button onClick={handleAutoBalance} disabled={isSubmitting || isSuccess} variant="outline" size="sm" className="flex-1 lg:flex-none font-black text-[10px] uppercase tracking-widest shadow-sm border-orange-500 text-orange-600 hover:bg-orange-50 h-8">
-                            <Wand2 size={12} className="mr-1.5"/> Auto-Balance
+                        <Button onClick={handleAutoBalance} disabled={isSubmitting || isSuccess || (remainingToAllocate > 0.01 && !canRecordOverage)} variant="outline" size="sm" className="flex-1 lg:flex-none font-black text-[10px] uppercase tracking-widest shadow-sm border-orange-500 text-orange-600 hover:bg-orange-50 h-8">
+                            <Wand2 size={12} className="mr-1.5"/> {canRecordOverage ? "Record Overage" : "Auto-Balance"}
                         </Button>
                     )}
 
@@ -752,8 +756,11 @@ export default function SettlementCommandCenter({ id, onClose, onChanged, autoAd
                                     const isExhausted = c.originalAmount > 0 && remaining <= 0;
                                     return (
                                         <div key={`source-${c.id}`} className={`p-2 rounded-md border shadow-sm transition-all group ${isExhausted ? 'bg-muted/30 border-dashed opacity-60' : 'bg-background border-border border-l-[3px] border-l-purple-500'}`}>
-                                            <div className="flex justify-between items-start mb-1">
-                                                <span className="text-[10px] font-black uppercase tracking-widest truncate pr-2 leading-tight">{c.label}</span>
+                                            <div className="flex justify-between items-start gap-2 mb-1">
+                                                <div className="flex min-w-0 flex-wrap items-center gap-1">
+                                                    <span className="text-[10px] font-black uppercase tracking-widest truncate pr-2 leading-tight">{c.label}</span>
+                                                    {c.isCrossEntity && <Badge variant="outline" className="text-[7px] uppercase px-1 py-0 h-3.5 leading-none border-purple-200 text-purple-700 bg-purple-50">Cross-Entity</Badge>}
+                                                </div>
                                                 <Badge variant="outline" className="text-[7px] uppercase px-1 py-0 h-3.5 leading-none border-purple-200 text-purple-700 bg-purple-50">{c.type}</Badge>
                                             </div>
                                             {c.customerName && <div className="text-[8px] font-bold text-muted-foreground truncate mb-1 leading-tight" title={c.customerName}>{c.customerName}</div>}

@@ -28,6 +28,35 @@ export const parseBit = (val: unknown): boolean => {
   return val === '1' || val === 'true' || val === 1;
 };
 
+export function computeDeliveryBasedDueDate(
+  dispatchDate?: unknown,
+  invoiceDate?: unknown,
+  dueDate?: unknown,
+  calculatedDueDate?: unknown
+): string {
+  if (calculatedDueDate) return String(calculatedDueDate);
+  const dispStr = dispatchDate ? String(dispatchDate) : null;
+  const dueStr = dueDate ? String(dueDate) : null;
+  const invStr = invoiceDate ? String(invoiceDate) : null;
+  if (dispStr) {
+    let termDays = 0;
+    if (dueStr && invStr) {
+      const invD = new Date(invStr);
+      const dueD = new Date(dueStr);
+      if (!isNaN(invD.getTime()) && !isNaN(dueD.getTime())) {
+        termDays = Math.max(0, Math.round((dueD.getTime() - invD.getTime()) / (1000 * 60 * 60 * 24)));
+      }
+    }
+    const delD = new Date(dispStr);
+    if (!isNaN(delD.getTime())) {
+      const newDue = new Date(delD.getTime());
+      newDue.setDate(newDue.getDate() + termDays);
+      return newDue.toISOString();
+    }
+  }
+  return dueStr ? String(dueStr) : '';
+}
+
 export function transformInvoices(data: RawInvoiceRow[]): {
   invoices: Invoice[];
   agingData: AgingBucket[];
@@ -43,22 +72,42 @@ export function transformInvoices(data: RawInvoiceRow[]): {
   const salesmanMap: Record<string, number> = {};
   const customerMap: Record<string, number> = {};
 
-  const invoices: Invoice[] = data.map((row) => {
+  const validRows = data.filter((row) => {
+    const tx = String(row.transactionStatus || row.transaction_status || '').trim().toUpperCase();
+    const pay = String(row.paymentStatus || row.payment_status || '').trim().toUpperCase();
+    if (tx === 'NOT FULFILLED' || tx === 'NOT_FULFILLED') return false;
+    if (tx === 'CANCELLED' || tx.startsWith('CANCELLED -') || tx.includes('OLD INVOICE')) return false;
+    if (tx === 'VOID' || tx === 'VOIDED') return false;
+    if (pay === 'VOID' || pay === 'VOIDED' || pay === 'CANCELLED' || pay.startsWith('CANCELLED -') || pay.includes('OLD INVOICE')) return false;
+    return true;
+  });
+
+  const invoices: Invoice[] = validRows.map((row) => {
     const netReceivable    = Number(row.netReceivable    ?? row.grossAmount ?? 0);
     const totalPaid        = Number(row.totalPaid        ?? 0);
     const outstanding      = Number(row.outstandingBalance ?? Math.max(0, netReceivable - totalPaid));
     const branch           = String(row.branch   ?? row.branchName   ?? 'Unknown');
     const salesman         = String(row.salesman ?? row.salesmanName ?? 'Unknown');
     const division         = String(row.division ?? '—');
-    const due              = String(row.calculatedDueDate ?? row.dueDate ?? row.due ?? '');
+    const due              = computeDeliveryBasedDueDate(row.dispatchDate, row.invoiceDate, row.dueDate ?? row.due, row.calculatedDueDate);
     const customer         = String(row.customerName ?? row.customer ?? row.client ?? '—');
 
     // The API sends daysOverdue: negative = future, 0 = today, positive = past due, null = no due date
     // Prefer server-computed value; fall back to client computation only if absent
     const agingRaw: number | null | undefined = row.daysOverdue as number | null | undefined;
-    const aging: number | null = agingRaw !== undefined && agingRaw !== null
+    let aging: number | null = agingRaw !== undefined && agingRaw !== null
       ? Number(agingRaw)
       : null;
+
+    if (aging === null && due) {
+      const d = new Date(due);
+      if (!isNaN(d.getTime())) {
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        d.setHours(0, 0, 0, 0);
+        aging = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+      }
+    }
 
     // Overdue: due date has passed (aging >= 0) and balance remains
     const isOverdue = aging !== null && aging >= 0 && outstanding > 0;
@@ -113,6 +162,7 @@ export function transformInvoices(data: RawInvoiceRow[]): {
       transactionStatus,
       cluster:            String(row.cluster ?? 'Unassigned'),
       salesmanCode:       String(row.salesmanCode ?? '—'),
+      supplierCode:       String(row.supplierCode ?? '—'),
     };
   });
 
@@ -199,6 +249,8 @@ export function buildARQueryParams(
     operation?: string;
     agingRange?: string;
     search?: string;
+    arStatus?: string;
+    transactionStatus?: string;
   },
   sort?: import('../types').ARTableSort,
 ): string {
@@ -212,6 +264,8 @@ export function buildARQueryParams(
   if (filters.operation) params.set('operation', filters.operation);
   if (filters.agingRange) params.set('agingRange', filters.agingRange);
   if (filters.search?.trim()) params.set('search', filters.search.trim());
+  if (filters.arStatus) params.set('arStatus', filters.arStatus);
+  if (filters.transactionStatus) params.set('transactionStatus', filters.transactionStatus);
   if (sort?.sortKey && sort?.sortOrder) {
     params.set('sortKey', sort.sortKey);
     params.set('sortOrder', sort.sortOrder);
@@ -224,8 +278,18 @@ export function mapARRowToInvoice(row: RawInvoiceRow): import('../types').Invoic
   const netReceivable = Number(row.netReceivable ?? row.grossAmount ?? 0);
   const totalPaid = Number(row.totalPaid ?? 0);
   const outstanding = Number(row.outstandingBalance ?? Math.max(0, netReceivable - totalPaid));
+  const due = computeDeliveryBasedDueDate(row.dispatchDate, row.invoiceDate, row.dueDate ?? row.due, row.calculatedDueDate);
   const agingRaw = row.daysOverdue as number | null | undefined;
-  const aging: number | null = agingRaw !== undefined && agingRaw !== null ? Number(agingRaw) : null;
+  let aging: number | null = agingRaw !== undefined && agingRaw !== null ? Number(agingRaw) : null;
+  if (aging === null && due) {
+    const d = new Date(due);
+    if (!isNaN(d.getTime())) {
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      d.setHours(0, 0, 0, 0);
+      aging = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+    }
+  }
   const isOverdue = aging !== null && aging >= 0 && outstanding > 0;
 
   return {
@@ -235,7 +299,7 @@ export function mapARRowToInvoice(row: RawInvoiceRow): import('../types').Invoic
     customer: String(row.customerName ?? row.customer ?? row.client ?? '—'),
     customerCode: String(row.customerCode ?? '—'),
     invoiceDate: String(row.invoiceDate ?? ''),
-    due: String(row.calculatedDueDate ?? row.dueDate ?? row.due ?? ''),
+    due,
     netReceivable,
     totalPaid,
     outstanding,
@@ -259,6 +323,7 @@ export function mapARRowToInvoice(row: RawInvoiceRow): import('../types').Invoic
     transactionStatus: String(row.transactionStatus || 'NULL'),
     cluster: String(row.cluster ?? 'Unassigned'),
     salesmanCode: String(row.salesmanCode ?? '—'),
+    supplierCode: String(row.supplierCode ?? '—'),
   };
 }
 

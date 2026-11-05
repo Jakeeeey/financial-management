@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import {
     ACTIVE_DISBURSEMENT_STATUSES,
     activeReceivingRowsByPurchaseOrder,
-    isFullyPostedPurchaseOrder,
+    hasUnpostedReceivingRows,
     purchaseOrderReferenceKey,
     purchaseOrderReferenceKeyFromParts,
     postedReceivingRowsByPurchaseOrder,
@@ -130,6 +130,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
             date: string | null;
             amountDue: number;
             type: string;
+            isPartiallyReceived: boolean;
         }> = [];
 
         for (const po of poList) {
@@ -138,12 +139,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
             if (Number(po.payment_type) === 1) {
                 // CWO (Cash With Order)
-                const activeReceivings = activeReceivingsByPoId.get(poId) || [];
-                // Product lines do not carry the financial posting marker. Keep
-                // CWO receipt rows hidden until every active receiving row is posted.
-                if (!isFullyPostedPurchaseOrder(activeReceivings)) continue;
                 if (taggedPurchaseOrderKeys.has(purchaseOrderReferenceKeyFromParts(poNo, "ADVANCE-CWO"))) continue;
             }
+
+            const activeReceivings = activeReceivingsByPoId.get(poId) || [];
+            const isPartiallyReceived = hasUnpostedReceivingRows(activeReceivings);
 
             // Only receipt rows posted to inventory and to financial amounts
             // may contribute to the disbursement selection list.
@@ -181,7 +181,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
                         receiptNo,
                         date: data.transDate || (po.date ? po.date.split("T")[0] : null),
                         amountDue: Number(remainingDue.toFixed(2)),
-                        type: Number(po.payment_type) === 1 ? "CWO" : "RECEIPT"
+                        type: Number(po.payment_type) === 1 ? "CWO" : "RECEIPT",
+                        isPartiallyReceived,
                     });
                 }
             }

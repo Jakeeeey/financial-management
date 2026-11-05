@@ -1,0 +1,358 @@
+"use client";
+
+import { WerCooldownBoundary } from "../../logistics-wer/components/WerCooldownBoundary";
+
+import { ExpenseVarianceSummary } from "../../logistics-wer/components/ExpenseVarianceSummary";
+
+import { formatWerTimestamp } from "../../logistics-wer/utils/date";
+
+import { useState } from "react";
+import { AlertCircle, CheckCircle2, Expand, ExternalLink, Loader2 } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
+import type { PayableDivisionOption } from "../../logistics-wer/services/logisticsWerApi";
+import type { SubmissionReview } from "../services/logisticsWerApprovalApi";
+import { displayWerStatus } from "../../logistics-wer/utils/status";
+
+function formatMoney(value: number | null | undefined): string {
+  return `₱${Number(value ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function formatLineDate(value: string | null): string {
+  if (!value) return "\u2014";
+  const date = new Date(`${value.slice(0, 10)}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) ? "\u2014" : new Intl.DateTimeFormat("en-PH", {
+    timeZone: "UTC", month: "short", day: "numeric", year: "numeric",
+  }).format(date);
+}
+
+function receiptHref(fileId: string): string {
+  return `/api/fm/treasury/disbursements/attachments/${encodeURIComponent(fileId)}`;
+}
+
+function ReceiptThumbnail({ fileId, receiptId, onPreview }: { fileId: string; receiptId: number; onPreview: (fileId: string) => void }) {
+  const [broken, setBroken] = useState(false);
+  if (broken) {
+    return (
+      <a href={receiptHref(fileId)} target="_blank" rel="noreferrer" className="text-xs underline">
+        Receipt #{receiptId}
+      </a>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => onPreview(fileId)}
+      title="Preview receipt"
+      aria-label={`Preview receipt ${receiptId}`}
+      className="group relative block overflow-hidden rounded-md border"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={receiptHref(fileId)}
+        alt={`Receipt ${receiptId} preview`}
+        loading="lazy"
+        onError={() => setBroken(true)}
+        className="h-12 w-12 object-cover"
+      />
+      <span className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/30">
+        <Expand className="size-4 text-white opacity-0 transition-opacity group-hover:opacity-100" />
+      </span>
+    </button>
+  );
+}
+
+interface LogisticsWerApprovalReviewDialogProps {
+  review: SubmissionReview | null;
+  divisions: PayableDivisionOption[];
+  loading: boolean;
+  error: string | null;
+  deciding: boolean;
+  decisionError: string | null;
+  decisionNotice: string | null;
+  onOpenChange: (open: boolean) => void;
+  onDecide: (decision: "approve" | "return" | "reject", remarks: string, acknowledgeVariance?: boolean) => void;
+}
+
+export function LogisticsWerApprovalReviewDialog({
+  review,
+  divisions,
+  loading,
+  error,
+  deciding,
+  decisionError,
+  decisionNotice,
+  onOpenChange,
+  onDecide,
+}: LogisticsWerApprovalReviewDialogProps) {
+  const [remarks, setRemarks] = useState("");
+  const [acknowledgedSubmission, setAcknowledgedSubmission] = useState<number | null>(null);
+  const [previewFileId, setPreviewFileId] = useState<string | null>(null);
+  const open = loading || error !== null || review !== null;
+  const submission = review?.submission ?? null;
+  const status = (submission?.status || "").toLowerCase();
+  const decidable = status === "submitted";
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] w-[95vw] overflow-y-auto sm:max-w-4xl">
+        <WerCooldownBoundary>
+        <DialogHeader>
+          <DialogTitle>
+            {submission ? `Review submission #${submission.id}` : "Review submission"}
+          </DialogTitle>
+          <DialogDescription>
+            {review
+              ? `Dispatch plan ${review.dispatchPlanDocNo} · ${formatMoney(submission?.totalAmount)}`
+              : "Loading submission details…"}
+          </DialogDescription>
+        </DialogHeader>
+
+        {loading && !review && (
+          <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" /> Loading submission…
+          </div>
+        )}
+        {error && (
+          <Alert variant="destructive">
+            <AlertCircle className="size-4" />
+            <AlertTitle>Unable to load submission</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        {review && submission && (
+          <div className="min-w-0 space-y-4">
+            {review.variance && <ExpenseVarianceSummary variance={review.variance} accounts={[...submission.lines, ...review.budgetByCoa]} />}
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {review.budgetByCoa.length > 0 ? review.budgetByCoa.map((budget) => {
+                const categoryLabel = [budget.coaCode, budget.coaTitle]
+                  .map((value) => value?.trim())
+                  .filter((value): value is string => Boolean(value))
+                  .join(" · ") || (budget.coaId !== null ? `COA #${budget.coaId}` : "Unassigned");
+                return (
+                  <div key={budget.coaId ?? "unassigned"} className="rounded-xl border bg-card p-3">
+                    <p className="text-xs text-muted-foreground">Budgeted Amount</p>
+                    <p className="mt-1 truncate text-xs font-medium" title={categoryLabel}>{categoryLabel}</p>
+                    <p className="mt-1 text-lg font-semibold">
+                      {budget.allocatedAmount === null ? "No COA allocation" : formatMoney(budget.allocatedAmount)}
+                    </p>
+                  </div>
+                );
+              }) : (
+                <div className="rounded-xl border bg-card p-3">
+                  <p className="text-xs text-muted-foreground">Budgeted Amount</p>
+                  <p className="mt-1 text-lg font-semibold">No COA allocation</p>
+                </div>
+              )}
+              <div className="rounded-xl border bg-card p-3">
+                <p className="text-xs text-muted-foreground">Supplier</p>
+                <p className="mt-1 text-sm font-semibold">
+                  {review.supplierEligibility?.eligible
+                    ? review.supplierEligibility.supplierName || `Supplier #${review.supplierEligibility.supplierId ?? "?"}`
+                    : "Not eligible"}
+                </p>
+              </div>
+            </div>
+
+            <div className="min-w-0 rounded-lg border">
+              <Table style={{ width: "100%", tableLayout: "fixed" }}>
+                <colgroup>
+                  <col style={{ width: "6%" }} />
+                  <col style={{ width: "13%" }} />
+                  <col style={{ width: "20%" }} />
+                  <col style={{ width: "14%" }} />
+                  <col style={{ width: "13%" }} />
+                  <col style={{ width: "22%" }} />
+                  <col style={{ width: "12%" }} />
+                </colgroup>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="whitespace-normal px-1 sm:px-2">Line</TableHead>
+                    <TableHead className="whitespace-normal px-1 sm:px-2">Date</TableHead>
+                    <TableHead className="whitespace-normal px-1 sm:px-2">COA Account</TableHead>
+                    <TableHead className="whitespace-normal px-1 sm:px-2">Division</TableHead>
+                    <TableHead className="whitespace-normal px-1 text-right sm:px-2">Amount</TableHead>
+                    <TableHead className="whitespace-normal px-1 sm:px-2">Remarks</TableHead>
+                    <TableHead className="whitespace-normal px-1 sm:px-2">Receipts</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {submission.lines.map((line, index) => {
+                    const coaLabel = [line.coaCode, line.coaTitle]
+                      .map((value) => value?.trim())
+                      .filter((value): value is string => Boolean(value))
+                      .join(" · ");
+                    return (
+                      <TableRow key={line.id}>
+                        <TableCell className="whitespace-normal">{line.lineNo ?? index + 1}</TableCell>
+                        <TableCell className="whitespace-normal">{formatLineDate(line.date)}</TableCell>
+                        <TableCell
+                          className="whitespace-normal text-xs"
+                          style={{ overflowWrap: "anywhere", wordBreak: "break-all" }}
+                        >
+                          {coaLabel || (line.coaId !== null
+                            ? `COA #${line.coaId} · Account details unavailable`
+                            : "Unassigned")}
+                        </TableCell>
+                        <TableCell
+                          className="whitespace-normal"
+                          style={{ overflowWrap: "anywhere", wordBreak: "break-all" }}
+                        >
+                          {line.divisionId ? divisions.find(division => division.divisionId === line.divisionId)?.divisionName || `Division #${line.divisionId}` : "\u2014"}
+                        </TableCell>
+                        <TableCell
+                          className="whitespace-normal text-right font-medium"
+                          style={{ overflowWrap: "anywhere" }}
+                        >
+                          {formatMoney(line.amount)}
+                        </TableCell>
+                        <TableCell
+                          className="align-top"
+                          style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+                        >
+                          {line.remarks || "—"}
+                        </TableCell>
+                        <TableCell className="whitespace-normal">
+                          {line.receipts.length === 0 ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : (
+                            <div className="flex flex-wrap gap-1.5">
+                              {line.receipts.map((receipt) => receipt.fileId ? (
+                                <ReceiptThumbnail
+                                  key={receipt.id}
+                                  fileId={receipt.fileId}
+                                  receiptId={receipt.id}
+                                  onPreview={setPreviewFileId}
+                                />
+                              ) : (
+                                <span key={receipt.id} className="text-xs text-muted-foreground">#{receipt.id}</span>
+                              ))}
+                            </div>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+
+            {submission.disbursementId && (
+              <Alert className="border-emerald-500/40 bg-emerald-500/5">
+                <CheckCircle2 className="size-4 text-emerald-600" />
+                <AlertTitle>Approved</AlertTitle>
+                <AlertDescription>
+                  {review.disbursementDocNo
+                    ? `Standard Draft disbursement ${review.disbursementDocNo} was created from this submission.`
+                    : "Standard Draft disbursement was created from this submission."}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {submission.decisionRemarks && <div className="rounded-lg border p-3 text-sm">
+              <h4 className="font-semibold">Recorded decision</h4>
+              <p className="whitespace-pre-wrap">{submission.decisionRemarks}</p>
+            </div>}
+            {decidable ? (
+              <div className="space-y-2 rounded-xl border p-4">
+                <Label htmlFor="wer-decision-remarks">Decision remarks (required for variance approval, return or rejection)</Label>
+                {review.variance?.requiresAcknowledgment && <label className="flex items-center gap-2 text-sm">
+                  <Checkbox checked={acknowledgedSubmission === submission.id} onCheckedChange={(checked) => setAcknowledgedSubmission(checked === true ? submission.id : null)} />
+                  I reviewed and acknowledge this budget variance.
+                </label>}
+                <Textarea
+                  id="wer-decision-remarks"
+                  value={remarks}
+                  onChange={(event) => setRemarks(event.target.value)}
+                  placeholder="Explain the decision…"
+                  className="min-h-20"
+                />
+                {decisionError && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="size-4" />
+                    <AlertTitle>Decision failed</AlertTitle>
+                    <AlertDescription>{decisionError}</AlertDescription>
+                  </Alert>
+                )}
+                {decisionNotice && (
+                  <Alert className="border-emerald-500/40 bg-emerald-500/5">
+                    <CheckCircle2 className="size-4 text-emerald-600" />
+                    <AlertTitle>Recorded</AlertTitle>
+                    <AlertDescription>{decisionNotice}</AlertDescription>
+                  </Alert>
+                )}
+                <div className="flex flex-wrap justify-end gap-2">
+                  <Button type="button" variant="outline" disabled={deciding} onClick={() => onDecide("return", remarks)}>
+                    {deciding ? "Saving…" : "Return"}
+                  </Button>
+                  <Button type="button" variant="destructive" disabled={deciding} onClick={() => onDecide("reject", remarks)}>
+                    {deciding ? "Saving…" : "Reject"}
+                  </Button>
+                  <Button type="button" disabled={deciding || Boolean(review.variance?.requiresAcknowledgment && (acknowledgedSubmission !== submission.id || !remarks.trim()))} onClick={() => onDecide("approve", remarks, acknowledgedSubmission === submission.id)}>
+                    {deciding ? "Approving…" : "Approve"}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Badge variant="outline">{displayWerStatus(submission.status)}</Badge>
+                {submission.submittedAt && <span>Submitted: {formatWerTimestamp(submission.submittedAt)}</span>}
+                {submission.decidedAt && <span>Decided: {formatWerTimestamp(submission.decidedAt)}</span>}
+                <span>This submission is no longer awaiting a decision.</span>
+              </div>
+            )}
+          </div>
+        )}
+      </WerCooldownBoundary>
+      </DialogContent>
+
+      <Dialog open={previewFileId !== null} onOpenChange={(nextOpen) => { if (!nextOpen) setPreviewFileId(null); }}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Receipt preview</DialogTitle>
+            <DialogDescription>
+              {previewFileId && (
+                <a
+                  href={receiptHref(previewFileId)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 font-semibold text-primary underline"
+                >
+                  <ExternalLink className="size-3.5" /> Open in new tab
+                </a>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {previewFileId && (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={receiptHref(previewFileId)}
+              alt="Receipt full preview"
+              className="max-h-[70vh] w-full rounded-lg border object-contain"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+    </Dialog>
+  );
+}

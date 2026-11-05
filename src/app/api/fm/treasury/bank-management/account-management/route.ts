@@ -31,9 +31,20 @@ type BankAccountRow = {
   branch?: unknown;
   ifsc_code?: unknown;
   opening_balance?: unknown;
+  country?: unknown;
+  region?: unknown;
   province?: unknown;
   city?: unknown;
   baranggay?: unknown;
+  zip_code?: unknown;
+  unit_building?: unknown;
+  house_no?: unknown;
+  block?: unknown;
+  lot?: unknown;
+  phase?: unknown;
+  street?: unknown;
+  subdivision?: unknown;
+  purok_sitio?: unknown;
   email?: unknown;
   mobile_no?: unknown;
   contact_person?: unknown;
@@ -62,9 +73,20 @@ type NormalizedPayload = {
   branch: string;
   ifsc_code: string;
   opening_balance?: number;
+  country: string;
+  region: string;
   province: string;
   city: string;
   baranggay: string;
+  zip_code: string;
+  unit_building: string;
+  house_no: string;
+  block: string;
+  lot: string;
+  phase: string;
+  street: string;
+  subdivision: string;
+  purok_sitio: string;
   email: string;
   mobile_no: string;
   contact_person: string;
@@ -90,9 +112,20 @@ const fullAccountFields = [
   "branch",
   "ifsc_code",
   "opening_balance",
+  "country",
+  "region",
   "province",
   "city",
   "baranggay",
+  "zip_code",
+  "unit_building",
+  "house_no",
+  "block",
+  "lot",
+  "phase",
+  "street",
+  "subdivision",
+  "purok_sitio",
   "email",
   "mobile_no",
   "contact_person",
@@ -109,6 +142,20 @@ const baseAccountFields = [
   "branch",
   "ifsc_code",
   "opening_balance",
+  "country",
+  "region",
+  "province",
+  "city",
+  "baranggay",
+  "zip_code",
+  "unit_building",
+  "house_no",
+  "block",
+  "lot",
+  "phase",
+  "street",
+  "subdivision",
+  "purok_sitio",
   "is_active",
   "created_at",
 ];
@@ -136,9 +183,20 @@ const accountFieldMap = {
   branch: "branch",
   ifsc_code: "ifscCode",
   opening_balance: "openingBalance",
+  country: "country",
+  region: "region",
   province: "province",
   city: "city",
   baranggay: "baranggay",
+  zip_code: "zip_code",
+  unit_building: "unit_building",
+  house_no: "house_no",
+  block: "block",
+  lot: "lot",
+  phase: "phase",
+  street: "street",
+  subdivision: "subdivision",
+  purok_sitio: "purok_sitio",
   email: "email",
   mobile_no: "mobileNo",
   contact_person: "contactPerson",
@@ -166,9 +224,20 @@ function normalizeAccount(row: BankAccountRow) {
     branch: asString(row.branch),
     ifscCode: asString(row.ifsc_code),
     openingBalance: asNumber(row.opening_balance) ?? 0,
+    country: asString(row.country),
+    region: asString(row.region),
     province: asString(row.province),
     city: asString(row.city),
     baranggay: asString(row.baranggay),
+    zip_code: asString(row.zip_code),
+    unit_building: asString(row.unit_building),
+    house_no: asString(row.house_no),
+    block: asString(row.block),
+    lot: asString(row.lot),
+    phase: asString(row.phase),
+    street: asString(row.street),
+    subdivision: asString(row.subdivision),
+    purok_sitio: asString(row.purok_sitio),
     email: asString(row.email),
     mobileNo: asString(row.mobile_no),
     contactPerson: asString(row.contact_person),
@@ -486,9 +555,20 @@ function normalizeCreatePayload(
     branch: asString(body.branch),
     ifsc_code: asString(body.ifscCode ?? body.ifsc_code),
     opening_balance: openingBalance ?? 0,
+    country: asString(body.country),
+    region: asString(body.region),
     province: asString(body.province),
     city: asString(body.city),
     baranggay: asString(body.baranggay),
+    zip_code: asString(body.zip_code),
+    unit_building: asString(body.unit_building),
+    house_no: asString(body.house_no),
+    block: asString(body.block),
+    lot: asString(body.lot),
+    phase: asString(body.phase),
+    street: asString(body.street),
+    subdivision: asString(body.subdivision),
+    purok_sitio: asString(body.purok_sitio),
     email: asString(body.email),
     mobile_no: sanitizeMobileNumber(body.mobileNo ?? body.mobile_no),
     contact_person: asString(body.contactPerson ?? body.contact_person),
@@ -509,7 +589,6 @@ function normalizeCreatePayload(
   if (!payload.ifsc_code) fieldErrors.ifscCode = "This field is required";
   if (openingBalance === null)
     fieldErrors.openingBalance = "Opening balance must be a valid amount";
-  if (!payload.province) fieldErrors.province = "This field is required";
   if (!payload.city) fieldErrors.city = "This field is required";
   if (!payload.baranggay) fieldErrors.baranggay = "This field is required";
   if (!payload.email) fieldErrors.email = "This field is required";

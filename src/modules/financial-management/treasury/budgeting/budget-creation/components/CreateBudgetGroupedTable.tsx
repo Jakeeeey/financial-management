@@ -42,6 +42,7 @@ import {
 import { useCreateBudgetContext } from "../providers/CreateBudgetProvider";
 import { getMonthName, getBudgetStatusColor } from "../utils";
 import type { Budget } from "../types";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const fmt = (n: number) =>
   new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(n);
@@ -82,34 +83,166 @@ function BudgetRemarksPopover({ remarks }: { remarks?: string | null }) {
   if (!cleanRemarks) return null;
 
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          variant="link"
-          className="h-auto max-w-[180px] justify-start gap-1 p-0 text-[10px] font-medium italic leading-none text-muted-foreground transition-colors hover:text-foreground"
+    <div className="flex items-center gap-1">
+      <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground/70">
+        Remarks:
+      </span>
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button
+            variant="link"
+            className="h-auto max-w-[180px] justify-start gap-1 p-0 text-[10px] font-medium italic leading-none text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <MessageSquareText className="h-2.5 w-2.5 shrink-0 opacity-60" />
+            <span className="truncate">{cleanRemarks}</span>
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          sideOffset={5}
+          className="z-50 w-80 rounded-2xl border-border/50 bg-card/95 p-4 shadow-xl backdrop-blur-sm"
         >
-          <MessageSquareText className="h-2.5 w-2.5 shrink-0 opacity-60" />
-          <span className="truncate">{cleanRemarks}</span>
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        sideOffset={5}
-        className="z-50 w-80 rounded-2xl border-border/50 bg-card/95 p-4 shadow-xl backdrop-blur-sm"
-      >
-        <div className="flex flex-col gap-2.5">
-          <div className="flex items-center gap-1.5 border-b border-border/40 pb-2">
-            <MessageSquareText className="h-3.5 w-3.5 text-primary" />
-            <h4 className="text-[10px] font-black uppercase tracking-widest text-foreground">
-              Budget Remarks / Justification
-            </h4>
+          <div className="flex flex-col gap-2.5">
+            <div className="flex items-center gap-1.5 border-b border-border/40 pb-2">
+              <MessageSquareText className="h-3.5 w-3.5 text-primary" />
+              <h4 className="text-[10px] font-black uppercase tracking-widest text-foreground">
+                Budget Remarks / Justification
+              </h4>
+            </div>
+            <div className="max-h-[200px] overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground scrollbar-thin">
+              {cleanRemarks}
+            </div>
           </div>
-          <div className="max-h-[200px] overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground scrollbar-thin">
-            {cleanRemarks}
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
+function formatDateOnly(dateStr?: string): string {
+  if (!dateStr) return "";
+  // Handle ISO string or "YYYY-MM-DD HH:mm:ss"
+  const cleanStr = dateStr.replace("T", " ").replace("Z", "");
+  const date = new Date(cleanStr.includes(" ") ? cleanStr.replace(" ", "T") : cleanStr);
+  if (isNaN(date.getTime())) return dateStr;
+  
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sept", "Oct", "Nov", "Dec"];
+  const m = monthNames[date.getMonth()];
+  const d = date.getDate();
+  const y = date.getFullYear();
+  return `${m} ${d} ${y}`;
+}
+
+function BudgetFeedbackDisplay({ feedbacks }: { feedbacks?: Array<{ id: string | number; status: string; feedback: string; voted_by_name: string; voted_at: string }> }) {
+  if (!feedbacks || feedbacks.length === 0) return null;
+
+  const latest = feedbacks[0];
+  const hasMultiple = feedbacks.length > 1;
+
+  const formattedDate = formatDateOnly(latest.voted_at);
+  const actionLabel = latest.status === "Rejected" ? "REJECTED BY:" : "APPROVED BY:";
+
+  return (
+    <div className="flex flex-col gap-0.5 border-l border-border/40 pl-3 ml-1">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground/70">
+          {actionLabel}
+        </span>
+        <span className="text-[11px] font-bold text-foreground">
+          {latest.voted_by_name || "System Evaluator"}
+        </span>
+        {formattedDate && (
+          <span className="text-[10px] font-mono text-muted-foreground">
+            {formattedDate}
+          </span>
+        )}
+        {hasMultiple && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Badge 
+                variant="outline" 
+                className="h-4 px-1 text-[8px] font-black uppercase tracking-tight text-blue-600 border-blue-200 bg-blue-50/50 cursor-pointer hover:bg-blue-100/50"
+              >
+                {feedbacks.length} Feedbacks
+              </Badge>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-80 p-3 rounded-2xl shadow-xl border-border/40 backdrop-blur-sm z-50">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between border-b border-border/40 pb-1.5">
+                  <span className="text-xs font-black uppercase tracking-tight text-foreground">
+                    Feedback History
+                  </span>
+                  <Badge variant="secondary" className="text-[9px] font-bold">
+                    {feedbacks.length} {feedbacks.length === 1 ? "Record" : "Records"}
+                  </Badge>
+                </div>
+                <div className="max-h-[220px] overflow-y-auto space-y-2 scrollbar-thin">
+                  {feedbacks.map((fb, idx) => (
+                    <div key={fb.id || idx} className="p-2 rounded-xl bg-muted/40 border border-border/30 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-foreground">{fb.voted_by_name}</span>
+                        <Badge className={`h-3.5 px-1 text-[8px] font-black uppercase ${fb.status === "Approved" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>
+                          {fb.status}
+                        </Badge>
+                      </div>
+                      {fb.voted_at && (
+                        <p className="text-[9px] font-mono text-muted-foreground">{formatDateOnly(fb.voted_at)}</p>
+                      )}
+                      {fb.feedback ? (
+                        <p className="text-xs text-muted-foreground whitespace-pre-wrap mt-0.5">{fb.feedback}</p>
+                      ) : (
+                        <p className="text-[10px] italic text-muted-foreground/60">No comment provided</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+        )}
+      </div>
+
+      <div className="flex items-start gap-1.5 flex-wrap max-w-[340px]">
+        <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground/70 shrink-0 mt-0.5">
+          FEEDBACK:
+        </span>
+        {latest.feedback ? (
+          <div className="flex flex-col items-start gap-0.5 min-w-0 flex-1">
+            <p className="text-xs text-muted-foreground italic leading-tight line-clamp-2" title={latest.feedback}>
+              &quot;{latest.feedback}&quot;
+            </p>
+            {latest.feedback.length > 60 && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button className="text-[9px] font-bold text-primary hover:underline mt-0.5">
+                    See More
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-80 p-3 rounded-2xl shadow-xl border-border/40 backdrop-blur-sm z-50">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between border-b border-border/40 pb-1">
+                      <span className="text-xs font-black uppercase tracking-tight text-foreground">
+                        Full Feedback
+                      </span>
+                      <span className="text-[10px] font-mono text-muted-foreground">
+                        {latest.voted_by_name}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed max-h-[200px] overflow-y-auto scrollbar-thin">
+                      &quot;{latest.feedback}&quot;
+                    </p>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            )}
           </div>
-        </div>
-      </PopoverContent>
-    </Popover>
+        ) : (
+          <p className="text-[10px] text-muted-foreground/60 italic leading-tight">
+            No feedback comment
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -471,10 +604,15 @@ function BudgetRow({
                 )}
               </div>
 
-              <p className="text-[11px] font-mono text-primary/80">
-                {node.gl_code} • <span className="opacity-60">{node.budget_no}</span>
-              </p>
-              <BudgetRemarksPopover remarks={node.remarks} />
+              <div className="flex items-start gap-3 mt-0.5">
+                <div className="flex flex-col gap-0.5">
+                  <p className="text-[11px] font-mono text-primary/80">
+                    {node.gl_code} • <span className="opacity-60">{node.budget_no}</span>
+                  </p>
+                  <BudgetRemarksPopover remarks={node.remarks} />
+                </div>
+                <BudgetFeedbackDisplay feedbacks={node.feedbacks} />
+              </div>
             </div>
           </div>
         </td>
@@ -512,10 +650,9 @@ function BudgetRow({
             {(node.status === "Draft" || node.status === "Rejected") && (
               <>
                 <Button
-                  variant="ghost"
                   size="sm"
                   onClick={() => openEditModal(node)}
-                  className="h-8 px-2 text-xs gap-1.5 hover:bg-muted transition-all active:scale-95"
+                  className="h-8 px-3 text-xs font-semibold gap-1.5 rounded-lg border bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-700 hover:text-white dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700 dark:hover:bg-slate-600 transition-all active:scale-95 shadow-xs"
                 >
                   <Pencil className="h-3.5 w-3.5" />
                   Edit
@@ -523,9 +660,8 @@ function BudgetRow({
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <Button
-                      variant="ghost"
                       size="sm"
-                      className="h-8 px-2 text-xs gap-1.5 hover:bg-primary/10 hover:text-primary transition-all active:scale-95"
+                      className="h-8 px-3 text-xs font-semibold gap-1.5 rounded-lg border bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-600 hover:text-white dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800 dark:hover:bg-emerald-600 dark:hover:text-white transition-all active:scale-95 shadow-xs"
                     >
                       <Send className="h-3.5 w-3.5" />
                       {node.status === "Rejected" ? "Resubmit" : "Submit"}
@@ -557,9 +693,8 @@ function BudgetRow({
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <Button
-                      variant="ghost"
                       size="sm"
-                      className="h-8 px-2 text-xs gap-1.5 hover:bg-destructive/10 hover:text-destructive transition-all active:scale-95"
+                      className="h-8 px-3 text-xs font-semibold gap-1.5 rounded-lg border bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-600 hover:text-white dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800 dark:hover:bg-rose-600 dark:hover:text-white transition-all active:scale-95 shadow-xs"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                       Delete
@@ -587,19 +722,18 @@ function BudgetRow({
             )}
             {node.status === "Approved" && node.entry_type !== "supplemental" && (
               <Button
-                variant="ghost"
                 size="sm"
                 disabled={inFlight}
                 onClick={() => openSupplementModal(node)}
-                title={inFlight ? "A supplement is already Draft or Pending" : "Request additional funding"}
-                className={`h-8 px-2 text-xs gap-1.5 transition-all active:scale-95 ${
+                title={inFlight ? "A supplement for this budget is currently in-flight (Draft, Pending, or Rejected)" : "Request additional funding"}
+                className={`h-8 px-3 text-xs font-semibold gap-1.5 rounded-lg border transition-all active:scale-95 ${
                   inFlight
-                    ? "opacity-50 cursor-not-allowed text-muted-foreground"
-                    : "hover:bg-blue-50 hover:text-blue-600 text-muted-foreground"
+                    ? "bg-muted/60 text-muted-foreground/70 border-border/50 opacity-60 cursor-not-allowed shadow-none"
+                    : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-600 hover:text-white hover:border-blue-600 shadow-xs"
                 }`}
               >
                 <Plus className="h-3.5 w-3.5" />
-                {inFlight ? "Supplement Pending" : "Request Supplement"}
+                {inFlight ? "Supplement In-Flight" : "Request Supplement"}
               </Button>
             )}
           </div>
@@ -619,6 +753,7 @@ function BudgetRow({
 export function CreateBudgetGroupedTable() {
   const {
     displayedItems,
+    allBudgets,
     initialLoading,
     loading,
     hasMore,
@@ -636,7 +771,6 @@ export function CreateBudgetGroupedTable() {
     total,
     filters,
   } = useCreateBudgetContext();
-
 
   const activeStatus = filters.status;
   const showCheckbox = activeStatus === "Draft" || activeStatus === "Rejected";
@@ -658,7 +792,7 @@ export function CreateBudgetGroupedTable() {
     [loading, initialLoading, hasMore, loadMore]
   );
 
-  const grouped = useMemo(() => groupBudgets(displayedItems, displayedItems), [displayedItems]);
+  const grouped = useMemo(() => groupBudgets(displayedItems, allBudgets), [displayedItems, allBudgets]);
 
 
   const toggleDiv = (key: string) =>
@@ -687,10 +821,12 @@ export function CreateBudgetGroupedTable() {
   const allIds = displayedItems.filter(b => b.entry_type !== "supplemental").map(b => String(b.id));
   const allSelected = allIds.length > 0 && allIds.every(id => selectedIds.has(id));
 
-  if (initialLoading) {
+  if (initialLoading || loading) {
     return (
-      <div className="flex h-64 items-center justify-center rounded-2xl border border-dashed">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      <div className="w-full space-y-4">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <Skeleton key={i} className="h-16 w-full rounded-2xl" />
+        ))}
       </div>
     );
   }

@@ -104,7 +104,7 @@ export default function PrintProcurementDialog({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Print Purchase Order</DialogTitle>
+            <DialogTitle>Print Procurement Summary</DialogTitle>
           </DialogHeader>
           <div className="space-y-6 py-4">
             <div className="flex flex-col gap-1">

@@ -186,7 +186,7 @@ export function useBudgetReports() {
           pdf.setTextColor(38, 91, 119);
           pdf.text(formatCurrency(grandTotal), totalX + labelW, currentY, { baseline: 'top' });
         }
-        currentY += 12;
+        currentY += 5;
       } else {
         pdf.setFontSize(10).setFont("helvetica", "normal").setTextColor(100, 100, 100);
         pdf.text(`PERIOD: ${period.label}`, margins.left, currentY, { baseline: 'top' });
@@ -277,16 +277,16 @@ export function useBudgetReports() {
           ? Math.min(pageHeight - margins.bottom - 8, templateBodyEndY + 16)
           : templateBodyEndY;
         const bodyRowCount = Math.max(tableBody.length, 1);
-        const baseBodyPaddingY = 3.7;
-        const baseHeadPaddingY = 3.2;
-        const compactBodyPaddingY = 2.9;
-        const compactHeadPaddingY = 2.6;
+        const baseBodyPaddingY = 1.8;
+        const baseHeadPaddingY = 1.8;
+        const compactBodyPaddingY = 1.4;
+        const compactHeadPaddingY = 1.4;
         let bodyPaddingY = baseBodyPaddingY;
         let headPaddingY = baseHeadPaddingY;
 
         if (useMinimalTableStyle) {
-          const minimalHeadingHeight = 7.5;
-          const sectionBottomGap = 5;
+          const minimalHeadingHeight = 5.5;
+          const sectionBottomGap = 2.5;
           const estimateHeadHeight = (headPad: number) => 7.2 * 0.35 + headPad * 2;
           const estimateRowHeight = (bodyPad: number) => 7.8 * 0.35 + bodyPad * 2;
           const estimateSectionHeight = (bodyPad: number, headPad: number) => {
@@ -326,12 +326,12 @@ export function useBudgetReports() {
         }
 
         if (useMinimalTableStyle) {
-          pdf.setTextColor(38, 91, 119).setFontSize(9.5).setFont("helvetica", "bold");
+          pdf.setTextColor(38, 91, 119).setFontSize(9).setFont("helvetica", "bold");
           pdf.text(division.toUpperCase(), margins.left, currentY, { baseline: 'top' });
-          currentY += 4.5;
+          currentY += 3.5;
           pdf.setDrawColor(82, 124, 150).setLineWidth(0.35);
           pdf.line(margins.left, currentY, pageWidth - margins.right, currentY);
-          currentY += 3;
+          currentY += 2;
         } else {
           pdf.setFillColor(41, 128, 185).rect(margins.left, currentY, pageWidth - margins.left - margins.right, 7, 'F');
           pdf.setTextColor(255).setFontSize(9).setFont("helvetica", "bold").text(division.toUpperCase(), pageWidth / 2, currentY + 3.5, { align: 'center', baseline: 'middle' });
@@ -345,10 +345,10 @@ export function useBudgetReports() {
           body: tableBody as unknown as RowInput[],
           theme: useMinimalTableStyle ? 'plain' : 'grid',
           styles: useMinimalTableStyle
-            ? { fontSize: 7.8, cellPadding: { top: bodyPaddingY, right: 2.2, bottom: bodyPaddingY, left: 2.2 }, textColor: [74, 74, 74], lineWidth: 0, valign: 'middle' }
+            ? { fontSize: 7.5, cellPadding: { top: bodyPaddingY, right: 2, bottom: bodyPaddingY, left: 2 }, textColor: [74, 74, 74], lineWidth: 0, valign: 'middle' }
             : { fontSize: 8, cellPadding: 3, lineColor: [200, 200, 200], lineWidth: 0.1 },
           headStyles: useMinimalTableStyle
-            ? { fillColor: [248, 248, 248], textColor: [125, 125, 125], fontStyle: 'bold', fontSize: 7.2, lineWidth: 0, cellPadding: { top: headPaddingY, right: 2.2, bottom: headPaddingY, left: 2.2 } }
+            ? { fillColor: [248, 248, 248], textColor: [125, 125, 125], fontStyle: 'bold', fontSize: 7, lineWidth: 0, cellPadding: { top: headPaddingY, right: 2, bottom: headPaddingY, left: 2 } }
             : { fillColor: [52, 73, 94], textColor: 255, fontStyle: 'bold', fontSize: 8, lineWidth: 0.1, lineColor: [200, 200, 200] },
           bodyStyles: useMinimalTableStyle ? { fillColor: [255, 255, 255] } : undefined,
           didParseCell: (d) => {
@@ -368,19 +368,23 @@ export function useBudgetReports() {
                   pdf.line(d.cell.x, d.cell.y + d.cell.height, d.cell.x + d.cell.width, d.cell.y + d.cell.height);
                 }
                 if (d.section === 'body') {
-                  pdf.setDrawColor(isSubtotal ? 145 : 235, isSubtotal ? 145 : 235, isSubtotal ? 145 : 235);
-                  pdf.setLineWidth(isSubtotal ? 0.45 : 0.12);
+                  pdf.setDrawColor(isSubtotal ? 145 : 210, isSubtotal ? 145 : 210, isSubtotal ? 145 : 210);
+                  pdf.setLineWidth(isSubtotal ? 0.45 : 0.35);
                   pdf.line(d.cell.x, d.cell.y + d.cell.height, d.cell.x + d.cell.width, d.cell.y + d.cell.height);
                 }
               }
             : undefined
         });
-        currentY = (pdf as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + (useMinimalTableStyle ? 5 : 10);
+        currentY = (pdf as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + (useMinimalTableStyle ? 2.5 : 8);
       }
 
       const totalPages = pdf.getNumberOfPages();
-      for (let j = 1; j <= totalPages; j++) {
-        pdf.setPage(j).setFontSize(9).setTextColor(150).text(`Page ${j} of ${totalPages}`, pageWidth / 2, pageHeight - (margins.bottom / 2), { align: 'center', baseline: 'middle' });
+      if (!config.pageNumber?.show) {
+        for (let j = 1; j <= totalPages; j++) {
+          pdf.setPage(j);
+          pdf.setFontSize(8).setFont("helvetica", "normal").setTextColor(148, 163, 184);
+          pdf.text(`Page ${j} of ${totalPages}`, pageWidth / 2, pageHeight - 6, { align: 'center', baseline: 'middle' });
+        }
       }
     });
 
@@ -398,7 +402,10 @@ export function useBudgetReports() {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("No budget data found")) {
         const period = getReportPeriod();
-        toast.info(`No budget allocation records found for ${period.label}.`);
+        const reportLabel = reportId === "revised-history" ? "budget revision"
+          : reportId === "approval-audit" ? "budget audit approval"
+          : "budget allocation";
+        toast.info(`No ${reportLabel} records found for ${period.label}.`);
       } else {
         toast.error(msg);
       }

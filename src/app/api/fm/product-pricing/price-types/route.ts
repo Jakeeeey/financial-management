@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { fetchPriceTypeDirectus, priceTypeErrorResponse } from "./_directus";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 const COLLECTION = "price_types";
@@ -11,16 +15,11 @@ type PriceTypeRow = {
     price_type_id?: number | string | null;
     price_type_name?: string | null;
     sort?: number | string | null;
+    is_active?: boolean | number | null;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null;
-}
-
-async function fetchDirectus<T>(url: string, init?: RequestInit): Promise<T> {
-    const res = await fetch(url, { cache: "no-store", ...init });
-    if (!res.ok) throw new Error(await res.text());
-    return (await res.json()) as T;
 }
 
 function decodeUserIdFromJwtCookie(req: NextRequest, cookieName = "vos_access_token") {
@@ -60,21 +59,17 @@ export async function GET(req: NextRequest) {
 
         const params = new URLSearchParams();
         params.set("limit", "-1");
-        params.set("fields", "price_type_id,price_type_name,sort");
+        params.set("fields", "price_type_id,price_type_name,sort,is_active");
         params.set("sort", "sort,price_type_id");
+        const includeInactive = req.nextUrl.searchParams.get("include_inactive") === "true";
+        if (!includeInactive) params.set("filter[is_active][_eq]", "1");
 
         const url = `${DIRECTUS_URL}/items/${COLLECTION}?${params.toString()}`;
-        const json = await fetchDirectus<{ data: PriceTypeRow[] }>(url);
+        const json = await fetchPriceTypeDirectus<{ data: PriceTypeRow[] }>(url);
 
         return NextResponse.json({ data: json.data ?? [] });
     } catch (error: unknown) {
-        return NextResponse.json(
-            {
-                error: "Unexpected error",
-                details: error instanceof Error ? error.message : String(error),
-            },
-            { status: 500 },
-        );
+        return priceTypeErrorResponse(error);
     }
 }
 
@@ -96,7 +91,7 @@ export async function POST(req: NextRequest) {
         };
 
         const url = `${DIRECTUS_URL}/items/${COLLECTION}`;
-        const json = await fetchDirectus<{ data: PriceTypeRow }>(url, {
+        const json = await fetchPriceTypeDirectus<{ data: PriceTypeRow }>(url, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
@@ -104,12 +99,6 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({ data: json.data });
     } catch (error: unknown) {
-        return NextResponse.json(
-            {
-                error: "Unexpected error",
-                details: error instanceof Error ? error.message : String(error),
-            },
-            { status: 500 },
-        );
+        return priceTypeErrorResponse(error);
     }
 }

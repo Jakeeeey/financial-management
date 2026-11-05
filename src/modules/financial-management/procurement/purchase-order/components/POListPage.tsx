@@ -24,7 +24,7 @@ export default function POListPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold tracking-tight">Purchase Orders</h1>
+        <h1 className="text-xl font-semibold tracking-tight">Procurement Summary</h1>
         <Button variant="default" size="sm" onClick={() => refetch()} className="gap-2">
           <RefreshCw className="h-4 w-4" />
           Refresh

@@ -20,6 +20,7 @@ type DirectusDisbursement = {
     doc_no?: string | null;
     status?: string | null;
     payee?: number | { id?: number } | null;
+    is_employee?: boolean | number | null;
 };
 
 type MemoBlockingDisbursement = {
@@ -92,6 +93,10 @@ export function isMemoLockingDisbursementStatus(status: unknown): boolean {
     return LOCKING_DISBURSEMENT_STATUSES.has(String(status || "").trim());
 }
 
+export function isMemoActiveDisbursementStatus(status: unknown): boolean {
+    return ACTIVE_DISBURSEMENT_STATUSES.has(String(status || "").trim());
+}
+
 export function shouldExposeSupplierMemo(balance: Pick<SupplierMemoBalance, "remainingAmount" | "isLocked">): boolean {
     return balance.remainingAmount > 0.01 || balance.isLocked;
 }
@@ -114,7 +119,7 @@ function roundMoney(value: number): number {
 }
 
 function normalizedReference(value: unknown): string {
-    return typeof value === "string" ? value.trim() : "";
+    return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
 }
 
 function looksLikeMemoReference(reference: string): boolean {
@@ -126,11 +131,11 @@ function looksLikeMemoReference(reference: string): boolean {
  * transaction-capable Directus operation is still required when the BFF is
  * deployed across multiple processes or instances.
  */
-export async function acquireMemoCapLock(lines: MemoCapInput[]): Promise<() => void> {
+export async function acquireMemoCapLock(lines: MemoCapInput[], knownMemo = false): Promise<() => void> {
     const references = Array.from(new Set(
         lines.map((line) => normalizedReference(line.referenceNo)).filter(Boolean),
     ));
-    let hasMemoReference = references.some(looksLikeMemoReference);
+    let hasMemoReference = knownMemo || references.some(looksLikeMemoReference);
     if (!hasMemoReference && references.length > 0) {
         try {
             hasMemoReference = (await fetchMemosByReferences(references)).length > 0;
@@ -228,6 +233,7 @@ async function fetchMemosForSupplier(supplierId: number): Promise<DirectusMemo[]
 async function fetchMemoUsage(
     references: string[],
     excludeDisbursementId?: number,
+    supplierId?: number,
 ): Promise<Map<string, MemoUsage>> {
     const usageByReference = new Map<string, MemoUsage>();
     if (references.length === 0) return usageByReference;
@@ -249,7 +255,7 @@ async function fetchMemoUsage(
 
     const disbursements = disbursementIds.length > 0
         ? (await directusFetch<DirectusList<DirectusDisbursement>>(
-            `/items/disbursement?filter[id][_in]=${disbursementIds.join(",")}&fields=id,doc_no,status,payee&limit=-1`,
+            `/items/disbursement?filter[id][_in]=${disbursementIds.join(",")}&fields=id,doc_no,status,payee,is_employee&limit=-1`,
         )).data || []
         : [];
     const disbursementMap = new Map(disbursements.map((row) => [Number(row.id), row]));
@@ -267,6 +273,7 @@ async function fetchMemoUsage(
         }
         const disbursement = disbursementMap.get(disbursementId);
         if (!disbursement) continue;
+        if (supplierId !== undefined && (relationId(disbursement.payee) !== supplierId || Boolean(Number(disbursement.is_employee)))) continue;
 
         const usage = usageByReference.get(reference) || {
             appliedAmount: 0,
@@ -297,7 +304,7 @@ async function fetchMemoUsage(
 export async function getSupplierMemoBalances(supplierId: number): Promise<SupplierMemoBalance[]> {
     const memos = await fetchMemosForSupplier(supplierId);
     const references = memos.map((memo) => memo.memo_number).filter(Boolean);
-    const usageByReference = await fetchMemoUsage(references);
+    const usageByReference = await fetchMemoUsage(references, undefined, supplierId);
     return memos.map((memo) => memoBalance(memo, usageByReference.get(memo.memo_number) || {
         appliedAmount: 0,
         blockingDisbursements: [],
@@ -308,13 +315,14 @@ export async function validateSupplierMemoCaps(
     supplierId: number,
     lines: MemoCapInput[],
     excludeDisbursementId?: number,
+    validateDirection = true,
 ): Promise<MemoCapError | null> {
     const requested = new Map<string, number>();
     for (const line of lines) {
         const reference = normalizedReference(line.referenceNo);
         if (!reference) continue;
         const amount = asNumber(line.amount);
-        if (amount === undefined || amount === 0) continue;
+        if (amount === undefined) continue;
         requested.set(reference, roundMoney((requested.get(reference) || 0) + Math.abs(amount)));
     }
 
@@ -325,8 +333,9 @@ export async function validateSupplierMemoCaps(
     // prefix, so prefix-only detection would allow numeric memo references to
     // bypass supplier, sign, and cap validation.
     const memos = await fetchMemosByReferences(references);
-    const memoMap = new Map(memos.map((memo) => [normalizedReference(memo.memo_number), memo]));
-    const memoReferences = references.filter((reference) => memoMap.has(reference) || looksLikeMemoReference(reference));
+    const supplierMemos = memos.filter((memo) => relationId(memo.supplier_id) === supplierId);
+    const memoMap = new Map(supplierMemos.map((memo) => [normalizedReference(memo.memo_number), memo]));
+    const memoReferences = references.filter((reference) => memos.some((memo) => normalizedReference(memo.memo_number) === reference) || looksLikeMemoReference(reference));
     if (memoReferences.length === 0) return null;
 
     const missing = memoReferences.find((reference) => !memoMap.has(reference));
@@ -341,11 +350,16 @@ export async function validateSupplierMemoCaps(
         };
     }
 
-    const usageByReference = await fetchMemoUsage(memoReferences, excludeDisbursementId);
+    const ambiguous = memoReferences.find((reference) => supplierMemos.filter((memo) => normalizedReference(memo.memo_number) === reference).length > 1);
+    if (ambiguous) {
+        return { memoNumber: ambiguous, authorizedAmount: 0, appliedAmount: 0, requestedAmount: requested.get(ambiguous) || 0, remainingAmount: 0,
+            message: `Supplier memo ${ambiguous} has multiple matching records for this supplier. Resolve the reference before applying it.` };
+    }
+
+    const usageByReference = await fetchMemoUsage(memoReferences, excludeDisbursementId, supplierId);
     for (const reference of memoReferences) {
         const memo = memoMap.get(reference);
         if (!memo) continue;
-        const memoSupplierId = relationId(memo.supplier_id);
         const requestedAmount = requested.get(reference) || 0;
         const usage = usageByReference.get(reference) || {
             appliedAmount: 0,
@@ -354,19 +368,9 @@ export async function validateSupplierMemoCaps(
         const appliedAmount = usage.appliedAmount;
         const balance = memoBalance(memo, usage);
 
-        if (memoSupplierId !== supplierId) {
-            return {
-                memoNumber: reference,
-                authorizedAmount: balance.amount,
-                appliedAmount,
-                requestedAmount,
-                remainingAmount: balance.remainingAmount,
-                isLocked: balance.isLocked,
-                lockingTrDocNo: balance.lockingTrDocNo,
-                lockingTrStatus: balance.lockingTrStatus,
-                lockingTrCount: balance.lockingTrCount,
-                message: `Supplier memo ${reference} does not belong to this supplier.`,
-            };
+        if (String(memo.status || "").trim().toUpperCase() === "CANCELLED") {
+            return { memoNumber: reference, authorizedAmount: balance.amount, appliedAmount, requestedAmount, remainingAmount: 0,
+                message: `Supplier memo ${reference} is cancelled and cannot be applied.` };
         }
 
         if (balance.isLocked) {
@@ -391,8 +395,8 @@ export async function validateSupplierMemoCaps(
         }
 
         const matchingLines = lines.filter((line) => normalizedReference(line.referenceNo) === reference);
-        const expectedSign = Number(memo.type) === 1 ? -1 : 1;
-        const hasWrongDirection = matchingLines.some((line) => {
+        const expectedSign = Number(memo.type) === 2 ? -1 : 1;
+        const hasWrongDirection = validateDirection && matchingLines.some((line) => {
             const amount = asNumber(line.amount);
             return amount !== undefined && amount !== 0 && Math.sign(amount) !== expectedSign;
         });
@@ -407,7 +411,7 @@ export async function validateSupplierMemoCaps(
                 lockingTrDocNo: balance.lockingTrDocNo,
                 lockingTrStatus: balance.lockingTrStatus,
                 lockingTrCount: balance.lockingTrCount,
-                message: `${reference} must be applied as a ${expectedSign < 0 ? "credit" : "debit"} amount.`,
+                message: `${reference} must be applied as a ${expectedSign < 0 ? "debit" : "credit"} amount.`,
             };
         }
 
@@ -439,11 +443,12 @@ export async function refreshSupplierMemoStatuses(
 
     const [memos, usageByReference] = await Promise.all([
         fetchMemosByReferences(uniqueReferences),
-        fetchMemoUsage(uniqueReferences),
+        fetchMemoUsage(uniqueReferences, undefined, supplierId),
     ]);
 
     await Promise.all(memos
-        .filter((memo) => relationId(memo.supplier_id) === supplierId && String(memo.status || "").toUpperCase() !== "CANCELLED")
+        .filter((memo) => relationId(memo.supplier_id) === supplierId && String(memo.status || "").toUpperCase() !== "CANCELLED"
+            && memos.filter((candidate) => relationId(candidate.supplier_id) === supplierId && candidate.memo_number === memo.memo_number).length === 1)
         .map(async (memo) => {
             const usage = usageByReference.get(memo.memo_number) || {
                 appliedAmount: 0,

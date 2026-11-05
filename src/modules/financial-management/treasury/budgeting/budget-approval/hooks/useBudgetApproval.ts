@@ -82,6 +82,15 @@ export function useBudgetApproval() {
     setSelectedIds(new Set());
   }, [fetchData]);
 
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev;
+      const visibleIds = new Set(displayedItems.map((b) => String(b.id)));
+      const next = new Set(Array.from(prev).filter((id) => visibleIds.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [displayedItems]);
+
 
   // ---------- Filters ----------
   const updateFilter = <K extends keyof BudgetApprovalFilters>(

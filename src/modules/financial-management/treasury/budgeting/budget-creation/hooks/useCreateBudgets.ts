@@ -13,6 +13,7 @@ const MONTH_NAMES = [
 ];
 
 export function useCreateBudgets() {
+  const [allBudgets, setAllBudgets] = useState<Budget[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [kpiTotals, setKpiTotals] = useState({ draft: 0, pending: 0, approved: 0, rejected: 0 });
   const [loading, setLoading] = useState(false);
@@ -28,39 +29,6 @@ export function useCreateBudgets() {
   // Selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const fetchKpiTotals = useCallback(async () => {
-    try {
-      const monthIndex = Number(filters.month);
-      const monthName = monthIndex ? MONTH_NAMES[monthIndex - 1] : undefined;
-
-      const { data } = await budgetService.getBudgets({
-        year: filters.year ? Number(filters.year) : undefined,
-        month: monthName,
-        division_id: filters.division_id ? Number(filters.division_id) : undefined,
-        department_id: filters.department_id ? Number(filters.department_id) : undefined,
-      });
-
-      const term = filters.search.trim().toLowerCase();
-      const filtered = term ? data.filter(b =>
-        [b.coa_name, b.gl_code, b.remarks, b.department_name, b.division_name, b.budget_no]
-          .join(" ").toLowerCase().includes(term)
-      ) : data;
-
-      const totals = filtered.reduce((acc, budget) => {
-        if (budget.status === "Draft") acc.draft += budget.amount;
-        if (budget.status === "Pending") acc.pending += budget.amount;
-        if (budget.status === "Approved") acc.approved += budget.amount;
-        if (budget.status === "Rejected") acc.rejected += budget.amount;
-        return acc;
-      }, { draft: 0, pending: 0, approved: 0, rejected: 0 });
-
-      setKpiTotals(totals);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to fetch budget KPI totals";
-      toast.error(msg);
-    }
-  }, [filters.year, filters.month, filters.search, filters.division_id, filters.department_id]);
-
   const fetchBudgets = useCallback(async () => {
     setLoading(true);
     try {
@@ -70,7 +38,6 @@ export function useCreateBudgets() {
       const { data } = await budgetService.getBudgets({
         year: filters.year ? Number(filters.year) : undefined,
         month: monthName,
-        status: filters.status || undefined,
         division_id: filters.division_id ? Number(filters.division_id) : undefined,
         department_id: filters.department_id ? Number(filters.department_id) : undefined,
       });
@@ -82,7 +49,22 @@ export function useCreateBudgets() {
           .join(" ").toLowerCase().includes(term)
       ) : data;
 
-      setBudgets(filtered);
+      setAllBudgets(filtered);
+
+      // KPI totals
+      const totals = filtered.reduce((acc, budget) => {
+        if (budget.status === "Draft") acc.draft += budget.amount;
+        if (budget.status === "Pending") acc.pending += budget.amount;
+        if (budget.status === "Approved") acc.approved += budget.amount;
+        if (budget.status === "Rejected") acc.rejected += budget.amount;
+        return acc;
+      }, { draft: 0, pending: 0, approved: 0, rejected: 0 });
+
+      setKpiTotals(totals);
+
+      // Displayed budgets filtered by active tab status
+      const tabFiltered = filtered.filter(b => b.status === (filters.status || "Draft"));
+      setBudgets(tabFiltered);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to fetch budgets";
       toast.error(msg);
@@ -96,8 +78,8 @@ export function useCreateBudgets() {
   }, [fetchBudgets]);
 
   useEffect(() => {
-    fetchKpiTotals();
-  }, [fetchKpiTotals]);
+    setSelectedIds(new Set());
+  }, [filters.status]);
 
   useEffect(() => {
     setSelectedIds(prev => {
@@ -149,7 +131,7 @@ export function useCreateBudgets() {
 
     try {
       await budgetService.submitBudgets(ids);
-      fetchKpiTotals();
+      fetchBudgets();
       toast.success(`${ids.length} budget(s) submitted for approval.`);
     } catch (err) {
       setBudgets(previousItems);
@@ -167,7 +149,7 @@ export function useCreateBudgets() {
 
     try {
       await budgetService.deleteBudget(id);
-      fetchKpiTotals();
+      fetchBudgets();
       toast.success("Budget deleted successfully.");
       setSelectedIds(prev => {
         const next = new Set(prev);
@@ -191,7 +173,7 @@ export function useCreateBudgets() {
 
     try {
       await Promise.all(Array.from(selectedIds).map(id => budgetService.deleteBudget(id)));
-      fetchKpiTotals();
+      fetchBudgets();
       toast.success(`${selectedIds.size} budget(s) deleted.`);
       clearSelection();
     } catch (err) {
@@ -209,7 +191,7 @@ export function useCreateBudgets() {
 
     try {
       await budgetService.submitBudgets([String(id)]);
-      fetchKpiTotals();
+      fetchBudgets();
       toast.success("Budget submitted for approval.");
       setSelectedIds(prev => {
         const next = new Set(prev);
@@ -234,7 +216,7 @@ export function useCreateBudgets() {
 
     try {
       await budgetService.submitBudgets(ids);
-      fetchKpiTotals();
+      fetchBudgets();
       toast.success(`${ids.length} budget(s) submitted for approval.`);
       clearSelection();
     } catch (err) {
@@ -269,7 +251,6 @@ export function useCreateBudgets() {
       });
       toast.success("Budget created successfully.");
       setFilters(prev => ({ ...prev, status: "Draft" }));
-      fetchKpiTotals();
       fetchBudgets();
     } catch (err) {
       throw err;
@@ -287,7 +268,6 @@ export function useCreateBudgets() {
 
       await budgetService.updateBudget(id, payload);
       toast.success("Budget updated successfully.");
-      fetchKpiTotals();
       fetchBudgets();
     } catch (err) {
       throw err;
@@ -296,10 +276,10 @@ export function useCreateBudgets() {
 
   // Helpers for table
   const getGrandTotal = (budgetId: string): number => {
-    const parent = budgets.find(b => String(b.id) === budgetId);
+    const parent = allBudgets.find(b => String(b.id) === budgetId);
     if (!parent) return 0;
     
-    const approvedSupplements = budgets.filter(
+    const approvedSupplements = allBudgets.filter(
       b => b.parent_budget_id != null && String(b.parent_budget_id) === budgetId && 
            b.entry_type === "supplemental" && 
            b.status === "Approved"
@@ -308,14 +288,16 @@ export function useCreateBudgets() {
   };
 
   const hasInFlightSupplement = (parentId: string): boolean => {
-    return budgets.some(
+    return allBudgets.some(
       b => b.parent_budget_id != null && String(b.parent_budget_id) === parentId && 
            b.entry_type === "supplemental" && 
-           (b.status === "Pending" || b.status === "Draft")
+           b.status !== "Approved" && 
+           b.status !== "Deleted"
     );
   };
 
   return {
+    allBudgets,
     budgets, 
     kpiTotals,
     loading, 
