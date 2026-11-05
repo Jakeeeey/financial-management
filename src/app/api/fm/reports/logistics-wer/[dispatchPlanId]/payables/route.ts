@@ -1,3 +1,5 @@
+import { publicWerFailure, werFailureStatus, WerDependencyError } from "../../_errors";
+import { calculateExpenseVariance, type ExpenseVariance } from "@/modules/financial-management/reports/logistics-wer/utils/budget-balances";
 import { NextRequest, NextResponse } from "next/server";
 import {
   DRAFT_COLLECTION,
@@ -12,13 +14,13 @@ import {
   markWerPlanLiquidatedIfSettled,
   requireSessionUserId,
   resolveDriverSupplier,
+  resolveDriverDepartment,
   withPlanLock,
   type DraftSubmission,
 } from "../../_payables";
-import { findBudgetRequestOverages } from "@/modules/financial-management/reports/logistics-wer/utils/budget-balances";
 import { validatePayableLines } from "@/modules/financial-management/reports/logistics-wer/utils/payable-validation";
 import type { ValidatedPayableLine } from "@/modules/financial-management/reports/logistics-wer/utils/payable-validation";
-import { formatManilaWallClock } from "../../_timestamps";
+import { formatManilaWallClock, toManilaWallClock } from "../../_timestamps";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -308,8 +310,8 @@ async function replaceEditableSubmissionLines(
       status: action === "submit" ? "submitted" : submission.status || "draft",
       department_id: departmentId,
       total_amount: total,
-      ...(action === "submit" ? { submitted_at: new Date().toISOString() } : {}),
-      date_updated: formatManilaWallClock(),
+      ...(action === "submit" ? { submitted_at: now } : {}),
+      date_updated: now,
     });
   } catch (replaceError) {
     if (hasMutations) {
@@ -330,7 +332,7 @@ async function replaceEditableSubmissionLines(
           status: submission.status || "draft",
           department_id: submission.departmentId,
           total_amount: submission.totalAmount,
-          submitted_at: submission.submittedAt,
+          submitted_at: toManilaWallClock(submission.submittedAt),
           date_updated: formatManilaWallClock(),
         });
       } catch (rollbackError) {
@@ -381,6 +383,10 @@ export async function POST(
     return error("submissionId must be a positive integer.", 400);
   }
 
+  const requestId = crypto.randomUUID();
+  let mutationStarted = false;
+  let applied = false;
+  let affectedId = requestedSubmissionId ?? undefined;
   try {
     return await withPlanLock(planId, async () => {
       const baseline = await getPlanBaseline(planId);
@@ -397,15 +403,18 @@ export async function POST(
         if (submission.submittedBy !== userId) {
           return error("Only the submitter can withdraw this submission.", 403);
         }
+        mutationStarted = true;
         await directusWrite("PATCH", `/items/${DRAFT_COLLECTION}/${submission.id}`, {
           status: "withdrawn",
           date_updated: formatManilaWallClock(),
         });
+        applied = true;
         await markWerPlanLiquidatedIfSettled(submission.id).catch((syncError) => {
           console.error("[Logistics WER] Liquidation sync after withdrawal failed:", syncError);
+          if (syncError instanceof WerDependencyError && syncError.upstreamStatus === 429) throw syncError;
         });
         const updated = await loadSubmission(planId, submission.id);
-        return NextResponse.json({ draft: updated });
+        return NextResponse.json({ draft: updated, outcome: "applied", submissionId: submission.id, requestId });
       }
 
       const planStatus = (baseline.status || "").toLowerCase();
@@ -419,15 +428,12 @@ export async function POST(
         return error(`Payables can only be recorded for plans in For Clearance state (current: ${baseline.status || "unknown"}).`, 409);
       }
 
-      const hasDepartmentId = body.departmentId !== null && body.departmentId !== undefined && body.departmentId !== "";
-      const departmentId = hasDepartmentId ? Number(body.departmentId) : null;
-      if (hasDepartmentId && (!Number.isInteger(departmentId) || Number(departmentId) <= 0)) {
-        return error("departmentId must be a positive integer.", 400);
-      }
-      if (action === "submit" && departmentId === null) {
-        return error("A department is required before submitting payables.", 400);
-      }
+      const assignedDepartment = await resolveDriverDepartment(baseline.driverId);
+      const departmentId = assignedDepartment.departmentId;
+      if (body.departmentId != null && body.departmentId !== "" && Number(body.departmentId) !== departmentId) return error("Department must match the assigned driver. Refresh the plan and save the updated draft.", 409);
+      if (action === "submit" && departmentId === null) return error(assignedDepartment.departmentError || "Driver department is required for submission.", 400);
 
+      let variance: ExpenseVariance | undefined;
       if (requestedSubmissionId) {
         if (action !== "save-draft" && action !== "submit") {
           return error("Draft or returned submissions can only be saved or submitted.", 400);
@@ -437,6 +443,7 @@ export async function POST(
         if (!["draft", "returned"].includes((submission.status || "").toLowerCase()) || submission.disbursementId !== null) {
           return error("Only draft or returned, unconverted payables can be edited.", 409);
         }
+        if (action === "submit" && submission.departmentId !== departmentId) return error("Driver department changed. Save the updated draft before submitting.", 409);
         if (submission.submittedBy !== userId) {
           return error("Only the original submitter can edit this payable.", 403);
         }
@@ -473,34 +480,22 @@ export async function POST(
         if (receiptCheck) return error(receiptCheck, 409);
 
         if (action === "submit") {
-          const eligibility = await resolveDriverSupplier(baseline.driverId);
+          const eligibility = await resolveDriverSupplier(baseline.driverId, assignedDepartment);
           if (!eligibility.eligible) {
             return error(eligibility.reason || "The assigned driver has no eligible supplier account.", 422, {
               eligibility,
             });
           }
-          const remaining = await getPlanRemaining(planId);
-          if (remaining.unclassifiedReservedAmount > 0) {
-            return error(
-              "Existing active payable reservations include unclassified COA lines. Resolve those submissions before adding expense budget reservations.",
-              409,
-              { remaining: remaining.remaining },
-            );
-          }
-          const overages = findBudgetRequestOverages(lines, remaining.budgetBalancesByCoa);
-          if (overages.length > 0) {
-            return error(
-              "One or more payable lines exceed the remaining expense budget for their selected COA.",
-              409,
-              { remaining: remaining.remaining, overages },
-            );
-          }
+          const context = await getPlanRemaining(planId, baseline);
+          variance = calculateExpenseVariance(lines, context.budgetBalancesByCoa, context.allocatedBudget, context.reserved);
         }
 
-        const now = new Date().toISOString();
+        const now = formatManilaWallClock();
+        mutationStarted = true;
         await replaceEditableSubmissionLines(submission, lines, userId, now, action, total, departmentId);
+        applied = true;
         const updated = await loadSubmission(planId, submission.id);
-        return NextResponse.json({ draft: updated });
+        return NextResponse.json({ draft: updated, variance, outcome: "applied", submissionId: submission.id, requestId });
       }
 
       const idempotencyKey = asTrimmedString(body.idempotencyKey) || null;
@@ -508,7 +503,8 @@ export async function POST(
         const existingId = await findDraftByKey(planId, idempotencyKey);
         if (existingId) {
           const existing = await loadSubmission(planId, existingId);
-          return NextResponse.json({ draft: existing, idempotent: true });
+          if (existing?.submittedBy !== userId) return error("Submission access denied.", 403);
+          return NextResponse.json({ draft: existing, idempotent: true, outcome: "applied", submissionId: existing.id, requestId });
         }
       }
 
@@ -520,7 +516,7 @@ export async function POST(
       }
       const total = lines.reduce((sum, line) => sum + line.amount, 0);
 
-      const eligibility = await resolveDriverSupplier(baseline.driverId);
+      const eligibility = await resolveDriverSupplier(baseline.driverId, assignedDepartment);
       if (!eligibility.eligible) {
         return error(eligibility.reason || "The assigned driver has no eligible supplier account.", 422, {
           eligibility,
@@ -528,32 +524,19 @@ export async function POST(
       }
 
       if (action === "submit") {
-        const remaining = await getPlanRemaining(planId);
-        if (remaining.unclassifiedReservedAmount > 0) {
-          return error(
-            "Existing active payable reservations include unclassified COA lines. Resolve those submissions before adding expense budget reservations.",
-            409,
-            { remaining: remaining.remaining },
-          );
-        }
-        const overages = findBudgetRequestOverages(lines, remaining.budgetBalancesByCoa);
-        if (overages.length > 0) {
-          return error(
-            "One or more payable lines exceed the remaining expense budget for their selected COA.",
-            409,
-            { remaining: remaining.remaining, overages },
-          );
-        }
+        const context = await getPlanRemaining(planId, baseline);
+        variance = calculateExpenseVariance(lines, context.budgetBalancesByCoa, context.allocatedBudget, context.reserved);
       }
 
-      const now = new Date().toISOString();
+      const now = formatManilaWallClock();
       const receiptCheck = await assertReceiptsAttachable(
         lines.flatMap((line) => line.receiptFileIds),
         null,
       );
       if (receiptCheck) return error(receiptCheck, 409);
 
-      const auditNow = formatManilaWallClock();
+      const auditNow = now;
+      mutationStarted = true;
       const created = await directusWrite<{ data?: { id?: unknown } }>("POST", `/items/${DRAFT_COLLECTION}`, {
         dispatch_plan_id: planId,
         department_id: departmentId,
@@ -566,6 +549,7 @@ export async function POST(
         date_updated: auditNow,
       });
       const draftId = Number(created.data?.id) || 0;
+      affectedId = draftId || undefined;
       if (!draftId) throw new Error("Draft creation did not return an id.");
 
       try {
@@ -610,14 +594,42 @@ export async function POST(
         throw lineError;
       }
 
+      applied = true;
       const draft = await loadSubmission(planId, draftId);
-      return NextResponse.json({ draft }, { status: 201 });
+      return NextResponse.json({ draft, variance, outcome: "applied", submissionId: draftId, requestId }, { status: 201 });
     });
   } catch (requestError) {
     console.error("[Logistics WER] Payables request failed:", requestError);
-    if (requestError instanceof BudgetContextError) {
-      return error(`Submission blocked because the expense budget could not be verified: ${requestError.message}`, 503);
-    }
-    return error(requestError instanceof Error ? requestError.message : "Unable to record the payable.", 502);
+    const outcome = applied ? "applied" : mutationStarted ? "unknown" : "not_applied";
+    const payload = publicWerFailure(requestError, outcome, affectedId);
+    console.error("[WER action outcome]", { ...payload, operation: action });
+    return NextResponse.json(payload, {
+      status: applied ? 200 : requestError instanceof WerDependencyError ? werFailureStatus(requestError) : requestError instanceof BudgetContextError ? 503 : 502,
+      ...(payload.retryAfterSeconds ? { headers: { "Retry-After": String(payload.retryAfterSeconds) } } : {}),
+    });
+  }
+}
+
+export async function GET(request: NextRequest, { params }: { params: Promise<{ dispatchPlanId: string }> }) {
+  const planId = Number((await params).dispatchPlanId);
+  if (!Number.isSafeInteger(planId) || planId <= 0) return error("Invalid dispatch plan.", 400);
+  const userId = await requireSessionUserId(request);
+  if (!userId) return error("Authentication is required.", 401);
+  const key = request.nextUrl.searchParams.get("idempotencyKey")?.trim();
+  const submissionId = Number(request.nextUrl.searchParams.get("submissionId"));
+  if (!key && (!Number.isSafeInteger(submissionId) || submissionId <= 0)) return error("Submission identifier is required.", 400);
+  try {
+    return await withPlanLock(planId, async () => {
+      const id = key ? await findDraftByKey(planId, key) : submissionId;
+      const draft = id ? await loadSubmission(planId, id) : null;
+      if (draft && draft.submittedBy !== userId) return error("Submission access denied.", 403);
+      if (draft && Math.abs(draft.lines.reduce((total, line) => total + line.amount, 0) - draft.totalAmount) > 0.005) {
+        return error("The saved submission is incomplete. Keep this form and contact support to reconcile its saved lines before retrying.", 409);
+      }
+      return NextResponse.json({ draft });
+    });
+  } catch (cause) {
+    const payload = publicWerFailure(cause);
+    return NextResponse.json(payload, { status: werFailureStatus(cause), headers: payload.retryAfterSeconds ? { "Retry-After": String(payload.retryAfterSeconds) } : undefined });
   }
 }

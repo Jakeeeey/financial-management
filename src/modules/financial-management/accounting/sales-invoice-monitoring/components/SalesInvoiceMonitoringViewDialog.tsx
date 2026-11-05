@@ -18,7 +18,7 @@ import { formatAmount, formatDate } from "../utils";
 interface SalesInvoiceMonitoringViewDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  row: SalesInvoiceMonitoringRow | null;
+  row: (Omit<SalesInvoiceMonitoringRow, "daysLapses" | "deliveryDate" | "amount"> & { daysLapses: number | null; deliveryDate: string | null; amount: number | null }) | null;
 }
 
 export function SalesInvoiceMonitoringViewDialog({
@@ -78,7 +78,7 @@ export function SalesInvoiceMonitoringViewDialog({
                 Amount
               </div>
               <div className="text-2xl font-bold tracking-tight text-primary">
-                {row ? `₱${formatAmount(row.amount)}` : "—"}
+                {row?.amount != null ? `₱${formatAmount(row.amount)}` : "—"}
               </div>
             </div>
 
@@ -88,7 +88,7 @@ export function SalesInvoiceMonitoringViewDialog({
                   <Calendar className="h-3.5 w-3.5" />
                   Delivery Date
                 </div>
-                <div className="font-medium text-sm">{row ? formatDate(row.deliveryDate) : "—"}</div>
+                <div className="font-medium text-sm">{row ? formatDate(row.deliveryDate || "") : "—"}</div>
               </div>
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -96,7 +96,7 @@ export function SalesInvoiceMonitoringViewDialog({
                   Days Lapses
                 </div>
                 <div className="flex items-center">
-                  {row ? (
+                  {row?.daysLapses != null ? (
                     <Badge 
                       variant={row.daysLapses > 30 ? "destructive" : row.daysLapses > 0 ? "secondary" : "default"}
                       className="px-2 py-0.5 text-xs font-semibold"

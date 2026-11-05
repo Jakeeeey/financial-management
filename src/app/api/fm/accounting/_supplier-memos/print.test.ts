@@ -138,3 +138,26 @@ test("individual printing retains memo-type checks and rejects cross-module reco
   const response = await routes.memoRoutes(2).print(request("/1/print"), context());
   assert.equal(response.status, 404);
 });
+
+ test("debit memo printing and both summary reports generate PDFs without external fonts", async () => {
+  for (const type of [1, 2] as const) {
+    const originalType = memo.type;
+    memo.type = type;
+    try {
+      const slip = await routes.memoRoutes(type).print(request("/1/print"), context());
+      assert.equal(slip.status, 200);
+      assert.equal(Buffer.from(await slip.arrayBuffer()).subarray(0, 5).toString(), "%PDF-");
+      for (const query of ["", "?search=no-matching-record"]) {
+        const report = await routes.memoRoutes(type).report(request(query));
+        assert.equal(report.status, 200);
+        assert.equal(Buffer.from(await report.arrayBuffer()).subarray(0, 5).toString(), "%PDF-");
+      }
+    } finally { memo.type = originalType; }
+  }
+});
+
+test("PDF currency uses readable built-in font characters", async () => {
+  const { memoPdfMoney } = await import("./pdf-format");
+  assert.equal(memoPdfMoney("1234567.89"), "PHP 1,234,567.89");
+  assert.equal(memoPdfMoney(null), "Needs review");
+});

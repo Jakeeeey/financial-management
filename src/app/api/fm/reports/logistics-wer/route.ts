@@ -1,3 +1,4 @@
+import { dependencyFromResponse, werFailureResponse } from "./_errors";
 import { NextRequest, NextResponse } from "next/server";
 import { proxySpring } from "@/app/api/fm/financial-statements/adjusting-journal-entries/_spring";
 import { getDispatchPlans } from "./_directus";
@@ -74,6 +75,7 @@ export async function GET(request: NextRequest) {
     const result = await getDispatchPlans({ startDate, endDate, status, search, page, size });
     const budgetByPlanId = new Map<number, number>();
     let budgetSummaryResponse: Response | null = null;
+    let budgetSummaryError: string | null = null;
     if (result.content.length > 0) {
       try {
         const budgetParams = new URLSearchParams();
@@ -81,6 +83,7 @@ export async function GET(request: NextRequest) {
         budgetSummaryResponse = await proxySpring(
           `/api/v1/dispatch-approvals/budget-summaries?${budgetParams.toString()}`,
         );
+        if (budgetSummaryResponse.status === 429) return werFailureResponse(dependencyFromResponse(budgetSummaryResponse, "spring"), "not_applied", budgetSummaryResponse);
         if (!budgetSummaryResponse.ok) {
           throw new Error(`Expense budget summary lookup failed with HTTP ${budgetSummaryResponse.status}.`);
         }
@@ -89,17 +92,21 @@ export async function GET(request: NextRequest) {
         if (!Array.isArray(payload)) throw new Error("Expense budget summary response was invalid.");
         for (const summary of payload as Array<Record<string, unknown>>) {
           const planId = Number(summary.planId);
-          const amount = Number(summary.allocatedExpenseBudget);
+          const rawAmount = summary.allocatedExpenseBudget;
+          const amount = (typeof rawAmount === "number" || typeof rawAmount === "string" && rawAmount.trim() !== "") ? Number(rawAmount) : NaN;
           if (Number.isSafeInteger(planId) && planId > 0 && Number.isFinite(amount) && amount >= 0) {
             budgetByPlanId.set(planId, amount);
           }
         }
+        if (result.content.some(plan => !budgetByPlanId.has(plan.id))) budgetSummaryError = "Allocated expense budgets could not be loaded for some dispatch plans. Retry the budget lookup.";
       } catch (budgetError) {
+        budgetSummaryError = "Allocated expense budgets are temporarily unavailable. Retry the budget lookup.";
         console.error("[Logistics WER] Failed to load expense budget summaries:", budgetError);
       }
     }
 
     const response: LogisticsWerReportPage = {
+      budgetSummaryError,
       content: result.content.map((plan) => ({
         ...plan,
         allocatedExpenseBudget: budgetByPlanId.get(plan.id) ?? null,
@@ -118,9 +125,6 @@ export async function GET(request: NextRequest) {
     return nextResponse;
   } catch (error) {
     console.error("[Logistics WER] Failed to load report:", error);
-    return NextResponse.json(
-      { message: error instanceof Error ? error.message : "Unable to load Logistics WER." },
-      { status: 502 },
-    );
+    return werFailureResponse(error);
   }
 }

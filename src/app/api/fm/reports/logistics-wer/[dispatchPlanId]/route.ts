@@ -1,6 +1,9 @@
+import { WerDependencyError, werFailureResponse } from "../_errors";
 import { NextRequest, NextResponse } from "next/server";
+import { addBudgetCoaLabels, type CoaLabelRow } from "../_coa-labels";
 import { getSpringDispatchPlanDetail } from "../_spring";
 import {
+  directusFetch,
   getPlanFinancialContext,
   resolveDriverSupplier,
 } from "../_payables";
@@ -21,19 +24,20 @@ export async function GET(
 
   const springResponse = await getSpringDispatchPlanDetail(id);
   if (!springResponse.ok) return springResponse;
-  const springPayload = await springResponse.json().catch(() => ({})) as Record<string, unknown>;
+  const springPayload = await springResponse.json().catch((cause: unknown) => cause instanceof WerDependencyError && cause.upstreamStatus === 429 ? cause : ({})) as Record<string, unknown>;
 
   // Merge Logistics WER reservations with the budget lines supplied by Spring.
   let context: Awaited<ReturnType<typeof getPlanFinancialContext>>;
   try {
     context = await getPlanFinancialContext(id, true, springPayload.budgets);
   } catch (mergeError) {
+    if (mergeError instanceof WerDependencyError && mergeError.upstreamStatus === 429) return werFailureResponse(mergeError);
     console.error("[Logistics WER] Failed to merge payables context:", mergeError);
     return NextResponse.json({
       ...springPayload,
       werPayables: {
         budgetContextAvailable: false,
-        budgetContextError: mergeError instanceof Error ? mergeError.message : "Unable to verify expense budget context.",
+        budgetContextError: "The service is temporarily busy. Existing values could not be refreshed. Please try again later.",
         dispatchPlanValue: typeof springPayload.amount === "number" ? springPayload.amount : null,
         reservedAmount: null,
         remainingAmount: null,
@@ -50,13 +54,32 @@ export async function GET(
   }
 
   const eligibility = await resolveDriverSupplier(context.plan?.driverId ?? null)
-    .catch((eligibilityError: unknown) => ({
+    .catch(() => ({
       eligible: false,
       driverId: context.plan?.driverId ?? null,
       supplierId: null,
       supplierName: null,
-      reason: eligibilityError instanceof Error ? eligibilityError.message : "Supplier eligibility could not be resolved.",
+      reason: "Supplier eligibility could not be resolved.",
     }));
+  if (eligibility instanceof WerDependencyError) return werFailureResponse(eligibility);
+  // Balances can include accounts introduced by expenses, with no original allocation.
+  const coaIds = Array.from(new Set(context.budgetBalancesByCoa.map(balance => balance.coaId)))
+    .filter(coaId => Number.isInteger(coaId) && coaId > 0);
+  let accounts: CoaLabelRow[] = [];
+  if (coaIds.length > 0) {
+    try {
+      const response = await directusFetch<{ data?: CoaLabelRow[] }>(`/items/chart_of_accounts?${new URLSearchParams({
+        "filter[coa_id][_in]": coaIds.join(","),
+        fields: "coa_id,gl_code,account_title",
+        limit: "-1",
+      })}`);
+      accounts = response.data ?? [];
+    } catch (labelError) {
+      // A display lookup must not discard already verified financial balances.
+      console.warn("[Logistics WER] Account labels unavailable; retaining budget balances.", labelError);
+    }
+  }
+  const budgetBalancesByCoa = addBudgetCoaLabels(context.budgetBalancesByCoa, accounts);
   return NextResponse.json({
     ...springPayload,
     werPayables: {
@@ -68,7 +91,7 @@ export async function GET(
       unclassifiedBudgetAmount: context.unclassifiedBudgetAmount,
       unclassifiedReservedAmount: context.unclassifiedReservedAmount,
       overBudgetAmount: context.overBudgetAmount,
-      budgetBalancesByCoa: context.budgetBalancesByCoa,
+      budgetBalancesByCoa,
       isLiquidated: context.plan?.isLiquidated ?? false,
       supplierEligibility: eligibility,
       submissions: context.submissions,

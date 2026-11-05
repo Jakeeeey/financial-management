@@ -32,6 +32,7 @@ export function AgreementDraftDialog({ detail, onClose, onSaved, returnFocus }: 
   const dirty = baseline.current !== JSON.stringify(draft);
   const uncertain = retryPayload !== null;
   const errors = failure?.fields ?? {};
+  const highCommission = draft.terms.commissionRate !== null && draft.terms.commissionRate > 35 && draft.terms.commissionRate <= 60;
   const denied = failure?.status === 401 || failure?.status === 403;
   const conflict = detail !== null && failure?.status === 409;
   const close = () => { if (busy) return; if (dirty || uncertain) setDiscard(true); else onClose(); };
@@ -72,10 +73,16 @@ export function AgreementDraftDialog({ detail, onClose, onSaved, returnFocus }: 
     if (!payload.consigneeId || consignee?.status !== "ACTIVE") fields.consigneeId = "Choose an existing Active consignee.";
     if (!payload.startDate) fields.startDate = "Enter the agreement start date.";
     if (!payload.endDate) fields.endDate = "Enter the agreement end date.";
+    if (payload.startDate && payload.endDate && payload.endDate <= payload.startDate) fields.endDate = "The end date must be after the start date.";
     for (const [key, label] of agreementNumbers) {
       const value = payload.terms[key];
       if (value === null || !Number.isFinite(value)) fields[`terms.${key}`] = `Enter ${label.toLowerCase()}.`;
       else if (key === "paymentTermsDays" && !Number.isInteger(value)) fields[`terms.${key}`] = "Use whole payment-term days.";
+      else if (key === "paymentTermsDays" && (value < 0 || value > 120)) fields[`terms.${key}`] = "Payment terms must be between 0 and 120 days.";
+      else if (key === "commissionRate" && (value <= 0 || value > 60)) fields[`terms.${key}`] = "Commission must be greater than 0% and at most 60%.";
+      else if (key === "exposureLimit" && value <= 0) fields[`terms.${key}`] = "Exposure limit must be greater than zero.";
+      else if (key === "ewtRate" && (value < 0 || value > 25)) fields[`terms.${key}`] = "EWT rate must be between 0% and 25%.";
+      else if (key === "priceTolerance" && (value < 0 || value > 50)) fields[`terms.${key}`] = "Price tolerance must be between 0% and 50%.";
     }
     for (const [key, label] of agreementChoices) if (!payload.terms[key]) fields[`terms.${key}`] = `Choose ${label.toLowerCase()}.`;
     if (Object.keys(fields).length) {
@@ -88,6 +95,7 @@ export function AgreementDraftDialog({ detail, onClose, onSaved, returnFocus }: 
       const saved = await saveAgreement(detail?.summary.id ?? null, payload);
       setRetryPayload(null);
       toast.success(`${saved.summary.reference} saved as Draft.`);
+      for (const warning of saved.warnings ?? []) toast.warning(warning);
       openingPreview.current = true;
       onSaved(saved);
     } catch (error) {
@@ -140,6 +148,7 @@ export function AgreementDraftDialog({ detail, onClose, onSaved, returnFocus }: 
       </form>
       {uncertain && <p role="status" className="text-sm text-muted-foreground">The save may already have persisted. Retry sends the identical request; entered values are retained.</p>}
       {reload && <div role="alert" className="space-y-2 rounded border p-3 text-sm"><p>Reopen the saved agreement and discard these entered values?</p><div className="flex gap-2"><Button variant="outline" disabled={busy} onClick={() => setReload(false)}>Keep editing</Button><Button disabled={busy} onClick={() => void reopen()}>Reopen saved record</Button></div></div>}
+      {highCommission && <p role="status" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">Commission exceeds 35%. This is allowed, but confirm the commercial term before approval.</p>}
       {discard && <div role="alert" className="space-y-2 rounded border p-3 text-sm"><p>Discard unsaved changes? An unconfirmed save may already have persisted.</p><div className="flex gap-2"><Button variant="outline" onClick={() => setDiscard(false)}>Keep editing</Button><Button variant="destructive" onClick={onClose}>Discard and close</Button></div></div>}
       <DialogFooter className="shrink-0 border-t pt-4"><Button variant="outline" disabled={busy} onClick={close}>Cancel</Button><Button type="submit" form="agreement-draft-form" disabled={busy || denied || conflict || pendingChoice !== null || (!!detail && !dirty && !uncertain)}>{busy ? "Saving…" : uncertain ? "Retry save" : "Save draft"}</Button></DialogFooter>
     </DialogContent>

@@ -1,3 +1,4 @@
+import { journalEntryType } from "../utils/entry-type";
 import { 
   JournalEntry, 
   JournalEntryGroup, 
@@ -258,6 +259,7 @@ export function filterJournalEntries(entries: JournalEntry[], filters: FilterSta
     if (filters.division !== "All Divisions" && e.division !== filters.division && e.divisionName !== filters.division) return false;
     if (filters.department !== "All Departments" && e.department !== filters.department && e.departmentName !== filters.department) return false;
     if (filters.status !== "All Statuses" && e.status !== filters.status) return false;
+    if (filters.entryType && filters.entryType !== "All Entry Types" && journalEntryType(e.sourceModule) !== filters.entryType) return false;
     if (filters.sourceModule !== "All Source Modules" && e.sourceModule !== filters.sourceModule) return false;
     
     // Strict Date Filtering

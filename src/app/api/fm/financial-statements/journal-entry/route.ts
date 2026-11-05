@@ -1,3 +1,4 @@
+import { normalizeJournalQuery } from "./_query";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getGroupedJournalEntries, getJournalEntries } from "@/modules/financial-management/financial-statements/journal-entry/services/journal-entry.service";
@@ -5,6 +6,9 @@ import {
   filterJournalEntries, 
 } from "@/modules/financial-management/financial-statements/journal-entry/services/journal-entry.helpers";
 import { FilterState, PresetRange } from "@/modules/financial-management/financial-statements/journal-entry/types";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 /**
  * Proxy and Processing API route for the general ledger entries.
@@ -21,6 +25,7 @@ export async function GET(request: NextRequest) {
 
   // Extract all filter parameters from query string
   const filters: FilterState = {
+    entryType: searchParams.get("entryType") || "All Entry Types",
     search: searchParams.get("search") || "",
     startDate: searchParams.get("startDate") || "2025-01-01",
     endDate: searchParams.get("endDate") || "2025-12-30",
@@ -47,12 +52,7 @@ export async function GET(request: NextRequest) {
 
   try {
     if (mode !== "flat") {
-      const groupedParams = new URLSearchParams(searchParams);
-      if ((!groupedParams.has("status") || groupedParams.get("status") === "All Statuses") && groupedParams.get("showPostedOnly") === "true") {
-        groupedParams.set("status", "Posted");
-      }
-      groupedParams.delete("showPostedOnly");
-      groupedParams.delete("entryType");
+      const groupedParams = normalizeJournalQuery(searchParams);
       const groupedResponse = await getGroupedJournalEntries(groupedParams, token);
       return NextResponse.json(groupedResponse);
     }

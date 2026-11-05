@@ -16,7 +16,9 @@ import {
     Filter,
     Layers,
     Database,
-    Pencil
+    Pencil,
+    FileSpreadsheet,
+    Loader2
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -32,6 +34,7 @@ import { CustomerMemoEditDialog } from "./CustomerMemoEditDialog";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { MultiSearchableSelect } from "./MultiSearchableSelect";
+import { useMemoExcelExport } from "../hooks/useMemoExcelExport";
 import {
     Pagination,
     PaginationContent,
@@ -70,6 +73,7 @@ export default function CustomersMemoListModule() {
     const [selectedMemoId, setSelectedMemoId] = useState<number | null>(null);
     const [detailOpen, setDetailOpen] = useState(false);
     const [editingMemo, setEditingMemo] = useState<MemoApprovalRow | null>(null);
+    const { exporting, exportSummary, exportMemo } = useMemoExcelExport();
 
     const loadData = async () => {
         setLoading(true);
@@ -159,6 +163,20 @@ export default function CustomersMemoListModule() {
 
     const uniqueStatuses = Array.from(new Set(memos.map(m => m.status)));
 
+    const handleSummaryExport = () => {
+        const filters = [
+            `Type: ${activeTab === "all" ? "All Memos" : activeTab === "credit" ? "Credit" : "Debit"}`,
+            normalizedSearchQuery ? `Search: ${searchQuery.trim()}` : "",
+            filterSupplier.length ? `Suppliers: ${suppliers.filter(row => filterSupplier.includes(String(row.id))).map(row => row.supplier_name).join(", ")}` : "",
+            filterCustomer.length ? `Customers: ${customers.filter(row => filterCustomer.includes(String(row.id))).map(row => row.customer_name).join(", ")}` : "",
+            filterSalesman.length ? `Salesmen: ${salesmen.filter(row => filterSalesman.includes(String(row.id))).map(row => `${row.salesman_code} · ${row.salesman_name}`).join(", ")}` : "",
+            filterStatus.length ? `Statuses: ${filterStatus.join(", ")}` : "",
+            filterCOA.length ? `COA: ${coas.filter(row => filterCOA.includes(String(row.coa_id))).map(row => `${row.gl_code} · ${row.account_title}`).join(", ")}` : "",
+            filterDateFrom ? `Created from: ${filterDateFrom}` : "", filterDateTo ? `Created through: ${filterDateTo}` : "",
+        ].filter(Boolean);
+        void exportSummary(filteredMemos.map(memo => memo.id), filters);
+    };
+
     if (loading && memos.length === 0) {
         return (
             <div className="p-8 space-y-6 min-h-screen bg-slate-50">
@@ -198,7 +216,11 @@ export default function CustomersMemoListModule() {
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3 bg-white p-2 rounded-[2rem] shadow-xl shadow-slate-200/40 border border-slate-100 ring-4 ring-slate-50">
+                <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-[2rem] shadow-xl shadow-slate-200/40 border border-slate-100 ring-4 ring-slate-50">
+                    <Button variant="outline" onClick={handleSummaryExport} disabled={loading || !filteredMemos.length || exporting !== null} className="h-14 rounded-[1.5rem]">
+                        {exporting === "summary" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />}
+                        {exporting === "summary" ? "Exporting summary..." : "Export Excel Summary"}
+                    </Button>
                     <div className="relative group">
                         <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-300 group-focus-within:text-blue-600 transition-colors" />
                         <Input
@@ -601,6 +623,9 @@ export default function CustomersMemoListModule() {
                 open={detailOpen}
                 onOpenChange={setDetailOpen}
                 readOnly={true}
+                onExportExcel={id => void exportMemo(id)}
+                exportingExcel={exporting === selectedMemoId && exporting !== null}
+                excelExportDisabled={exporting !== null}
             />
             <CustomerMemoEditDialog
                 memo={editingMemo}

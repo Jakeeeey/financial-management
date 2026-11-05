@@ -111,12 +111,10 @@ export function AjeAuditTrail({ entryId, revision }: { entryId?: number | null; 
   const [users, setUsers] = React.useState<Array<{ id: number; name: string }>>([]);
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(true);
-  const [lastUpdatedAt, setLastUpdatedAt] = React.useState<number | null>(null);
   const [loadedQueryKey, setLoadedQueryKey] = React.useState("");
   const [dataRetryRevision, setDataRetryRevision] = React.useState(0);
   const [usersError, setUsersError] = React.useState("");
   const [usersLoading, setUsersLoading] = React.useState(true);
-  const [usersUpdatedAt, setUsersUpdatedAt] = React.useState<number | null>(null);
   const [usersRetryRevision, setUsersRetryRevision] = React.useState(0);
   const [attachmentRetryRevision, setAttachmentRetryRevision] = React.useState(0);
   const [selectedEvent, setSelectedEvent] = React.useState<AjeAuditEvent | null>(null);
@@ -145,7 +143,7 @@ export function AjeAuditTrail({ entryId, revision }: { entryId?: number | null; 
     let active = true;
     setUsersLoading(true);
     api.auditUsers().then(rows => {
-      if (active) { setUsers(rows); setUsersError(""); setUsersUpdatedAt(Date.now()); }
+      if (active) { setUsers(rows); setUsersError(""); }
     }).catch(e => { if (active) setUsersError(e instanceof Error ? e.message : "Unable to load audit user options"); })
       .finally(() => { if (active) setUsersLoading(false); });
     return () => { active = false; };
@@ -158,7 +156,7 @@ export function AjeAuditTrail({ entryId, revision }: { entryId?: number | null; 
       const params = new URLSearchParams({ page:String(page), size:String(pageSize) });
       Object.entries(filters).forEach(([key, value]) => { if (value) params.set(key, value); });
       if (entryId) params.set("entryId", String(entryId));
-      api.audit(params).then(result => { if (active) { setData(result); setLoadedQueryKey(auditQueryKey); setLastUpdatedAt(Date.now()); setError(""); } })
+      api.audit(params).then(result => { if (active) { setData(result); setLoadedQueryKey(auditQueryKey); setError(""); } })
         .catch(e => { if (active) setError(e instanceof Error ? e.message : "Unable to load the audit trail"); })
         .finally(() => { if (active) setLoading(false); });
     }, 250);
@@ -281,10 +279,6 @@ export function AjeAuditTrail({ entryId, revision }: { entryId?: number | null; 
   }
 
   return <div className="space-y-4">
-    <div className="flex flex-wrap gap-x-4 gap-y-1">
-      <AjeDataFreshness label="Audit events" updatedAt={lastUpdatedAt} loading={loading} stale={Boolean(error) || auditScopeStale} />
-      <AjeDataFreshness label="Audit user options" updatedAt={usersUpdatedAt} loading={usersLoading} stale={Boolean(usersError)} />
-    </div>
     {usersError && <AjeRetryAlert message={`Audit user options: ${usersError}`} retrying={usersLoading} retryLabel="Retry user options" onRetry={() => setUsersRetryRevision(value => value + 1)} />}
     <div className="space-y-3 rounded-md border bg-background p-3" aria-label="Audit filters">
       <div className="flex flex-wrap items-end gap-3">
@@ -312,7 +306,7 @@ export function AjeAuditTrail({ entryId, revision }: { entryId?: number | null; 
             <div className="space-y-1"><Label htmlFor="audit-status">Current journal status</Label><select id="audit-status" className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={filters.status} onChange={e => change("status",e.target.value)}><option value="">All current statuses</option>{statuses.map(status => <option key={status}>{status}</option>)}</select></div>
             <div className="space-y-1"><Label htmlFor="audit-from">From date</Label><Input id="audit-from" type="date" value={filters.fromDate} onChange={e => change("fromDate",e.target.value)} /></div>
             <div className="space-y-1"><Label htmlFor="audit-to">To date</Label><Input id="audit-to" type="date" value={filters.toDate} onChange={e => change("toDate",e.target.value)} /></div>
-            <div className="space-y-1"><Label htmlFor="audit-page-size">Rows per page</Label><select id="audit-page-size" className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={pageSize} onChange={e => updateAuditQuery({ size:e.target.value, page:"0" })}><option value={20}>20 events</option><option value={50}>50 events</option><option value={100}>100 events</option></select></div>
+
           </div>
         </details>
         <Button type="button" variant="outline" size="sm" disabled={!canClear} onClick={clearFilters}>Clear filters</Button>
@@ -339,7 +333,7 @@ export function AjeAuditTrail({ entryId, revision }: { entryId?: number | null; 
     {!loading && !error && !data?.content.length && <div className="rounded-md border p-6 text-center text-muted-foreground"><p>No audit events match these filters.</p>{canClear && <Button type="button" variant="link" size="sm" onClick={clearFilters}>Clear filters and show all events</Button>}</div>}
 
     {groups.length > 0 && <section aria-labelledby="audit-activity-heading" aria-busy={loading} className={loading || auditScopeStale ? "pointer-events-none space-y-2 opacity-60 transition-opacity" : "space-y-2"}>
-      <div className="flex flex-wrap items-center justify-between gap-2"><div><h2 id="audit-activity-heading" className="text-base font-semibold">Activity</h2><AjeDataFreshness label="Document metadata" updatedAt={attachmentLookup.updatedAt} loading={attachmentLookup.loading} stale={Boolean(attachmentLookup.error)} /></div><span className="text-xs text-muted-foreground">{data?.totalElements ?? 0} events</span></div>
+      <div className="flex flex-wrap items-center justify-between gap-2"><h2 id="audit-activity-heading" className="text-base font-semibold">Activity</h2><span className="text-xs text-muted-foreground">{data?.totalElements ?? 0} events</span></div>
       {attachmentLookup.error && <AjeRetryAlert message={`Supporting-document metadata: ${attachmentLookup.error}`} retrying={attachmentLookup.loading} retryLabel="Retry documents" onRetry={retryDocuments} />}
       <div className="space-y-3">
           {groups.map(([date, events, count]) => <section key={date} aria-label={`Audit events ${date}`} className="space-y-2">
@@ -442,7 +436,7 @@ export function AjeAuditTrail({ entryId, revision }: { entryId?: number | null; 
       </div>
     </section>}
 
-    <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Showing {firstResult}–{lastResult} of {data?.totalElements ?? 0} events · Page {page + 1} of {totalPages}</span><div className="flex gap-2"><Button variant="outline" size="icon-sm" aria-label="Go to first page" disabled={page === 0 || loading} onClick={() => updateAuditQuery({ page:"0" })}><ChevronsLeft className="h-4 w-4" /></Button><Button variant="outline" size="sm" disabled={page === 0 || loading} onClick={() => updateAuditQuery({ page:String(page - 1) })}>Previous</Button><Button variant="outline" size="sm" disabled={loading || !data || page + 1 >= data.totalPages} onClick={() => updateAuditQuery({ page:String(page + 1) })}>Next</Button><Button variant="outline" size="icon-sm" aria-label="Go to last page" disabled={loading || !data || page + 1 >= data.totalPages} onClick={() => updateAuditQuery({ page:String(totalPages - 1) })}><ChevronsRight className="h-4 w-4" /></Button></div></div>
+    <div className="flex flex-wrap items-center justify-between gap-2 text-sm">            <div className="space-y-1"><Label htmlFor="audit-page-size">Rows per page</Label><select id="audit-page-size" className="h-9 w-full rounded-md border bg-background px-2 text-sm" disabled={loading} value={pageSize} onChange={e => updateAuditQuery({ size:e.target.value, page:"0" })}><option value={20}>20 events</option><option value={50}>50 events</option><option value={100}>100 events</option></select></div><span>Showing {firstResult}–{lastResult} of {data?.totalElements ?? 0} events · Page {page + 1} of {totalPages}</span><div className="flex gap-2"><Button variant="outline" size="icon-sm" aria-label="Go to first page" disabled={page === 0 || loading} onClick={() => updateAuditQuery({ page:"0" })}><ChevronsLeft className="h-4 w-4" /></Button><Button variant="outline" size="sm" disabled={page === 0 || loading} onClick={() => updateAuditQuery({ page:String(page - 1) })}>Previous</Button><Button variant="outline" size="sm" disabled={loading || !data || page + 1 >= data.totalPages} onClick={() => updateAuditQuery({ page:String(page + 1) })}>Next</Button><Button variant="outline" size="icon-sm" aria-label="Go to last page" disabled={loading || !data || page + 1 >= data.totalPages} onClick={() => updateAuditQuery({ page:String(totalPages - 1) })}><ChevronsRight className="h-4 w-4" /></Button></div></div>
 
     <Dialog open={selectedEvent !== null} onOpenChange={closeEntry}>
       <DialogContent className="grid-cols-1 min-w-0 max-h-[90vh] overflow-x-hidden overflow-y-auto sm:max-w-5xl">

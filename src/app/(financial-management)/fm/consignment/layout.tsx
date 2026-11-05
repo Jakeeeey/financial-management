@@ -48,7 +48,7 @@ export default async function ConsignmentLayout({ children }: { children: ReactN
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
       <ConsignmentAppHeader user={user} />
-      <div className="min-h-0 min-w-0 flex-1 overflow-hidden bg-background">{children}</div>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">{children}</div>
     </div>
   );
 }

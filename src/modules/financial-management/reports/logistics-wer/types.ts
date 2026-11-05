@@ -25,6 +25,8 @@ export interface LogisticsWerBudgetLine {
 
 export interface LogisticsWerCoaBudgetBalance {
   coaId: number;
+  coaCode?: string | null;
+  coaTitle?: string | null;
   allocatedAmount: number;
   reservedAmount: number;
   remainingAmount: number;
@@ -61,6 +63,7 @@ export interface LogisticsWerStop {
 }
 
 export interface LogisticsWerReportPage {
+  budgetSummaryError?: string | null;
   content: LogisticsWerDispatchPlanSummary[];
   number: number;
   size: number;
@@ -94,6 +97,9 @@ export interface LogisticsWerDispatchPlanDetail {
 }
 
 export interface LogisticsWerSupplierEligibility {
+  departmentId?: number | null;
+  departmentName?: string | null;
+  departmentError?: string | null;
   eligible: boolean;
   driverId: number | null;
   supplierId: number | null;
@@ -156,6 +162,8 @@ export interface LogisticsWerPayableSubmission {
 }
 
 export interface LogisticsWerPayableSubmissionSummary {
+  submittedAt?: string | null;
+  decidedAt?: string | null;
   id: number;
   status: string | null;
   totalAmount: number;

@@ -1,5 +1,6 @@
 "use client";
 
+import { useJournalSourceRecord, JournalSourceFeedback } from "@/modules/financial-management/financial-statements/journal-entry/components/JournalSourceRecord";
 import { useState } from "react";
 
 import { SalesInvoiceMonitoringFiltersBar } from "./components/SalesInvoiceMonitoringFilters";
@@ -9,6 +10,7 @@ import { useSalesInvoiceMonitoring } from "./hooks/useSalesInvoiceMonitoring";
 import type { SalesInvoiceMonitoringRow } from "./types";
 
 export default function SalesInvoiceMonitoringModule() {
+	const source = useJournalSourceRecord<SalesInvoiceMonitoringRow>("Sales Invoice");
 	const [viewOpen, setViewOpen] = useState(false);
 	const [selectedRow, setSelectedRow] = useState<SalesInvoiceMonitoringRow | null>(null);
 
@@ -67,6 +69,8 @@ export default function SalesInvoiceMonitoringModule() {
 				onPageChange={setPage}
 			/>
 
+			<JournalSourceFeedback source={source} />
+			{source.record && <SalesInvoiceMonitoringViewDialog open onOpenChange={open => { if (!open) source.close(); }} row={source.record} />}
 			<SalesInvoiceMonitoringViewDialog
 				open={viewOpen}
 				onOpenChange={(open) => {

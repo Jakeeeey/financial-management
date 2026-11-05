@@ -1,4 +1,4 @@
-import type { AgreementConsigneePage, AgreementDetail, AgreementDraft, AgreementPage, AgreementQuery } from "../agreement-types";
+import type { AgreementClosureReadiness, AgreementConsigneePage, AgreementDetail, AgreementDraft, AgreementPage, AgreementQuery } from "../agreement-types";
 
 export class AgreementApiError extends Error {
   constructor(message: string, public status: number, public fields: Record<string, string> = {}) { super(message); }
@@ -35,4 +35,28 @@ export async function saveAgreement(id: string | null, draft: AgreementDraft) {
     throw new AgreementApiError("The saved draft response is incomplete. Check the register before creating another draft.", 502);
   }
   return detail;
+}
+
+function commandBody(version: number, reason?: string) {
+  return JSON.stringify({ version, ...(reason !== undefined ? { reason } : {}) });
+}
+
+export async function submitAgreement(id: string, version: number) {
+  return request<AgreementDetail>(`/${encodeURIComponent(id)}/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: commandBody(version) });
+}
+
+export async function approveAgreement(id: string, version: number) {
+  return request<AgreementDetail>(`/${encodeURIComponent(id)}/approve`, { method: "POST", headers: { "Content-Type": "application/json" }, body: commandBody(version) });
+}
+
+export async function rejectAgreement(id: string, version: number, reason: string) {
+  return request<AgreementDetail>(`/${encodeURIComponent(id)}/reject`, { method: "POST", headers: { "Content-Type": "application/json" }, body: commandBody(version, reason) });
+}
+
+export async function closeAgreement(id: string, version: number, reason: string) {
+  return request<AgreementDetail>(`/${encodeURIComponent(id)}/close`, { method: "POST", headers: { "Content-Type": "application/json" }, body: commandBody(version, reason) });
+}
+
+export function getAgreementClosureReadiness(id: string, signal?: AbortSignal) {
+  return request<AgreementClosureReadiness>(`/${encodeURIComponent(id)}/closure-readiness`, { signal });
 }

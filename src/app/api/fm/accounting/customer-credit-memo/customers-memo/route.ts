@@ -2,6 +2,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { canEditPendingCreditMemo, requireCustomerMemoModuleAccess } from "./_edit";
+import { MEMO_HEADER_FIELDS } from "./_read";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -343,14 +344,7 @@ export async function GET(req: NextRequest) {
             case "list": {
                 const status = searchParams.get("status") || "FOR APPROVAL";
                 // Fetch memos with enriched joined data
-                const fields = [
-                    "id", "memo_number", "amount", "applied_amount", "reason", "status", "created_at", "type",
-                    "supplier_id.id", "supplier_id.supplier_name",
-                    "customer_id.id", "customer_id.customer_name", "customer_id.store_name", "customer_id.brgy", "customer_id.city", "customer_id.province",
-                    "salesman_id.id", "salesman_id.salesman_code", "salesman_id.salesman_name",
-                    "chart_of_account.coa_id", "chart_of_account.gl_code", "chart_of_account.account_title",
-                    "encoder_id", "encoder_id.user_fname", "encoder_id.user_lname"
-                ].join(",");
+                const fields = MEMO_HEADER_FIELDS.join(",");
                 
                 const filterStr = status === "ALL" ? "" : `&filter[status][_eq]=${status}`;
                 
@@ -432,14 +426,7 @@ export async function GET(req: NextRequest) {
                 if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
 
                 // Fetch header with joined names
-                const headerFields = [
-                    "id", "memo_number", "amount", "applied_amount", "reason", "status", "created_at", "type",
-                    "supplier_id.id", "supplier_id.supplier_name",
-                    "customer_id.id", "customer_id.customer_name", "customer_id.store_name", "customer_id.brgy", "customer_id.city", "customer_id.province",
-                    "salesman_id.id", "salesman_id.salesman_code", "salesman_id.salesman_name",
-                    "chart_of_account.coa_id", "chart_of_account.gl_code", "chart_of_account.account_title",
-                    "encoder_id", "encoder_id.user_fname", "encoder_id.user_lname"
-                ].join(",");
+                const headerFields = MEMO_HEADER_FIELDS.join(",");
 
                 const headerRes = await directusFetch<DirectusItemResponse<CustomersMemoRow>>(
                     `${DIRECTUS_URL}/items/customers_memo/${id}?fields=${headerFields}`

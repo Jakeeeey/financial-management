@@ -1,5 +1,7 @@
 "use client";
 
+import { WerCooldownBoundary, useWerScope } from "../logistics-wer/components/WerCooldownBoundary";
+
 import { useState } from "react";
 import { AlertCircle, Loader2, Search } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -41,7 +43,8 @@ function statusBadgeClassName(status: string | null): string {
   }
 }
 
-export default function LogisticsWerApprovalModule() {
+export default function LogisticsWerApprovalModule({ cooldownScope = "session" }: { cooldownScope?: string }) {
+  useWerScope(cooldownScope);
   const queue = useLogisticsWerApproval();
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [decisionNotice, setDecisionNotice] = useState<string | null>(null);
@@ -49,11 +52,11 @@ export default function LogisticsWerApprovalModule() {
   const [bulkNotice, setBulkNotice] = useState<string | null>(null);
   const [bulkError, setBulkError] = useState<string | null>(null);
 
-  const handleDecide = async (decision: ApprovalDecision, remarks: string) => {
+  const handleDecide = async (decision: ApprovalDecision, remarks: string, acknowledgeVariance = false) => {
     setDecisionError(null);
     setDecisionNotice(null);
     try {
-      const result = await queue.decide(decision, remarks.trim() || undefined);
+      const result = await queue.decide(decision, remarks.trim() || undefined, acknowledgeVariance);
       if (!result) return;
       if (decision === "approve") {
         if (result.idempotent) {
@@ -100,6 +103,7 @@ export default function LogisticsWerApprovalModule() {
   };
 
   return (
+    <WerCooldownBoundary>
     <div className="space-y-4">
       <div className="flex min-w-0 flex-col gap-2">
         <div className="min-w-0">
@@ -271,7 +275,9 @@ export default function LogisticsWerApprovalModule() {
       </div>
 
       <LogisticsWerApprovalReviewDialog
+        key={queue.review?.submission.id ?? "closed"}
         review={queue.review}
+        divisions={queue.divisions}
         loading={queue.reviewLoading}
         error={queue.reviewError}
         deciding={queue.deciding}
@@ -284,8 +290,9 @@ export default function LogisticsWerApprovalModule() {
             queue.closeReview();
           }
         }}
-        onDecide={(decision, remarks) => void handleDecide(decision, remarks)}
+        onDecide={(decision, remarks, acknowledged) => void handleDecide(decision, remarks, acknowledged)}
       />
     </div>
+    </WerCooldownBoundary>
   );
 }

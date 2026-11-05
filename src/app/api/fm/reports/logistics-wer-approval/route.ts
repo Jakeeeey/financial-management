@@ -1,3 +1,5 @@
+import { werFailureResponse } from "../logistics-wer/_errors";
+import { serializeManilaTimestamp } from "../logistics-wer/_timestamps";
 import { NextRequest, NextResponse } from "next/server";
 import { hasDisbursementApprovalAccess } from "@/app/api/fm/treasury/disbursements/_approval-access";
 import {
@@ -69,9 +71,9 @@ function mapSubmission(row: QueueDraftRow): DraftSubmission {
     status: asString(row.status) || null,
     totalAmount: asNumber(row.total_amount),
     submittedBy: asNullableNumber(row.submitted_by),
-    submittedAt: asString(row.submitted_at) || null,
+    submittedAt: serializeManilaTimestamp(row.submitted_at),
     decidedBy: asNullableNumber(row.decided_by),
-    decidedAt: asString(row.decided_at) || null,
+    decidedAt: serializeManilaTimestamp(row.decided_at),
     decisionRemarks: asString(row.decision_remarks) || null,
     disbursementId: asNullableNumber(row.disbursement_id),
     idempotencyKey: asString(row.idempotency_key) || null,
@@ -285,6 +287,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (queueError) {
     console.error("[Logistics WER] Approval queue failed:", queueError);
-    return error("Unable to load the approval queue.", 502);
+    return werFailureResponse(queueError);
   }
 }

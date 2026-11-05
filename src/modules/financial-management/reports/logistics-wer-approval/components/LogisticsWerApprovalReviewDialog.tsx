@@ -1,10 +1,17 @@
 "use client";
 
+import { WerCooldownBoundary } from "../../logistics-wer/components/WerCooldownBoundary";
+
+import { ExpenseVarianceSummary } from "../../logistics-wer/components/ExpenseVarianceSummary";
+
+import { formatWerTimestamp } from "../../logistics-wer/utils/date";
+
 import { useState } from "react";
 import { AlertCircle, CheckCircle2, Expand, ExternalLink, Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -22,11 +29,20 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import type { PayableDivisionOption } from "../../logistics-wer/services/logisticsWerApi";
 import type { SubmissionReview } from "../services/logisticsWerApprovalApi";
 import { displayWerStatus } from "../../logistics-wer/utils/status";
 
 function formatMoney(value: number | null | undefined): string {
   return `₱${Number(value ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function formatLineDate(value: string | null): string {
+  if (!value) return "\u2014";
+  const date = new Date(`${value.slice(0, 10)}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) ? "\u2014" : new Intl.DateTimeFormat("en-PH", {
+    timeZone: "UTC", month: "short", day: "numeric", year: "numeric",
+  }).format(date);
 }
 
 function receiptHref(fileId: string): string {
@@ -67,17 +83,19 @@ function ReceiptThumbnail({ fileId, receiptId, onPreview }: { fileId: string; re
 
 interface LogisticsWerApprovalReviewDialogProps {
   review: SubmissionReview | null;
+  divisions: PayableDivisionOption[];
   loading: boolean;
   error: string | null;
   deciding: boolean;
   decisionError: string | null;
   decisionNotice: string | null;
   onOpenChange: (open: boolean) => void;
-  onDecide: (decision: "approve" | "return" | "reject", remarks: string) => void;
+  onDecide: (decision: "approve" | "return" | "reject", remarks: string, acknowledgeVariance?: boolean) => void;
 }
 
 export function LogisticsWerApprovalReviewDialog({
   review,
+  divisions,
   loading,
   error,
   deciding,
@@ -87,6 +105,7 @@ export function LogisticsWerApprovalReviewDialog({
   onDecide,
 }: LogisticsWerApprovalReviewDialogProps) {
   const [remarks, setRemarks] = useState("");
+  const [acknowledgedSubmission, setAcknowledgedSubmission] = useState<number | null>(null);
   const [previewFileId, setPreviewFileId] = useState<string | null>(null);
   const open = loading || error !== null || review !== null;
   const submission = review?.submission ?? null;
@@ -96,6 +115,7 @@ export function LogisticsWerApprovalReviewDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] w-[95vw] overflow-y-auto sm:max-w-4xl">
+        <WerCooldownBoundary>
         <DialogHeader>
           <DialogTitle>
             {submission ? `Review submission #${submission.id}` : "Review submission"}
@@ -121,7 +141,8 @@ export function LogisticsWerApprovalReviewDialog({
         )}
 
         {review && submission && (
-          <div className="space-y-4">
+          <div className="min-w-0 space-y-4">
+            {review.variance && <ExpenseVarianceSummary variance={review.variance} accounts={[...submission.lines, ...review.budgetByCoa]} />}
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {review.budgetByCoa.length > 0 ? review.budgetByCoa.map((budget) => {
                 const categoryLabel = [budget.coaCode, budget.coaTitle]
@@ -153,24 +174,26 @@ export function LogisticsWerApprovalReviewDialog({
               </div>
             </div>
 
-            <div className="rounded-lg border">
+            <div className="min-w-0 rounded-lg border">
               <Table style={{ width: "100%", tableLayout: "fixed" }}>
                 <colgroup>
                   <col style={{ width: "6%" }} />
-                  <col style={{ width: "12%" }} />
-                  <col style={{ width: "21%" }} />
                   <col style={{ width: "13%" }} />
-                  <col style={{ width: "36%" }} />
+                  <col style={{ width: "20%" }} />
+                  <col style={{ width: "14%" }} />
+                  <col style={{ width: "13%" }} />
+                  <col style={{ width: "22%" }} />
                   <col style={{ width: "12%" }} />
                 </colgroup>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Line</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead>COA</TableHead>
-                    <TableHead>Reference</TableHead>
-                    <TableHead>Remarks</TableHead>
-                    <TableHead>Receipts</TableHead>
+                    <TableHead className="whitespace-normal px-1 sm:px-2">Line</TableHead>
+                    <TableHead className="whitespace-normal px-1 sm:px-2">Date</TableHead>
+                    <TableHead className="whitespace-normal px-1 sm:px-2">COA Account</TableHead>
+                    <TableHead className="whitespace-normal px-1 sm:px-2">Division</TableHead>
+                    <TableHead className="whitespace-normal px-1 text-right sm:px-2">Amount</TableHead>
+                    <TableHead className="whitespace-normal px-1 sm:px-2">Remarks</TableHead>
+                    <TableHead className="whitespace-normal px-1 sm:px-2">Receipts</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -181,8 +204,8 @@ export function LogisticsWerApprovalReviewDialog({
                       .join(" · ");
                     return (
                       <TableRow key={line.id}>
-                        <TableCell>{line.lineNo ?? index + 1}</TableCell>
-                        <TableCell className="text-right font-medium">{formatMoney(line.amount)}</TableCell>
+                        <TableCell className="whitespace-normal">{line.lineNo ?? index + 1}</TableCell>
+                        <TableCell className="whitespace-normal">{formatLineDate(line.date)}</TableCell>
                         <TableCell
                           className="whitespace-normal text-xs"
                           style={{ overflowWrap: "anywhere", wordBreak: "break-all" }}
@@ -195,15 +218,21 @@ export function LogisticsWerApprovalReviewDialog({
                           className="whitespace-normal"
                           style={{ overflowWrap: "anywhere", wordBreak: "break-all" }}
                         >
-                          {line.referenceNo || "—"}
+                          {line.divisionId ? divisions.find(division => division.divisionId === line.divisionId)?.divisionName || `Division #${line.divisionId}` : "\u2014"}
+                        </TableCell>
+                        <TableCell
+                          className="whitespace-normal text-right font-medium"
+                          style={{ overflowWrap: "anywhere" }}
+                        >
+                          {formatMoney(line.amount)}
                         </TableCell>
                         <TableCell
                           className="align-top"
-                          style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-all" }}
+                          style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
                         >
                           {line.remarks || "—"}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="whitespace-normal">
                           {line.receipts.length === 0 ? (
                             <span className="text-muted-foreground">—</span>
                           ) : (
@@ -240,9 +269,17 @@ export function LogisticsWerApprovalReviewDialog({
               </Alert>
             )}
 
+            {submission.decisionRemarks && <div className="rounded-lg border p-3 text-sm">
+              <h4 className="font-semibold">Recorded decision</h4>
+              <p className="whitespace-pre-wrap">{submission.decisionRemarks}</p>
+            </div>}
             {decidable ? (
               <div className="space-y-2 rounded-xl border p-4">
-                <Label htmlFor="wer-decision-remarks">Decision remarks (required to return or reject)</Label>
+                <Label htmlFor="wer-decision-remarks">Decision remarks (required for variance approval, return or rejection)</Label>
+                {review.variance?.requiresAcknowledgment && <label className="flex items-center gap-2 text-sm">
+                  <Checkbox checked={acknowledgedSubmission === submission.id} onCheckedChange={(checked) => setAcknowledgedSubmission(checked === true ? submission.id : null)} />
+                  I reviewed and acknowledge this budget variance.
+                </label>}
                 <Textarea
                   id="wer-decision-remarks"
                   value={remarks}
@@ -271,7 +308,7 @@ export function LogisticsWerApprovalReviewDialog({
                   <Button type="button" variant="destructive" disabled={deciding} onClick={() => onDecide("reject", remarks)}>
                     {deciding ? "Saving…" : "Reject"}
                   </Button>
-                  <Button type="button" disabled={deciding} onClick={() => onDecide("approve", remarks)}>
+                  <Button type="button" disabled={deciding || Boolean(review.variance?.requiresAcknowledgment && (acknowledgedSubmission !== submission.id || !remarks.trim()))} onClick={() => onDecide("approve", remarks, acknowledgedSubmission === submission.id)}>
                     {deciding ? "Approving…" : "Approve"}
                   </Button>
                 </div>
@@ -279,11 +316,14 @@ export function LogisticsWerApprovalReviewDialog({
             ) : (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Badge variant="outline">{displayWerStatus(submission.status)}</Badge>
+                {submission.submittedAt && <span>Submitted: {formatWerTimestamp(submission.submittedAt)}</span>}
+                {submission.decidedAt && <span>Decided: {formatWerTimestamp(submission.decidedAt)}</span>}
                 <span>This submission is no longer awaiting a decision.</span>
               </div>
             )}
           </div>
         )}
+      </WerCooldownBoundary>
       </DialogContent>
 
       <Dialog open={previewFileId !== null} onOpenChange={(nextOpen) => { if (!nextOpen) setPreviewFileId(null); }}>

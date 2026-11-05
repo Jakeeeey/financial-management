@@ -23,7 +23,8 @@ export const capSettlementAllocation = (
     sourceAvailable: number,
     invoiceAvailable: number
 ) => {
-    const requestedCents = Math.max(0, toCurrencyCents(Math.abs(requestedAmount)));
+    if (![requestedAmount, sourceAvailable, invoiceAvailable].every(Number.isFinite)) return 0;
+    const requestedCents = Math.max(0, toCurrencyCents(requestedAmount));
     const sourceCents = Math.max(0, toCurrencyCents(sourceAvailable));
     const invoiceCents = Math.max(0, toCurrencyCents(invoiceAvailable));
     return Math.min(requestedCents, sourceCents, invoiceCents) / 100;
