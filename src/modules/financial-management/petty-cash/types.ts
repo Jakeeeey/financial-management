@@ -3,7 +3,7 @@ import { z } from "zod";
 export const PETTY_CASH_ROOT = "/fm/petty-cash";
 export const PETTY_CASH_WORKSPACES = {
   onboarding: { title: "Onboarding", description: "Fund requests, registered payees, personnel and policy settings." },
-  "onboarding-approval": { title: "Onboarding Approval", description: "Independent review of fund establishment and changes." },
+  "onboarding-approval": { title: "Onboarding Approval", description: "Review, approve and fund, or reject new fund requests." },
   disbursement: { title: "Disbursement", description: "Custodian vouchers, receipt details and independent payment approvals." },
   replenishment: { title: "Replenishment", description: "Cash reconciliation and replenishment requests." },
   "replenishment-approval": { title: "Replenishment Approval", description: "Named-approver review and replenishment posting." },
