@@ -16,17 +16,17 @@ export function useFundRead<T>(path: string | null, delay = 0) {
   }, [path, key, delay]);
   return { data: result?.key === key ? result.data : undefined, error: result?.key === key ? result.error : undefined, loading: path !== null && result?.key !== key, refresh: useCallback(() => setRevision(value => value + 1), []) };
 }
-export function useFundDecision() {
+export function useFundDecision<T = FundDetails>() {
   const pending = useRef<{ key: string; path: string; payload: object } | null>(null), active = useRef(false);
   const [busy, setBusy] = useState(false), [uncertain, setUncertain] = useState(false), [error, setError] = useState<Error | null>(null);
   async function completed() {
     if (!pending.current) return null;
     try {
-      const status = await fundApi<{ state: string; result: { record?: FundDetails } }>(`requests/${pending.current.key}`);
+      const status = await fundApi<{ state: string; result: { record?: T } }>(`requests/${pending.current.key}`);
       return status.state === "COMPLETED" ? status.result.record ?? null : null;
     } catch { return null; }
   }
-  async function run(path: string, payload: object): Promise<FundDetails | null> {
+  async function run(path: string, payload: object): Promise<T | null> {
     if (active.current) return null;
     active.current = true; setBusy(true); setError(null);
     try {
@@ -36,7 +36,7 @@ export function useFundDecision() {
         if (previous) { pending.current = null; setUncertain(false); return previous; }
       }
       const request = pending.current;
-      const result = await fundApi<FundDetails>(request.path, { method: "POST", body: JSON.stringify({ ...request.payload, requestId: request.key }) });
+      const result = await fundApi<T>(request.path, { method: "POST", body: JSON.stringify({ ...request.payload, requestId: request.key }) });
       pending.current = null; setUncertain(false); return result;
     } catch (cause) {
       const previous = await completed();

@@ -4,7 +4,7 @@ export const PETTY_CASH_ROOT = "/fm/petty-cash";
 export const PETTY_CASH_WORKSPACES = {
   onboarding: { title: "Onboarding", description: "Fund requests, registered payees, personnel and policy settings." },
   "onboarding-approval": { title: "Onboarding Approval", description: "Review, approve and fund, or reject new fund requests." },
-  disbursement: { title: "Disbursement", description: "Custodian vouchers, receipt details and independent payment approvals." },
+  disbursement: { title: "Disbursement", description: "Custodian vouchers, receipt details and payment approvals." },
   replenishment: { title: "Replenishment", description: "Cash reconciliation and replenishment requests." },
   "replenishment-approval": { title: "Replenishment Approval", description: "Named-approver review and replenishment posting." },
   "master-list": { title: "Master List", description: "Fund positions, custody and approved fund changes." },
@@ -20,14 +20,15 @@ const navigationSchema = z.object({
 });
 const workspaceSchema = z.object({
   key: z.string().refine(isPettyCashWorkspace), title: z.string(), path: z.string(),
-  stage: z.enum(["FOUNDATION", "ONBOARDING", "VOUCHER_DRAFTS", "FUND_APPROVAL", "FUND_MASTER"]),
-  capabilities: z.array(z.enum(["READ_ONBOARDING", "EDIT_SETTINGS", "MANAGE_PAYEE_PROFILES", "MANAGE_TAX_RULES", "SUBMIT_FUND_REQUEST", "EDIT_PENDING_FUNDS", "DELETE_PENDING_FUNDS", "READ_VOUCHER_DRAFTS", "EDIT_VOUCHER_DRAFTS", "READ_FUND_APPROVALS", "DECIDE_FUND_REQUESTS", "READ_FUND_MASTER"])).max(7),
+  stage: z.enum(["FOUNDATION", "ONBOARDING", "VOUCHER_DRAFTS", "FUND_APPROVAL", "FUND_MASTER", "VOUCHER_OPERATIONS"]),
+  capabilities: z.array(z.enum(["READ_ONBOARDING", "EDIT_SETTINGS", "MANAGE_PAYEE_PROFILES", "MANAGE_TAX_RULES", "SUBMIT_FUND_REQUEST", "EDIT_PENDING_FUNDS", "DELETE_PENDING_FUNDS", "READ_VOUCHER_DRAFTS", "EDIT_VOUCHER_DRAFTS", "READ_FUND_APPROVALS", "DECIDE_FUND_REQUESTS", "READ_FUND_MASTER", "OPERATE_VOUCHERS"])).max(7),
 }).refine(item => item.path === `${PETTY_CASH_ROOT}/${item.key}`)
   .refine(item => item.stage === "FOUNDATION" ? item.capabilities.length === 0
     : item.stage === "ONBOARDING" ? item.key === "onboarding" && item.capabilities.includes("READ_ONBOARDING")
       : item.stage === "VOUCHER_DRAFTS" ? item.key === "disbursement" && item.capabilities.includes("READ_VOUCHER_DRAFTS")
         : item.stage === "FUND_APPROVAL" ? item.key === "onboarding-approval" && item.capabilities.includes("READ_FUND_APPROVALS")
-          : item.key === "master-list" && item.capabilities.includes("READ_FUND_MASTER"));
+          : item.stage === "VOUCHER_OPERATIONS" ? item.key === "disbursement" && item.capabilities.includes("OPERATE_VOUCHERS")
+            : item.key === "master-list" && item.capabilities.includes("READ_FUND_MASTER"));
 const contextSchema = z.object({
   actorId: z.number().int().positive(), actorName: z.string(), parent: navigationSchema,
   workspaces: z.array(workspaceSchema).max(8), stage: z.enum(["FOUNDATION", "ONBOARDING", "VOUCHER_DRAFTS"]),

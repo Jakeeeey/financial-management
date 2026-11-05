@@ -16,9 +16,9 @@ async function forward(request: NextRequest, { params }: Context) {
     } catch { return fileError("Send a valid file or attachment command.", 400); }
     return fileError("This attachment action is unavailable.", 404);
   }
-  const validGet = method === "GET" && (parts.length === 1 && ["funds", "vouchers"].includes(parts[0]) || parts.length === 2 && (voucher || parts[0] === "lookups" && ["payees", "accounts", "tax-rules"].includes(parts[1])));
+  const validGet = method === "GET" && (parts.length === 1 && ["funds", "vouchers", "register", "approvals", "print-list"].includes(parts[0]) || voucher && parts.length === 3 && parts[2] === "workflow" || parts.length === 2 && (voucher || parts[0] === "lookups" && ["payees", "accounts", "tax-rules"].includes(parts[1])));
   const validWrite = method === "POST" && parts.length === 2 && parts[0] === "vouchers" && ["preview", "drafts"].includes(parts[1])
-    || voucher && parts.length === 3 && (method === "PUT" && parts[2] === "draft" || method === "POST" && parts[2] === "discard");
+    || voucher && parts.length === 3 && (method === "PUT" && parts[2] === "draft" || method === "POST" && ["discard", "finalize", "approve", "reject", "void"].includes(parts[2]));
   if (!validGet && !validWrite) return fileError("Unknown voucher resource or action.", 404);
   let body: string | undefined;
   if (method !== "GET") { try { body = JSON.stringify(await request.json()); } catch { return fileError("Send a valid JSON document.", 400); } }

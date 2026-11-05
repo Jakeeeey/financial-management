@@ -80,6 +80,6 @@ export async function removeVoucherFile(voucherId: string, fileId: string, body:
   const result = await readPettyCash(`disbursement/vouchers/${voucherId}/attachments/${fileId}/remove`, { method: "POST", body: JSON.stringify(body) });
   if (!result.ok) return result;
   const metadata = await result.clone().json() as VoucherAttachment;
-  try { const service = directus(); await fetch(`${service.base}/files/${encodeURIComponent(metadata.fileId)}`, { method: "DELETE", headers: service.headers, signal: AbortSignal.timeout(15_000) }); } catch { /* Ownership metadata remains removed; retryable cleanup never restores access. */ }
+  if (metadata.state === "REMOVED") try { const service = directus(); await fetch(`${service.base}/files/${encodeURIComponent(metadata.fileId)}`, { method: "DELETE", headers: service.headers, signal: AbortSignal.timeout(15_000) }); } catch { /* Ownership metadata remains removed; retryable cleanup never restores access. */ }
   return result;
 }
