@@ -8,7 +8,7 @@ export function printMoney(value: string) {
   const negative = value.startsWith("-"), [whole, cents = "00"] = value.replace(/^-/, "").split(".");
   return `${negative ? "-" : ""}PHP ${BigInt(whole).toLocaleString("en-PH")}.${cents.padEnd(2, "0")}`;
 }
-function heading(doc: jsPDF, company: Record<string, string>, title: string, reference: string) {
+export function heading(doc: jsPDF, company: Record<string, string>, title: string, reference: string) {
   let y = 13;
   for (const [text, size] of [[company.registeredName || "Petty Cash", 12], [`${company.address || ""}${company.postalCode ? ` ${company.postalCode}` : ""}`.trim(), 8], [company.tin ? `TIN ${company.tin}` : "", 8], [title, 15], [reference, 9]] as const) {
     if (!text) continue;
@@ -17,11 +17,11 @@ function heading(doc: jsPDF, company: Record<string, string>, title: string, ref
   }
   return y + 2;
 }
-function table(doc: jsPDF, y: number, options: UserOptions) {
+export function table(doc: jsPDF, y: number, options: UserOptions) {
   autoTable(doc, { startY: y, margin: { left: 13, right: 13, top: 15, bottom: 48 }, styles: { font: "helvetica", fontSize: 8, cellPadding: 2, overflow: "linebreak", textColor: 20 }, headStyles: { fillColor: [240, 242, 245], textColor: 20, fontStyle: "bold" }, footStyles: { fillColor: [248, 248, 248], textColor: 20 }, theme: "grid", rowPageBreak: "avoid", showFoot: "lastPage", ...options });
   return (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 7;
 }
-function finish(doc: jsPDF, y: number, signatures: string[], reference: string) {
+export function finish(doc: jsPDF, y: number, signatures: string[], reference: string) {
   if (y > 258) { doc.addPage(); y = 25; }
   const cell = 184 / signatures.length;
   signatures.forEach((label, index) => { const x = 13 + cell * index; doc.setDrawColor(90).line(x, y + 12, x + cell - 7, y + 12); doc.setFontSize(8).setFont("helvetica", "normal").text(doc.splitTextToSize(label, cell - 8), x, y + 17); });
