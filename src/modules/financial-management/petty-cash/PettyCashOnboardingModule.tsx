@@ -1,6 +1,5 @@
 "use client";
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Choice, MasterLinks, Page } from "./onboarding-types";
 import { useOnboardingRead } from "./hooks/useOnboarding";
@@ -17,16 +16,16 @@ export default function PettyCashOnboardingModule({ requesterName, canSubmitFund
       <TabsTrigger value="funds">Fund requests</TabsTrigger><TabsTrigger value="payees">Payees</TabsTrigger><TabsTrigger value="departments">Departments</TabsTrigger><TabsTrigger value="personnel">Personnel</TabsTrigger><TabsTrigger value="settings">Company</TabsTrigger>
     </TabsList>
       <TabsContent value="funds"><OnboardingFunds requesterName={requesterName} canSubmit={canSubmitFund} canEdit={canEditFunds} canDelete={canDeleteFunds} /></TabsContent><TabsContent value="payees"><OnboardingPayees links={links.data} /></TabsContent>
-      <TabsContent value="departments"><SharedMaster resource="departments" links={links.data} /></TabsContent><TabsContent value="personnel"><SharedMaster resource="personnel" links={links.data} /></TabsContent>
+      <TabsContent value="departments"><SharedMaster resource="departments" /></TabsContent><TabsContent value="personnel"><SharedMaster resource="personnel" /></TabsContent>
       <TabsContent value="settings"><OnboardingSettings /></TabsContent>
     </Tabs>
   </section>;
 }
-function SharedMaster({ resource, links }: { resource: "departments" | "personnel"; links: MasterLinks | null }) {
+function SharedMaster({ resource }: { resource: "departments" | "personnel" }) {
   const [page, setPage] = useState(1);
   const { data, loading, error, refresh } = useOnboardingRead<Page<Choice>>(`lookups/${resource}?page=${page}&pageSize=25`);
-  const link = links?.[resource], title = resource === "departments" ? "Departments" : "Personnel";
-  return <div className="space-y-4 rounded-xl border bg-card p-5"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">{title}</h2>{link?.allowed && link.path && <Button asChild><a href={link.path}>{resource === "departments" ? "+ Add department" : "+ Add person"}</a></Button>}</div>
+  const title = resource === "departments" ? "Departments" : "Personnel";
+  return <div className="space-y-4 rounded-xl border bg-card p-5"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">{title}</h2></div>
     <ErrorBox error={error} retry={refresh} />
     {loading && <p role="status">Loading {resource}...</p>}{data && <><div className="overflow-x-auto rounded-lg border"><table className="w-full text-left text-sm"><thead className="bg-muted/40"><tr>{(resource === "departments" ? ["Department", "Funds", "Personnel"] : ["Name", "Department", "Active funds held"]).map(label => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>
       {data.items.map(item => <tr className="border-t" key={item.id}><td className="p-3">{item.name}</td><td className="p-3">{resource === "departments" ? Number(item.details.funds || 0) : item.classification || "—"}</td><td className="p-3">{Number(item.details[resource === "departments" ? "personnel" : "activeFunds"] || 0)}</td></tr>)}{!data.items.length && <tr><td colSpan={3} className="p-6 text-center text-muted-foreground">No matching records.</td></tr>}
