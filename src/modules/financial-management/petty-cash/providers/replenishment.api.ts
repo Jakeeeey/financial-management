@@ -3,7 +3,7 @@ export const REPLENISHMENT_API = "/api/fm/petty-cash/replenishment";
 export async function replenishmentApi<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${REPLENISHMENT_API}/${path}`, { ...init, cache: "no-store", headers: { ...(init?.body && !(init.body instanceof FormData) ? { "Content-Type": "application/json" } : {}), ...init?.headers } });
   const body = await response.json().catch(() => null);
-  if (!response.ok) throw new OnboardingError(body?.message || "The replenishment request failed. Please retry.", response.status, body?.fieldErrors || {}, body?.requestId);
+  if (!response.ok) throw new OnboardingError(body?.message || "The replenishment request failed. Please retry.", response.status, body?.fieldErrors || {}, body?.requestId, body?.code);
   if (!body || typeof body !== "object") throw new OnboardingError("The replenishment response was incomplete. Please retry.", 503);
   return body as T;
 }
