@@ -10,6 +10,7 @@ import { OnboardingFunds } from "./components/OnboardingFunds";
 import { OnboardingTaxAccounts } from "./components/OnboardingTaxAccounts";
 import { OnboardingAlerts } from "./components/OnboardingAlerts";
 import { ErrorBox, Paging } from "./components/OnboardingCommon";
+import { TableSkeleton } from "./components/PettyCashSkeletons";
 
 export default function PettyCashOnboardingModule({ requesterName, canSubmitFund, canEditFunds, canDeleteFunds, canEditSettings }: { requesterName: string; canSubmitFund: boolean; canEditFunds: boolean; canDeleteFunds: boolean; canEditSettings: boolean }) {
   const links = useOnboardingRead<MasterLinks>("master-links");
@@ -33,7 +34,7 @@ function SharedMaster({ resource }: { resource: "departments" | "personnel" }) {
   const title = resource === "departments" ? "Departments" : "Personnel";
   return <div className="space-y-4 rounded-xl border bg-card p-5"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">{title}</h2></div>
     <ErrorBox error={error} retry={refresh} title={`Could not load ${resource}`} />
-    {loading && <p role="status">Loading {resource}...</p>}{data && <><div className="overflow-x-auto rounded-lg border"><table className="w-full text-left text-sm"><thead className="bg-muted/40"><tr>{(resource === "departments" ? ["Department", "Funds", "Personnel"] : ["Name", "Department", "Active funds held"]).map(label => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>
+    {loading && <TableSkeleton label={`Loading ${resource}`} rows={5} columns={3} />}{data && <><div className="overflow-x-auto rounded-lg border"><table className="w-full text-left text-sm"><thead className="bg-muted/40"><tr>{(resource === "departments" ? ["Department", "Funds", "Personnel"] : ["Name", "Department", "Active funds held"]).map(label => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>
       {data.items.map(item => <tr className="border-t" key={item.id}><td className="p-3">{item.name}</td><td className="p-3">{resource === "departments" ? Number(item.details.funds || 0) : item.classification || "—"}</td><td className="p-3">{Number(item.details[resource === "departments" ? "personnel" : "activeFunds"] || 0)}</td></tr>)}{!data.items.length && <tr><td colSpan={3} className="p-6 text-center text-muted-foreground">No matching records.</td></tr>}
     </tbody></table></div>{data.total > data.pageSize && <Paging page={page} total={data.total} pageSize={data.pageSize} onChange={setPage} />}</>}
   </div>;

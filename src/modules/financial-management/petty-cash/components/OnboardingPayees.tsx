@@ -7,6 +7,7 @@ import type { Choice, MasterLinks, Page, Profile } from "../onboarding-types";
 import { useOnboardingCommand, useOnboardingRead } from "../hooks/useOnboarding";
 import { OnboardingChoice } from "./OnboardingChoice";
 import { ErrorBox, Field, NativeSelect, OnboardingFeedback, Paging } from "./OnboardingCommon";
+import { TableSkeleton } from "./PettyCashSkeletons";
 import { onboardingFieldError, onboardingFieldErrors } from "../utils/onboardingFeedback";
 
 const payeeFieldIds: Record<string, string> = {
@@ -19,7 +20,7 @@ export function OnboardingPayees({ links }: { links: MasterLinks | null }) {
   const [page, setPage] = useState(1), [editor, setEditor] = useState<Profile | "new" | null>(null);
   const { data, loading, error, refresh } = useOnboardingRead<Page<Profile>>(`payees?page=${page}&pageSize=25`, 250);
   return <div className="space-y-4 rounded-xl border bg-card p-5"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">Payees</h2><Button onClick={() => setEditor("new")}>Add payee</Button></div>
-    <ErrorBox error={error} retry={refresh} title="Could not load payees" />{loading && <p role="status">Loading payees...</p>}
+    <ErrorBox error={error} retry={refresh} title="Could not load payees" />{loading && <TableSkeleton label="Loading payees" rows={5} columns={6} />}
     {data && <><div className="overflow-x-auto rounded-lg border"><table className="w-full text-left text-sm"><thead className="bg-muted/40"><tr>{["Payee", "TIN", "Type", "Tax status", "Default account", ""].map(label => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>
       {data.items.map(profile => <tr className="border-t" key={profile.id}><td className="p-3 font-medium">{profile.supplier?.name || `Supplier ${profile.supplierId}`}</td><td className="p-3">{String(profile.supplier?.details.tin || "Not supplied")}</td><td className="p-3">{profile.payeeKind === "INDIVIDUAL" ? "Individual" : "Corporation"}</td><td className="p-3">{profile.vatRegistered ? "VAT registered" : "Non-VAT"}</td><td className="p-3">{profile.defaultExpenseAccount ? `${profile.defaultExpenseAccount.code} · ${profile.defaultExpenseAccount.name}` : "Not selected"}</td><td className="p-3"><Button size="sm" variant="outline" onClick={() => setEditor(profile)}>Edit</Button></td></tr>)}
       {!data.items.length && <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">No Petty Cash payees configured.</td></tr>}

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { OnboardingError } from "../providers/onboarding.api";
 import { MasterError } from "./MasterCommon";
+import { CsvSkeleton } from "./PettyCashSkeletons";
 
 export function ReportCsv({ dataset, query, title, onClose }: { dataset: string; query: string; title: string; onClose: () => void }) {
   const [result, setResult] = useState<{ text?: string; error?: Error } | null>(null), [revision, setRevision] = useState(0), [message, setMessage] = useState("");
@@ -26,7 +27,7 @@ export function ReportCsv({ dataset, query, title, onClose }: { dataset: string;
     catch { textarea.current?.focus(); textarea.current?.select(); const copied = document.execCommand("copy"); setMessage(copied ? "CSV copied." : "Select the CSV text and copy it."); if (copied) toast.success("CSV copied."); }
   }
   return <Dialog open onOpenChange={open => { if (!open) onClose(); }}><DialogContent className="sm:max-w-4xl"><DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>Complete server-generated CSV for the applied report scope.</DialogDescription></DialogHeader>
-    {!result && <p role="status">Preparing CSV...</p>}<MasterError error={result?.error} retry={() => { setResult(null); setRevision(value => value + 1); }} title="Unable to prepare the CSV export" />
+    {!result && <CsvSkeleton />}<MasterError error={result?.error} retry={() => { setResult(null); setRevision(value => value + 1); }} title="Unable to prepare the CSV export" />
     {result?.text != null && <><textarea ref={textarea} aria-label="CSV preview" rows={12} readOnly className="w-full rounded border p-3 font-mono text-xs" value={result.text} /><div className="flex flex-wrap gap-2"><Button onClick={download}>Download CSV</Button><Button variant="outline" onClick={copy}>Copy</Button></div></>}{message && <p role="status">{message}</p>}
   </DialogContent></Dialog>;
 }

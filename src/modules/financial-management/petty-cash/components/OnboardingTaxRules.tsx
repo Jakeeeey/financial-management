@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import type { Page, TaxRule } from "../onboarding-types";
 import { useOnboardingCommand, useOnboardingRead } from "../hooks/useOnboarding";
 import { ErrorBox, Field, NativeSelect, Paging } from "./OnboardingCommon";
+import { TableSkeleton } from "./PettyCashSkeletons";
 
 const documents = { INVOICE: "Invoice", OFFICIAL_RECEIPT: "Official receipt", ACKNOWLEDGEMENT: "Acknowledgement receipt", OTHER: "Other" };
 export function OnboardingTaxRules() {
@@ -14,7 +15,7 @@ export function OnboardingTaxRules() {
   const { data, loading, error, refresh } = useOnboardingRead<Page<TaxRule>>(`tax-rules?${query}`, 250);
   return <section className="space-y-4 rounded-xl border bg-card p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">Verified tax rules</h2><p className="mt-1 text-sm text-muted-foreground">Maintain Accounting-reviewed VAT and ATC definitions. No rates from the prototype are preselected.</p></div><Button type="button" onClick={() => setEditor("new")}>Add tax rule</Button></div>
     {saved && <p role="status" className="text-sm text-green-800">Tax rule saved.</p>}<Input aria-label="Search tax rules" placeholder="Search code or source reference" value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} />
-    <ErrorBox error={error} retry={refresh} />{loading && <p role="status">Loading tax rules...</p>}
+    <ErrorBox error={error} retry={refresh} />{loading && <TableSkeleton label="Loading tax rules" rows={5} columns={7} />}
     {data && <><div className="overflow-x-auto rounded-lg border"><table className="w-full text-left text-sm"><thead className="bg-muted/40"><tr>{["Code", "Kind", "Payee classification", "Rate (%)", "Effective dates", "Verification", "Action"].map(label => <th className="p-3" key={label}>{label}</th>)}</tr></thead><tbody>
       {data.items.map(rule => <tr className="border-t" key={rule.id}><td className="p-3 font-medium">{rule.code}</td><td className="p-3">{rule.ruleKind}</td><td className="p-3">{rule.payeeKind}</td><td className="p-3">{rule.rate}</td><td className="p-3 whitespace-nowrap">{rule.effectiveFrom} – {rule.effectiveTo || "Open ended"}</td><td className="p-3">{rule.state}</td><td className="p-3"><Button type="button" variant="outline" size="sm" onClick={() => setEditor(rule)}>{rule.state === "DRAFT" ? "Edit rule" : "View rule"}</Button></td></tr>)}
       {!data.items.length && <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">No tax rules configured.</td></tr>}
