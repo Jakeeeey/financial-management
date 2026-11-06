@@ -47,5 +47,6 @@ export function useFundDecision<T = FundDetails>() {
       setUncertain(unresolved); setError(failure); return null;
     } finally { active.current = false; setBusy(false); }
   }
-  return { run, busy, uncertain, error, retry: () => pending.current ? run(pending.current.path, pending.current.payload) : Promise.resolve(null) };
+  const clearError = useCallback(() => setError(null), []);
+  return { run, busy, uncertain, error, clearError, retry: () => pending.current ? run(pending.current.path, pending.current.payload) : Promise.resolve(null) };
 }

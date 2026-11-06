@@ -31,5 +31,6 @@ export function useOnboardingCommand() {
     } catch (cause) { failure.current = cause instanceof Error ? cause : new OnboardingError("Unable to save Onboarding.", 503); setError(failure.current); return null; }
     finally { active.current = false; setBusy(false); }
   }
-  return { run, busy, error, failure };
+  const clearError = useCallback(() => { failure.current = null; setError(null); }, []);
+  return { run, busy, error, failure, clearError };
 }

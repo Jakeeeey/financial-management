@@ -20,10 +20,11 @@ const navigationSchema = z.object({
 });
 const workspaceSchema = z.object({
   key: z.string().refine(isPettyCashWorkspace), title: z.string(), path: z.string(),
-  stage: z.enum(["FOUNDATION", "ONBOARDING", "VOUCHER_DRAFTS", "FUND_APPROVAL", "FUND_MASTER", "VOUCHER_OPERATIONS", "REPLENISHMENT", "REPLENISHMENT_APPROVAL"]),
-  capabilities: z.array(z.enum(["READ_ONBOARDING", "EDIT_SETTINGS", "MANAGE_PAYEE_PROFILES", "MANAGE_TAX_RULES", "SUBMIT_FUND_REQUEST", "EDIT_PENDING_FUNDS", "DELETE_PENDING_FUNDS", "READ_VOUCHER_DRAFTS", "EDIT_VOUCHER_DRAFTS", "READ_FUND_APPROVALS", "DECIDE_FUND_REQUESTS", "READ_FUND_MASTER", "OPERATE_VOUCHERS", "READ_REPLENISHMENT", "SUBMIT_REPLENISHMENT", "POST_ACCRUAL", "READ_REPLENISHMENT_APPROVALS", "DECIDE_REPLENISHMENT"])).max(7),
+  stage: z.enum(["FOUNDATION", "ONBOARDING", "VOUCHER_DRAFTS", "FUND_APPROVAL", "FUND_MASTER", "VOUCHER_OPERATIONS", "REPLENISHMENT", "REPLENISHMENT_APPROVAL", "CASH_COUNT"]),
+  capabilities: z.array(z.enum(["READ_ONBOARDING", "EDIT_SETTINGS", "MANAGE_PAYEE_PROFILES", "MANAGE_TAX_RULES", "SUBMIT_FUND_REQUEST", "EDIT_PENDING_FUNDS", "DELETE_PENDING_FUNDS", "READ_VOUCHER_DRAFTS", "EDIT_VOUCHER_DRAFTS", "READ_FUND_APPROVALS", "DECIDE_FUND_REQUESTS", "READ_FUND_MASTER", "OPERATE_VOUCHERS", "READ_REPLENISHMENT", "SUBMIT_REPLENISHMENT", "POST_ACCRUAL", "READ_REPLENISHMENT_APPROVALS", "DECIDE_REPLENISHMENT", "READ_CASH_COUNTS", "RECORD_CASH_COUNTS", "REQUEST_FUND_CHANGES", "DECIDE_FUND_CHANGES"])).max(7),
 }).refine(item => item.path === `${PETTY_CASH_ROOT}/${item.key}`)
   .refine(item => item.stage === "FOUNDATION" ? item.capabilities.length === 0
+    : item.stage === "CASH_COUNT" ? item.key === "cash-count" && item.capabilities.includes("READ_CASH_COUNTS")
     : item.stage === "REPLENISHMENT_APPROVAL" ? item.key === "replenishment-approval" && item.capabilities.includes("READ_REPLENISHMENT_APPROVALS")
     : item.stage === "REPLENISHMENT" ? item.key === "replenishment" && item.capabilities.includes("READ_REPLENISHMENT")
     : item.stage === "ONBOARDING" ? item.key === "onboarding" && item.capabilities.includes("READ_ONBOARDING")
