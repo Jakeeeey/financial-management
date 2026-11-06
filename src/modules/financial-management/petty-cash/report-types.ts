@@ -1,0 +1,12 @@
+export const REPORT_TABS = { vouchers: "Vouchers", funds: "Fund check", reps: "Replenishments", ewt: "EWT / BIR 2307", journal: "Journal entries", tb: "Trial balance", counts: "Cash counts", audit: "Audit trail" } as const;
+export type ReportKind = keyof typeof REPORT_TABS;
+export type ReportColumn = { key: string; label: string; kind: "text" | "money" | "status" };
+export type ReportRow = Record<string, string | number | null>;
+export type ReportTable = { kind: string; title: string; columns: ReportColumn[]; items: ReportRow[]; total: number; page: number; pageSize: number; totals: Record<string, string>; appliedFilters: Record<string, string>; scope: string; asOf: string };
+export type ReportPoint = { label: string; value: string };
+export type ReportOverview = { metrics: Record<"gross" | "cash" | "vouchers" | "average" | "vat" | "ewt", string>; accounts: ReportPoint[]; months: ReportPoint[]; payees: ReportPoint[]; asOf: string };
+export type ReportPosition = { usage: ReportPoint[]; alerts: string[]; usageWarning: string | null; usageCritical: string | null; asOf: string };
+export type AuditVerification = { verified: boolean; events: number; chains: number; firstFailure: string; checkedAt: string };
+export type ReportPrintData = { report: ReportTable; filters: Record<string, string | number | null>; company: Record<string, string>; preparedBy: string };
+export type Certificate = { payeeId: number; payee: { name: string; tin: string; address: string; postalCode: string }; rows: ReportRow[]; vouchers: string[] };
+export type CertificateDocument = { id: number; quarter: string; createdAt: string; preparedBy: string; snapshot: { quarter: string; from: string; to: string; fundId: number | null; fundLabel: string; company: Record<string, string>; certificates: Certificate[]; createdAt: string; preparedBy: string; note: string } };
