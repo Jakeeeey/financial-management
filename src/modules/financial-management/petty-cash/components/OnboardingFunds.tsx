@@ -8,6 +8,7 @@ import { useOnboardingCommand, useOnboardingRead } from "../hooks/useOnboarding"
 import { OnboardingError } from "../providers/onboarding.api";
 import { OnboardingChoice } from "./OnboardingChoice";
 import { ErrorBox, Field, OnboardingFeedback, Paging } from "./OnboardingCommon";
+import { TableSkeleton } from "./PettyCashSkeletons";
 import { onboardingFieldError, onboardingFieldErrors } from "../utils/onboardingFeedback";
 
 const money = (value: number | null) => value == null ? "Not set" : new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(value);
@@ -34,7 +35,7 @@ export function OnboardingFunds({ requesterName, canSubmit, canEdit, canDelete }
     refresh();
   }
   return <div className="space-y-4 rounded-xl border bg-card p-5"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">Fund requests</h2>{canSubmit && <Button onClick={() => setEditor("new")}>+ New fund request</Button>}</div>
-    <ErrorBox error={error} retry={refresh} title="Could not load fund requests" />{loading && <p role="status">Loading funds...</p>}
+    <ErrorBox error={error} retry={refresh} title="Could not load fund requests" />{loading && <TableSkeleton label="Loading fund requests" rows={5} columns={9} />}
     {data && <><div className="overflow-x-auto rounded-lg border"><table className="w-full text-left text-sm"><thead className="bg-muted/40"><tr>{["Fund", "Department", "Custodian", "Imprest", "Per voucher", "Approval above", "Requested by", "Status", ...(canEdit || canDelete ? [""] : [])].map((label, i) => <th key={i} className="p-3">{label}</th>)}</tr></thead><tbody>
       {data.items.map(item => <tr className="border-t" key={item.id}><td className="p-3"><span>{item.docNo}</span><strong className="block">{item.name || "Not set"}</strong></td><td className="p-3">{item.department?.name || "Not set"}</td><td className="p-3">{item.custodian?.name || "Not set"}</td>
         <td className="whitespace-nowrap p-3">{money(item.imprestAmount)}</td><td className="whitespace-nowrap p-3">{money(item.perVoucherLimit)}</td><td className="whitespace-nowrap p-3">{money(item.approvalThreshold)}</td><td className="p-3">{item.requestedBy?.name || "Not set"}<small className="block text-muted-foreground">{item.createdAt?.slice(0, 10)}</small></td><td className="p-3">{status(item.status)}</td>

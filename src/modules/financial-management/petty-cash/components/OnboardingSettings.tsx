@@ -8,6 +8,7 @@ import { useOnboardingCommand, useOnboardingRead } from "../hooks/useOnboarding"
 import { OnboardingError } from "../providers/onboarding.api";
 import { OnboardingChoice } from "./OnboardingChoice";
 import { ErrorBox, Field, OnboardingFeedback } from "./OnboardingCommon";
+import { DetailsSkeleton } from "./PettyCashSkeletons";
 import { onboardingFieldError, onboardingFieldErrors } from "../utils/onboardingFeedback";
 
 const companyFieldIds: Record<string, string> = {
@@ -20,7 +21,7 @@ export function OnboardingSettings() {
   const data = read.data;
   return <section className="space-y-4 rounded-xl border bg-card p-5"><div className="flex items-center justify-between gap-3"><h2 className="text-lg font-semibold">Company</h2><Button disabled={!data} onClick={() => setEditing(true)}>Edit company details</Button></div>
     <p className="text-sm text-muted-foreground">These details print on every document and appear as the payor on BIR Form 2307.</p>
-    {read.loading && <p role="status">Loading company...</p>}<ErrorBox error={read.error} retry={read.refresh} title="Could not load company details" />
+    {read.loading && <DetailsSkeleton label="Loading company details" rows={6} />}<ErrorBox error={read.error} retry={read.refresh} title="Could not load company details" />
     {data && <dl className="text-sm">{[["Registered name", data.company?.name], ["TIN", data.company?.details.tin], ["Registered address", data.company?.details.address], ["ZIP code", data.company?.details.postalCode], ["Authorised signatory for 2307", [data.signatory?.name, data.signatoryTitle].filter(Boolean).join(", ")], ["Signatory TIN", data.signatoryTin]].map(([label, value]) => <div key={String(label)} className="grid gap-2 border-b px-2 py-3 sm:grid-cols-[1fr_2fr]"><dt className="text-xs uppercase text-muted-foreground">{String(label)}</dt><dd className="break-words">{value ? String(value) : "Not set"}</dd></div>)}</dl>}
     {editing && data && <CompanyEditor settings={data} onClose={() => setEditing(false)} onReload={read.refresh} onSaved={() => { setEditing(false); toast.success("Company details updated for new Petty Cash documents."); read.refresh(); }} />}
   </section>;

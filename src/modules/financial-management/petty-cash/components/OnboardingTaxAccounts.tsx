@@ -8,6 +8,7 @@ import { useOnboardingCommand, useOnboardingRead } from "../hooks/useOnboarding"
 import { OnboardingError } from "../providers/onboarding.api";
 import { OnboardingChoice } from "./OnboardingChoice";
 import { ErrorBox } from "./OnboardingCommon";
+import { FormSkeleton } from "./PettyCashSkeletons";
 import { onboardingFieldError } from "../utils/onboardingFeedback";
 
 type TaxRole = "INPUT_VAT" | "EWT_PAYABLE" | "CASH_OVER_SHORT";
@@ -22,7 +23,7 @@ function savedAccount(settings: Settings, role: TaxRole): Choice | null {
 export function OnboardingTaxAccounts({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const read = useOnboardingRead<Settings>("settings"), [busy, setBusy] = useState(false);
   return <Dialog open onOpenChange={open => { if (!open && !busy) onClose(); }}><DialogContent showCloseButton={false} className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl"><DialogHeader><DialogTitle>Configure posting accounts</DialogTitle><DialogDescription>Select the shared accounts used for Input VAT, EWT Payable and cash variances.</DialogDescription></DialogHeader>
-    {read.loading && <p role="status">Loading posting accounts...</p>}<ErrorBox error={read.error} retry={read.refresh} title="Could not load posting account settings" />
+    {read.loading && <FormSkeleton label="Loading posting accounts" fields={3} />}<ErrorBox error={read.error} retry={read.refresh} title="Could not load posting account settings" />
     {read.data ? <TaxAccountEditor key={read.data.version} settings={read.data} onClose={onClose} onSaved={onSaved} reload={read.refresh} onBusyChange={setBusy} /> : <div><Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button></div>}
   </DialogContent></Dialog>;
 }
