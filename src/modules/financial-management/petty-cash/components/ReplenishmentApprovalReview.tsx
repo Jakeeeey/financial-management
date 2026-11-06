@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ErrorBox, OnboardingFeedback } from "./OnboardingCommon";
+import { ReviewSkeleton } from "./PettyCashSkeletons";
 import { ReplenishmentJournal } from "./ReplenishmentJournal";
 import { ReplenishmentStatus } from "./ReplenishmentStatus";
 import { useFundDecision, useFundRead } from "../hooks/useFunds";
@@ -48,7 +49,7 @@ export function ReplenishmentApprovalReview({ id, actorName, onClose, onChanged 
 
   return <Dialog open onOpenChange={open => { if (!open && !locked) onClose(); }}><DialogContent showCloseButton={!locked} className="max-h-[90vh] grid-cols-1 overflow-y-auto sm:max-w-[1100px]" onEscapeKeyDown={event => { if (locked) event.preventDefault(); }} onInteractOutside={event => { if (locked) event.preventDefault(); }}>
     <DialogHeader><DialogTitle>{r && p ? `${r.docNo} - ${p.fund.docNo} ${p.fund.name}` : "Replenishment review"}</DialogTitle><DialogDescription>Review the reconciliation, vouchers, supporting documents and journal before deciding.</DialogDescription></DialogHeader>
-    {read.loading && <p role="status">Loading replenishment...</p>}<ErrorBox error={read.error || null} retry={reload} title="Unable to load this replenishment" /><ErrorBox error={command.error} />
+    {read.loading && <ReviewSkeleton label="Loading replenishment review" />}<ErrorBox error={read.error || null} retry={reload} title="Unable to load this replenishment" /><ErrorBox error={command.error} />
     {data && r && p && <><div><ReplenishmentStatus state={r.state} /></div><div className="grid gap-4 rounded-lg bg-muted/30 p-4 text-sm sm:grid-cols-3">{[["Prepared by", `${r.preparedBy} - ${r.submittedAt.slice(0, 10)}`], ["Custodian", p.fund.custodian], ["Named approver", r.approver]].map(([label, value]) => <div key={label}><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 font-medium">{value}</p></div>)}</div>
       <dl className="divide-y text-sm">{[["Imprest amount", p.fund.imprest], ["Expected cash", p.fund.expectedCash], ["Cash counted", p.countedCash], ["Over/(short)", p.variance], ["To reimburse", p.reimbursement]].map(([label, value]) => <div key={label} className="grid grid-cols-2 gap-3 py-2"><dt>{label}</dt><dd className="text-right font-medium">{voucherMoney(value)}</dd></div>)}</dl>
       {pending && !data.row.assigned && <OnboardingFeedback tone="warning" title="Assigned to another approver">Only {r.approver} can decide this request.</OnboardingFeedback>}

@@ -11,6 +11,7 @@ import { onboardingRequestId } from "../providers/onboarding.api";
 import { useVoucherCommand, useVoucherPreview, useVoucherRead } from "../hooks/useVouchers";
 import { VOUCHER_FILE_ACCEPT, VOUCHER_FILE_GUIDANCE, voucherFileError } from "../utils/voucherFiles";
 import { ErrorBox, Field, NativeSelect, OnboardingFeedback } from "./OnboardingCommon";
+import { TotalsSkeleton, VoucherEditorSkeleton } from "./PettyCashSkeletons";
 import { useFundDecision } from "../hooks/useFunds";
 import { VoucherChoice } from "./VoucherChoice";
 import { voucherCents, voucherMoney as money } from "../utils/voucherMoney";
@@ -28,7 +29,7 @@ export function VoucherEditor({ fund, voucherId, canEdit, onClose, operational =
   const loaded = useVoucherRead<Voucher>(voucherId === null ? null : `vouchers/${voucherId}`), [busy, setBusy] = useState(false);
   return <Dialog open onOpenChange={open => { if (!open && !busy) onClose(); }}><DialogContent showCloseButton={false} className="max-h-[92dvh] w-[calc(100vw-2rem)] grid-cols-1 overflow-y-auto sm:max-w-7xl" onEscapeKeyDown={event => { if (busy) event.preventDefault(); }} onInteractOutside={event => { if (busy) event.preventDefault(); }}>
     <DialogHeader><DialogTitle>{operational ? voucherId === null ? "New payment voucher" : "Edit voucher" : voucherId === null ? "New voucher draft" : "Voucher draft details"}</DialogTitle><DialogDescription>{operational ? "One payee per voucher, one line per receipt. Save a draft or review the payment before cash moves." : "One payee per voucher. Save an unpaid draft and its supporting files; no cash is paid."}</DialogDescription></DialogHeader>
-    {loaded.loading && <p role="status">Loading voucher draft...</p>}<ErrorBox error={loaded.error} retry={loaded.refresh} title="Could not load voucher" />
+    {loaded.loading && <VoucherEditorSkeleton />}<ErrorBox error={loaded.error} retry={loaded.refresh} title="Could not load voucher" />
     {(voucherId === null || loaded.data) && <EditorForm initial={loaded.data} fund={fund} canEdit={canEdit} onClose={onClose} onBusy={setBusy} operational={operational} onFinalized={onFinalized} onDataChanged={onDataChanged} />}
   </DialogContent></Dialog>;
 }
@@ -172,7 +173,7 @@ function EditorForm({ initial, fund, canEdit, onClose, onBusy, operational, onFi
       <Button type="button" variant="outline" onClick={() => { setLines(current => [...current, newLine()]); clearFeedback(); }}>Add receipt / expense line</Button>
     </fieldset>
     {!previewReady && <OnboardingFeedback tone="info" title="Complete the voucher details"><p>Select a payee and complete the first receipt line to calculate the voucher.</p></OnboardingFeedback>}
-    {preview.loading && <p role="status" className="text-sm">Calculating voucher preview...</p>}<ErrorBox error={preview.error} retry={preview.refresh} title="Voucher calculation needs attention" />
+    {preview.loading && <TotalsSkeleton label="Calculating voucher preview" />}<ErrorBox error={preview.error} retry={preview.refresh} title="Voucher calculation needs attention" />
     <ErrorBox error={command.error} title="Could not save voucher draft" /><ErrorBox error={fileError} title="Supporting file action failed" />
     {operational && <p className="text-sm text-muted-foreground">Saving a draft does not move cash. Payments at or below {money(fund.approvalThreshold)} require confirmation; higher amounts are submitted for approval. No journal posts until replenishment.</p>}
     {decision.uncertain && !confirmation && <OnboardingFeedback tone="warning" title="Payment outcome is unconfirmed"><p>Retry the same action to check its status safely.</p></OnboardingFeedback>}

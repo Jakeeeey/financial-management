@@ -8,11 +8,12 @@ import { useOnboardingRead, useOnboardingCommand } from "../hooks/useOnboarding"
 import { OnboardingError } from "../providers/onboarding.api";
 import { onboardingFieldError } from "../utils/onboardingFeedback";
 import { ErrorBox, Field } from "./OnboardingCommon";
+import { FormSkeleton } from "./PettyCashSkeletons";
 
 export function OnboardingAlerts({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const read = useOnboardingRead<Settings>("settings"), [busy, setBusy] = useState(false);
   return <Dialog open onOpenChange={open => { if (!open && !busy) onClose(); }}><DialogContent showCloseButton={false} className="max-h-[90dvh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>Configure alerts</DialogTitle><DialogDescription>Set the usage and stale-voucher alerts shared by all Petty Cash funds.</DialogDescription></DialogHeader>
-    {read.loading && <p role="status">Loading alert settings...</p>}<ErrorBox error={read.error} retry={read.refresh} title="Could not load alert settings" />
+    {read.loading && <FormSkeleton label="Loading alert settings" fields={3} />}<ErrorBox error={read.error} retry={read.refresh} title="Could not load alert settings" />
     {read.data ? <AlertEditor key={read.data.version} settings={read.data} onClose={onClose} onSaved={onSaved} reload={read.refresh} onBusyChange={setBusy} /> : <Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button>}
   </DialogContent></Dialog>;
 }
