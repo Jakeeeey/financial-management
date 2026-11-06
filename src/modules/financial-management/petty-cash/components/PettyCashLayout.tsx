@@ -17,6 +17,7 @@ import PettyCashOnboardingApprovalModule from "../PettyCashOnboardingApprovalMod
 import PettyCashReplenishmentApprovalModule from "../PettyCashReplenishmentApprovalModule";
 import PettyCashReplenishmentModule from "../PettyCashReplenishmentModule";
 import PettyCashCashCountModule from "../PettyCashCashCountModule";
+import PettyCashReportsModule from "../PettyCashReportsModule";
 import type { PettyCashHeaderUser } from "../utils/headerUser";
 
 const Context = createContext<PettyCashContext | null>(null);
@@ -72,6 +73,7 @@ export function PettyCashWorkspace({ workspace }: { workspace?: PettyCashWorkspa
     <p className="mt-2 text-muted-foreground" role="status">{first ? "Opening your workspace…" : "No Petty Cash submodules assigned. Ask your administrator to assign the required child modules."}</p></div>;
   if (!context.workspaces.some(item => item.key === workspace)) return <div role="alert" className="rounded-xl border p-6"><h1 className="text-xl font-semibold">Access denied</h1><p className="mt-2">You do not have access to this Petty Cash workspace.</p></div>;
   const capabilities = context.workspaces.find(item => item.key === workspace)?.capabilities;
+  if (workspace === "reports" && capabilities?.includes("READ_REPORTS")) return <PettyCashReportsModule />;
   if (workspace === "cash-count" && capabilities?.includes("READ_CASH_COUNTS")) return <PettyCashCashCountModule actorId={context.actorId} actorName={context.actorName} />;
   if (workspace === "replenishment-approval" && capabilities?.includes("READ_REPLENISHMENT_APPROVALS")) return <PettyCashReplenishmentApprovalModule actorName={context.actorName} />;
   if (workspace === "replenishment" && capabilities?.includes("READ_REPLENISHMENT")) return <PettyCashReplenishmentModule />;
