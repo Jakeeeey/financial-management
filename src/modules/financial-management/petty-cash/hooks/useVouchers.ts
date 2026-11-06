@@ -5,28 +5,31 @@ import { onboardingRequestId } from "../providers/onboarding.api";
 import type { VoucherInput, VoucherPreview } from "../voucher-types";
 
 export function useVoucherRead<T>(path: string | null, delay = 0) {
-  const [revision, setRevision] = useState(0), [result, setResult] = useState<{ key: string; data: T | null; error: Error | null } | null>(null);
+  const [revision, setRevision] = useState(0), [result, setResult] = useState<{ key: string; path: string; data: T | null; error: Error | null } | null>(null);
   const key = JSON.stringify([path, revision]);
   useEffect(() => {
     if (!path) return;
     const controller = new AbortController();
-    const timer = setTimeout(() => { voucherApi<T>(path, { signal: controller.signal }).then(data => { if (!controller.signal.aborted) setResult({ key, data, error: null }); })
-      .catch(cause => { if (!controller.signal.aborted) setResult({ key, data: null, error: cause instanceof Error ? cause : new Error("Unable to load vouchers.") }); }); }, delay);
+    const timer = setTimeout(() => { voucherApi<T>(path, { signal: controller.signal }).then(data => { if (!controller.signal.aborted) setResult({ key, path, data, error: null }); })
+      .catch(cause => { if (!controller.signal.aborted) setResult({ key, path, data: null, error: cause instanceof Error ? cause : new Error("Unable to load vouchers.") }); }); }, delay);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [path, key, delay]);
-  return { data: result?.key === key ? result.data : null, error: result?.key === key ? result.error : null, loading: path !== null && result?.key !== key, refresh: useCallback(() => setRevision(value => value + 1), []) };
+  const resolved = result?.key === key, samePath = path !== null && result?.path === path;
+  return { data: samePath ? result.data : null, error: resolved ? result.error : null, loading: path !== null && !resolved, refresh: useCallback(() => setRevision(value => value + 1), []) };
 }
-export function useVoucherPreview(input: VoucherInput) {
+export function useVoucherPreview(input: VoucherInput, enabled = true) {
   const serialized = JSON.stringify(input); const [revision, setRevision] = useState(0);
   const key = JSON.stringify([serialized, revision]);
   const [result, setResult] = useState<{ key: string; data: VoucherPreview | null; error: Error | null } | null>(null);
   useEffect(() => {
+    if (!enabled) return;
     const controller = new AbortController();
     const timer = setTimeout(() => { voucherApi<VoucherPreview>("vouchers/preview", { method: "POST", body: serialized, signal: controller.signal }).then(data => { if (!controller.signal.aborted) setResult({ key, data, error: null }); })
       .catch(cause => { if (!controller.signal.aborted) setResult({ key, data: null, error: cause instanceof Error ? cause : new Error("Unable to preview calculations.") }); }); }, 350);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [serialized, key]);
-  return { data: result?.key === key ? result.data : null, error: result?.key === key ? result.error : null, loading: result?.key !== key, refresh: () => setRevision(value => value + 1) };
+  }, [enabled, serialized, key]);
+  const resolved = enabled && result?.key === key;
+  return { data: resolved ? result.data : null, error: resolved ? result.error : null, loading: enabled && result?.key !== key, refresh: () => setRevision(value => value + 1) };
 }
 export function useVoucherCommand() {
   const active = useRef(false), identity = useRef<{ fingerprint: string; key: string } | null>(null);
@@ -40,5 +43,6 @@ export function useVoucherCommand() {
     } catch (cause) { setError(cause instanceof Error ? cause : new Error("Unable to save voucher.")); return null; }
     finally { active.current = false; setBusy(false); }
   }
-  return { run, busy, error };
+  const clearError = useCallback(() => setError(null), []);
+  return { run, busy, error, clearError };
 }

@@ -31,6 +31,18 @@ const FIELD_LABELS: Record<string, string> = {
     newCustodian: "New custodian",
     fundingRequired: "Funding requirement",
     decision: "Decision",
+    fundId: "Fund",
+    payeeProfileId: "Payee",
+    date: "Voucher date",
+    particulars: "Particulars",
+    lines: "Receipt lines",
+    documentType: "Document type",
+    receiptNo: "Receipt number",
+    expenseCoaId: "Expense account",
+    gross: "Gross amount",
+    vatIncluded: "VAT inclusion",
+    vatRuleId: "VAT rule",
+    ewtRuleId: "EWT / ATC rule",
     accounts: "Account mappings",
     usageWarning: "Usage warning",
     usageCritical: "Critical usage",
@@ -67,6 +79,9 @@ export function onboardingFieldLabel(field: string): string {
         const role = field.slice("accounts.".length) as AccountRole;
         return ACCOUNT_ROLES[role] ? `${ACCOUNT_ROLES[role]} account` : "Account mapping";
     }
+
+    const line = field.match(/^lines\.(\d+)\.([^.]+)$/);
+    if (line) return `${FIELD_LABELS[line[2]] || humanize(line[2])}, line ${Number(line[1]) + 1}`;
 
     return humanize(field);
 }
