@@ -8,13 +8,14 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
+import { AssetDetailDialog } from "./components/AssetDetailDialog";
 import { DepositKpis, PendingSlipsNote } from "./components/DepositKpis";
 import { NewDepositDialog } from "./components/NewDepositDialog";
 import { SlipDetailDialog } from "./components/SlipDetailDialog";
 import { SlipsTable } from "./components/SlipsTable";
 import { UndepositedTable } from "./components/UndepositedTable";
 import { useDeposit } from "./hooks/useDeposit";
-import type { DepositSlip } from "./types";
+import type { DepositSlip, UndepositedAsset } from "./types";
 
 /** Bank Deposit (FSD 1.3): vault assets, slip creation and slip cancellation. */
 export function DepositModule() {
@@ -44,6 +45,7 @@ export function DepositModule() {
   const [tab, setTab] = useState("undeposited");
   const [createOpen, setCreateOpen] = useState(false);
   const [activeSlip, setActiveSlip] = useState<DepositSlip | null>(null);
+  const [openAsset, setOpenAsset] = useState<UndepositedAsset | null>(null);
 
   const selectedAssets = useMemo(
     () => assets.filter((asset) => selected.has(asset.collectionDetailId)),
@@ -161,6 +163,7 @@ export function DepositModule() {
             onToggleAll={toggleAll}
             onSelectAllReady={selectAllReady}
             onDeselectAll={() => setSelected(new Set())}
+            onOpenRow={setOpenAsset}
           />
         </TabsContent>
 
@@ -190,6 +193,15 @@ export function DepositModule() {
         assets={selectedAssets}
         isSaving={isSaving}
         onSubmit={createSlip}
+      />
+
+      <AssetDetailDialog
+        asset={openAsset}
+        selected={openAsset ? selected.has(openAsset.collectionDetailId) : false}
+        onOpenChange={(open) => {
+          if (!open) setOpenAsset(null);
+        }}
+        onToggle={toggle}
       />
 
       <SlipDetailDialog

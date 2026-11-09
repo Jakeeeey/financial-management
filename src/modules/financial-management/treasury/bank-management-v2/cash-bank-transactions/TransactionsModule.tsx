@@ -10,6 +10,7 @@ import { formatNumber } from "@/lib/utils";
 import { CancelMemoDialog } from "./components/CancelMemoDialog";
 import { InlineAlert } from "./components/InlineAlert";
 import { NewTransactionDialog } from "./components/NewTransactionDialog";
+import { TransactionDetailDialog } from "./components/TransactionDetailDialog";
 import { TransactionFiltersBar } from "./components/TransactionFilters";
 import { TransactionsTable } from "./components/TransactionsTable";
 import { TransfersClearingPanel } from "./components/TransfersClearingPanel";
@@ -46,6 +47,7 @@ export function TransactionsModule() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [cancelTarget, setCancelTarget] = useState<TransactionRow | null>(null);
+  const [openRow, setOpenRow] = useState<TransactionRow | null>(null);
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-6">
@@ -95,6 +97,7 @@ export function TransactionsModule() {
             onPageChange={(next) => patchFilters({ page: next })}
             onCancelMemo={setCancelTarget}
             onSettle={(row) => void settle(row)}
+            onOpenRow={setOpenRow}
             filters={
               <TransactionFiltersBar
                 filters={filters}
@@ -112,9 +115,26 @@ export function TransactionsModule() {
             isLoading={isLoading}
             isSaving={isSaving}
             onSettle={(row) => void settle(row)}
+            onOpenRow={setOpenRow}
           />
         </TabsContent>
       </Tabs>
+
+      <TransactionDetailDialog
+        row={openRow}
+        isSaving={isSaving}
+        onOpenChange={(open) => {
+          if (!open) setOpenRow(null);
+        }}
+        onSettle={(row) => {
+          setOpenRow(null);
+          void settle(row);
+        }}
+        onCancelMemo={(row) => {
+          setOpenRow(null);
+          setCancelTarget(row);
+        }}
+      />
 
       <NewTransactionDialog
         open={dialogOpen}

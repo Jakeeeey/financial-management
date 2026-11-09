@@ -15,10 +15,11 @@ interface TransfersClearingPanelProps {
   isLoading: boolean;
   isSaving: boolean;
   onSettle: (row: TransactionRow) => void;
+  onOpenRow: (row: TransactionRow) => void;
 }
 
 /** PENDING transfers parked in transfer-in-transit, each settleable once its value date arrives. */
-export function TransfersClearingPanel({ clearing, isLoading, isSaving, onSettle }: TransfersClearingPanelProps) {
+export function TransfersClearingPanel({ clearing, isLoading, isSaving, onSettle, onOpenRow }: TransfersClearingPanelProps) {
   const today = phtToday();
 
   return (
@@ -57,7 +58,19 @@ export function TransfersClearingPanel({ clearing, isLoading, isSaving, onSettle
                 {clearing.map((row) => {
                   const canSettle = row.valueDate <= today;
                   return (
-                    <TableRow key={row.key}>
+                    <TableRow
+                      key={row.key}
+                      tabIndex={0}
+                      aria-label={`Open transfer ${row.refNo}`}
+                      className="cursor-pointer"
+                      onClick={() => onOpenRow(row)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          onOpenRow(row);
+                        }
+                      }}
+                    >
                       <TableCell className="truncate font-mono text-xs" title={row.refNo}>
                         {row.refNo}
                       </TableCell>
@@ -81,7 +94,11 @@ export function TransfersClearingPanel({ clearing, isLoading, isSaving, onSettle
                       <TableCell>
                         <StatusBadge status={row.status} />
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell
+                        className="text-right"
+                        onClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => event.stopPropagation()}
+                      >
                         <Button
                           type="button"
                           size="sm"
@@ -105,7 +122,19 @@ export function TransfersClearingPanel({ clearing, isLoading, isSaving, onSettle
             {clearing.map((row) => {
               const canSettle = row.valueDate <= today;
               return (
-                <li key={row.key} className="space-y-2 p-4">
+                <li
+                  key={row.key}
+                  tabIndex={0}
+                  aria-label={`Open transfer ${row.refNo}`}
+                  className="cursor-pointer space-y-2 p-4"
+                  onClick={() => onOpenRow(row)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onOpenRow(row);
+                    }
+                  }}
+                >
                   <div className="flex items-start justify-between gap-2">
                     <p className="truncate font-mono text-xs" title={row.refNo}>
                       {row.refNo}
@@ -126,16 +155,22 @@ export function TransfersClearingPanel({ clearing, isLoading, isSaving, onSettle
                     </p>
                     <span className="text-sm font-medium tabular-nums">{formatCurrency(row.amount)}</span>
                   </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={!canSettle || isSaving}
-                    onClick={() => onSettle(row)}
-                    aria-label={`Settle transfer ${row.refNo}`}
+                  <div
+                    className="flex items-end justify-end"
+                    onClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => event.stopPropagation()}
                   >
-                    Settle leg 2
-                  </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={!canSettle || isSaving}
+                      onClick={() => onSettle(row)}
+                      aria-label={`Settle transfer ${row.refNo}`}
+                    >
+                      Settle leg 2
+                    </Button>
+                  </div>
                 </li>
               );
             })}

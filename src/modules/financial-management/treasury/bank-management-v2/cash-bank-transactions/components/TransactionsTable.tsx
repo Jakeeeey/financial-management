@@ -44,6 +44,7 @@ interface TransactionsTableProps {
   onPageChange: (page: number) => void;
   onCancelMemo: (row: TransactionRow) => void;
   onSettle: (row: TransactionRow) => void;
+  onOpenRow: (row: TransactionRow) => void;
   /** The filter row, rendered inside the register panel above the table. */
   filters: ReactNode;
 }
@@ -115,6 +116,7 @@ export function TransactionsTable({
   onPageChange,
   onCancelMemo,
   onSettle,
+  onOpenRow,
   filters,
 }: TransactionsTableProps) {
   const showLoading = isLoading && rows.length === 0;
@@ -173,7 +175,19 @@ export function TransactionsTable({
               </TableHeader>
               <TableBody>
                 {rows.map((row) => (
-                  <TableRow key={row.key}>
+                  <TableRow
+                    key={row.key}
+                    tabIndex={0}
+                    aria-label={`Open transaction ${row.refNo}`}
+                    className="cursor-pointer"
+                    onClick={() => onOpenRow(row)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onOpenRow(row);
+                      }
+                    }}
+                  >
                     <TableCell className="tabular-nums">{row.date}</TableCell>
                     <TableCell>
                       <span className="block max-w-[240px] truncate" title={row.accountLabel}>
@@ -216,7 +230,11 @@ export function TransactionsTable({
                     <TableCell className="text-right tabular-nums text-red-700 dark:text-red-400">
                       {deduction(row) === null ? "" : formatCurrency(deduction(row) as number)}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell
+                      className="text-right"
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
+                    >
                       <RowActions row={row} isSaving={isSaving} onCancelMemo={onCancelMemo} onSettle={onSettle} />
                     </TableCell>
                   </TableRow>
@@ -227,7 +245,19 @@ export function TransactionsTable({
 
           <ul className="divide-y divide-border xl:hidden">
             {rows.map((row) => (
-              <li key={row.key} className="space-y-2 p-4">
+              <li
+                key={row.key}
+                tabIndex={0}
+                aria-label={`Open transaction ${row.refNo}`}
+                className="cursor-pointer space-y-2 p-4"
+                onClick={() => onOpenRow(row)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onOpenRow(row);
+                  }
+                }}
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate font-mono text-xs" title={row.refNo}>
@@ -268,7 +298,11 @@ export function TransactionsTable({
                   <dt className="text-muted-foreground">JE no.</dt>
                   <dd className="truncate text-right font-mono text-xs">{row.jeNo ?? "—"}</dd>
                 </dl>
-                <div className="flex justify-end">
+                <div
+                  className="flex justify-end"
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
                   <RowActions row={row} isSaving={isSaving} onCancelMemo={onCancelMemo} onSettle={onSettle} />
                 </div>
               </li>

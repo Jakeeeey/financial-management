@@ -74,7 +74,19 @@ export function SlipsTable({
               </TableHeader>
               <TableBody>
                 {rows.map((slip) => (
-                  <TableRow key={slip.id}>
+                  <TableRow
+                    key={slip.id}
+                    tabIndex={0}
+                    aria-label={`Open slip ${slip.depositNo}`}
+                    className="cursor-pointer"
+                    onClick={() => onView(slip)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onView(slip);
+                      }
+                    }}
+                  >
                     <TableCell className="whitespace-nowrap font-mono text-sm">
                       {toPhtDateString(slip.depositDate)}
                     </TableCell>
@@ -97,8 +109,17 @@ export function SlipsTable({
                     <TableCell>
                       <StatusBadge status={slip.status} />
                     </TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="View slip" onClick={() => onView(slip)}>
+                    <TableCell
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
+                    >
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        aria-label="View slip"
+                        onClick={() => onView(slip)}
+                      >
                         <Eye className="h-4 w-4" />
                       </Button>
                     </TableCell>
@@ -110,7 +131,19 @@ export function SlipsTable({
 
           <ul className="divide-y divide-border lg:hidden">
             {rows.map((slip) => (
-              <li key={slip.id} className="p-4">
+              <li
+                key={slip.id}
+                className="cursor-pointer p-4"
+                tabIndex={0}
+                aria-label={`Open slip ${slip.depositNo}`}
+                onClick={() => onView(slip)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onView(slip);
+                  }
+                }}
+              >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="truncate font-mono text-sm">{toPhtDateString(slip.depositDate)}</p>
@@ -120,7 +153,11 @@ export function SlipsTable({
                   </div>
                   <StatusBadge status={slip.status} />
                 </div>
-                <div className="mt-2 flex items-center justify-between gap-2">
+                <div
+                  className="mt-2 flex items-center justify-between gap-2"
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
                   <span className="text-sm tabular-nums">{formatCurrency(slip.grandTotal)}</span>
                   <Button variant="outline" size="sm" onClick={() => onView(slip)}>
                     View

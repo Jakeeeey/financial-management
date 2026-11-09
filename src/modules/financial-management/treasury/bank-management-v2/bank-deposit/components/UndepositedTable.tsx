@@ -26,6 +26,7 @@ type Props = {
   onToggleAll: (checked: boolean, ids: number[]) => void;
   onSelectAllReady: (ids: number[]) => void;
   onDeselectAll: () => void;
+  onOpenRow: (asset: UndepositedAsset) => void;
 };
 
 /**
@@ -45,6 +46,7 @@ export function UndepositedTable({
   onToggleAll,
   onSelectAllReady,
   onDeselectAll,
+  onOpenRow,
 }: Props) {
   // A refetch can leave the page past the last row; clamp instead of resetting so the
   // selection the user built up is not disturbed by an unrelated page change.
@@ -121,8 +123,21 @@ export function UndepositedTable({
                 {rows.map((asset) => {
                   const pdc = isPdc(asset);
                   return (
-                    <TableRow key={asset.collectionDetailId} data-state={selected.has(asset.collectionDetailId) ? "selected" : undefined}>
-                      <TableCell>
+                    <TableRow
+                      key={asset.collectionDetailId}
+                      data-state={selected.has(asset.collectionDetailId) ? "selected" : undefined}
+                      tabIndex={0}
+                      aria-label={`Open ${asset.documentNumber}`}
+                      className="cursor-pointer"
+                      onClick={() => onOpenRow(asset)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          onOpenRow(asset);
+                        }
+                      }}
+                    >
+                      <TableCell onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
                         <Checkbox
                           aria-label={`Select ${asset.documentNumber}`}
                           disabled={pdc}
@@ -192,13 +207,30 @@ export function UndepositedTable({
             {rows.map((asset) => {
               const pdc = isPdc(asset);
               return (
-                <li key={asset.collectionDetailId} className="flex items-start gap-3 p-4">
-                  <Checkbox
-                    aria-label={`Select ${asset.documentNumber}`}
-                    disabled={pdc}
-                    checked={selected.has(asset.collectionDetailId)}
-                    onCheckedChange={() => onToggle(asset.collectionDetailId)}
-                  />
+                <li
+                  key={asset.collectionDetailId}
+                  className="flex cursor-pointer items-start gap-3 p-4"
+                  onClick={() => onOpenRow(asset)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onOpenRow(asset);
+                    }
+                  }}
+                  tabIndex={0}
+                  aria-label={`Open ${asset.documentNumber}`}
+                >
+                  <span
+                    onClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => event.stopPropagation()}
+                  >
+                    <Checkbox
+                      aria-label={`Select ${asset.documentNumber}`}
+                      disabled={pdc}
+                      checked={selected.has(asset.collectionDetailId)}
+                      onCheckedChange={() => onToggle(asset.collectionDetailId)}
+                    />
+                  </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
                       <p className="truncate text-sm font-medium" title={asset.documentNumber}>
