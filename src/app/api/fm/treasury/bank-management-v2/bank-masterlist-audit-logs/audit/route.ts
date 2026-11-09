@@ -9,6 +9,9 @@ const emptyToUndefined = (value: unknown) => (value === "" || value == null ? un
 
 const querySchema = z.object({
   module: z.preprocess(emptyToUndefined, z.string().trim().max(60).optional()),
+  user: z.preprocess(emptyToUndefined, z.string().trim().max(80).optional()),
+  pht: z.preprocess(emptyToUndefined, z.enum(["PHT", "NOT_PHT"]).optional()),
+  q: z.preprocess(emptyToUndefined, z.string().trim().max(120).optional()),
   from: z.preprocess(emptyToUndefined, z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD").optional()),
   to: z.preprocess(emptyToUndefined, z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD").optional()),
   page: z.preprocess((value) => Number(emptyToUndefined(value)), z.number().int().min(1).default(1)),

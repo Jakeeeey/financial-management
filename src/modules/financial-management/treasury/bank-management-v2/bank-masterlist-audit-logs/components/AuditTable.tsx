@@ -1,12 +1,15 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
+import { LIST_PAGE_SIZE } from "../constants";
 import { phtDisplayStamp } from "../pht";
 import type { AuditLogRow } from "../types";
+import { TablePager } from "./TablePager";
 
 type Props = {
   rows: AuditLogRow[];
@@ -14,15 +17,19 @@ type Props = {
   pageCount: number;
   total: number;
   onPage: (page: number) => void;
+  /** Filter band rendered inside the card, above the table. */
+  filters?: ReactNode;
+  emptyLabel?: string;
 };
 
 const COLUMNS = 6;
 
 /** FSD 1.6 movement log: every recorded action, stamped in PHT, with UTC imports flagged. */
-export function AuditTable({ rows, page, pageCount, total, onPage }: Props) {
+export function AuditTable({ rows, page, pageCount, total, onPage, filters, emptyLabel }: Props) {
   return (
-    <Card className="overflow-hidden border-border/50 shadow-none">
+    <Card className="overflow-hidden border-border/50 border-t-[3px] border-t-rose-500/70 shadow-none">
       <CardContent className="p-0">
+        {filters}
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -39,7 +46,7 @@ export function AuditTable({ rows, page, pageCount, total, onPage }: Props) {
               {rows.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={COLUMNS} className="h-24 text-center text-sm text-muted-foreground">
-                    The movement log has no entry yet.
+                    {emptyLabel ?? "The movement log has no entry yet."}
                   </TableCell>
                 </TableRow>
               )}
@@ -92,21 +99,14 @@ export function AuditTable({ rows, page, pageCount, total, onPage }: Props) {
           </Table>
         </div>
 
-        {pageCount > 1 && (
-          <div className="flex items-center justify-between gap-3 border-t px-4 py-3 text-sm text-muted-foreground">
-            <span>
-              Page {page} of {pageCount} · {total} entries
-            </span>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onPage(page - 1)}>
-                Previous
-              </Button>
-              <Button variant="outline" size="sm" disabled={page >= pageCount} onClick={() => onPage(page + 1)}>
-                Next
-              </Button>
-            </div>
-          </div>
-        )}
+        <TablePager
+          page={page}
+          pageCount={pageCount}
+          total={total}
+          pageSize={LIST_PAGE_SIZE}
+          onPageChange={onPage}
+          className="border-t px-4 py-3"
+        />
       </CardContent>
     </Card>
   );

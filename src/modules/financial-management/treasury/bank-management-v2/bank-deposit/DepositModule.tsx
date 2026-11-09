@@ -20,6 +20,12 @@ import type { DepositSlip } from "./types";
 export function DepositModule() {
   const {
     assets,
+    filteredAssets,
+    filters,
+    setFilters,
+    filteredSlips,
+    slipFilters,
+    setSlipFilters,
     slips,
     accounts,
     totals,
@@ -66,6 +72,15 @@ export function DepositModule() {
     });
   }
 
+  // Same merge as `toggleAll`: choosing everything ready must not drop picks made earlier.
+  function selectAllReady(ids: number[]) {
+    setSelected((current) => {
+      const next = new Set(current);
+      for (const id of ids) next.add(id);
+      return next;
+    });
+  }
+
   function openCreate() {
     if (selectedAssets.length === 0) return;
     setCreateOpen(true);
@@ -81,9 +96,6 @@ export function DepositModule() {
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-3">
-          {selectedAssets.length === 0 && !isLoading && assets.length > 0 && tab === "undeposited" && (
-            <p className="text-xs text-muted-foreground">Tick the collections going on one slip</p>
-          )}
           <Button variant="outline" size="icon" aria-label="Refresh" onClick={() => void refetch()} disabled={isLoading}>
             <RefreshCw className="h-4 w-4" />
           </Button>
@@ -137,23 +149,32 @@ export function DepositModule() {
 
         <TabsContent value="undeposited">
           <UndepositedTable
-            assets={assets}
+            assets={filteredAssets}
+            totalCount={assets.length}
+            filters={filters}
             selected={selected}
             isLoading={isLoading}
             page={assetsPage}
             onPageChange={setAssetsPage}
+            onFiltersChange={setFilters}
             onToggle={toggle}
             onToggleAll={toggleAll}
+            onSelectAllReady={selectAllReady}
+            onDeselectAll={() => setSelected(new Set())}
           />
         </TabsContent>
 
         <TabsContent value="slips" className="space-y-3">
           <PendingSlipsNote count={totals.pendingSlips} slipCount={slips.length} />
           <SlipsTable
-            slips={slips}
+            slips={filteredSlips}
+            allSlips={slips}
+            totalCount={slips.length}
+            filters={slipFilters}
             isLoading={isLoading}
             page={slipsPage}
             onPageChange={setSlipsPage}
+            onFiltersChange={setSlipFilters}
             onView={(slip) => setActiveSlip(slip)}
           />
         </TabsContent>

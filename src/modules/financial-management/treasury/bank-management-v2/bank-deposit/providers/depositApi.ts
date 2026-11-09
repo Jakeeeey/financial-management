@@ -1,4 +1,4 @@
-import type { DepositSlip, UndepositedAsset } from "../types";
+import type { DepositSlip, ResolvedJournalEntry, UndepositedAsset } from "../types";
 
 export type DepositAccountOption = { bankId: number; label: string };
 
@@ -64,6 +64,20 @@ export async function cancelSlip(slipId: number, reason: string): Promise<Deposi
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ reason }),
+    }),
+  );
+}
+
+/** E07 lines for the create dialog; the server resolves GL codes from `bank_gl_mapping`. */
+export async function previewDepositSlip(payload: {
+  bankAccountId: number;
+  cashTotal: number;
+}): Promise<ResolvedJournalEntry> {
+  return unwrap<ResolvedJournalEntry>(
+    await fetch("/api/fm/treasury/bank-management-v2/bank-deposit/slips/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     }),
   );
 }

@@ -162,17 +162,23 @@ export type CheckWriteResult = {
   postingBlocked: PostingBlocked | null;
 };
 
+export type CheckRegisterFlag = "PDC" | "STALE" | "NOREPL" | "REPL";
+
 export type CheckRegisterFilter = {
   direction?: CheckDirection;
   status?: CheckStatus;
   accountId?: number;
+  bankName?: string;
+  flag?: CheckRegisterFlag;
+  dateFrom?: string;
+  dateTo?: string;
   q?: string;
 };
 
 export type CheckRegisterResult = {
   checks: BankCheck[];
   counts: Record<CheckStatus, number>;
-  accounts: { bankId: number; label: string }[];
+  accounts: { bankId: number; label: string; bankName: string }[];
   notice?: string;
 };
 
@@ -205,6 +211,8 @@ export type CheckActionInput = {
   returnReason?: string | null;
   note?: string | null;
   replacement?: ReplacementInput | null;
+  /** Date the bank cleared the check. Defaults to today when omitted. */
+  clearedDate?: string | null;
 };
 
 export type CreateCheckbookInput = {
@@ -293,14 +301,18 @@ async function accountLabels(ids?: number[]): Promise<Map<number, string>> {
   return new Map(rows.map((row) => [Number(row.bank_id), accountLabel(row)]));
 }
 
-async function listActiveAccounts(): Promise<{ bankId: number; label: string }[]> {
+async function listActiveAccounts(): Promise<{ bankId: number; label: string; bankName: string }[]> {
   const { rows } = await listItems<AccountRow>(ACCOUNTS, {
     fields: ACCOUNT_FIELDS,
     filter: { is_active: { _eq: 1 } },
     sort: "bank_name",
     limit: 500,
   });
-  return rows.map((row) => ({ bankId: Number(row.bank_id), label: accountLabel(row) }));
+  return rows.map((row) => ({
+    bankId: Number(row.bank_id),
+    label: accountLabel(row),
+    bankName: asString(row.bank_name) || "Bank account",
+  }));
 }
 
 function checkStatus(value: unknown): CheckStatus {
@@ -385,11 +397,38 @@ async function countByStatus(): Promise<Record<CheckStatus, number>> {
   return Object.fromEntries(entries) as Record<CheckStatus, number>;
 }
 
-async function listFilteredChecks(input: CheckRegisterFilter): Promise<CheckRow[]> {
+function flagMatches(row: CheckRow, flag: CheckRegisterFlag): boolean {
+  const status = checkStatus(row.status);
+  const open = status === "PENDING" || status === "RECEIVED" || status === "IN_CLEARING";
+
+  if (flag === "PDC") return asBoolean(row.is_pdc);
+  if (flag === "STALE") return open && daysSince(row.check_date) > STALE_CHECK_DAYS;
+  if (flag === "NOREPL") {
+    return (status === "RETURNED" || status === "CANCELLED") && row.replaced_by_id == null;
+  }
+  return row.replaces_id != null || row.replaced_by_id != null;
+}
+
+async function listFilteredChecks(
+  input: CheckRegisterFilter,
+  accounts: { bankId: number; bankName: string }[],
+): Promise<CheckRow[]> {
   const filter: Record<string, unknown> = {};
   if (input.direction) filter.direction = { _eq: input.direction };
   if (input.status) filter.status = { _eq: input.status };
   if (input.accountId) filter.bank_account_id = { _eq: input.accountId };
+
+  if (input.bankName) {
+    const ids = accounts.filter((account) => account.bankName === input.bankName).map((account) => account.bankId);
+    filter.bank_account_id = { _in: ids.length ? ids : [-1] };
+  }
+
+  if (input.dateFrom || input.dateTo) {
+    const range: Record<string, string> = {};
+    if (input.dateFrom) range._gte = input.dateFrom;
+    if (input.dateTo) range._lte = input.dateTo;
+    filter.check_date = range;
+  }
 
   const q = asString(input.q);
   if (q) {
@@ -408,7 +447,7 @@ async function listFilteredChecks(input: CheckRegisterFilter): Promise<CheckRow[
     // ponytail: 500-row cap on the unpaginated register; add paging once the list outgrows a screen.
     limit: 500,
   });
-  return rows;
+  return input.flag ? rows.filter((row) => flagMatches(row, input.flag as CheckRegisterFlag)) : rows;
 }
 
 export async function listCheckRegister(input: CheckRegisterFilter = {}): Promise<CheckRegisterResult> {
@@ -420,7 +459,7 @@ export async function listCheckRegister(input: CheckRegisterFilter = {}): Promis
   let notice: string | undefined;
 
   try {
-    [rows, counts] = await Promise.all([listFilteredChecks(input), countByStatus()]);
+    [rows, counts] = await Promise.all([listFilteredChecks(input, accounts), countByStatus()]);
   } catch (error) {
     if (!(error instanceof DirectusError)) throw error;
     notice = NOTICE_REGISTER;
@@ -775,21 +814,29 @@ export async function applyCheckAction(checkId: number, input: CheckActionInput)
       throw new ConflictError("A received check must be deposited before it can be marked cleared.", "action");
     }
 
+    const clearedDate = asString(input.clearedDate) || today;
+    if (!isCalendarDate(clearedDate)) {
+      throw new ValidationError("Enter the date the bank cleared the check.", "clearedDate");
+    }
+    if (clearedDate > today) {
+      throw new ValidationError("The clearing date cannot be in the future.", "clearedDate");
+    }
+
     const posting =
       direction === "ISSUED"
         ? await postCheckEntry(
             issuedCheckEntry("E10", account, amount, ISSUED_COUNTER_KEY, draftBase(
               checkNo,
-              today,
+              clearedDate,
               `Check ${checkNo} cleared`,
             )),
           )
         : await postCheckEntry(
-            receivedCheckEntry("E13", account, amount, draftBase(checkNo, today, `Check ${checkNo} cleared`)),
+            receivedCheckEntry("E13", account, amount, draftBase(checkNo, clearedDate, `Check ${checkNo} cleared`)),
           );
     const eventCode = direction === "ISSUED" ? "E10" : "E13";
 
-    await updateItem(CHECKS, checkId, { status: "CLEARED", cleared_at: phtStamp() });
+    await updateItem(CHECKS, checkId, { status: "CLEARED", cleared_at: `${clearedDate}T00:00:00` });
     await appendEvent({
       checkId,
       action: "CLEAR",
@@ -931,6 +978,43 @@ export async function applyCheckAction(checkId: number, input: CheckActionInput)
   });
 
   return { check: await reloadCheck(Number(created.id)), postingBlocked: null };
+}
+
+export type ClearCheckEntry = { checkId: number; clearedDate: string };
+
+export type ClearChecksResult = {
+  cleared: BankCheck[];
+  blocked: PostingBlocked[];
+  failures: { checkId: number; message: string }[];
+};
+
+/**
+ * Batch clearing: one bank statement line per check, so each carries its own date.
+ * A rejected row does not abort the batch — it comes back in `failures` for the UI to show.
+ */
+export async function clearChecks(entries: ClearCheckEntry[]): Promise<ClearChecksResult> {
+  const cleared: BankCheck[] = [];
+  const blocked: PostingBlocked[] = [];
+  const failures: { checkId: number; message: string }[] = [];
+
+  for (const entry of entries) {
+    try {
+      const result = await applyCheckAction(entry.checkId, {
+        action: "CLEAR",
+        clearedDate: entry.clearedDate,
+      });
+      cleared.push(result.check);
+      if (result.postingBlocked) blocked.push(result.postingBlocked);
+    } catch (error) {
+      if (error instanceof ValidationError || error instanceof ConflictError) {
+        failures.push({ checkId: entry.checkId, message: error.message });
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  return { cleared, blocked, failures };
 }
 
 export async function listCheckbooks(accountId?: number): Promise<CheckbookListResult> {

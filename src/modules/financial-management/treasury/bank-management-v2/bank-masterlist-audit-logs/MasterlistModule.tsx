@@ -1,40 +1,45 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, RefreshCw } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { FileSpreadsheet, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { formatNumber } from "@/lib/utils";
 
 import { AccountsTable } from "./components/AccountsTable";
+import { AccountDetailDialog } from "./components/AccountDetailDialog";
+import { ArfFilters } from "./components/ArfFilters";
 import { ArfTable } from "./components/ArfTable";
+import { AuditFilters } from "./components/AuditFilters";
 import { AuditTable } from "./components/AuditTable";
-import { OptionCombobox, type ComboboxOption } from "./components/OptionCombobox";
+import { MasterlistFilters } from "./components/MasterlistFilters";
+import type { ComboboxOption } from "./components/OptionCombobox";
 import { useMasterlist } from "./hooks/useMasterlist";
+import type { BankAccountV2 } from "./types";
+import { downloadAccounts, downloadFindings, downloadLog } from "./utils/exportWorkbook";
 
-const CSV_HEADER = [
-  "Bank code",
-  "Bank & branch",
-  "Account no.",
-  "Currency",
-  "IFRS 9 category",
-  "Linked GL",
-  "Status",
-  "Book balance",
-  "Last reconciled (PHT)",
-];
+type Tab = "accounts" | "arf" | "audit";
+
+/** The download button names what it will actually contain, because each tab has its own columns. */
+const DOWNLOAD_LABEL: Record<Tab, string> = {
+  accounts: "Download masterlist",
+  arf: "Download findings",
+  audit: "Download log",
+};
 
 /** Bank Masterlist & Audit Logs (FSD 1.6): accounts, ARF findings and the PHT movement log. */
 export function MasterlistModule() {
+  const router = useRouter();
+  const [tab, setTab] = useState<Tab>("accounts");
+  const [isExporting, setIsExporting] = useState(false);
+  const [openAccount, setOpenAccount] = useState<BankAccountV2 | null>(null);
   const {
-    accounts,
+    allAccounts,
     visibleAccounts,
-    findings,
+    filteredFindings,
     audit,
     auditTotal,
     page,
@@ -47,6 +52,12 @@ export function MasterlistModule() {
     findingsTotal,
     bankId,
     filters,
+    arfFilters,
+    logFilters,
+    facets,
+    accountTypeOptions,
+    ifrsOptions,
+    arfSubModules,
     notice,
     isLoading,
     error,
@@ -55,14 +66,16 @@ export function MasterlistModule() {
     setBankId,
     setAccountsPage,
     setFindingsPage,
+    setArfFilters,
+    setLogFilters,
+    allAuditRows,
     refetch,
   } = useMasterlist();
-  const [query, setQuery] = useState("");
 
-  // Options come from the API, so they need a searchable picker rather than a fixed Select.
+  // Options come from the unfiltered set, so a chosen value never disappears from its own picker.
   const bankOptions: ComboboxOption[] = [
     { value: "ALL", label: "All accounts" },
-    ...accounts.map((account) => ({
+    ...allAccounts.map((account) => ({
       value: String(account.bankId),
       label: `BA-${account.bankId} · ${account.bankName} · ${account.accountNumber}`,
       searchText: `${account.bankName} ${account.accountNumber} ${account.branch ?? ""}`,
@@ -70,30 +83,37 @@ export function MasterlistModule() {
     })),
   ];
 
-  async function copyCsv() {
-    const lines = [
-      CSV_HEADER.join(","),
-      ...accounts.map((account) =>
-        [
-          `BA-${account.bankId}`,
-          `${account.bankName} ${account.branch ?? ""}`.trim(),
-          account.accountNumber,
-          account.currency,
-          account.ifrsCategory,
-          account.glCode ?? "",
-          account.status,
-          account.bookBalance.toFixed(2),
-          account.lastReconciledAt ?? "Never",
-        ]
-          .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
-          .join(","),
-      ),
-    ];
+  /** Each tab downloads its own sheet, with the filters that tab is showing. */
+  async function download() {
+    setIsExporting(true);
     try {
-      await navigator.clipboard.writeText(lines.join("\n"));
-      toast.success(`${accounts.length} account(s) copied as CSV.`);
-    } catch {
-      toast.error("The browser blocked the clipboard.");
+      if (tab === "accounts") {
+        if (!visibleAccounts.length) {
+          toast.warning("No account matches these filters.");
+          return;
+        }
+        downloadAccounts(visibleAccounts);
+        toast.success(`${visibleAccounts.length} account(s) downloaded.`);
+      } else if (tab === "arf") {
+        if (!filteredFindings.length) {
+          toast.warning("No finding matches these filters.");
+          return;
+        }
+        downloadFindings(filteredFindings);
+        toast.success(`${filteredFindings.length} finding(s) downloaded.`);
+      } else {
+        const rows = await allAuditRows();
+        if (!rows.length) {
+          toast.warning("No log entry matches these filters.");
+          return;
+        }
+        downloadLog(rows);
+        toast.success(`${rows.length} log entr${rows.length === 1 ? "y" : "ies"} downloaded.`);
+      }
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "The workbook could not be generated.");
+    } finally {
+      setIsExporting(false);
     }
   }
 
@@ -110,9 +130,13 @@ export function MasterlistModule() {
           <Button variant="outline" size="icon" aria-label="Refresh" onClick={refetch} disabled={isLoading}>
             <RefreshCw className="h-4 w-4" />
           </Button>
-          <Button variant="outline" onClick={() => void copyCsv()} disabled={accounts.length === 0}>
-            <Copy className="mr-2 h-4 w-4" />
-            Copy CSV
+          <Button variant="outline" onClick={() => void download()} disabled={isExporting || isLoading}>
+            {isExporting ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <FileSpreadsheet className="mr-2 h-4 w-4" />
+            )}
+            {DOWNLOAD_LABEL[tab]}
           </Button>
         </div>
       </div>
@@ -131,85 +155,20 @@ export function MasterlistModule() {
         </Alert>
       )}
 
-      <Tabs defaultValue="accounts" className="space-y-4">
+      <Tabs value={tab} onValueChange={(next) => setTab(next as Tab)} className="space-y-4">
         <TabsList>
-          <TabsTrigger value="accounts">Bank masterlist</TabsTrigger>
-          <TabsTrigger value="arf">ARF findings ({formatNumber(findings.length)})</TabsTrigger>
-          <TabsTrigger value="audit">PHT movement log</TabsTrigger>
+          <TabsTrigger value="accounts" className="min-h-11 md:min-h-0">
+            Bank Masterlist
+          </TabsTrigger>
+          <TabsTrigger value="arf" className="min-h-11 md:min-h-0">
+            ARF Findings
+          </TabsTrigger>
+          <TabsTrigger value="audit" className="min-h-11 md:min-h-0">
+            Movement Logs
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="accounts" className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") setFilters({ ...filters, q: query.trim() || undefined });
-              }}
-              placeholder="Search account no., holder or branch"
-              className="w-full sm:w-[280px]"
-            />
-            <Select
-              value={filters.status ?? "ALL"}
-              onValueChange={(value) => setFilters({ ...filters, status: value })}
-            >
-              <SelectTrigger className="w-full sm:w-[160px]">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent className="max-h-60">
-                <SelectItem value="ALL">All statuses</SelectItem>
-                <SelectItem value="ACTIVE">Active</SelectItem>
-                <SelectItem value="DORMANT">Dormant</SelectItem>
-                <SelectItem value="CLOSED">Closed</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select
-              value={filters.currency ?? "ALL"}
-              onValueChange={(value) => setFilters({ ...filters, currency: value })}
-            >
-              <SelectTrigger className="w-full sm:w-[140px]">
-                <SelectValue placeholder="Currency" />
-              </SelectTrigger>
-              <SelectContent className="max-h-60">
-                <SelectItem value="ALL">All currencies</SelectItem>
-                <SelectItem value="PHP">PHP</SelectItem>
-                <SelectItem value="USD">USD</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select
-              value={filters.reconciliation ?? "ALL"}
-              onValueChange={(value) => setFilters({ ...filters, reconciliation: value })}
-            >
-              <SelectTrigger className="w-full sm:w-[190px]">
-                <SelectValue placeholder="Reconciliation" />
-              </SelectTrigger>
-              <SelectContent className="max-h-60">
-                <SelectItem value="ALL">Any reconciliation</SelectItem>
-                <SelectItem value="RECONCILED">Reconciled at least once</SelectItem>
-                <SelectItem value="UNRECONCILED">Never reconciled</SelectItem>
-              </SelectContent>
-            </Select>
-            <OptionCombobox
-              options={bankOptions}
-              value={bankId}
-              onChange={setBankId}
-              placeholder="Bank account"
-              searchPlaceholder="Search bank, account no. or branch"
-              emptyLabel="No bank account found."
-              className="w-full sm:w-[240px]"
-            />
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setQuery("");
-                setBankId("ALL");
-                setFilters({});
-              }}
-            >
-              Clear filters
-            </Button>
-          </div>
-
+        <TabsContent value="accounts">
           <AccountsTable
             accounts={visibleAccounts}
             isLoading={isLoading}
@@ -217,23 +176,68 @@ export function MasterlistModule() {
             pageCount={accountsPageCount}
             total={accountsTotal}
             onPageChange={setAccountsPage}
+            onOpenAccount={setOpenAccount}
+            filters={
+              <MasterlistFilters
+                filters={filters}
+                bankId={bankId}
+                bankOptions={bankOptions}
+                accountTypeOptions={accountTypeOptions}
+                ifrsOptions={ifrsOptions}
+                onChange={setFilters}
+                onBankChange={setBankId}
+                onClear={() => {
+                  setBankId("ALL");
+                  setFilters({});
+                }}
+              />
+            }
           />
         </TabsContent>
 
         <TabsContent value="arf">
           <ArfTable
-            findings={findings}
+            findings={filteredFindings}
             page={findingsPage}
             pageCount={findingsPageCount}
             total={findingsTotal}
             onPageChange={setFindingsPage}
+            onOpenModule={(path) => router.push(path)}
+            filters={
+              <ArfFilters
+                filters={arfFilters}
+                subModules={arfSubModules}
+                onChange={setArfFilters}
+              />
+            }
           />
         </TabsContent>
 
         <TabsContent value="audit">
-          <AuditTable rows={audit} page={page} pageCount={pageCount} total={auditTotal} onPage={setPage} />
+          <AuditTable
+            rows={audit}
+            page={page}
+            pageCount={pageCount}
+            total={auditTotal}
+            onPage={setPage}
+            emptyLabel={
+              logFilters.q || logFilters.module !== "ALL" || logFilters.pht !== "ALL" || logFilters.from || logFilters.to
+                ? "No log entry matches these filters."
+                : "The movement log has no entry yet."
+            }
+            filters={
+              <AuditFilters
+                filters={logFilters}
+                modules={facets.modules}
+                users={facets.users}
+                onChange={setLogFilters}
+              />
+            }
+          />
         </TabsContent>
       </Tabs>
+
+      <AccountDetailDialog account={openAccount} onOpenChange={(open) => !open && setOpenAccount(null)} />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -9,16 +10,22 @@ import { cn, formatCurrency } from "@/lib/utils";
 import { phtDate, toPhtDateString } from "../pht";
 import { PAGE_SIZE, toneClass } from "../constants";
 import { TablePager } from "./TablePager";
-import type { UndepositedAsset } from "../types";
+import { UndepositedFiltersBar } from "./UndepositedFilters";
+import type { UndepositedAsset, UndepositedFilters } from "../types";
 
 type Props = {
   assets: UndepositedAsset[];
+  totalCount: number;
+  filters: UndepositedFilters;
   selected: Set<number>;
   isLoading: boolean;
   page: number;
   onPageChange: (page: number) => void;
+  onFiltersChange: (filters: UndepositedFilters) => void;
   onToggle: (id: number) => void;
   onToggleAll: (checked: boolean, ids: number[]) => void;
+  onSelectAllReady: (ids: number[]) => void;
+  onDeselectAll: () => void;
 };
 
 /**
@@ -27,12 +34,17 @@ type Props = {
  */
 export function UndepositedTable({
   assets,
+  totalCount,
+  filters,
   selected,
   isLoading,
   page,
   onPageChange,
+  onFiltersChange,
   onToggle,
   onToggleAll,
+  onSelectAllReady,
+  onDeselectAll,
 }: Props) {
   // A refetch can leave the page past the last row; clamp instead of resetting so the
   // selection the user built up is not disturbed by an unrelated page change.
@@ -43,16 +55,35 @@ export function UndepositedTable({
   const isPdc = (asset: UndepositedAsset) =>
     asset.assetType === "CHECK" && asset.chequeDate ? asset.chequeDate > today : false;
   const selectableIds = rows.filter((asset) => !isPdc(asset)).map((asset) => asset.collectionDetailId);
+  // "Ready" ignores paging: the button exists for the common case of depositing everything at once.
+  const readyIds = assets.filter((asset) => !isPdc(asset)).map((asset) => asset.collectionDetailId);
   const allSelected =
     selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border/50">
-      <div className="flex items-center justify-between gap-2 border-b bg-muted/30 px-4 py-2.5">
-        <Badge variant="outline" className={cn("shrink-0 text-[11px] font-semibold", toneClass("neutral"))}>
-          {assets.length} item{assets.length === 1 ? "" : "s"}
-        </Badge>
+    <div className="overflow-hidden rounded-xl border border-border/50 border-t-[3px] border-t-emerald-500/70">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/30 px-4 py-2.5">
+        <p className="text-xs text-muted-foreground">Tick the collections going on one deposit slip, then choose the bank.</p>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8"
+            disabled={readyIds.length === 0 || readyIds.every((id) => selected.has(id))}
+            onClick={() => onSelectAllReady(readyIds)}
+          >
+            Select all ready ({readyIds.length})
+          </Button>
+          {selected.size > 0 ? (
+            <Button type="button" variant="ghost" size="sm" className="h-8" onClick={onDeselectAll}>
+              Deselect all ({selected.size})
+            </Button>
+          ) : null}
+        </div>
       </div>
+
+      <UndepositedFiltersBar filters={filters} onChange={onFiltersChange} />
 
       {isLoading ? (
         <div className="space-y-2 p-4">
@@ -61,7 +92,9 @@ export function UndepositedTable({
           ))}
         </div>
       ) : assets.length === 0 ? (
-        <p className="px-4 py-12 text-center text-sm text-muted-foreground">Nothing is waiting to be deposited.</p>
+        <p className="px-4 py-12 text-center text-sm text-muted-foreground">
+          {totalCount === 0 ? "Nothing is waiting to be deposited." : "No collections match these filters."}
+        </p>
       ) : (
         <>
           <div className="hidden overflow-x-auto xl:block">
@@ -204,6 +237,7 @@ export function UndepositedTable({
             total={assets.length}
             pageSize={PAGE_SIZE}
             onPageChange={onPageChange}
+            className="border-t border-border/50 px-4 py-3"
           />
         </>
       )}

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
@@ -96,7 +96,7 @@ export function TransactionFiltersBar({ filters, accounts, onChange, onReset }: 
             onChange({ bankName: value === ALL ? null : value, bankAccountId: null })
           }
           placeholder="All banks"
-          searchPlaceholder="Search banksâ€¦"
+          searchPlaceholder="Search banks…"
           emptyLabel="No bank matches."
           className="h-9"
         />
@@ -112,7 +112,7 @@ export function TransactionFiltersBar({ filters, accounts, onChange, onReset }: 
           value={filters.bankAccountId ? String(filters.bankAccountId) : ALL}
           onChange={(value) => onChange({ bankAccountId: value === ALL ? null : Number(value) })}
           placeholder="All accounts"
-          searchPlaceholder="Search accountsâ€¦"
+          searchPlaceholder="Search accounts…"
           emptyLabel="No account matches."
           className="h-9"
         />

@@ -22,12 +22,11 @@ export function TransfersClearingPanel({ clearing, isLoading, isSaving, onSettle
   const today = phtToday();
 
   return (
-    <section aria-label="Transfers in clearing" className="overflow-hidden rounded-xl border border-border/50">
+    <section aria-label="Transfers in clearing" className="overflow-hidden rounded-xl border border-border/50 border-t-[3px] border-t-violet-500/70">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/30 px-4 py-3">
-        <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold">Transfers in clearing</h2>
-          <p className="truncate text-xs text-muted-foreground">Money already out of the source account, waiting for its value date.</p>
-        </div>
+        <p className="min-w-0 truncate text-xs text-muted-foreground">
+          Money already out of the source account, waiting for its value date.
+        </p>
         <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs font-semibold tabular-nums">
           {clearing.length}
         </span>

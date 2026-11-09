@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { ChevronLeft, ChevronRight, MoreVertical, ReceiptText } from "lucide-react";
+import { MoreVertical, ReceiptText } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -29,6 +29,7 @@ import { formatCurrency } from "@/lib/utils";
 
 import { phtToday } from "../pht";
 import { StatusBadge } from "./StatusBadge";
+import { TablePager } from "./TablePager";
 import { TRANSACTION_KIND_LABELS } from "../constants";
 import type { TransactionRow } from "../types";
 
@@ -39,6 +40,7 @@ interface TransactionsTableProps {
   page: number;
   pageCount: number;
   total: number;
+  pageSize: number;
   onPageChange: (page: number) => void;
   onCancelMemo: (row: TransactionRow) => void;
   onSettle: (row: TransactionRow) => void;
@@ -109,6 +111,7 @@ export function TransactionsTable({
   page,
   pageCount,
   total,
+  pageSize,
   onPageChange,
   onCancelMemo,
   onSettle,
@@ -119,7 +122,7 @@ export function TransactionsTable({
   return (
     <section
       aria-label="Bank transactions"
-      className="overflow-hidden rounded-2xl border border-border/50 bg-card shadow-sm"
+      className="overflow-hidden rounded-2xl border border-border/50 border-t-[3px] border-t-violet-500/70 bg-card shadow-sm"
     >
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 bg-muted/30 px-4 py-3">
         <div className="min-w-0">
@@ -274,40 +277,15 @@ export function TransactionsTable({
         </>
       )}
 
-      {total > 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/50 px-4 py-3">
-          <p className="text-xs text-muted-foreground tabular-nums">
-            {pageCount > 1 ? `Page ${page} of ${pageCount} · ` : ""}
-            {total} transaction{total === 1 ? "" : "s"}
-          </p>
-          {pageCount > 1 ? (
-            <div className="flex items-center gap-1">
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                aria-label="Previous page"
-                disabled={page <= 1 || isLoading}
-                onClick={() => onPageChange(page - 1)}
-              >
-                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                aria-label="Next page"
-                disabled={page >= pageCount || isLoading}
-                onClick={() => onPageChange(page + 1)}
-              >
-                <ChevronRight className="h-4 w-4" aria-hidden="true" />
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+      <TablePager
+        page={page}
+        pageCount={pageCount}
+        total={total}
+        pageSize={pageSize}
+        onPageChange={onPageChange}
+        isLoading={isLoading}
+        className="border-t border-border/50 px-4 py-3"
+      />
     </section>
   );
 }

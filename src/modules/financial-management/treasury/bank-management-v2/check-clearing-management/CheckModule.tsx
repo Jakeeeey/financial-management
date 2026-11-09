@@ -1,31 +1,29 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Plus, RefreshCw } from "lucide-react";
+import { useState } from "react";
+import { Ban, CheckCheck, FileClock, LoaderCircle, Plus, Undo2 } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { formatNumber } from "@/lib/utils";
+import { cn, formatNumber } from "@/lib/utils";
 
-import { statusLabel, statusTone, toneClass } from "./constants";
-import { cn } from "@/lib/utils";
+import { accentClass, toneClass } from "./constants";
+import { BatchClearDialog } from "./components/BatchClearDialog";
 import { CheckActionDialog } from "./components/CheckActionDialog";
+import { CheckFlow } from "./components/CheckFlow";
+import { CheckFilters } from "./components/CheckFilters";
+import { CheckbookDialog } from "./components/CheckbookDialog";
 import { ChecksTable, type CheckAction } from "./components/ChecksTable";
 import { NewCheckDialog } from "./components/NewCheckDialog";
-import { OptionCombobox } from "./components/OptionCombobox";
 import { useChecks } from "./hooks/useChecks";
 import type { BankCheck } from "./types";
-
-const STATUS_FILTERS = ["ALL", "PENDING", "RECEIVED", "IN_CLEARING", "CLEARED", "RETURNED", "CANCELLED"] as const;
 
 /** Check & Clearing Management (FSD 1.4): register, status tiles and every check action. */
 export function CheckModule() {
   const {
     checks,
-    statusTiles,
+    counts,
     accounts,
     notice,
     filters,
@@ -39,21 +37,26 @@ export function CheckModule() {
     issue,
     receive,
     act,
+    bulkClear,
+    addSeries,
+    loadSeries,
     loadDetail,
   } = useChecks();
-  const [query, setQuery] = useState("");
   const [newOpen, setNewOpen] = useState(false);
+  const [seriesOpen, setSeriesOpen] = useState(false);
   const [activeCheck, setActiveCheck] = useState<BankCheck | null>(null);
   const [activeAction, setActiveAction] = useState<CheckAction | null>(null);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setFilters((current) => ({ ...current, q: query.trim() || undefined }));
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [query, setFilters]);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [clearOpen, setClearOpen] = useState(false);
 
   function handleAction(check: BankCheck, action: CheckAction) {
+    // Clearing always needs the statement date, so a single row uses the same dialog
+    // the reference uses for both cases.
+    if (action === "CLEAR") {
+      setSelected(new Set([check.id]));
+      setClearOpen(true);
+      return;
+    }
     setActiveCheck(check);
     setActiveAction(action);
   }
@@ -61,6 +64,27 @@ export function CheckModule() {
   const accountOptions = [
     { value: "ALL", label: "All accounts" },
     ...accounts.map((account) => ({ value: String(account.bankId), label: account.label })),
+  ];
+
+  const bankOptions = [
+    { value: "ALL", label: "All banks" },
+    ...[...new Set(accounts.map((account) => account.bankName))].filter(Boolean).map((name) => ({ value: name, label: name })),
+  ];
+
+  const selectedChecks = checks.filter((check) => selected.has(check.id));
+
+  const tiles = [
+    {
+      key: "OPEN",
+      label: "Pending / received",
+      count: counts.PENDING + counts.RECEIVED,
+      icon: FileClock,
+      tone: "info" as const,
+    },
+    { key: "IN_CLEARING", label: "In clearing", count: counts.IN_CLEARING, icon: LoaderCircle, tone: "warning" as const },
+    { key: "CLEARED", label: "Cleared", count: counts.CLEARED, icon: CheckCheck, tone: "success" as const },
+    { key: "RETURNED", label: "Returned", count: counts.RETURNED, icon: Undo2, tone: "danger" as const },
+    { key: "CANCELLED", label: "Cancelled", count: counts.CANCELLED, icon: Ban, tone: "neutral" as const },
   ];
 
   return (
@@ -72,9 +96,9 @@ export function CheckModule() {
             Track issued and received checks from release to clearing, returns and replacements.
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button variant="outline" size="icon" aria-label="Refresh" onClick={() => void refetch()} disabled={isLoading}>
-            <RefreshCw className="h-4 w-4" />
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <Button variant="outline" onClick={() => setSeriesOpen(true)}>
+            Checkbook series
           </Button>
           <Button onClick={() => setNewOpen(true)} disabled={accounts.length === 0}>
             <Plus className="mr-2 h-4 w-4" />
@@ -102,75 +126,63 @@ export function CheckModule() {
         </Alert>
       )}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-        {statusTiles.map((tile) => (
-          <Card key={tile.status} className="shadow-none">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+        {tiles.map((tile) => (
+          <Card
+            key={tile.key}
+            className={cn(
+              "overflow-hidden border-border/50 border-l-[3px] bg-gradient-to-br to-transparent shadow-none",
+              accentClass(tile.tone),
+            )}
+          >
             <CardContent className="p-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                {statusLabel(tile.status)}
-              </p>
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{tile.label}</p>
+                <span className={cn("shrink-0 rounded-lg border p-1.5", toneClass(tile.tone))} aria-hidden="true">
+                  <tile.icon className="h-4 w-4" />
+                </span>
+              </div>
               <p className="mt-1 text-lg font-semibold tabular-nums">{formatNumber(tile.count)}</p>
-              <span className={cn("mt-2 inline-block h-1 w-8 rounded-full", toneClass(statusTone(tile.status)))} />
             </CardContent>
           </Card>
         ))}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search check no., payee or payor"
-          className="w-full sm:w-[280px]"
-        />
-        <Select
-          value={filters.direction ?? "ALL"}
-          onValueChange={(value) => setFilters((current) => ({ ...current, direction: value }))}
-        >
-          <SelectTrigger className="w-full sm:w-[170px]">
-            <SelectValue placeholder="Direction" />
-          </SelectTrigger>
-          <SelectContent className="max-h-60">
-            <SelectItem value="ALL">All directions</SelectItem>
-            <SelectItem value="ISSUED">Issued</SelectItem>
-            <SelectItem value="RECEIVED">Received</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select
-          value={filters.status ?? "ALL"}
-          onValueChange={(value) => setFilters((current) => ({ ...current, status: value }))}
-        >
-          <SelectTrigger className="w-full sm:w-[180px]">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent className="max-h-60">
-            {STATUS_FILTERS.map((status) => (
-              <SelectItem key={status} value={status}>
-                {status === "ALL" ? "All statuses" : statusLabel(status)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <OptionCombobox
-          options={accountOptions}
-          value={filters.accountId ? String(filters.accountId) : "ALL"}
-          onChange={(value) =>
-            setFilters((current) => ({ ...current, accountId: value === "ALL" ? undefined : Number(value) }))
-          }
-          placeholder="All accounts"
-          searchPlaceholder="Search accounts"
-          emptyLabel="No account matches that search."
-          aria-label="Account filter"
-          className="sm:w-[240px]"
-        />
-      </div>
+      <CheckFlow />
 
-      <ChecksTable
-        checks={checks}
-        isLoading={isLoading}
-        page={page}
-        onPageChange={setPage}
-        onAction={handleAction}
+      <Card className="overflow-hidden border-border/50 border-t-[3px] border-t-amber-500/70 shadow-none">
+        <div className="border-b border-border/50 px-4 py-3">
+          <h2 className="text-sm font-semibold">Check register</h2>
+          <p className="text-xs text-muted-foreground">Click a row for its details and audit trail</p>
+        </div>
+        <CheckFilters
+          accountOptions={accountOptions}
+          bankOptions={bankOptions}
+          filters={filters}
+          onChange={setFilters}
+        />
+        <ChecksTable
+          checks={checks}
+          isLoading={isLoading}
+          page={page}
+          onPageChange={setPage}
+          onAction={handleAction}
+          selected={selected}
+          onSelectionChange={setSelected}
+          onBulkClear={() => setClearOpen(true)}
+        />
+      </Card>
+
+      <BatchClearDialog
+        checks={selectedChecks}
+        open={clearOpen}
+        isSaving={isSaving}
+        onOpenChange={setClearOpen}
+        onSubmit={async (entries) => {
+          const result = await bulkClear(entries);
+          if (result) setSelected(new Set());
+          return result;
+        }}
       />
 
       <NewCheckDialog
@@ -180,6 +192,15 @@ export function CheckModule() {
         isSaving={isSaving}
         onIssue={issue}
         onReceive={receive}
+      />
+
+      <CheckbookDialog
+        open={seriesOpen}
+        onOpenChange={setSeriesOpen}
+        accounts={accounts}
+        isSaving={isSaving}
+        loadSeries={loadSeries}
+        onRegister={addSeries}
       />
 
       <CheckActionDialog
@@ -195,6 +216,7 @@ export function CheckModule() {
         }}
         onSubmit={act}
         loadDetail={loadDetail}
+        onSelectAction={setActiveAction}
       />
     </div>
   );

@@ -32,6 +32,7 @@ export interface BankAccountV2 {
 
 export type ArfSeverity = "CRITICAL" | "HIGH" | "MEDIUM";
 
+/** Where a finding's record lives, so the row can offer "Normalize to PHT" without trusting the client. */
 export interface ArfFinding {
   key: string;
   severity: ArfSeverity;
@@ -40,6 +41,8 @@ export interface ArfFinding {
   detail: string;
   reference: string | null;
   occurredAt: string | null;
+  /** Page that owns the record, for the "Open <module>" action. */
+  goTo?: "check-clearing-management" | "bank-deposit";
 }
 
 export interface AuditLogRow {

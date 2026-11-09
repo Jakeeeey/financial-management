@@ -1,5 +1,7 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -18,6 +20,9 @@ type Props = {
   pageCount: number;
   total: number;
   onPageChange: (page: number) => void;
+  onOpenAccount: (account: BankAccountV2) => void;
+  /** Filter band rendered inside the card, above the table. */
+  filters?: ReactNode;
 };
 
 const COLUMNS = 9;
@@ -32,14 +37,24 @@ function holderLine(account: BankAccountV2): string {
 }
 
 /** FSD 1.6 account masterlist: one row per bank account with its GL, IFRS category and book balance. */
-export function AccountsTable({ accounts, isLoading, page, pageCount, total, onPageChange }: Props) {
+export function AccountsTable({
+  accounts,
+  isLoading,
+  page,
+  pageCount,
+  total,
+  onPageChange,
+  onOpenAccount,
+  filters,
+}: Props) {
   const start = (page - 1) * LIST_PAGE_SIZE;
   const rows = accounts.slice(start, start + LIST_PAGE_SIZE);
 
   return (
     <>
-      <Card className="hidden overflow-hidden border-border/50 shadow-none xl:block">
+      <Card className="hidden overflow-hidden border-border/50 border-t-[3px] border-t-rose-500/70 shadow-none xl:block">
         <CardContent className="p-0">
+          {filters}
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -77,7 +92,19 @@ export function AccountsTable({ accounts, isLoading, page, pageCount, total, onP
 
                 {!isLoading &&
                   rows.map((account) => (
-                    <TableRow key={account.bankId}>
+                    <TableRow
+                      key={account.bankId}
+                      tabIndex={0}
+                      aria-label={`Open account ${account.accountNumber}`}
+                      className="cursor-pointer"
+                      onClick={() => onOpenAccount(account)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          onOpenAccount(account);
+                        }
+                      }}
+                    >
                       <TableCell className="tabular-nums text-muted-foreground">BA-{account.bankId}</TableCell>
                       <TableCell className="max-w-[280px]">
                         <p className="truncate" title={bankBranch(account)}>
@@ -119,7 +146,7 @@ export function AccountsTable({ accounts, isLoading, page, pageCount, total, onP
               page={page}
               pageCount={pageCount}
               total={total}
-              shown={rows.length}
+              pageSize={LIST_PAGE_SIZE}
               onPageChange={onPageChange}
               className="border-t px-4 py-3"
             />
@@ -127,7 +154,9 @@ export function AccountsTable({ accounts, isLoading, page, pageCount, total, onP
         </CardContent>
       </Card>
 
-      <ul className="divide-y divide-border rounded-2xl border border-border/50 xl:hidden">
+      <div className="xl:hidden">
+        {filters}
+        <ul className="divide-y divide-border rounded-2xl border border-border/50">
         {isLoading &&
           Array.from({ length: 3 }).map((_, index) => (
             <li key={index} className="space-y-2 p-4">
@@ -140,7 +169,19 @@ export function AccountsTable({ accounts, isLoading, page, pageCount, total, onP
         )}
         {!isLoading &&
           rows.map((account) => (
-            <li key={account.bankId} className="space-y-1 p-4">
+            <li
+              key={account.bankId}
+              tabIndex={0}
+              aria-label={`Open account ${account.accountNumber}`}
+              className="cursor-pointer space-y-1 p-4"
+              onClick={() => onOpenAccount(account)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onOpenAccount(account);
+                }
+              }}
+            >
               <div className="flex items-start justify-between gap-3">
                 <p className="min-w-0 truncate font-medium" title={account.bankName}>
                   {account.bankName}
@@ -153,14 +194,15 @@ export function AccountsTable({ accounts, isLoading, page, pageCount, total, onP
               <p className="text-sm tabular-nums">{formatCurrency(account.bookBalance)}</p>
             </li>
           ))}
-      </ul>
+        </ul>
+      </div>
 
       {!isLoading && (
         <TablePager
           page={page}
           pageCount={pageCount}
           total={total}
-          shown={rows.length}
+          pageSize={LIST_PAGE_SIZE}
           onPageChange={onPageChange}
           className="px-1 pt-2 xl:hidden"
         />

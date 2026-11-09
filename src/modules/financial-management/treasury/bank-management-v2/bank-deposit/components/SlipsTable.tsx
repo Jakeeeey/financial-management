@@ -10,25 +10,42 @@ import { formatCurrency } from "@/lib/utils";
 import { toPhtDateString } from "../pht";
 import { PAGE_SIZE } from "../constants";
 import { StatusBadge } from "./StatusBadge";
+import { SlipFiltersBar } from "./SlipFilters";
 import { TablePager } from "./TablePager";
-import type { DepositSlip } from "../types";
+import type { DepositSlip, SlipFilters } from "../types";
 
 type Props = {
   slips: DepositSlip[];
+  allSlips: DepositSlip[];
+  totalCount: number;
+  filters: SlipFilters;
   isLoading: boolean;
   page: number;
   onPageChange: (page: number) => void;
+  onFiltersChange: (filters: SlipFilters) => void;
   onView: (slip: DepositSlip) => void;
 };
 
 /** Deposit slips already prepared, newest first. */
-export function SlipsTable({ slips, isLoading, page, onPageChange, onView }: Props) {
+export function SlipsTable({
+  slips,
+  allSlips,
+  totalCount,
+  filters,
+  isLoading,
+  page,
+  onPageChange,
+  onFiltersChange,
+  onView,
+}: Props) {
   const pageCount = Math.max(1, Math.ceil(slips.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
   const rows = slips.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border/50">
+    <div className="overflow-hidden rounded-xl border border-border/50 border-t-[3px] border-t-emerald-500/70">
+      <SlipFiltersBar slips={allSlips} filters={filters} onChange={onFiltersChange} />
+
       {isLoading ? (
         <div className="space-y-2 p-4">
           {Array.from({ length: 4 }).map((_, index) => (
@@ -36,7 +53,9 @@ export function SlipsTable({ slips, isLoading, page, onPageChange, onView }: Pro
           ))}
         </div>
       ) : slips.length === 0 ? (
-        <p className="px-4 py-12 text-center text-sm text-muted-foreground">No deposit slips yet.</p>
+        <p className="px-4 py-12 text-center text-sm text-muted-foreground">
+          {totalCount === 0 ? "No deposit slips yet." : "No deposit slips match these filters."}
+        </p>
       ) : (
         <>
           <div className="hidden overflow-x-auto lg:block">
@@ -63,7 +82,9 @@ export function SlipsTable({ slips, isLoading, page, onPageChange, onView }: Pro
                       <p className="truncate font-mono text-sm" title={slip.depositNo}>
                         {slip.depositNo}
                       </p>
-                      <p className="truncate text-[11px] text-muted-foreground">{slip.id}</p>
+                      <p className="truncate text-[11px] text-muted-foreground" title={slip.referenceNo ?? undefined}>
+                        {slip.referenceNo ?? "No validation no."}
+                      </p>
                     </TableCell>
                     <TableCell className="max-w-[200px] truncate text-sm" title={slip.targetBankLabel}>
                       {slip.targetBankLabel}
@@ -114,6 +135,7 @@ export function SlipsTable({ slips, isLoading, page, onPageChange, onView }: Pro
             total={slips.length}
             pageSize={PAGE_SIZE}
             onPageChange={onPageChange}
+            className="border-t border-border/50 px-4 py-3"
           />
         </>
       )}

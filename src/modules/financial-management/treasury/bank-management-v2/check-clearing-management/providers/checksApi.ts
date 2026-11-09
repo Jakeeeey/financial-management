@@ -5,7 +5,7 @@ export type CheckCounts = Record<CheckStatus, number>;
 export type CheckRegister = {
   checks: BankCheck[];
   counts: CheckCounts;
-  accounts: { bankId: number; label: string }[];
+  accounts: { bankId: number; label: string; bankName: string }[];
   notice?: string;
 };
 
@@ -51,6 +51,10 @@ export type RegisterFilters = {
   direction?: string;
   status?: string;
   accountId?: number;
+  bank?: string;
+  flag?: string;
+  from?: string;
+  to?: string;
   q?: string;
 };
 
@@ -107,6 +111,17 @@ export function receiveCheck(payload: ReceiveCheckPayload): Promise<CheckMutatio
 
 export function actOnCheck(checkId: number, payload: CheckActionPayload): Promise<CheckMutationResult> {
   return postJson(`/api/fm/treasury/bank-management-v2/check-clearing-management/${checkId}/action`, payload);
+}
+
+export type ClearChecksResult = {
+  cleared: BankCheck[];
+  blocked: PostingBlocked[];
+  failures: { checkId: number; message: string }[];
+};
+
+/** One row per check: the bank statement clears them on different days. */
+export function clearChecks(entries: { checkId: number; clearedDate: string }[]): Promise<ClearChecksResult> {
+  return postJson("/api/fm/treasury/bank-management-v2/check-clearing-management/bulk/clear", { entries });
 }
 
 export async function listCheckbooks(accountId?: number): Promise<{ series: CheckbookSeries[]; notice?: string }> {

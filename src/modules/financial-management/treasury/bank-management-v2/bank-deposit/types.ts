@@ -115,6 +115,25 @@ export interface UndepositedAsset {
 }
 
 export type CheckDirection = "ISSUED" | "RECEIVED";
+
+/** Filters on the undeposited tab, mirroring the prototype's `dp` filter bar. */
+export interface UndepositedFilters {
+  type: "ALL" | "CASH" | "CHECK";
+  canDeposit: "ALL" | "READY" | "PDC";
+  from: string;
+  to: string;
+  q: string;
+}
+
+/** Filters on the deposit-slips tab, mirroring the prototype's `ds` filter bar. */
+export interface SlipFilters {
+  bank: string;
+  status: string;
+  from: string;
+  to: string;
+  q: string;
+}
+
 export type CheckStatus =
   | "PENDING"
   | "RECEIVED"

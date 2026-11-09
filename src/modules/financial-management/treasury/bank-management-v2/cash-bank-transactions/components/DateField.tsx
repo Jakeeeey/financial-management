@@ -15,14 +15,19 @@ import { cn } from "@/lib/utils";
 
 interface DateFieldProps {
   id?: string;
-  /** `YYYY-MM-DD`, PHT wall clock. */
+  /** `YYYY-MM-DD`, PHT wall clock. Empty string means "no date picked". */
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   disabled?: boolean;
+  /** Earliest selectable day, inclusive, as `YYYY-MM-DD`. */
+  minDate?: string;
+  /** Latest selectable day, inclusive, as `YYYY-MM-DD`. */
+  maxDate?: string;
   /** Set inside a Dialog: a portalled popover is dismissed by the dialog's layer on click. */
   inDialog?: boolean;
   className?: string;
+  "aria-label"?: string;
   "aria-invalid"?: boolean;
   "aria-describedby"?: string;
 }
@@ -40,18 +45,25 @@ export function formatDateValue(date: Date): string {
   return format(date, "yyyy-MM-dd");
 }
 
+/** shadcn picker (Popover + Calendar) used instead of the banned native date input. */
 export function DateField({
   id,
   value,
   onChange,
   placeholder = "Pick a date",
   disabled,
+  minDate,
+  maxDate,
   inDialog = false,
   className,
   ...aria
 }: DateFieldProps) {
   const selected = parseDateValue(value);
+  const min = parseDateValue(minDate ?? "");
+  const max = parseDateValue(maxDate ?? "");
   const Content = inDialog ? PopoverContentInDialog : PopoverContent;
+
+  const blocked = [...(min ? [{ before: min }] : []), ...(max ? [{ after: max }] : [])];
 
   return (
     <Popover>
@@ -61,6 +73,7 @@ export function DateField({
           type="button"
           variant="outline"
           disabled={disabled}
+          aria-label={aria["aria-label"]}
           aria-invalid={aria["aria-invalid"]}
           aria-describedby={aria["aria-describedby"]}
           className={cn(
@@ -78,6 +91,7 @@ export function DateField({
           mode="single"
           selected={selected}
           defaultMonth={selected}
+          disabled={blocked.length > 0 ? blocked : undefined}
           onSelect={(date) => {
             if (date) onChange(formatDateValue(date));
           }}

@@ -93,8 +93,7 @@ export async function listItems<T>(
   return { rows: response.data ?? [], total };
 }
 
-export function asString(value: unknown): string {
-  if (typeof value === "string") return value.trim();
+export function asString(value: unknown): string {  if (typeof value === "string") return value.trim();
   return value == null ? "" : String(value).trim();
 }
 

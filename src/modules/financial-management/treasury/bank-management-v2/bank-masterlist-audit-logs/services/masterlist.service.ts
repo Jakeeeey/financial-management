@@ -73,6 +73,8 @@ function money(value: number): string {
 export type AccountsFilter = {
   status?: BankAccountStatus;
   currency?: Currency;
+  accountType?: string;
+  ifrsCategory?: string;
   q?: string;
   reconciliation?: "RECONCILED" | "UNRECONCILED";
 };
@@ -181,6 +183,8 @@ function toAccount(
 function matchesAccount(account: BankAccountV2, filter: AccountsFilter, needle: string): boolean {
   if (filter.status && account.status !== filter.status) return false;
   if (filter.currency && account.currency !== filter.currency) return false;
+  if (filter.accountType && (account.accountType ?? "") !== filter.accountType) return false;
+  if (filter.ifrsCategory && account.ifrsCategory !== filter.ifrsCategory) return false;
   if (filter.reconciliation === "RECONCILED" && !account.lastReconciledAt) return false;
   if (filter.reconciliation === "UNRECONCILED" && account.lastReconciledAt) return false;
   if (!needle) return true;
@@ -218,58 +222,6 @@ function sortFindings(findings: ArfFinding[]): ArfFinding[] {
     if (bySeverity !== 0) return bySeverity;
     return (right.occurredAt ?? "").localeCompare(left.occurredAt ?? "");
   });
-}
-
-function utcFinding(
-  key: string,
-  subModule: string,
-  reference: string | null,
-  field: string,
-  stamp: string,
-): ArfFinding {
-  return {
-    key,
-    severity: "CRITICAL",
-    subModule,
-    title: "Timestamp stored in UTC",
-    detail: `${reference ?? "This row"} stores ${field} as a UTC stamp (${stamp}); the FSD requires PHT wall clock.`,
-    reference,
-    occurredAt: toPhtDateString(stamp) || null,
-  };
-}
-
-async function utcFindings(): Promise<ArfFinding[]> {
-  const [deposits, transfers] = await Promise.all([
-    listItems<{ id: number; deposit_no: string | null; deposit_date: string | null; date_prepared: string | null }>(
-      "bank_deposit",
-      { fields: ["id", "deposit_no", "deposit_date", "date_prepared"], limit: -1 },
-    ),
-    listItems<{ transfer_id: number; transfer_no: string | null; transfer_date: string | null }>("bank_transfers", {
-      fields: ["transfer_id", "transfer_no", "transfer_date"],
-      limit: -1,
-    }),
-  ]);
-
-  const findings: ArfFinding[] = [];
-  for (const row of deposits.rows) {
-    const stamps: Array<[string, string | null]> = [
-      ["deposit_date", row.deposit_date],
-      ["date_prepared", row.date_prepared],
-    ];
-    const offending = stamps.find(([, value]) => isUtcStamp(value));
-    if (offending && offending[1]) {
-      findings.push(
-        utcFinding(`utc:bank_deposit:${asNumber(row.id)}`, "Deposit", row.deposit_no, offending[0], offending[1]),
-      );
-    }
-  }
-  for (const row of transfers.rows) {
-    if (!isUtcStamp(row.transfer_date)) continue;
-    findings.push(
-      utcFinding(`utc:bank_transfers:${asNumber(row.transfer_id)}`, "Fund Transfer", row.transfer_no, "transfer_date", row.transfer_date as string),
-    );
-  }
-  return findings;
 }
 
 async function undepositedCashFindings(): Promise<ArfFinding[]> {
@@ -313,6 +265,7 @@ async function undepositedCashFindings(): Promise<ArfFinding[]> {
       detail: `Cash of PHP ${money(asNumber(row.amount))} from ${document || `collection ${asNumber(row.collection_id)}`} has sat in the vault for ${ageDays} day${ageDays === 1 ? "" : "s"}.`,
       reference: document || null,
       occurredAt: toPhtDateString(parent.collection_date) || null,
+      goTo: "bank-deposit",
     });
   }
   return findings;
@@ -348,6 +301,7 @@ async function unclearedDepositFindings(): Promise<ArfFinding[]> {
       detail: `A check on ${document || "a deposit slip"} dated ${asString(parent.deposit_date) || "unknown"} is still in transit after ${ageDays} days.`,
       reference: document || null,
       occurredAt: toPhtDateString(parent.deposit_date) || null,
+      goTo: "bank-deposit",
     });
   }
   return findings;
@@ -376,7 +330,7 @@ async function checkFindings(): Promise<{ findings: ArfFinding[]; notice?: strin
     if (error instanceof DirectusError) {
       return {
         findings: [],
-        notice: "The bank_checks register does not exist yet, so check findings (UTC stamps, returned checks, stale checks) are unavailable.",
+        notice: "The bank_checks register does not exist yet, so check findings (returned checks, stale checks) are unavailable.",
       };
     }
     throw error;
@@ -388,10 +342,6 @@ async function checkFindings(): Promise<{ findings: ArfFinding[]; notice?: strin
     const reference = checkNo || null;
     const status = asString(row.status).toUpperCase();
 
-    if (isUtcStamp(row.created_at)) {
-      findings.push(utcFinding(`utc:bank_checks:${asNumber(row.id)}`, "Check & Clearing", reference, "created_at", row.created_at as string));
-    }
-
     if (RETURNED_CHECK_STATUSES.has(status) && !asNumber(row.replaced_by_id)) {
       findings.push({
         key: `replace:${asNumber(row.id)}`,
@@ -401,6 +351,7 @@ async function checkFindings(): Promise<{ findings: ArfFinding[]; notice?: strin
         detail: `Check ${checkNo || asNumber(row.id)} is ${status.toLowerCase()} and no replacement check is linked.`,
         reference,
         occurredAt: toPhtDateString(row.check_date) || null,
+        goTo: "check-clearing-management",
       });
     }
 
@@ -415,6 +366,7 @@ async function checkFindings(): Promise<{ findings: ArfFinding[]; notice?: strin
           detail: `Check ${checkNo || asNumber(row.id)} has been ${status.toLowerCase().replace(/_/g, " ")} for ${ageDays} days; a check is stale after ${STALE_CHECK_DAYS} days.`,
           reference,
           occurredAt: toPhtDateString(row.check_date) || null,
+          goTo: "check-clearing-management",
         });
       }
     }
@@ -424,26 +376,31 @@ async function checkFindings(): Promise<{ findings: ArfFinding[]; notice?: strin
 
 /** Recomputes every ARF finding per call; nothing is persisted. */
 export async function listFindings(): Promise<ArfResult> {
-  const [utc, cash, uncleared, checks] = await Promise.all([
-    utcFindings(),
+  const [cash, uncleared, checks] = await Promise.all([
     undepositedCashFindings(),
     unclearedDepositFindings(),
     checkFindings(),
   ]);
 
-  const findings = sortFindings([...utc, ...cash, ...uncleared, ...checks.findings]);
+  const findings = sortFindings([...cash, ...uncleared, ...checks.findings]);
   return checks.notice ? { findings, notice: checks.notice } : { findings };
 }
 
 export type AuditFilter = {
   module?: string;
+  user?: string;
+  pht?: "PHT" | "NOT_PHT";
+  q?: string;
   from?: string;
   to?: string;
   page: number;
   pageSize: number;
 };
 
-export type AuditResult = Paginated<AuditLogRow> & { notice?: string };
+/** Selectable values for the movement log's Module and User pickers, read from the table itself. */
+export type AuditFacets = { modules: string[]; users: string[] };
+
+export type AuditResult = Paginated<AuditLogRow> & { notice?: string; facets: AuditFacets };
 
 type AuditRow = {
   id: number;
@@ -473,23 +430,51 @@ function phtStampFromRow(value: string): string {
 function auditWhere(filter: AuditFilter): Record<string, unknown> | undefined {
   const conditions: Record<string, unknown>[] = [];
   if (filter.module) conditions.push({ module: { _eq: filter.module } });
+  if (filter.user) conditions.push({ actor_name: { _eq: filter.user } });
+  // A legacy UTC import is the one flagged with `legacy_utc_at`; everything else was written in PHT.
+  if (filter.pht === "PHT") conditions.push({ legacy_utc_at: { _null: true } });
+  if (filter.pht === "NOT_PHT") conditions.push({ legacy_utc_at: { _nnull: true } });
   // from/to are inclusive PHT calendar days, so the upper bound covers the whole day.
   if (filter.from) conditions.push({ occurred_at: { _gte: `${filter.from}T00:00:00` } });
   if (filter.to) conditions.push({ occurred_at: { _lte: `${filter.to}T23:59:59` } });
+  if (filter.q) {
+    conditions.push({
+      _or: [{ action: { _contains: filter.q } }, { reference: { _contains: filter.q } }],
+    });
+  }
   return conditions.length ? { _and: conditions } : undefined;
 }
 
+async function loadAuditFacets(): Promise<AuditFacets> {
+  try {
+    const { rows } = await listItems<{ module: string | null; actor_name: string | null }>("bank_audit_log", {
+      fields: ["module", "actor_name"],
+      limit: -1,
+    });
+    return {
+      modules: [...new Set(rows.map((row) => asString(row.module)).filter(Boolean))].sort(),
+      users: [...new Set(rows.map((row) => asString(row.actor_name)).filter(Boolean))].sort(),
+    };
+  } catch (error) {
+    if (error instanceof DirectusError) return { modules: [], users: [] };
+    throw error;
+  }
+}
+
 export async function listAuditLog(filter: AuditFilter): Promise<AuditResult> {
-  const empty: AuditResult = { rows: [], total: 0, page: filter.page, pageSize: filter.pageSize };
+  const empty: AuditResult = { rows: [], total: 0, page: filter.page, pageSize: filter.pageSize, facets: { modules: [], users: [] } };
 
   try {
-    const { rows, total } = await listItems<AuditRow>("bank_audit_log", {
-      fields: AUDIT_FIELDS,
-      filter: auditWhere(filter),
-      sort: "-occurred_at",
-      limit: filter.pageSize,
-      page: filter.page,
-    });
+    const [{ rows, total }, facets] = await Promise.all([
+      listItems<AuditRow>("bank_audit_log", {
+        fields: AUDIT_FIELDS,
+        filter: auditWhere(filter),
+        sort: "-occurred_at",
+        limit: filter.pageSize,
+        page: filter.page,
+      }),
+      loadAuditFacets(),
+    ]);
 
     return {
       rows: rows.map((row) => ({
@@ -505,6 +490,7 @@ export async function listAuditLog(filter: AuditFilter): Promise<AuditResult> {
       total,
       page: filter.page,
       pageSize: filter.pageSize,
+      facets,
     };
   } catch (error) {
     if (error instanceof DirectusError) {

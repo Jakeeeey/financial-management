@@ -8,6 +8,8 @@ export const dynamic = "force-dynamic";
 const querySchema = z.object({
   status: z.enum(["ACTIVE", "DORMANT", "CLOSED"]).optional(),
   currency: z.enum(["PHP", "USD"]).optional(),
+  type: z.preprocess((value) => (value === "" || value == null ? undefined : value), z.string().trim().max(40).optional()),
+  ifrs: z.preprocess((value) => (value === "" || value == null ? undefined : value), z.string().trim().max(40).optional()),
   q: z
     .string()
     .trim()
@@ -28,7 +30,11 @@ export async function GET(request: Request) {
   }
 
   try {
-    const data = await listAccounts(parsed.data);
+    const data = await listAccounts({
+      ...parsed.data,
+      accountType: parsed.data.type,
+      ifrsCategory: parsed.data.ifrs,
+    });
     return NextResponse.json({ success: true, data });
   } catch (error) {
     console.error("[bank-management-v2] masterlist accounts failed", error);

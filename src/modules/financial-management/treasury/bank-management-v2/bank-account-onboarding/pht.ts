@@ -77,7 +77,14 @@ export function toPhtStampString(value: string | Date | number): string {
   const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
   if (dateOnly) return `${dateOnly[1]}-${dateOnly[2]}-${dateOnly[3]}T00:00:00`;
 
-  const parsed = Date.parse(raw.endsWith("Z") || /[+-]\d{2}:?\d{2}$/.test(raw) ? raw : `${raw}Z`);
+  // A stamp carrying no zone is already PHT wall clock: we write PHT, never UTC, so
+  // shifting it by +8 would render every new row eight hours into the future.
+  if (!raw.endsWith("Z") && !/[+-]\d{2}:?\d{2}$/.test(raw)) {
+    const naive = raw.replace(" ", "T");
+    return naive.length === 16 ? `${naive}:00` : naive.slice(0, 19);
+  }
+
+  const parsed = Date.parse(raw);
   if (Number.isNaN(parsed)) return "";
   return phtStamp(parsed);
 }

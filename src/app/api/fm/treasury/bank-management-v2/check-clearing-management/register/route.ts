@@ -12,6 +12,10 @@ const RegisterQuery = z.object({
   direction: z.enum(["ISSUED", "RECEIVED"]).optional(),
   status: z.enum(["PENDING", "RECEIVED", "IN_CLEARING", "CLEARED", "RETURNED", "CANCELLED"]).optional(),
   accountId: z.coerce.number().int().positive().optional(),
+  bank: z.string().trim().max(120).optional(),
+  flag: z.enum(["PDC", "STALE", "NOREPL", "REPL"]).optional(),
+  from: z.string().trim().length(10).optional(),
+  to: z.string().trim().length(10).optional(),
   q: z.string().trim().max(120).optional(),
 });
 
@@ -34,6 +38,10 @@ export async function GET(request: Request) {
       direction: parsed.data.direction,
       status: parsed.data.status,
       accountId: parsed.data.accountId,
+      bankName: parsed.data.bank,
+      flag: parsed.data.flag,
+      dateFrom: parsed.data.from,
+      dateTo: parsed.data.to,
       q: parsed.data.q,
     });
     return NextResponse.json({ success: true, data });

@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Landmark, Pencil } from "lucide-react";
+import { Landmark, Pencil } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -10,6 +10,7 @@ import { formatCurrency } from "@/lib/utils";
 import { toPhtDateString } from "../pht";
 import type { BankAccountV2 } from "../types";
 import { StatusBadge } from "./StatusBadge";
+import { TablePager } from "./TablePager";
 
 const COLUMN_COUNT = 10;
 
@@ -47,12 +48,10 @@ export function AccountsTable({
   onPageChange,
 }: AccountsTableProps) {
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
-  const first = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const last = Math.min(page * pageSize, total);
 
   return (
     <div className="space-y-3">
-      <div className="hidden overflow-hidden rounded-2xl border border-border/50 bg-card shadow-sm xl:block">
+      <div className="hidden overflow-hidden rounded-2xl border border-border/50 border-t-[3px] border-t-blue-500/70 bg-card shadow-sm xl:block">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -230,38 +229,14 @@ export function AccountsTable({
         )}
       </ul>
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground tabular-nums">
-          Showing {first}–{last} of {total}
-        </p>
-        {pageCount > 1 ? (
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => onPageChange(page - 1)}
-              disabled={page <= 1}
-            >
-              <ChevronLeft className="mr-1 size-4" />
-              Previous
-            </Button>
-            <span className="text-sm text-muted-foreground tabular-nums">
-              Page {page} of {pageCount}
-            </span>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => onPageChange(page + 1)}
-              disabled={page >= pageCount}
-            >
-              Next
-              <ChevronRight className="ml-1 size-4" />
-            </Button>
-          </div>
-        ) : null}
-      </div>
+      <TablePager
+        page={page}
+        pageCount={pageCount}
+        total={total}
+        pageSize={pageSize}
+        onPageChange={onPageChange}
+        className="px-1 pt-2"
+      />
     </div>
   );
 }

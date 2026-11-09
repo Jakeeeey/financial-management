@@ -4,6 +4,8 @@ import type { ArfFinding, AuditLogRow, BankAccountV2, Paginated } from "../types
 
 type Envelope<T> = { success: boolean; data?: T; error?: string };
 
+const BASE = "/api/fm/treasury/bank-management-v2/bank-masterlist-audit-logs";
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { ...init, cache: "no-store" });
   const body = (await response.json().catch(() => null)) as Envelope<T> | null;
@@ -23,23 +25,39 @@ function query(params: Record<string, string | number | undefined>): string {
   return text ? `?${text}` : "";
 }
 
-export type AccountsFilter = { status?: string; currency?: string; q?: string; reconciliation?: string };
-export type AuditFilter = { module?: string; from?: string; to?: string; page?: number; pageSize?: number };
+export type AccountsFilter = {
+  status?: string;
+  currency?: string;
+  type?: string;
+  ifrs?: string;
+  q?: string;
+  reconciliation?: string;
+};
+
+export type AuditFilter = {
+  module?: string;
+  user?: string;
+  pht?: string;
+  q?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+  pageSize?: number;
+};
+
+export type AuditFacets = { modules: string[]; users: string[] };
 
 export function fetchAccounts(filter: AccountsFilter) {
-  return request<{ accounts: BankAccountV2[]; notice?: string }>(
-    `/api/fm/treasury/bank-management-v2/bank-masterlist-audit-logs/accounts${query(filter)}`,
-  );
+  return request<{ accounts: BankAccountV2[]; notice?: string }>(`${BASE}/accounts${query(filter)}`);
 }
 
 export function fetchFindings() {
-  return request<{ findings: ArfFinding[]; notice?: string }>(
-    "/api/fm/treasury/bank-management-v2/bank-masterlist-audit-logs/arf",
-  );
+  return request<{ findings: ArfFinding[]; notice?: string }>(`${BASE}/arf`);
 }
 
 export function fetchAudit(filter: AuditFilter) {
-  return request<Paginated<AuditLogRow> & { notice?: string }>(
-    `/api/fm/treasury/bank-management-v2/bank-masterlist-audit-logs/audit${query(filter)}`,
+  return request<Paginated<AuditLogRow> & { notice?: string; facets: AuditFacets }>(
+    `${BASE}/audit${query(filter)}`,
   );
 }
+

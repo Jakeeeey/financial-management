@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import type { DepositSlip, UndepositedAsset } from "../types";
+import type { DepositSlip, SlipFilters, UndepositedAsset, UndepositedFilters } from "../types";
+import { phtToday, toPhtDateString } from "../pht";
+import { EMPTY_SLIP_FILTERS, EMPTY_UNDEPOSITED_FILTERS } from "../constants";
 import {
   cancelSlip as cancelSlipRequest,
   createSlip as createSlipRequest,
@@ -25,6 +27,8 @@ export function useDeposit() {
   // clamp a page that a shorter list leaves behind.
   const [assetsPage, setAssetsPage] = useState(1);
   const [slipsPage, setSlipsPage] = useState(1);
+  const [filters, setFiltersState] = useState<UndepositedFilters>(EMPTY_UNDEPOSITED_FILTERS);
+  const [slipFilters, setSlipFiltersState] = useState<SlipFilters>(EMPTY_SLIP_FILTERS);
 
   const refetch = useCallback(async () => {
     setIsLoading(true);
@@ -45,15 +49,78 @@ export function useDeposit() {
     void refetch();
   }, [refetch]);
 
+  const setFilters = useCallback((next: UndepositedFilters) => {
+    setFiltersState(next);
+    setAssetsPage(1);
+  }, []);
+
+  const filteredAssets = useMemo(() => {
+    const today = phtToday();
+    const query = filters.q.trim().toLowerCase();
+    return assets.filter((asset) => {
+      if (filters.type !== "ALL" && asset.assetType !== filters.type) return false;
+      const pdc = Boolean(asset.chequeDate && asset.chequeDate > today);
+      if (filters.canDeposit === "READY" && pdc) return false;
+      if (filters.canDeposit === "PDC" && !pdc) return false;
+      const collected = toPhtDateString(asset.collectionDate);
+      if (filters.from && collected < filters.from) return false;
+      if (filters.to && collected > filters.to) return false;
+      if (!query) return true;
+      return [asset.documentNumber, asset.checkNo, asset.customer, asset.collectionReference, asset.bankName].some(
+        (value) => value && value.toLowerCase().includes(query),
+      );
+    });
+  }, [assets, filters]);
+
+  const setSlipFilters = useCallback((next: SlipFilters) => {
+    setSlipFiltersState(next);
+    setSlipsPage(1);
+  }, []);
+
+  const filteredSlips = useMemo(() => {
+    const query = slipFilters.q.trim().toLowerCase();
+    return slips.filter((slip) => {
+      if (slipFilters.bank && slip.targetBankLabel !== slipFilters.bank) return false;
+      if (slipFilters.status !== "ALL" && slip.status !== slipFilters.status) return false;
+      const depositDate = toPhtDateString(slip.depositDate);
+      if (slipFilters.from && depositDate < slipFilters.from) return false;
+      if (slipFilters.to && depositDate > slipFilters.to) return false;
+      if (!query) return true;
+      return [slip.depositNo, slip.referenceNo, slip.remarks].some(
+        (value) => value && value.toLowerCase().includes(query),
+      );
+    });
+  }, [slips, slipFilters]);
+
   const totals = useMemo(() => {
+    const today = phtToday();
+    const month = today.slice(0, 7);
     const cash = assets.filter((asset) => asset.assetType === "CASH");
     const checks = assets.filter((asset) => asset.assetType === "CHECK");
+    const isPdc = (asset: UndepositedAsset) => Boolean(asset.chequeDate && asset.chequeDate > today);
+    const readyChecks = checks.filter((asset) => !isPdc(asset));
+    const pdc = checks.filter(isPdc);
+    const postedSlips = slips.filter((slip) => slip.status !== "CANCELLED" && slip.depositDate.startsWith(month));
+    const sum = (rows: UndepositedAsset[]) => rows.reduce((total, asset) => total + asset.amount, 0);
+    const cashTotal = sum(cash);
     return {
-      undeposited: cash.reduce((sum, asset) => sum + asset.amount, 0) + checks.reduce((sum, asset) => sum + asset.amount, 0),
-      cash: cash.reduce((sum, asset) => sum + asset.amount, 0),
-      checks: checks.reduce((sum, asset) => sum + asset.amount, 0),
+      undeposited: cashTotal + sum(checks),
+      cash: cashTotal,
+      checks: sum(checks),
       pendingSlips: slips.filter((slip) => slip.status !== "CLEARED" && slip.status !== "CANCELLED").length,
       overdueCash: cash.filter((asset) => asset.ageDays >= 1).length,
+      cashCount: cash.length,
+      oldestCashDate:
+        cash
+          .map((asset) => asset.collectionDate)
+          .filter((date): date is string => Boolean(date))
+          .sort()[0] ?? null,
+      readyCheckTotal: sum(readyChecks),
+      readyCheckCount: readyChecks.length,
+      pdcTotal: sum(pdc),
+      pdcCount: pdc.length,
+      monthTotal: postedSlips.reduce((total, slip) => total + slip.totalCash + slip.totalChecks, 0),
+      monthSlipCount: postedSlips.length,
     };
   }, [assets, slips]);
 
@@ -103,6 +170,12 @@ export function useDeposit() {
 
   return {
     assets,
+    filteredAssets,
+    filters,
+    setFilters,
+    filteredSlips,
+    slipFilters,
+    setSlipFilters,
     slips,
     accounts,
     totals,

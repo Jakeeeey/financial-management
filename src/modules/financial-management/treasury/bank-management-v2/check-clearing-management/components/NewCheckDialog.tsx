@@ -19,6 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 
 import { phtDate } from "../pht";
+import { DateField } from "./DateField";
 import { OptionCombobox } from "./OptionCombobox";
 import type { IssueCheckPayload, ReceiveCheckPayload } from "../providers/checksApi";
 
@@ -148,11 +149,11 @@ export function NewCheckDialog({ open, onOpenChange, accounts, isSaving, onIssue
                     <Label htmlFor="issue-date">
                       Check date <span className="text-destructive">*</span>
                     </Label>
-                    <Input
+                    <DateField
                       id="issue-date"
-                      type="date"
+                      inDialog
                       value={issue.checkDate}
-                      onChange={(event) => setIssue({ ...issue, checkDate: event.target.value })}
+                      onChange={(value) => setIssue({ ...issue, checkDate: value })}
                     />
                     {touched && issueErrors.checkDate && (
                       <p className="text-xs text-destructive">{issueErrors.checkDate}</p>
@@ -238,11 +239,11 @@ export function NewCheckDialog({ open, onOpenChange, accounts, isSaving, onIssue
                     {receive.checkDate > today && (
                       <p className="text-xs text-muted-foreground">Future-dated — stored as a PDC.</p>
                     )}
-                    <Input
+                    <DateField
                       id="receive-date"
-                      type="date"
+                      inDialog
                       value={receive.checkDate}
-                      onChange={(event) => setReceive({ ...receive, checkDate: event.target.value })}
+                      onChange={(value) => setReceive({ ...receive, checkDate: value })}
                     />
                     {touched && receiveErrors.checkDate && (
                       <p className="text-xs text-destructive">{receiveErrors.checkDate}</p>

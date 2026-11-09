@@ -20,6 +20,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency } from "@/lib/utils";
 
 import { phtDate, toPhtDateString } from "../pht";
+import { DepositPreview } from "./DepositPreview";
+import { DateField } from "./DateField";
 import { OptionCombobox } from "./OptionCombobox";
 import type { DepositAccountOption } from "../providers/depositApi";
 import type { UndepositedAsset } from "../types";
@@ -57,6 +59,8 @@ export function NewDepositDialog({ open, onOpenChange, accounts, assets, isSavin
     const checks = assets.filter((asset) => asset.assetType === "CHECK").reduce((sum, asset) => sum + asset.amount, 0);
     return { cash, checks, total: cash + checks };
   }, [assets]);
+  const cashCount = assets.filter((asset) => asset.assetType === "CASH").length;
+  const checkCount = assets.length - cashCount;
 
   const accountOptions = accounts.map((account) => ({ value: String(account.bankId), label: account.label }));
 
@@ -90,72 +94,97 @@ export function NewDepositDialog({ open, onOpenChange, accounts, assets, isSavin
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[95vw] sm:max-w-[550px] p-0 rounded-2xl">
-        <form onSubmit={handleSubmit} className="flex max-h-[85vh] flex-col overflow-hidden">
+      <DialogContent className="w-[95vw] p-0 sm:max-w-[950px] rounded-2xl">
+        <form onSubmit={handleSubmit} className="flex max-h-[88vh] flex-col overflow-hidden">
           <DialogHeader className="border-b px-6 py-4">
-            <DialogTitle className="line-clamp-1">New deposit slip</DialogTitle>
+            <DialogTitle className="line-clamp-1">
+              Deposit {assets.length} collection{assets.length === 1 ? "" : "s"}
+            </DialogTitle>
             <DialogDescription className="line-clamp-2 max-w-md">
-              {assets.length} item{assets.length === 1 ? "" : "s"} selected · {formatCurrency(totals.total)}
+              Total {formatCurrency(totals.total)} · {cashCount} cash, {checkCount} check
+              {checkCount === 1 ? "" : "s"}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="deposit-account">
-                  Account <span className="text-destructive">*</span>
-                </Label>
-                <OptionCombobox
-                  id="deposit-account"
-                  options={accountOptions}
-                  value={bankAccountId}
-                  onChange={setBankAccountId}
-                  placeholder="Select account"
-                  searchPlaceholder="Search bank accounts"
-                  emptyLabel="No account matches that search."
-                />
-                {touched && errors.bankAccountId && <p className="text-xs text-destructive">{errors.bankAccountId}</p>}
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-4">
+            <div className="grid gap-5 lg:grid-cols-2">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="deposit-account">
+                    Deposit to bank account <span className="text-destructive">*</span>
+                  </Label>
+                  <OptionCombobox
+                    id="deposit-account"
+                    options={accountOptions}
+                    value={bankAccountId}
+                    onChange={setBankAccountId}
+                    placeholder="Select account"
+                    searchPlaceholder="Search bank accounts"
+                    emptyLabel="No account matches that search."
+                  />
+                  {touched && errors.bankAccountId && (
+                    <p className="text-xs text-destructive">{errors.bankAccountId}</p>
+                  )}
+                </div>
+
+                <div className="grid items-end gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="deposit-date" className="whitespace-nowrap">
+                      Deposit date <span className="text-destructive">*</span>
+                    </Label>
+                    <DateField
+                      id="deposit-date"
+                      inDialog
+                      maxDate={today}
+                      value={depositDate}
+                      onChange={(value) => setDepositDate(value)}
+                    />
+                    {touched && errors.depositDate && (
+                      <p className="text-xs text-destructive">{errors.depositDate}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="deposit-slip-no" className="whitespace-nowrap">
+                      Slip / validation no. <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      id="deposit-slip-no"
+                      value={slipNo}
+                      maxLength={40}
+                      placeholder="As printed or validated by the bank"
+                      onChange={(event) => setSlipNo(event.target.value)}
+                    />
+                    {touched && errors.slipNo && <p className="text-xs text-destructive">{errors.slipNo}</p>}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="deposit-remarks">Remarks</Label>
+                  <Textarea
+                    id="deposit-remarks"
+                    rows={3}
+                    maxLength={500}
+                    className="min-h-[92px] resize-none"
+                    placeholder="Optional, e.g. deposited by armored car"
+                    value={remarks}
+                    onChange={(event) => setRemarks(event.target.value)}
+                  />
+                </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="deposit-date">
-                  Deposit date <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="deposit-date"
-                  type="date"
-                  max={today}
-                  value={depositDate}
-                  onChange={(event) => setDepositDate(event.target.value)}
+                <DepositPreview
+                  bankAccountId={bankAccountId ? Number(bankAccountId) : null}
+                  cashTotal={totals.cash}
                 />
-                {touched && errors.depositDate && <p className="text-xs text-destructive">{errors.depositDate}</p>}
+                {checkCount > 0 ? (
+                  <p className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
+                    {checkCount} check{checkCount === 1 ? "" : "s"} totalling {formatCurrency(totals.checks)} move to
+                    In Clearing. No entry is posted for them now; the bank GL is debited when each check clears.
+                  </p>
+                ) : null}
               </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="deposit-slip-no">
-                Slip / validation no. <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="deposit-slip-no"
-                value={slipNo}
-                maxLength={40}
-                placeholder="e.g. 0001234"
-                onChange={(event) => setSlipNo(event.target.value)}
-              />
-              {touched && errors.slipNo && <p className="text-xs text-destructive">{errors.slipNo}</p>}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="deposit-remarks">Remarks</Label>
-              <Textarea
-                id="deposit-remarks"
-                rows={3}
-                maxLength={500}
-                className="min-h-[100px] resize-none"
-                value={remarks}
-                onChange={(event) => setRemarks(event.target.value)}
-              />
             </div>
 
             <div className="space-y-2">

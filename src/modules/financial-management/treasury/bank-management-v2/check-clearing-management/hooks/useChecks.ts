@@ -3,13 +3,15 @@
 import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { toast } from "sonner";
 
-import type { BankCheck, CheckEvent, CheckStatus } from "../types";
+import type { BankCheck, CheckEvent, CheckStatus, CheckbookSeries } from "../types";
 import {
   actOnCheck,
+  clearChecks,
   createCheckbook,
   fetchCheckDetail,
   fetchRegister,
   issueCheck,
+  listCheckbooks,
   receiveCheck,
   type CheckActionPayload,
   type CheckCounts,
@@ -32,7 +34,7 @@ export function useChecks(initialFilters: RegisterFilters = {}) {
   const [filters, setFilters] = useState<RegisterFilters>({ direction: "ALL", status: "ALL", ...initialFilters });
   const [checks, setChecks] = useState<BankCheck[]>([]);
   const [counts, setCounts] = useState<CheckCounts>(EMPTY_COUNTS);
-  const [accounts, setAccounts] = useState<{ bankId: number; label: string }[]>([]);
+  const [accounts, setAccounts] = useState<{ bankId: number; label: string; bankName: string }[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -110,14 +112,47 @@ export function useChecks(initialFilters: RegisterFilters = {}) {
     [run],
   );
 
+  const bulkClear = useCallback(
+    async (entries: { checkId: number; clearedDate: string }[]) => {
+      setIsSaving(true);
+      try {
+        const result = await clearChecks(entries);
+        await refetch();
+        if (result.failures.length) {
+          toast.error(`${result.failures.length} check(s) could not be cleared: ${result.failures[0].message}`);
+        } else {
+          toast.success(`${result.cleared.length} check(s) cleared`);
+        }
+        if (result.blocked.length) {
+          toast.warning("Cleared, but the journal entry is blocked until the GL mapping is set.");
+        }
+        return result;
+      } catch (caught) {
+        toast.error(caught instanceof Error ? caught.message : "The checks could not be cleared.");
+        return null;
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [refetch],
+  );
+
   const addSeries = useCallback(
     (payload: { bankAccountId: number; seriesStart: string; seriesEnd: string }) =>
       run(() => createCheckbook(payload), "Checkbook series added"),
     [run],
   );
 
-  const loadDetail = useCallback(
-    async (checkId: number): Promise<{ check: BankCheck; events: CheckEvent[] } | null> => {
+  const loadSeries = useCallback(async (): Promise<{ series: CheckbookSeries[]; notice?: string } | null> => {
+    try {
+      return await listCheckbooks();
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "Could not load the checkbook series.");
+      return null;
+    }
+  }, []);
+
+  const loadDetail = useCallback(    async (checkId: number): Promise<{ check: BankCheck; events: CheckEvent[] } | null> => {
       try {
         return await fetchCheckDetail(checkId);
       } catch (caught) {
@@ -145,7 +180,9 @@ export function useChecks(initialFilters: RegisterFilters = {}) {
     issue,
     receive,
     act,
+    bulkClear,
     addSeries,
+    loadSeries,
     loadDetail,
   };
 }

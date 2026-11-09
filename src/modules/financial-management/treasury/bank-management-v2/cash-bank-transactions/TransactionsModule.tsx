@@ -4,6 +4,8 @@ import { useState } from "react";
 import { Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { formatNumber } from "@/lib/utils";
 
 import { CancelMemoDialog } from "./components/CancelMemoDialog";
 import { InlineAlert } from "./components/InlineAlert";
@@ -28,6 +30,7 @@ export function TransactionsModule() {
     total,
     page,
     pageCount,
+    pageSize,
     accounts,
     expenseAccounts,
     clearing,
@@ -70,32 +73,48 @@ export function TransactionsModule() {
         </InlineAlert>
       ) : null}
 
-      <TransactionsTable
-        rows={rows}
-        isLoading={isLoading}
-        isSaving={isSaving}
-        page={page}
-        pageCount={pageCount}
-        total={total}
-        onPageChange={(next) => patchFilters({ page: next })}
-        onCancelMemo={setCancelTarget}
-        onSettle={(row) => void settle(row)}
-        filters={
-          <TransactionFiltersBar
-            filters={filters}
-            accounts={accounts}
-            onChange={patchFilters}
-            onReset={resetFilters}
-          />
-        }
-      />
+      <Tabs defaultValue="transactions" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="transactions" className="min-h-11 md:min-h-0">
+            Bank transactions ({formatNumber(total)})
+          </TabsTrigger>
+          <TabsTrigger value="clearing" className="min-h-11 md:min-h-0">
+            Transfers in clearing ({formatNumber(clearing.length)})
+          </TabsTrigger>
+        </TabsList>
 
-      <TransfersClearingPanel
-        clearing={clearing}
-        isLoading={isLoading}
-        isSaving={isSaving}
-        onSettle={(row) => void settle(row)}
-      />
+        <TabsContent value="transactions">
+          <TransactionsTable
+            rows={rows}
+            isLoading={isLoading}
+            isSaving={isSaving}
+            page={page}
+            pageCount={pageCount}
+            total={total}
+            pageSize={pageSize}
+            onPageChange={(next) => patchFilters({ page: next })}
+            onCancelMemo={setCancelTarget}
+            onSettle={(row) => void settle(row)}
+            filters={
+              <TransactionFiltersBar
+                filters={filters}
+                accounts={accounts}
+                onChange={patchFilters}
+                onReset={resetFilters}
+              />
+            }
+          />
+        </TabsContent>
+
+        <TabsContent value="clearing">
+          <TransfersClearingPanel
+            clearing={clearing}
+            isLoading={isLoading}
+            isSaving={isSaving}
+            onSettle={(row) => void settle(row)}
+          />
+        </TabsContent>
+      </Tabs>
 
       <NewTransactionDialog
         open={dialogOpen}

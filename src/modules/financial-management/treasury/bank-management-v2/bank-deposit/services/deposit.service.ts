@@ -1,8 +1,8 @@
 import "server-only";
 
-import type { DepositSlip, UndepositedAsset } from "../types";
+import type { DepositSlip, ResolvedJournalEntry, UndepositedAsset } from "../types";
 import { daysSince, phtDisplayStamp, phtStamp, phtToday } from "../pht";
-import { postJournalEntry, PostingBlockedError } from "./gl.service";
+import { postJournalEntry, PostingBlockedError, resolveJournalEntry } from "./gl.service";
 import {
   DirectusError,
   asNumber,
@@ -99,6 +99,20 @@ async function loadAccounts(): Promise<Map<number, string>> {
   );
 }
 
+/**
+ * `collection_details.bank` stores the `bank_names` id as text, so the register printed bare numbers
+ * until this lookup. Missing ids fall back to the raw value rather than blanking the cell.
+ */
+async function loadBankNames(): Promise<Map<string, string>> {
+  const { rows } = await listItems<{ id: number; bank_name: string | null }>("bank_names", {
+    fields: ["id", "bank_name"],
+    limit: 500,
+  });
+  return new Map(
+    rows.filter((row) => row.bank_name).map((row) => [String(row.id), String(row.bank_name)]),
+  );
+}
+
 function isTruthyFlag(value: unknown): boolean {
   if (value == null) return false;
   if (typeof value === "boolean") return value;
@@ -131,6 +145,7 @@ export async function listUndepositedAssets(): Promise<UndepositedAsset[]> {
     { fields: COLLECTION_FIELDS, filter: { id: { _in: collectionIds } }, limit: 800 },
   );
   const byId = new Map(collections.map((row) => [Number(row.id), row]));
+  const bankNames = await loadBankNames();
 
   return pending.map((row) => {
     const parent = row.collection_id == null ? undefined : byId.get(Number(row.collection_id));
@@ -143,7 +158,7 @@ export async function listUndepositedAssets(): Promise<UndepositedAsset[]> {
       collectionReference: parent?.docNo ?? null,
       assetType: isCash ? "CASH" : "CHECK",
       customer: row.customer_code,
-      bankName: row.bank,
+      bankName: bankNames.get(asString(row.bank)) ?? asString(row.bank) ?? null,
       checkNo: row.check_no,
       chequeDate: row.chequeDate,
       collectionDate,
@@ -152,6 +167,20 @@ export async function listUndepositedAssets(): Promise<UndepositedAsset[]> {
       alreadyDeposited: false,
     };
   });
+}
+
+/**
+ * E07 preview for the create dialog. Nothing is written: the same resolver the posting path uses
+ * runs on the cash total, so the panel cannot drift from what posting will actually do.
+ */
+export async function previewDepositSlip(input: { bankAccountId: number; cashTotal: number }): Promise<ResolvedJournalEntry> {
+  return resolveJournalEntry(
+    depositCashEntry({ bankId: input.bankAccountId, glCoaId: null }, roundMoney(input.cashTotal), {
+      sourceRef: "PREVIEW",
+      postingDate: phtToday(),
+      description: "Cash deposit",
+    }),
+  );
 }
 
 export async function listDepositSlips(): Promise<DepositSlip[]> {

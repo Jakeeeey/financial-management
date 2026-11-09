@@ -5,8 +5,26 @@
  * lane never hard-codes a colour or renames a status locally.
  */
 
+import type { SlipFilters, UndepositedFilters } from "./types";
+
 /** Rows per page in the module's list tables; the pager hides itself below two pages. */
 export const PAGE_SIZE = 10;
+
+export const EMPTY_UNDEPOSITED_FILTERS: UndepositedFilters = {
+  type: "ALL",
+  canDeposit: "ALL",
+  from: "",
+  to: "",
+  q: "",
+};
+
+export const EMPTY_SLIP_FILTERS: SlipFilters = {
+  bank: "",
+  status: "ALL",
+  from: "",
+  to: "",
+  q: "",
+};
 
 export const BANK_STATUSES = ["ACTIVE", "DORMANT", "CLOSED"] as const;
 
@@ -76,6 +94,19 @@ export type Tone = keyof typeof TONE_CLASS;
 
 export function toneClass(tone: Tone): string {
   return TONE_CLASS[tone] ?? TONE_CLASS.neutral;
+}
+
+/** Card accent: coloured left rail plus a wash that fades to the card surface. */
+const TONE_ACCENT: Record<string, string> = {
+  success: "border-l-emerald-500 from-emerald-50/70 dark:from-emerald-950/40",
+  warning: "border-l-amber-500 from-amber-50/70 dark:from-amber-950/40",
+  danger: "border-l-red-500 from-red-50/70 dark:from-red-950/40",
+  info: "border-l-blue-500 from-blue-50/70 dark:from-blue-950/40",
+  neutral: "border-l-border from-muted/40 dark:from-muted/10",
+};
+
+export function accentClass(tone: Tone): string {
+  return TONE_ACCENT[tone] ?? TONE_ACCENT.neutral;
 }
 
 const STATUS_TONE: Record<string, Tone> = {
