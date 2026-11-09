@@ -18,7 +18,7 @@ function load(file, overrides = {}) {
   return exports;
 }
 const directory = "src/app/api/fm/reports/logistics-wer-approval";
-function fixture({ budgetFailure = false, auditFailure = false, withinBudget = false, reloadFailure = false } = {}) {
+function fixture({ budgetFailure = false, auditFailure = false, withinBudget = false, reloadFailure = false, planStatus = "For Clearance" } = {}) {
   const writes = [];
   const errors = load("src/app/api/fm/reports/logistics-wer/_errors.ts");
   const submission = { id: 1, status: "submitted", departmentId: 8, totalAmount: 1600, disbursementId: null, lines: [{ id: 10, coaId: 1024, divisionId: 1, amount: 1000, receipts: [] }, { id: 11, coaId: 1031, divisionId: 1, amount: 600, receipts: [] }] };
@@ -26,7 +26,7 @@ function fixture({ budgetFailure = false, auditFailure = false, withinBudget = f
     DRAFT_COLLECTION: "drafts",
     withPlanLock: async (_, task) => task(),
     getPlanSubmission: async () => { if (reloadFailure && submission.status === "approved") throw new errors.WerDependencyError(429, "RATE_LIMITED", 3); return { planId: 2, submission }; },
-    getPlanBaseline: async () => ({ status: "For Clearance", docNo: "TEST", driverId: 3 }),
+    getPlanBaseline: async () => ({ status: planStatus, docNo: "TEST", driverId: 3 }),
     resolveDriverSupplier: async () => ({ eligible: true, supplierId: 4 }),
     getPlanRemaining: async () => {
       if (budgetFailure) throw new Error("Budget unavailable");
@@ -129,4 +129,24 @@ test("confirmed approval remains successful when the result reload is rate-limit
   assert.equal(result.refreshFailure.code, "WER_RATE_LIMITED");
   assert.equal(result.refreshFailure.outcome, "applied");
   assert.equal(result.refreshFailure.retryAfterSeconds, 3);
+});
+
+test("Posted approval preserves variance review and converts each submission only once", async () => {
+  const blocked = fixture({ planStatus: "Posted" });
+  await assert.rejects(blocked.api.decideOneSubmission({ submissionId: 1, decision: "approve", approverId: 2, remarks: "" }), error => error.status === 422);
+  assert.deepEqual(blocked.writes, []);
+  for (const withinBudget of [false, true]) {
+    const { api, writes, submission } = fixture({ planStatus: "Posted", withinBudget });
+    const outcome = await api.decideOneSubmission({ submissionId: 1, decision: "approve", approverId: 2,
+      remarks: "Receipts reviewed", acknowledgeVariance: true });
+    assert.equal(submission.status, "approved");
+    assert.equal(outcome.disbursementId, 9);
+    assert.deepEqual(writes.filter(write => write.url === "/items/disbursement_payables").map(write => write.body.amount), [1000, 600]);
+    const count = writes.length;
+    await api.decideOneSubmission({ submissionId: 1, decision: "approve", approverId: 2, remarks: "" });
+    assert.equal(writes.length, count);
+  }
+  const blockedStatus = fixture({ planStatus: "Cancelled" });
+  await assert.rejects(blockedStatus.api.decideOneSubmission({ submissionId: 1, decision: "approve", approverId: 2, remarks: "" }), error => error.status === 409);
+  assert.deepEqual(blockedStatus.writes, []);
 });

@@ -1,5 +1,6 @@
 import { publicWerFailure, WerDependencyError } from "../logistics-wer/_errors";
 import { calculateExpenseVariance } from "@/modules/financial-management/reports/logistics-wer/utils/budget-balances";
+import { isLogisticsWerPayableStatus } from "@/modules/financial-management/reports/logistics-wer/utils/status";
 import {
   acquireDocumentNumberLock,
   documentPrefixForTransactionType,
@@ -273,8 +274,8 @@ export async function decideOneSubmission(input: DecideOneInput): Promise<Decisi
 
     const baseline = await getPlanBaseline(initial.planId);
     if (!baseline) throw new DecisionFailure("Dispatch plan not found.", 404);
-    if ((baseline.status || "").toLowerCase() !== "for clearance") {
-      throw new DecisionFailure("The dispatch plan is no longer in For Clearance state; approval is blocked.", 409);
+    if (!isLogisticsWerPayableStatus(baseline.status)) {
+      throw new DecisionFailure("The dispatch plan must be in For Clearance or Posted state; approval is blocked.", 409);
     }
     const eligibility = await resolveDriverSupplier(baseline.driverId);
     if (!eligibility.eligible || !eligibility.supplierId) {
