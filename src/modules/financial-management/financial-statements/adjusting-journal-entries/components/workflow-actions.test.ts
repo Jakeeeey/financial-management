@@ -67,12 +67,14 @@ test("authorized users may post their own entries regardless of historical appro
   assert.equal(isEntryPoster(entry("Submitted", { entryOrigin: "SYSTEM" }), 27), false);
 });
 
-test("Creation maintenance actions are shared while Posting retains review actions", () => {
+test("Submitted entries expose no Creation actions while Posting retains review actions", () => {
   const submitted = entry("Submitted");
-  assert.deepEqual(actionsForPresentation(submitted, 24, true), ["withdraw", "cancel"]);
+  for (const userId of [24, 25, 26, 27, undefined]) {
+    assert.deepEqual(actionsForPresentation(submitted, userId, true), []);
+  }
   assert.deepEqual(actionsForPresentation(submitted, 24, false), ["post", "reject", "reject-final"]);
-  assert.deepEqual(actionsForPresentation(submitted, 27, true), ["withdraw", "cancel"]);
   assert.deepEqual(actionsForPresentation(entry("Draft"), 24, true), ["submit", "cancel"]);
+  assert.deepEqual(actionsForPresentation(entry("For Revision"), 24, true), ["submit", "cancel"]);
 });
 
 test("failed reversal conflicts cannot retry and system entries expose no manual actions", () => {
@@ -81,15 +83,20 @@ test("failed reversal conflicts cannot retry and system entries expose no manual
   assert.deepEqual(availableActions(entry("For Revision", { entryOrigin: "SYSTEM" })), []);
 });
 
-test("Creation tracks submissions without exposing posting and Posting offers an individual review action", () => {
-  const props = { entries: [entry("Submitted")], loading: false, userId: 27, readOnly: false,
-    onView: () => {}, onAction: () => {}, onReverse: () => {} };
-  const creation = renderToStaticMarkup(createElement(AdjustingEntriesTable, { ...props, presentation: "creation" }));
-  const posting = renderToStaticMarkup(createElement(AdjustingEntriesTable, { ...props, presentation: "posting" }));
-  assert.ok(creation.includes("Submitted"));
-  assert.equal(creation.includes(">Post</button>"), false);
-  assert.ok(posting.includes(">Post</button>"));
-  assert.equal(posting.includes("Approve selected"), false);
+test("Submitted adjustments and reversals show only View in Creation on desktop and mobile", () => {
+  for (const entryKind of ["ADJUSTMENT", "REVERSAL"] as const) {
+    const props = { entries: [entry("Submitted", { entryKind })], loading: false, userId: 27, readOnly: false,
+      onView: () => {}, onAction: () => {}, onReverse: () => {} };
+    const creation = renderToStaticMarkup(createElement(AdjustingEntriesTable, { ...props, presentation: "creation" }));
+    const posting = renderToStaticMarkup(createElement(AdjustingEntriesTable, { ...props, presentation: "posting" }));
+    assert.ok(creation.includes("Submitted"));
+    assert.equal((creation.match(/>View<\/button>/g) || []).length, 2);
+    assert.equal((creation.match(/<button\b/g) || []).length, 2);
+    assert.equal(creation.includes("More actions"), false);
+    assert.equal(creation.includes(">Post</button>"), false);
+    assert.ok(posting.includes(">Post</button>"));
+    assert.equal(posting.includes("Approve selected"), false);
+  }
 });
 
 test("all tables show lifecycle actors and times", () => {

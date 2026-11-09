@@ -28,6 +28,7 @@ export function isEntryPoster(entry: AdjustingEntry, userId?: number) {
 }
 
 export function actionsForPresentation(entry: AdjustingEntry, userId: number | undefined, creationView: boolean) {
+  if (creationView && entry.status === "Submitted") return [];
   return (userId == null ? [] : availableActions(entry)).filter(action => creationView
     ? ["submit", "withdraw", "revise", "cancel"].includes(action)
     : ["post", "retry", "reject", "reject-final"].includes(action));
