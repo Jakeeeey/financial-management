@@ -87,7 +87,7 @@ export async function referenceResponse(read: (access: BankReconciliationContext
 
 const sources = {
   companies: { collection: "company", key: "company_id", fields: "company_id,company_code,company_name", sort: "company_name,company_id", search: ["company_code", "company_name"] },
-  "bank-accounts": { collection: "bank_accounts", key: "bank_id", fields: "bank_id,bank_name,branch,account_number,currency,is_active,account_status", sort: "bank_name,branch,bank_id", search: ["bank_name", "branch"] },
+  "bank-accounts": { collection: "bank_accounts", key: "bank_id", fields: "bank_id,bank_name,branch,account_number,currency,is_active,account_status,company_id", sort: "bank_name,branch,bank_id", search: ["bank_name", "branch"] },
   accounts: { collection: "chart_of_accounts", key: "coa_id", fields: "coa_id,gl_code,account_title,status,account_type.account_name,bsis_code.bsis_code", sort: "gl_code,coa_id", search: ["gl_code", "account_title"] },
 } as const;
 
@@ -111,6 +111,7 @@ function project(kind: BankReconciliationReferenceResource, row: Row): BankRecon
       maskedAccountNumber: account ? `•••• ${account.slice(-4)}` : null,
       currency: text(row.currency), status: text(row.account_status).toUpperCase(),
       isActive: enabled(row.is_active) && text(row.account_status).toUpperCase() === "ACTIVE",
+      companyId: row.company_id == null ? null : Number(row.company_id),
     };
   }
   return {
@@ -129,6 +130,10 @@ export async function listReferences(kind: string, params: URLSearchParams) {
   const filter: Row = {};
   if (name === "bank-accounts") Object.assign(filter, { is_active: { _eq: 1 }, account_status: { _eq: "ACTIVE" } });
   if (name === "accounts") filter.status = { _in: ["pending", "approved"] };
+  if (name === "bank-accounts" && params.has("companyId")) {
+    const companyId = positiveInteger(params.get("companyId")!, "company ID");
+    filter._and = [{ _or: [{ company_id: { _eq: companyId } }, { company_id: { _null: true } }] }];
+  }
   if (search) filter._or = source.search.map(field => ({ [field]: { _icontains: search } }));
   const upstream = query(source.fields, filter, String(pageSize));
   upstream.set("offset", String(offset)); upstream.set("sort", source.sort); upstream.set("meta", "filter_count");

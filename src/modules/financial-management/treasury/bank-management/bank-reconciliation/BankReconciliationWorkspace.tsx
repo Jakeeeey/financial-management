@@ -1,6 +1,8 @@
 import { BANK_RECONCILIATION_WORKSPACES, type BankReconciliationWorkspaceKey } from "./workspaces";
+import BankReconciliationSetupModule from "./BankReconciliationSetupModule";
 
 export default function BankReconciliationWorkspace({ workspace }: { workspace: BankReconciliationWorkspaceKey }) {
+  if (workspace === "reconcile") return <BankReconciliationSetupModule />;
   const { title, description } = BANK_RECONCILIATION_WORKSPACES[workspace];
 
   return (
