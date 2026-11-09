@@ -150,28 +150,24 @@ export function CheckModule() {
 
       <CheckFlow />
 
-      <Card className="overflow-hidden border-border/50 border-t-[3px] border-t-amber-500/70 shadow-none">
-        <div className="border-b border-border/50 px-4 py-3">
-          <h2 className="text-sm font-semibold">Check register</h2>
-          <p className="text-xs text-muted-foreground">Click a row for its details and audit trail</p>
-        </div>
-        <CheckFilters
-          accountOptions={accountOptions}
-          bankOptions={bankOptions}
-          filters={filters}
-          onChange={setFilters}
-        />
-        <ChecksTable
-          checks={checks}
-          isLoading={isLoading}
-          page={page}
-          onPageChange={setPage}
-          onAction={handleAction}
-          selected={selected}
-          onSelectionChange={setSelected}
-          onBulkClear={() => setClearOpen(true)}
-        />
-      </Card>
+      <ChecksTable
+        filters={
+          <CheckFilters
+            accountOptions={accountOptions}
+            bankOptions={bankOptions}
+            filters={filters}
+            onChange={setFilters}
+          />
+        }
+        checks={checks}
+        isLoading={isLoading}
+        page={page}
+        onPageChange={setPage}
+        onAction={handleAction}
+        selected={selected}
+        onSelectionChange={setSelected}
+        onBulkClear={() => setClearOpen(true)}
+      />
 
       <BatchClearDialog
         checks={selectedChecks}

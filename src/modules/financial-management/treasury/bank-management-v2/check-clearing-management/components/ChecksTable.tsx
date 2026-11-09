@@ -1,6 +1,7 @@
 "use client";
 
 import { MoreVertical } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency, formatNumber } from "@/lib/utils";
 
 import { toPhtDateString } from "../pht";
 import { PAGE_SIZE } from "../constants";
@@ -70,6 +71,8 @@ type Props = {
   selected: Set<number>;
   onSelectionChange: (next: Set<number>) => void;
   onBulkClear: () => void;
+  /** Filter band rendered inside the register card, like every other V2 table. */
+  filters: ReactNode;
 };
 
 /** The check register: issued and received checks across every account. */
@@ -82,25 +85,8 @@ export function ChecksTable({
   selected,
   onSelectionChange,
   onBulkClear,
+  filters,
 }: Props) {
-  if (isLoading) {
-    return (
-      <div className="space-y-2 rounded-xl border border-border/50 p-4">
-        {Array.from({ length: 6 }).map((_, index) => (
-          <Skeleton key={index} className="h-10 w-full" />
-        ))}
-      </div>
-    );
-  }
-
-  if (checks.length === 0) {
-    return (
-      <div className="rounded-xl border border-border/50 px-4 py-16 text-center">
-        <p className="text-sm font-medium">No checks match these filters</p>
-        <p className="mt-1 text-sm text-muted-foreground">Issue a check or record one received from a customer.</p>
-      </div>
-    );
-  }
 
   // A mutation can shorten the register under the current page; clamp rather than reset
   // so an unrelated action does not also move the user off their page.
@@ -131,7 +117,35 @@ export function ChecksTable({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border/50">
+    <section
+      aria-label="Check register"
+      className="overflow-hidden rounded-2xl border border-border/50 border-t-[3px] border-t-amber-500/70 bg-card shadow-sm"
+    >
+      <header className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold">Check register</h2>
+          <p className="text-xs text-muted-foreground">Click a row for its details and audit trail.</p>
+        </div>
+        <Badge variant="outline" className="tabular-nums text-[11px]">
+          {formatNumber(checks.length)} checks
+        </Badge>
+      </header>
+
+      {filters}
+
+      {isLoading ? (
+        <div className="space-y-2 px-4 py-3">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <Skeleton key={index} className="h-10 w-full" />
+          ))}
+        </div>
+      ) : checks.length === 0 ? (
+        <div className="px-4 py-16 text-center">
+          <p className="text-sm font-medium">No checks match these filters</p>
+          <p className="mt-1 text-sm text-muted-foreground">Issue a check or record one received from a customer.</p>
+        </div>
+      ) : (
+        <>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/30 px-4 py-2.5">
         {selectedRows.length === 0 ? (
           <>
@@ -351,6 +365,8 @@ export function ChecksTable({
           </li>
         ))}
       </ul>
+        </>
+      )}
 
       <TablePager
         page={safePage}
@@ -360,6 +376,6 @@ export function ChecksTable({
         onPageChange={onPageChange}
         className="border-t border-border/50 px-4 py-3"
       />
-    </div>
+    </section>
   );
 }

@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { formatNumber } from "@/lib/utils";
 
 import { LIST_PAGE_SIZE } from "../constants";
 import { phtDisplayStamp } from "../pht";
@@ -29,6 +30,15 @@ export function AuditTable({ rows, page, pageCount, total, onPage, filters, empt
   return (
     <Card className="overflow-hidden border-border/50 border-t-[3px] border-t-rose-500/70 shadow-none">
       <CardContent className="p-0">
+        <header className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold">Movement log</h2>
+            <p className="text-xs text-muted-foreground">Every recorded action, stamped in PHT. UTC imports are flagged.</p>
+          </div>
+          <Badge variant="outline" className="tabular-nums text-[11px]">
+            {formatNumber(total)} entries
+          </Badge>
+        </header>
         {filters}
         <div className="overflow-x-auto">
           <Table>
