@@ -11,6 +11,7 @@ import { ShipmentPreviewPanel } from "./ShipmentPreviewPanel";
 import { getShipment, postShipment, postingPreview, rejectShipment, ShipmentError } from "../providers/shipments.api";
 import type { ShipmentDetail, ShipmentPreview } from "../shipment-types";
 import { formatDateTime, formatPeso, formatQuantity } from "../utils/shipment-ui";
+import { consignmentRequestId } from "../utils/request-id";
 
 export function ShipmentReviewDialog({ initial, onClose, returnFocus, onChanged }: {
   initial: ShipmentDetail;
@@ -26,7 +27,7 @@ export function ShipmentReviewDialog({ initial, onClose, returnFocus, onChanged 
   const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState("");
   const [confirmChangedCosts, setConfirmChangedCosts] = useState(false);
-  const requestId = useRef(crypto.randomUUID());
+  const requestId = useRef(consignmentRequestId());
   const running = useRef(false);
 
   const loadPreview = useCallback(async () => {
