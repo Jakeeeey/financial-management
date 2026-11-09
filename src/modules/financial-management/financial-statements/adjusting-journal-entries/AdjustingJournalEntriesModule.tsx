@@ -28,6 +28,7 @@ type Tab = "creation" | "new" | "posting" | "audit" | "summary";
 type EntryListTab = Extract<Tab, "creation" | "posting" | "summary">;
 type PostingQueue = "all" | "awaiting-my-review" | "ready-for-me-to-post" | "my-drafts";
 const statuses = ["All","Drafts and revisions","Draft","For Revision","Submitted","Posted","Cancelled","Failed","Voided"];
+const postingStatuses = ["All","Ready for me to post","Draft","For Revision","Submitted","Failed","Posted","Cancelled","Voided"];
 const queueValues: PostingQueue[] = ["all","awaiting-my-review","ready-for-me-to-post","my-drafts"];
 const pageSizes = [10,20,50,100];
 const sortValues = ["lastActivity,desc","transactionDate,desc","transactionDate,asc","id,desc","jeNo,asc","status,asc"];
@@ -119,8 +120,6 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   const [divisionsUpdatedAt, setDivisionsUpdatedAt] = React.useState<number | null>(null);
   const [periodUpdatedAt, setPeriodUpdatedAt] = React.useState<number | null>(null);
   const [periodOpen, setPeriodOpen] = React.useState(false);
-  const [savedPostingQueue, setSavedPostingQueue] = React.useState<PostingQueue | null>(null);
-  const [queuePreferenceLoaded, setQueuePreferenceLoaded] = React.useState(false);
   const [entries, setEntries] = React.useState<AdjustingEntry[]>([]);
   const [summary, setSummary] = React.useState(emptySummary);
   const [totalPages, setTotalPages] = React.useState(0);
@@ -190,10 +189,10 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   const search = listFilters.search;
   const normalizedSearch = search.trim();
   const [searchDraft, setSearchDraft] = React.useState(search);
-  const postingQueue = listFilters.queue || (initialView === "posting" && listFilters.status !== "All" ? "all" : savedPostingQueue || "ready-for-me-to-post");
-  const statusOptions = initialView === "creation" ? ["All","Drafts and revisions","Draft","For Revision","Submitted","Cancelled","My drafts and revisions"] : initialView === "posting" ? ["All","Submitted","Failed","Posted"] : statuses;
-  const status = initialView === "posting" && postingQueue !== "all" ? "All" : statusOptions.includes(listFilters.status) && listFilters.status !== "All" ? listFilters.status : initialView === "creation" && !searchParams.has("status") && listFilters.queue !== "my-drafts" ? "Draft" : "All";
-  const selectedStatus = initialView === "creation" && listFilters.queue === "my-drafts" ? "My drafts and revisions" : status;
+  const postingQueue = initialView === "posting" && !searchParams.has("status") && listFilters.queue === "ready-for-me-to-post" ? "ready-for-me-to-post" : "all";
+  const statusOptions = initialView === "creation" ? ["All","Drafts and revisions","Draft","For Revision","Submitted","Cancelled","My drafts and revisions"] : initialView === "posting" ? postingStatuses : statuses;
+  const status = statusOptions.includes(listFilters.status) && listFilters.status !== "All" ? listFilters.status : initialView === "creation" && !searchParams.has("status") && listFilters.queue !== "my-drafts" ? "Draft" : "All";
+  const selectedStatus = initialView === "creation" && listFilters.queue === "my-drafts" ? "My drafts and revisions" : initialView === "posting" && postingQueue === "ready-for-me-to-post" ? "Ready for me to post" : status;
   const workspace = initialView === "creation" || initialView === "posting" ? initialView : undefined;
   const startDate = listFilters.startDate;
   const endDate = listFilters.endDate;
@@ -237,10 +236,13 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
 
   React.useEffect(() => {
     if (initialView !== "posting") return;
-    if (listFilters.queue === "my-drafts" || ["Draft","For Revision","Drafts and revisions"].includes(listFilters.status)) {
-      updateListQuery({ queue:"all",status:null,page:"0" });
-    }
-  }, [initialView,listFilters.queue,listFilters.status,updateListQuery]);
+    const params = new URLSearchParams(searchParamText);
+    const canonicalStatus = status === "All" ? null : status;
+    const updates: Record<string, string | null> = {};
+    if (params.has("status") && params.get("status") !== canonicalStatus) updates.status = canonicalStatus;
+    if (params.has("queue") && params.get("queue") !== postingQueue) updates.queue = postingQueue;
+    if (Object.keys(updates).length) updateListQuery(updates);
+  }, [initialView,searchParamText,status,postingQueue,updateListQuery]);
 
   const updateFilters = React.useCallback((updates: Record<string, string | null>) => {
     updateListQuery({ ...updates, page:"0" });
@@ -273,14 +275,6 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
 
   React.useEffect(() => () => cancelPendingSearchCommit(), [cancelPendingSearchCommit]);
 
-  function selectPostingQueue(value: PostingQueue) {
-    if (access) {
-      try { window.localStorage.setItem(`aje-posting-queue:${access.userId}`, value); } catch { /* Storage can be unavailable in private contexts. */ }
-    }
-    setSavedPostingQueue(value);
-    updateListQuery({ queue:value, status:null, page:"0" });
-  }
-
   React.useEffect(() => {
     if (initialView !== "creation" && initialView !== "posting") return;
     let active = true;
@@ -288,7 +282,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
     api.access().then(value => {
       if (active) { setAccess(value); setAccessError(""); setAccessUpdatedAt(Date.now()); }
     }).catch(e => {
-      if (active) { setAccessError(e instanceof Error ? e.message : "Unable to load AJE permissions"); if (initialView === "posting") setQueuePreferenceLoaded(true); }
+      if (active) { setAccessError(e instanceof Error ? e.message : "Unable to load AJE permissions"); }
     }).finally(() => { if (active) setAccessLoading(false); });
     return () => { active = false; };
   }, [initialView,accessRevision]);
@@ -338,27 +332,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   }, [initialView,periodRevision]);
 
   React.useEffect(() => {
-    if (initialView !== "posting" || !access || queuePreferenceLoaded) return;
-    let saved: PostingQueue | null = listFilters.queue;
-    if (!saved) {
-      try {
-        const stored = window.localStorage.getItem(`aje-posting-queue:${access.userId}`);
-        if (stored && queueValues.includes(stored as PostingQueue)) saved = stored as PostingQueue;
-      } catch { /* Storage can be unavailable in private contexts. */ }
-    }
-    setSavedPostingQueue(saved === "my-drafts" || saved === "awaiting-my-review" ? "ready-for-me-to-post" : saved || "ready-for-me-to-post");
-    setQueuePreferenceLoaded(true);
-  }, [access,initialView,listFilters.queue,queuePreferenceLoaded]);
-
-  React.useEffect(() => {
-    if (initialView === "posting" && queuePreferenceLoaded) {
-      if (!listFilters.queue) updateListQuery({ queue:postingQueue });
-      else if (postingQueue !== "all" && listFilters.status !== "All") updateListQuery({ status:null });
-    }
-  }, [initialView, listFilters.queue, listFilters.status, postingQueue, queuePreferenceLoaded, updateListQuery]);
-
-  React.useEffect(() => {
-    if (!listViewActive || (initialView === "posting" && !queuePreferenceLoaded)) {
+    if (!listViewActive) {
       setListLoading(false);
       return;
     }
@@ -379,7 +353,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
       .catch(e => { if (!controller.signal.aborted) setListError(e instanceof Error ? e.message : "Unable to load adjusting entries"); })
       .finally(() => { if (!controller.signal.aborted) setListLoading(false); });
     return () => controller.abort();
-  }, [initialView,listViewActive,queuePreferenceLoaded,listQuery,listQueryKey,listRevision]);
+  }, [listViewActive,listQuery,listQueryKey,listRevision]);
 
   React.useEffect(() => {
     if (!listViewActive) {
@@ -412,7 +386,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   }
 
   function retryLookup(resource: "access" | "accounts" | "departments" | "divisions" | "period") {
-    if (resource === "access") { setQueuePreferenceLoaded(false); setAccessRevision(value => value + 1); }
+    if (resource === "access") setAccessRevision(value => value + 1);
     else if (resource === "accounts") setAccountsRevision(value => value + 1);
     else if (resource === "departments") setDepartmentsRevision(value => value + 1);
     else if (resource === "divisions") setDivisionsRevision(value => value + 1);
@@ -488,7 +462,6 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
       cancelPendingSearchCommit();
       setSearchDraft("");
       setTab("posting");
-      setSavedPostingQueue("all");
       latestSearchParams.current = "queue=all";
       router.replace(`${pathname}?queue=all`, { scroll:false });
     } else {
@@ -743,19 +716,11 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   function clearFilters() {
     cancelPendingSearchCommit();
     setSearchDraft("");
-    if (initialView === "posting" && access) {
-      try { window.localStorage.setItem(`aje-posting-queue:${access.userId}`, "all"); } catch { /* Storage can be unavailable in private contexts. */ }
-      setSavedPostingQueue("all");
-    }
     updateListQuery({ search:null,status:null,startDate:null,endDate:null,divisionId:null,departmentId:null,accountTypeId:null,unbalancedOnly:null,sort:null,page:"0",pageSize:null,...(initialView === "posting" || initialView === "creation" ? { queue:"all" } : {}) });
   }
   const focusUnbalancedPosted = () => updateFilters({ status:"Posted",queue:"all",unbalancedOnly:"true" });
   const focusDrafts = () => updateFilters({ status:"Drafts and revisions",queue:"all",unbalancedOnly:"true" });
   const hasFilters = Boolean((initialView === "creation" && listFilters.queue === "my-drafts") || searchDraft.trim() || status !== "All" || startDate || endDate || division !== "all" || department !== "all" || accountType || unbalancedOnly || sort !== "lastActivity,desc" || page > 0 || pageSize !== 20 || (initialView === "posting" && postingQueue !== "all"));
-  const postingQueueOptions = [
-    { value:"all",label:"All posting entries",count:summary.totalRecords },
-    { value:"ready-for-me-to-post",label:"Ready for me to post",count:summary.readyForMeToPost },
-  ] as const;
   const accountTypes = React.useMemo(() => [...new Map((catalogs?.accounts || []).filter(a => a.accountTypeId).map(a => [a.accountTypeId,{ id:a.accountTypeId!,name:a.accountTypeName || "Other" }])).values()], [catalogs]);
   const lookupResources = [
     ...(initialView === "creation" || initialView === "posting" ? [{ key:"access" as const,label:"Permissions",error:accessError,loading:accessLoading,updatedAt:accessUpdatedAt }] : []),
@@ -769,7 +734,6 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
   const editorTitle = editorEntry ? (readOnly ? "View Adjusting Entry" : "Editing Adjusting Entry") : editorSeed?.entryKind === "REVERSAL" ? "New Reversal" : "New Adjusting Entry";
   const summaryPrintDisabled = listLoading || listScopeStale || Boolean(listError) || searchDraft.trim() !== normalizedSearch;
   const summaryExportDisabled = summaryPrintDisabled || summaryLoading || summaryScopeStale || Boolean(summaryError) || loadedExportScope !== exportScopeKey(listQuery) || exportingFormat !== null;
-  const countActionsDisabled = summaryLoading || summaryScopeStale || Boolean(summaryError);
   const pageHeader = <div className="flex flex-wrap items-start justify-between gap-3"><div>
     <h1 ref={pageHeadingRef} tabIndex={-1} className="text-xl font-semibold">{tab === "creation" ? "Creation" : tab === "posting" ? "Posting of Entries" : tab === "new" ? editorTitle : tab === "audit" ? "Audit Trail" : "Summary"}</h1>
     <p className="text-sm text-muted-foreground">{tab === "creation" ? "Prepare drafts, revise returned entries, and track submissions." : tab === "posting" ? "Review submitted entries, post to the General Ledger, and prepare reversals." : tab === "new" ? editorEntry ? (readOnly ? "Review this adjusting entry." : "Update this editable adjusting entry.") : "Prepare a balanced adjustment and submit it for posting." : tab === "audit" ? "Chronological journal actions, revisions, supporting files, and period controls." : "Review entry volume and posted debit and credit activity."}</p>
@@ -803,22 +767,11 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
     {(tab === "creation" || tab === "posting" || tab === "summary") && <>
       {tab === "summary" && summaryError && summaryUpdatedAt === null && <p role="status" className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">Summary counts are unavailable until they load successfully.</p>}
       {tab === "summary" && !(summaryError && summaryUpdatedAt === null) && <AdjustingEntriesSummaryCards summary={summary} loading={summaryLoading} showPostedAmounts onInvestigatePosted={focusUnbalancedPosted} onShowUnbalancedDrafts={focusDrafts} />}
-      {tab === "posting" && <>
-        <div className="space-y-1 md:hidden" aria-label="Posting queue view">
-          <Label htmlFor="aje-posting-queue-mobile" className="text-xs font-medium text-muted-foreground">Posting queue</Label>
-          <select id="aje-posting-queue-mobile" aria-label="Posting queue" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={postingQueue} disabled={countActionsDisabled} onChange={event => selectPostingQueue(event.target.value as PostingQueue)}>
-            {postingQueueOptions.map(option => <option key={option.value} value={option.value}>{option.label} ({summaryUpdatedAt === null ? "—" : option.count})</option>)}
-          </select>
-        </div>
-        <div className="hidden flex-wrap items-center gap-2 md:flex" aria-label="Posting queue view">
-          {postingQueueOptions.map(({ value, label, count }) => <Button key={value} type="button" size="sm" disabled={countActionsDisabled} aria-pressed={postingQueue === value && (value !== "all" || status === "All")} variant={postingQueue === value && (value !== "all" || status === "All") ? "default" : "outline"} onClick={() => selectPostingQueue(value)}>{label}<span className="ml-1 rounded-full bg-background/20 px-1.5 text-xs">{summaryUpdatedAt === null ? "—" : count}</span></Button>)}
-        </div>
-      </>}
       <AdjustingEntriesFilters search={searchDraft} startDate={startDate} endDate={endDate} status={selectedStatus} filterDivisionId={division} filterDepartmentId={department} statusOptions={statusOptions}
         filterDivisionOptions={[{ value:"all",label:"All divisions" },...(catalogs?.divisions || []).map(d => ({ value:String(d.id),label:d.name }))]}
         filterDepartmentOptions={[{ value:"all",label:"All departments" },...(catalogs?.departments || []).filter(d => division === "all" || !d.parentDivision || String(d.parentDivision) === division).map(d => ({ value:String(d.id),label:d.name }))]}
         hasActiveFilters={hasFilters} moreFiltersCount={Number(division !== "all") + Number(department !== "all") + Number(Boolean(accountType))} onSearchChange={handleSearchChange} onStartDateChange={v => updateFilters({ startDate:v || null })} onEndDateChange={v => updateFilters({ endDate:v || null })}
-        onStatusChange={v => updateFilters({ status:initialView === "creation" ? v === "My drafts and revisions" ? "All" : v : v === "All" ? null : v,queue:initialView === "creation" && v === "My drafts and revisions" ? "my-drafts" : "all",unbalancedOnly:null })} onDivisionChange={v => updateFilters({ divisionId:v === "all" ? null : v,departmentId:null })} onDepartmentChange={v => updateFilters({ departmentId:v === "all" ? null : v })} onClearFilters={clearFilters}>
+        onStatusChange={v => updateFilters({ status:initialView === "creation" ? v === "My drafts and revisions" ? "All" : v : v === "All" || v === "Ready for me to post" ? null : v,queue:initialView === "creation" && v === "My drafts and revisions" ? "my-drafts" : initialView === "posting" && v === "Ready for me to post" ? "ready-for-me-to-post" : "all",unbalancedOnly:null })} onDivisionChange={v => updateFilters({ divisionId:v === "all" ? null : v,departmentId:null })} onDepartmentChange={v => updateFilters({ departmentId:v === "all" ? null : v })} onClearFilters={clearFilters}>
         <div className="space-y-1.5"><Label className="text-xs font-medium text-muted-foreground">Account type</Label><AjeSearchableSelect ariaLabel="Account type" value={accountType || "all"} onValueChange={value => updateFilters({ accountTypeId:value === "all" ? null : value })} options={[{ value:"all",label:"All account types" },...accountTypes.map(accountType => ({ value:String(accountType.id),label:accountType.name }))]} placeholder="All account types" /></div>
         <div className="space-y-1.5"><Label htmlFor="aje-sort" className="text-xs font-medium text-muted-foreground">Sort</Label><select id="aje-sort" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={sort} onChange={e => updateFilters({ sort:e.target.value === "lastActivity,desc" ? null : e.target.value })}><option value="lastActivity,desc">Last activity: newest</option><option value="transactionDate,desc">Accounting date: newest</option><option value="transactionDate,asc">Accounting date: oldest</option><option value="id,desc">Newest created</option><option value="jeNo,asc">Journal number</option><option value="status,asc">Status</option></select></div>
       </AdjustingEntriesFilters>
@@ -827,7 +780,7 @@ export function AdjustingJournalEntriesModule({ initialView = "posting" }: { ini
         <span role="status" aria-live="polite">{listLoading || listScopeStale && !listError ? <>Updating results...<span className="sr-only"> Previous results remain visible. Workflow actions are unavailable until current results arrive.</span></> : listError ? listUpdatedAt ? "Previous results - refresh failed" : "Journal results unavailable" : "Journal results current"}</span>
         {listUpdatedAt !== null && <span>Last updated <time dateTime={new Date(listUpdatedAt).toISOString()}>{new Date(listUpdatedAt).toLocaleString("en-PH", { timeZone: "Asia/Manila" })} PHT</time></span>}
       </div>}
-      <AdjustingEntriesTable entries={entries} presentation={tab === "summary" ? "summary" : tab === "creation" ? "creation" : "posting"} loading={listLoading || busy} actionsDisabled={listScopeStale || Boolean(listError) || Boolean(accessError)} emptyMessage={tab === "creation" && !listError ? "No entries match this Creation scope." : listError && entries.length === 0 ? "Journal results are unavailable. Retry the journal request above." : listScopeStale && entries.length === 0 ? "Previous filter results were empty. Waiting for the current results." : postingQueue === "awaiting-my-review" ? "No entries are awaiting your review." : postingQueue === "ready-for-me-to-post" ? "No submitted or retryable entries are ready for you to post." : postingQueue === "my-drafts" ? "You have no draft entries." : undefined} userId={access?.userId} readOnly={tab === "summary" || !access || accessLoading || Boolean(accessError)} onView={(entry,edit,trigger) => { if ((initialView === "creation" || initialView === "posting" || initialView === "summary") && !edit) void openReview(entry,"view",trigger); else void view(entry,edit); }} onAction={requestAction} onReverse={entry => void previewReversal(entry)} />
+      <AdjustingEntriesTable entries={entries} presentation={tab === "summary" ? "summary" : tab === "creation" ? "creation" : "posting"} loading={listLoading || busy} actionsDisabled={listScopeStale || Boolean(listError) || Boolean(accessError)} emptyMessage={tab === "creation" && !listError ? "No entries match this Creation scope." : listError && entries.length === 0 ? "Journal results are unavailable. Retry the journal request above." : listScopeStale && entries.length === 0 ? "Previous filter results were empty. Waiting for the current results." : initialView === "posting" && postingQueue === "ready-for-me-to-post" ? "No submitted or retryable entries are ready for you to post." : undefined} userId={access?.userId} readOnly={tab === "summary" || !access || accessLoading || Boolean(accessError)} onView={(entry,edit,trigger) => { if ((initialView === "creation" || initialView === "posting" || initialView === "summary") && !edit) void openReview(entry,"view",trigger); else void view(entry,edit); }} onAction={requestAction} onReverse={entry => void previewReversal(entry)} />
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><div className="flex items-center gap-2"><label htmlFor="aje-register-page-size">Rows per page</label><select id="aje-register-page-size" disabled={listLoading} value={pageSize} onChange={event => updateListQuery({ pageSize:event.target.value,page:"0" })} className="h-9 rounded-md border bg-background px-2 text-sm">{[10,20,50,100].map(size => <option key={size} value={size}>{size}</option>)}</select></div><span>{totalElements > 0 ? `Showing ${page * pageSize + 1}–${Math.min((page + 1) * pageSize, totalElements)} of ${totalElements} entries · Page ${page + 1} of ${Math.max(totalPages, 1)}` : "0 entries"}</span><div className="flex gap-2"><Button variant="outline" size="icon-sm" aria-label="Go to first page" disabled={page === 0 || listLoading} onClick={() => updateListQuery({ page:"0" })}><ChevronsLeft className="h-4 w-4" /></Button><Button variant="outline" size="sm" disabled={page === 0 || listLoading} onClick={() => updateListQuery({ page:String(page - 1) })}>Previous</Button><Button variant="outline" size="sm" disabled={listLoading || page + 1 >= totalPages} onClick={() => updateListQuery({ page:String(page + 1) })}>Next</Button><Button variant="outline" size="icon-sm" aria-label="Go to last page" disabled={listLoading || page + 1 >= totalPages} onClick={() => updateListQuery({ page:String(Math.max(0, totalPages - 1)) })}><ChevronsRight className="h-4 w-4" /></Button></div></div>
     </>}
     {periodOpen && period && <AjePeriodDialog period={period} onClose={() => setPeriodOpen(false)} onSaved={value => { setPeriod(value); setPeriodUpdatedAt(Date.now()); setPeriodError(""); }} />}
