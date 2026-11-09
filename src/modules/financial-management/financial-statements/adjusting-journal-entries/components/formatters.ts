@@ -21,7 +21,12 @@ export function formatQueueAgeLabel(status: "Submitted" | "Approved" | "Failed",
   return canRetry ? `Retry posting · Last attempt ${duration}` : `Posting failed · Last attempt ${duration}`;
 }
 
+export function auditActionLabel(action: string) {
+  return action === "SYSTEM_POSTED" ? "System posted" : action;
+}
+
 export function auditEventSummary(event: AjeAuditEvent) {
+  if (event.display?.summary?.trim()) return event.display.summary.trim();
   if (event.reason?.trim()) return event.reason.trim();
   if (event.action === "Withdrawn") {
     const destination = event.changes.find(change => change.field === "Status")?.after;

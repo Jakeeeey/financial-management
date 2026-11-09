@@ -11,10 +11,11 @@ import { Label } from "@/components/ui/label";
 import { adjustingJournalEntriesApi as api, ajeAttachmentPreviewUrl, ajeAttachmentThumbnailUrl, ajeAttachmentUrl, ajeAuditReportUrl } from "../services/adjusting-journal-entries.api";
 import type { AjeAttachment, AjeAuditEvent, AjeAuditPage, AdjustingEntry } from "../types";
 import { AjeAttachmentPreview, isPreviewableAjeImage } from "./AjeAttachmentPreview";
+import { AjeAuditEventDetails } from "./AjeAuditEventDetails";
 import { AjeDataFreshness, AjeRetryAlert } from "./AjeDataFreshness";
-import { auditEventSummary, formatDate, formatDateTime, money, statusBadgeClass, todayManila } from "./formatters";
+import { auditActionLabel, auditEventSummary, formatDate, formatDateTime, money, statusBadgeClass, todayManila } from "./formatters";
 
-const actions = ["Created","Edited","Submitted","Approved","Rejected","Returned for Revision","Workflow Migrated","Withdrawn","Revision Started","Cancelled","Posted","Posting Failed","Period Closed","Period Reopened","Supporting Document Added","Supporting Document Removed"];
+const actions = ["Created","Edited","Submitted","Approved","Rejected","Returned for Revision","Workflow Migrated","Withdrawn","Revision Started","Cancelled","Posted","SYSTEM_POSTED","Posting Failed","Period Closed","Period Reopened","Supporting Document Added","Supporting Document Removed"];
 const statuses = ["Draft","For Revision","Submitted","Posted","Cancelled","Failed","Voided"];
 type AuditFilters = { search: string; userId: string; action: string; status: string; fromDate: string; toDate: string };
 const auditPageSizes = [20, 50, 100] as const;
@@ -78,13 +79,6 @@ function groupEvents(events: AjeAuditEvent[], dayCounts: Record<string, number>)
   return [...groups.entries()].map(([date, rows]) => [date, rows, dayCounts[date] ?? rows.length] as const);
 }
 
-function auditChangeValue(field: string, value: string | null | undefined) {
-  if (!value) return "—";
-  if (field !== "Journal lines") return value;
-  return value.replace(/(\bDebit\s+)(-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)(,\s*Credit\s+)(-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)/g,
-    (_match, debitLabel: string, debit: string, creditLabel: string, credit: string) => `${debitLabel}${money(Number(debit))}${creditLabel}${money(Number(credit))}`);
-}
-
 function actionBadgeClass(action: string) {
   switch (action) {
     case "Rejected":
@@ -94,6 +88,7 @@ function actionBadgeClass(action: string) {
       return "border-red-500/30 bg-red-500/10 text-red-700";
     case "Approved":
     case "Posted":
+    case "SYSTEM_POSTED":
       return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700";
     default:
       return "border-zinc-500/30 bg-zinc-500/10 text-zinc-700";
@@ -258,7 +253,7 @@ export function AjeAuditTrail({ entryId, revision }: { entryId?: number | null; 
   const activeFilters = [
     filters.search && { key:"search" as const, label:`Search: ${filters.search}` },
     filters.userId && { key:"userId" as const, label:`User: ${users.find(user => String(user.id) === filters.userId)?.name || filters.userId}` },
-    filters.action && { key:"action" as const, label:`Action: ${filters.action}` },
+    filters.action && { key:"action" as const, label:`Action: ${auditActionLabel(filters.action)}` },
     filters.status && { key:"status" as const, label:`Current journal status: ${filters.status}` },
     filters.fromDate && { key:"fromDate" as const, label:`From: ${filters.fromDate}` },
     filters.toDate && { key:"toDate" as const, label:`To: ${filters.toDate}` },
@@ -302,7 +297,7 @@ export function AjeAuditTrail({ entryId, revision }: { entryId?: number | null; 
           </summary>
           <div className="grid gap-3 border-t pt-3 sm:grid-cols-2 xl:grid-cols-3">
             <div className="space-y-1"><Label htmlFor="audit-user">User</Label><select id="audit-user" className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={filters.userId} onChange={e => change("userId",e.target.value)}><option value="">All users</option>{users.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}</select>{usersLoading && <p role="status" className="text-xs text-muted-foreground">Loading user options…</p>}</div>
-            <div className="space-y-1"><Label htmlFor="audit-action">Action</Label><select id="audit-action" className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={filters.action} onChange={e => change("action",e.target.value)}><option value="">All actions</option>{actions.map(action => <option key={action}>{action}</option>)}</select></div>
+            <div className="space-y-1"><Label htmlFor="audit-action">Action</Label><select id="audit-action" className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={filters.action} onChange={e => change("action",e.target.value)}><option value="">All actions</option>{actions.map(action => <option key={action} value={action}>{auditActionLabel(action)}</option>)}</select></div>
             <div className="space-y-1"><Label htmlFor="audit-status">Current journal status</Label><select id="audit-status" className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={filters.status} onChange={e => change("status",e.target.value)}><option value="">All current statuses</option>{statuses.map(status => <option key={status}>{status}</option>)}</select></div>
             <div className="space-y-1"><Label htmlFor="audit-from">From date</Label><Input id="audit-from" type="date" value={filters.fromDate} onChange={e => change("fromDate",e.target.value)} /></div>
             <div className="space-y-1"><Label htmlFor="audit-to">To date</Label><Input id="audit-to" type="date" value={filters.toDate} onChange={e => change("toDate",e.target.value)} /></div>
@@ -380,7 +375,7 @@ export function AjeAuditTrail({ entryId, revision }: { entryId?: number | null; 
                 <tr className="align-top hover:bg-muted/30">
                   <td className="whitespace-nowrap px-3 py-2.5 text-xs text-muted-foreground"><time dateTime={event.occurredAt} title={formatDateTime(event.occurredAt)}>{formatDateTime(event.occurredAt)}</time></td>
                   <td className="px-3 py-2.5">{event.actorName || "Name unavailable"}</td>
-                  <td className="px-3 py-2.5"><Badge variant="outline" className={actionBadgeClass(event.action)}>{event.action}</Badge></td>
+                  <td className="px-3 py-2.5"><Badge variant="outline" className={actionBadgeClass(event.action)}>{event.display?.actionLabel || auditActionLabel(event.action)}</Badge></td>
                   <td className="whitespace-nowrap px-3 py-2.5">{event.entryId ? <Button type="button" variant="link" className="h-auto p-0 text-left" onClick={() => void openEntry(event)}>{event.journalNumber || `Open entry #${event.entryId}`}</Button> : <span>{event.journalNumber || "Period controls"}</span>}</td>
                   <td className="px-3 py-2.5 text-xs">{event.entryId == null ? <span className="text-muted-foreground">Not applicable</span>
                     : !event.currentEntryAvailable ? <span className="text-muted-foreground">Information unavailable</span>
@@ -389,18 +384,7 @@ export function AjeAuditTrail({ entryId, revision }: { entryId?: number | null; 
                 </tr>
                 {expanded && <tr className="bg-muted/10"><td colSpan={6} className="px-3 py-3">
                   <div id={detailsId} className="space-y-3 rounded-md border bg-background p-3 sm:p-4">
-                    {event.reason && <section aria-label="Event reason"><h3 className="text-xs font-semibold text-muted-foreground">Reason / detail</h3><p className="mt-1 whitespace-pre-wrap break-words text-sm">{event.reason}</p></section>}
-                    <section aria-label="Changes recorded at this event">
-                      <h3 className="text-xs font-semibold">Changes recorded at this event</h3>
-                      {event.changes.length ? <div className="mt-2 divide-y rounded-md border">
-                        <div className="hidden grid-cols-[minmax(8rem,0.7fr)_1fr_1fr] gap-3 bg-muted/40 px-3 py-2 text-xs font-medium sm:grid"><span>Field</span><span>Before</span><span>After</span></div>
-                        {event.changes.map((change, index) => <div key={`${change.field}-${index}`} className="grid gap-1 px-3 py-2 sm:grid-cols-[minmax(8rem,0.7fr)_1fr_1fr] sm:gap-3">
-                          <p className="font-medium">{change.field}</p>
-                          <div><p className="text-xs text-muted-foreground sm:sr-only">Before</p><p className="whitespace-pre-wrap break-words text-sm">{auditChangeValue(change.field, change.before)}</p></div>
-                          <div><p className="text-xs text-muted-foreground sm:sr-only">After</p><p className="whitespace-pre-wrap break-words text-sm">{auditChangeValue(change.field, change.after)}</p></div>
-                        </div>)}
-                      </div> : <p className="mt-1 text-sm text-muted-foreground">No field changes recorded.</p>}
-                    </section>
+                    <AjeAuditEventDetails event={event} />
                     {isAttachmentEvent && fileName && <section aria-label={`Attachment ${fileName}`} className="space-y-2">
                       <h3 className="text-xs font-semibold text-muted-foreground">Supporting document</h3>
                       {attachment ? (() => {
