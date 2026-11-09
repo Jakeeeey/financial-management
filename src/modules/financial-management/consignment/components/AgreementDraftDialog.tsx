@@ -8,10 +8,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AgreementConsigneeSelect } from "./AgreementConsigneeSelect";
 import { AgreementApiError, getAgreement, saveAgreement } from "../providers/agreements.api";
 import { agreementChoices, agreementNumbers, emptyAgreementTerms, manilaToday } from "../utils/agreement-fields";
+import { consignmentRequestId } from "../utils/request-id";
 import type { AgreementConsignee, AgreementDetail, AgreementDraft } from "../agreement-types";
 
 function initial(detail: AgreementDetail | null): AgreementDraft {
-  return { requestId: crypto.randomUUID(), version: detail?.version ?? null, consigneeId: detail?.consignee.id ?? "",
+  return { requestId: consignmentRequestId(), version: detail?.version ?? null, consigneeId: detail?.consignee.id ?? "",
     startDate: detail?.summary.startDate ?? manilaToday(), endDate: detail?.summary.endDate ?? "", terms: detail?.terms ?? emptyAgreementTerms() };
 }
 
