@@ -3,10 +3,9 @@
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatNumber } from "@/lib/utils";
 
 import { LIST_PAGE_SIZE, statusLabel, statusTone, toneClass } from "../constants";
 import { toPhtDateString } from "../pht";
@@ -51,11 +50,23 @@ export function AccountsTable({
   const rows = accounts.slice(start, start + LIST_PAGE_SIZE);
 
   return (
-    <>
-      <Card className="hidden overflow-hidden border-border/50 border-t-[3px] border-t-rose-500/70 shadow-none xl:block">
-        <CardContent className="p-0">
-          {filters}
-          <div className="overflow-x-auto">
+    <section
+      aria-label="Bank accounts"
+      className="overflow-hidden rounded-2xl border border-border/50 border-t-[3px] border-t-rose-500/70 bg-card shadow-sm"
+    >
+      <header className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold">Bank accounts</h2>
+          <p className="text-xs text-muted-foreground">Book balance, linked GL and last reconciliation per account.</p>
+        </div>
+        <Badge variant="outline" className="tabular-nums text-[11px]">
+          {formatNumber(total)} accounts
+        </Badge>
+      </header>
+
+      {filters}
+
+      <div className="hidden overflow-x-auto xl:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -139,24 +150,9 @@ export function AccountsTable({
                   ))}
               </TableBody>
             </Table>
-          </div>
+      </div>
 
-          {!isLoading && (
-            <TablePager
-              page={page}
-              pageCount={pageCount}
-              total={total}
-              pageSize={LIST_PAGE_SIZE}
-              onPageChange={onPageChange}
-              className="border-t px-4 py-3"
-            />
-          )}
-        </CardContent>
-      </Card>
-
-      <div className="xl:hidden">
-        {filters}
-        <ul className="divide-y divide-border rounded-2xl border border-border/50">
+      <ul className="divide-y divide-border xl:hidden">
         {isLoading &&
           Array.from({ length: 3 }).map((_, index) => (
             <li key={index} className="space-y-2 p-4">
@@ -195,7 +191,6 @@ export function AccountsTable({
             </li>
           ))}
         </ul>
-      </div>
 
       {!isLoading && (
         <TablePager
@@ -204,9 +199,9 @@ export function AccountsTable({
           total={total}
           pageSize={LIST_PAGE_SIZE}
           onPageChange={onPageChange}
-          className="px-1 pt-2 xl:hidden"
+          className="border-t border-border/50 px-4 py-3"
         />
       )}
-    </>
+    </section>
   );
 }

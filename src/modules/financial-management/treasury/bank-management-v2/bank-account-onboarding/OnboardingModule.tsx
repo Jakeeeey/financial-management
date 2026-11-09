@@ -87,15 +87,16 @@ export function OnboardingModule() {
         </Alert>
       ) : null}
 
-      <OnboardingFilters
-        filters={filters}
-        options={options}
-        activeFilterCount={activeFilterCount}
-        onChange={updateFilter}
-        onReset={resetFilters}
-      />
-
       <AccountsTable
+        filters={
+          <OnboardingFilters
+            filters={filters}
+            options={options}
+            activeFilterCount={activeFilterCount}
+            onChange={updateFilter}
+            onReset={resetFilters}
+          />
+        }
         accounts={accounts}
         isLoading={isLoading}
         total={total}
