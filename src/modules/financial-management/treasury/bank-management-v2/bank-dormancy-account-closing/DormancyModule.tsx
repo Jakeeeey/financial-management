@@ -42,10 +42,8 @@ export function DormancyModule() {
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold sm:text-2xl">Dormancy &amp; Account Closing</h1>
-          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Accounts with no customer-initiated movement for 6–12 months are Inactive; after 12 months they become
-            Dormant, move to GL 201800 and leave every active dropdown. Dormant liabilities are never released to
-            profit or loss.
+          <p className="text-sm text-muted-foreground">
+            Watch accounts that have gone quiet, reclassify dormant ones, and close accounts once they settle.
           </p>
         </div>
         <Button variant="outline" onClick={() => void dormancy.refetch()} disabled={dormancy.isLoading}>
