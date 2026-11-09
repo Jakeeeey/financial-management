@@ -97,9 +97,9 @@ export function AdjustingEntriesFilters({
         />
       </div>
       <div className="col-span-2 space-y-1.5 lg:col-span-3">
-        <Label className="text-xs font-medium text-muted-foreground">Status</Label>
+        <Label htmlFor="aje-status-filter" className="text-xs font-medium text-muted-foreground">Status</Label>
         <Select value={status} onValueChange={onStatusChange}>
-          <SelectTrigger className="w-full">
+          <SelectTrigger id="aje-status-filter" className="w-full">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
