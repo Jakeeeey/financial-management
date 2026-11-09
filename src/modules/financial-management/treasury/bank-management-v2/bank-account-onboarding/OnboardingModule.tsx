@@ -1,0 +1,133 @@
+"use client";
+
+import { useState } from "react";
+import { Info, Plus, RefreshCw } from "lucide-react";
+
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { cn, formatNumber } from "@/lib/utils";
+
+import { useOnboarding } from "./hooks/useOnboarding";
+import type { BankAccountV2 } from "./types";
+import { AccountsTable } from "./components/AccountsTable";
+import { EditAccountDialog } from "./components/EditAccountDialog";
+import { OnboardingFilters } from "./components/OnboardingFilters";
+import { RegisterAccountDialog } from "./components/RegisterAccountDialog";
+
+/** Register of every bank account, with the FSD 1.1 create and edit flows. */
+export function OnboardingModule() {
+  const {
+    accounts,
+    total,
+    options,
+    notice,
+    filters,
+    page,
+    pageSize,
+    activeFilterCount,
+    isLoading,
+    isSaving,
+    error,
+    refetch,
+    updateFilter,
+    resetFilters,
+    setPage,
+    registerAccount,
+    saveAccount,
+  } = useOnboarding();
+
+  const [registerOpen, setRegisterOpen] = useState(false);
+  const [editing, setEditing] = useState<BankAccountV2 | null>(null);
+
+  return (
+    <div className="mx-auto max-w-[1600px] space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 space-y-1">
+          <h1 className="text-xl font-semibold sm:text-2xl">Bank &amp; Account Onboarding</h1>
+          <p className="text-sm text-muted-foreground">
+            {isLoading ? "Loading the register…" : `${formatNumber(total)} account${total === 1 ? "" : "s"} in the register`}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            aria-label="Refresh register"
+            title="Refresh register"
+            onClick={() => void refetch()}
+            disabled={isLoading}
+          >
+            <RefreshCw className={cn("size-4", isLoading && "animate-spin")} aria-hidden="true" />
+          </Button>
+          <Button type="button" onClick={() => setRegisterOpen(true)} className="min-h-11 md:min-h-0">
+            <Plus className="mr-2 size-4" aria-hidden="true" />
+            Register account
+          </Button>
+        </div>
+      </div>
+
+      {error ? (
+        <Alert variant="destructive">
+          <AlertTitle>Could not load the account register</AlertTitle>
+          <AlertDescription className="flex items-center justify-between gap-3">
+            <span className="min-w-0 break-words">{error}</span>
+            <Button type="button" variant="outline" size="sm" onClick={() => void refetch()}>
+              Retry
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      {notice && !error ? (
+        <Alert>
+          <Info className="size-4" aria-hidden="true" />
+          <AlertTitle>Notice</AlertTitle>
+          <AlertDescription className="break-words">{notice}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      <OnboardingFilters
+        filters={filters}
+        options={options}
+        activeFilterCount={activeFilterCount}
+        onChange={updateFilter}
+        onReset={resetFilters}
+      />
+
+      <AccountsTable
+        accounts={accounts}
+        isLoading={isLoading}
+        total={total}
+        page={page}
+        pageSize={pageSize}
+        onEdit={setEditing}
+        onPageChange={setPage}
+      />
+
+      <p className="text-xs text-muted-foreground">
+        Active accounts appear in purchase order payment, sales order collection and disbursement lists. Dormant and
+        closed accounts do not.
+      </p>
+
+      <RegisterAccountDialog
+        open={registerOpen}
+        onOpenChange={setRegisterOpen}
+        options={options}
+        isSaving={isSaving}
+        onSubmit={registerAccount}
+      />
+
+      <EditAccountDialog
+        open={editing !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditing(null);
+        }}
+        account={editing}
+        options={options}
+        isSaving={isSaving}
+        onSubmit={saveAccount}
+      />
+    </div>
+  );
+}
