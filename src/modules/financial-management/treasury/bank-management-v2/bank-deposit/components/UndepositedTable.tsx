@@ -48,11 +48,7 @@ export function UndepositedTable({
 
   return (
     <div className="overflow-hidden rounded-xl border border-border/50">
-      <div className="flex items-center justify-between gap-2 border-b bg-muted/30 px-4 py-3">
-        <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold">Undeposited collections</h2>
-          <p className="text-xs text-muted-foreground">Cash and checks still in the vault.</p>
-        </div>
+      <div className="flex items-center justify-between gap-2 border-b bg-muted/30 px-4 py-2.5">
         <Badge variant="outline" className={cn("shrink-0 text-[11px] font-semibold", toneClass("neutral"))}>
           {assets.length} item{assets.length === 1 ? "" : "s"}
         </Badge>

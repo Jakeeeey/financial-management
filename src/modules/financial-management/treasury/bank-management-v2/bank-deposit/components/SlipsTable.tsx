@@ -29,11 +29,6 @@ export function SlipsTable({ slips, isLoading, page, onPageChange, onView }: Pro
 
   return (
     <div className="overflow-hidden rounded-xl border border-border/50">
-      <div className="border-b bg-muted/30 px-4 py-3">
-        <h2 className="truncate text-sm font-semibold">Deposit slips</h2>
-        <p className="text-xs text-muted-foreground">Prepared slips and their bank clearing status.</p>
-      </div>
-
       {isLoading ? (
         <div className="space-y-2 p-4">
           {Array.from({ length: 4 }).map((_, index) => (
