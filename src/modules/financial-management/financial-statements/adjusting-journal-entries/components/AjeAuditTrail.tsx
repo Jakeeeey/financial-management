@@ -333,7 +333,7 @@ export function AjeAuditTrail({ entryId, revision }: { entryId?: number | null; 
       <div className="space-y-3">
           {groups.map(([date, events, count]) => <section key={date} aria-label={`Audit events ${date}`} className="space-y-2">
             <h3 className="sticky top-0 z-[1] flex items-center justify-between gap-2 rounded-md bg-background/95 py-1 text-sm font-semibold text-muted-foreground backdrop-blur"><span>{date === "unknown" ? "Date unavailable" : auditDay(date)}</span><span className="text-xs font-normal">{count} {count === 1 ? "event" : "events"}</span></h3>
-            <div className="overflow-x-auto rounded-md border">
+            <div className="@container overflow-x-auto rounded-md border">
               <table aria-label={`Audit activity for ${date}`} className="w-full min-w-[1100px] border-collapse text-left text-sm">
                 <caption className="sr-only">Audit activity with expandable event details for {date}</caption>
                 <thead className="bg-muted/60"><tr>
@@ -383,7 +383,7 @@ export function AjeAuditTrail({ entryId, revision }: { entryId?: number | null; 
                   <td className="px-3 py-2.5"><div className="space-y-1"><p className="line-clamp-2 break-words" title={auditEventSummary(event)}>{auditEventSummary(event)}</p><Button type="button" variant="link" size="sm" className="h-auto px-0 py-0 text-xs" aria-expanded={expanded} aria-controls={expanded ? detailsId : undefined} aria-label={`${expanded ? "Hide" : "Show"} details for ${event.journalNumber || `event ${event.id}`}`} onClick={() => toggleEventDetails(event.id)}>{expanded ? "Hide details" : "Show details"}</Button></div></td>
                 </tr>
                 {expanded && <tr className="bg-muted/10"><td colSpan={6} className="px-3 py-3">
-                  <div id={detailsId} className="space-y-3 rounded-md border bg-background p-3 sm:p-4">
+                  <div id={detailsId} className="sticky left-3 w-[calc(100cqw_-_1.5rem)] space-y-3 rounded-md border bg-background p-3 sm:p-4">
                     <AjeAuditEventDetails event={event} />
                     {isAttachmentEvent && fileName && <section aria-label={`Attachment ${fileName}`} className="space-y-2">
                       <h3 className="text-xs font-semibold text-muted-foreground">Supporting document</h3>
