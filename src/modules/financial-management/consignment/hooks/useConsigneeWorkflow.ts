@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ConsigneeSaveError, consigneeCommand } from "../providers/consignees.api";
 import type { ConsigneeDetail, ConsignmentWorkspace } from "../types";
+import { consignmentRequestId } from "../utils/request-id";
 
 export type ConsigneeWorkflowIntent = "submit" | "approve" | "reject" | "replacement-draft" | "withdraw";
 
@@ -34,13 +35,13 @@ export function useConsigneeWorkflow({ detail, workspace, reason, setReason, onC
   const [intent, setIntent] = useState<ConsigneeWorkflowIntent | null>(null);
   const [failure, setFailure] = useState<ConsigneeSaveError | null>(null);
   const [busy, setBusy] = useState(false);
-  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
+  const [requestId, setRequestId] = useState(consignmentRequestId);
 
   useEffect(() => {
     setIntent(null);
     setFailure(null);
     setBusy(false);
-    setRequestId(crypto.randomUUID());
+    setRequestId(consignmentRequestId());
   }, [detail?.summary.id, detail?.version, workspace]);
 
   const mustReload = !!failure && (failure.status === 409 || failure.status === 401 || failure.status === 403 || ((failure.status === 0 || failure.status >= 500) && intent !== "replacement-draft"));

@@ -8,6 +8,7 @@ import { accountManagementApi } from "@/modules/financial-management/treasury/ba
 import { ConsigneeSaveError, getConsignee, saveConsignee } from "../providers/consignees.api";
 import { ConsigneeLocationSelect, type ConsigneeLocationOption } from "./ConsigneeLocationSelect";
 import type { ConsigneeDetail, ConsigneeDraft, ConsignmentWorkspace } from "../types";
+import { consignmentRequestId } from "../utils/request-id";
 
 const identity = [
   ["legalName", "Registered business name", 200], ["tradeName", "Trade name", 160], ["tin", "TIN", 32],
@@ -29,7 +30,7 @@ const submissionRequiredFields = new Set([
 
 function initial(detail: ConsigneeDetail | null): ConsigneeDraft {
   return {
-    requestId: crypto.randomUUID(), version: detail?.version ?? null,
+    requestId: consignmentRequestId(), version: detail?.version ?? null,
     legalName: detail?.legalName ?? "", tradeName: detail?.tradeName ?? "", tin: detail?.tin ?? "",
     vatTreatment: detail?.summary.vatTreatment ?? "", contactPerson: detail?.summary.contactPerson ?? "",
     email: detail?.summary.email ?? "", phone: detail?.summary.phone ?? "",

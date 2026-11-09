@@ -13,6 +13,7 @@ import { ShipmentPreviewPanel } from "./ShipmentPreviewPanel";
 import { getShipment, previewShipment, saveShipment, submitShipment, ShipmentError } from "../providers/shipments.api";
 import type { ShipmentDetail, ShipmentDraft, ShipmentLine, ShipmentPreview, ShipmentChoice } from "../shipment-types";
 import { focusShipmentField, formatPeso, formatQuantity } from "../utils/shipment-ui";
+import { consignmentRequestId } from "../utils/request-id";
 
 export function ShipmentEditor({ initial, editing, onClose, onSaved, returnFocus }: {
   initial: ShipmentDetail | null;
@@ -34,7 +35,7 @@ export function ShipmentEditor({ initial, editing, onClose, onSaved, returnFocus
   const [busy, setBusy] = useState(false);
   const [action, setAction] = useState<"save" | "preview" | "submit" | "reload" | null>(null);
   const [dirty, setDirty] = useState(false);
-  const [requestId] = useState(() => crypto.randomUUID());
+  const [requestId] = useState(consignmentRequestId);
   const running = useRef(false);
   const errorSummaryRef = useRef<HTMLDivElement>(null);
 

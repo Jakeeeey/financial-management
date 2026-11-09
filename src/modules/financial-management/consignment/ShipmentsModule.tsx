@@ -12,6 +12,7 @@ import { ConsignmentStatusBadge } from "./components/ConsignmentStatusBadge";
 import { getShipment, listShipments, ShipmentError } from "./providers/shipments.api";
 import type { ShipmentDetail, ShipmentPage } from "./shipment-types";
 import { formatDateTime } from "./utils/shipment-ui";
+import { consignmentRequestId } from "./utils/request-id";
 
 type Snapshot = { data: ShipmentPage; search: string; status: string };
 
@@ -52,7 +53,7 @@ export default function ShipmentsModule() {
     setLoading(true);
     try {
       const detail = await getShipment(id);
-      setEditor({ detail, editing: editing && detail.summary.editable, key: crypto.randomUUID() });
+      setEditor({ detail, editing: editing && detail.summary.editable, key: consignmentRequestId() });
     } catch (cause) {
       setError(cause instanceof ShipmentError ? cause : new ShipmentError("Unable to open shipment.", 503));
     } finally {
@@ -66,7 +67,7 @@ export default function ShipmentsModule() {
     setLoading(true);
     try {
       const detail = await getShipment(id);
-      setReview({ detail, key: crypto.randomUUID() });
+      setReview({ detail, key: consignmentRequestId() });
     } catch (cause) {
       setError(cause instanceof ShipmentError ? cause : new ShipmentError("Unable to open shipment review.", 503));
     } finally {
@@ -96,7 +97,7 @@ export default function ShipmentsModule() {
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">Prepare shipment drafts, submit them for independent review, and track posted warehouse-to-consignment reclassifications.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {!denied && <Button disabled={loading} onClick={event => { invoker.current = event.currentTarget; setEditor({ detail: null, editing: true, key: crypto.randomUUID() }); }}>Create shipment draft</Button>}
+          {!denied && <Button disabled={loading} onClick={event => { invoker.current = event.currentTarget; setEditor({ detail: null, editing: true, key: consignmentRequestId() }); }}>Create shipment draft</Button>}
           <Button variant="outline" disabled={loading || denied} onClick={() => void refresh()}><RefreshCw className={loading ? "animate-spin" : ""} aria-hidden="true" />Refresh</Button>
         </div>
       </div>
