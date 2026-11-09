@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency, formatNumber } from "@/lib/utils";
 
 import { phtDate, toPhtDateString } from "../pht";
 import { PAGE_SIZE, toneClass } from "../constants";
@@ -63,29 +63,41 @@ export function UndepositedTable({
     selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border/50 border-t-[3px] border-t-emerald-500/70">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/30 px-4 py-2.5">
-        <p className="text-xs text-muted-foreground">Tick the collections going on one deposit slip, then choose the bank.</p>
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-8"
-            disabled={readyIds.length === 0 || readyIds.every((id) => selected.has(id))}
-            onClick={() => onSelectAllReady(readyIds)}
-          >
-            Select all ready ({readyIds.length})
-          </Button>
-          {selected.size > 0 ? (
-            <Button type="button" variant="ghost" size="sm" className="h-8" onClick={onDeselectAll}>
-              Deselect all ({selected.size})
-            </Button>
-          ) : null}
+    <section
+      aria-label="Undeposited collections"
+      className="overflow-hidden rounded-2xl border border-border/50 border-t-[3px] border-t-emerald-500/70 bg-card shadow-sm"
+    >
+      <header className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold">Undeposited collections</h2>
+          <p className="text-xs text-muted-foreground">
+            Tick the collections going on one deposit slip, then choose the bank.
+          </p>
         </div>
-      </div>
+        <Badge variant="outline" className="tabular-nums text-[11px]">
+          {formatNumber(assets.length)} collections
+        </Badge>
+      </header>
 
       <UndepositedFiltersBar filters={filters} onChange={onFiltersChange} />
+
+      <div className="flex flex-wrap items-center justify-end gap-2 border-b border-border/50 bg-muted/20 px-4 py-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8"
+          disabled={readyIds.length === 0 || readyIds.every((id) => selected.has(id))}
+          onClick={() => onSelectAllReady(readyIds)}
+        >
+          Select all ready ({readyIds.length})
+        </Button>
+        {selected.size > 0 ? (
+          <Button type="button" variant="ghost" size="sm" className="h-8" onClick={onDeselectAll}>
+            Deselect all ({selected.size})
+          </Button>
+        ) : null}
+      </div>
 
       {isLoading ? (
         <div className="space-y-2 p-4">
@@ -273,6 +285,6 @@ export function UndepositedTable({
           />
         </>
       )}
-    </div>
+    </section>
   );
 }

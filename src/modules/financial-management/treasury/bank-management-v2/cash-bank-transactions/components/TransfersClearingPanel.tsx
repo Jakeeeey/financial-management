@@ -3,8 +3,9 @@
 import { ArrowRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatNumber } from "@/lib/utils";
 
 import { phtToday, toPhtDateString } from "../pht";
 import type { TransactionRow } from "../types";
@@ -23,14 +24,20 @@ export function TransfersClearingPanel({ clearing, isLoading, isSaving, onSettle
   const today = phtToday();
 
   return (
-    <section aria-label="Transfers in clearing" className="overflow-hidden rounded-xl border border-border/50 border-t-[3px] border-t-violet-500/70">
-      <header className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/30 px-4 py-3">
-        <p className="min-w-0 truncate text-xs text-muted-foreground">
-          Money already out of the source account, waiting for its value date.
-        </p>
-        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs font-semibold tabular-nums">
-          {clearing.length}
-        </span>
+    <section
+      aria-label="Transfers in clearing"
+      className="overflow-hidden rounded-2xl border border-border/50 border-t-[3px] border-t-violet-500/70 bg-card shadow-sm"
+    >
+      <header className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold">Transfers in clearing</h2>
+          <p className="text-xs text-muted-foreground">
+            Money already out of the source account, waiting for its value date.
+          </p>
+        </div>
+        <Badge variant="outline" className="tabular-nums text-[11px]">
+          {formatNumber(clearing.length)} transfers
+        </Badge>
       </header>
 
       {isLoading && clearing.length === 0 ? (

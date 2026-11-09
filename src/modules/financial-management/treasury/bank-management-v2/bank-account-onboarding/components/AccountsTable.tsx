@@ -1,11 +1,13 @@
 "use client";
 
 import { Landmark, Pencil } from "lucide-react";
+import type { ReactNode } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatNumber } from "@/lib/utils";
 
 import { toPhtDateString } from "../pht";
 import type { BankAccountV2 } from "../types";
@@ -22,6 +24,8 @@ type AccountsTableProps = {
   pageSize: number;
   onEdit: (account: BankAccountV2) => void;
   onPageChange: (page: number) => void;
+  /** Filter band rendered inside the register card, like every other V2 table. */
+  filters: ReactNode;
 };
 
 function bankBranch(account: BankAccountV2): string {
@@ -46,13 +50,28 @@ export function AccountsTable({
   pageSize,
   onEdit,
   onPageChange,
+  filters,
 }: AccountsTableProps) {
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
   return (
-    <div className="space-y-3">
-      <div className="hidden overflow-hidden rounded-2xl border border-border/50 border-t-[3px] border-t-blue-500/70 bg-card shadow-sm xl:block">
-        <div className="overflow-x-auto">
+    <section
+      aria-label="Registered bank accounts"
+      className="overflow-hidden rounded-2xl border border-border/50 border-t-[3px] border-t-blue-500/70 bg-card shadow-sm"
+    >
+      <header className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold">Registered accounts</h2>
+          <p className="text-xs text-muted-foreground">Active accounts only appear in payment and collection lists.</p>
+        </div>
+        <Badge variant="outline" className="tabular-nums text-[11px]">
+          {formatNumber(total)} accounts
+        </Badge>
+      </header>
+
+      {filters}
+
+      <div className="hidden overflow-x-auto xl:block">
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/30 hover:bg-muted/30">
@@ -150,10 +169,9 @@ export function AccountsTable({
               )}
             </TableBody>
           </Table>
-        </div>
       </div>
 
-      <ul className="divide-y divide-border rounded-2xl border border-border/50 bg-card shadow-sm xl:hidden">
+      <ul className="divide-y divide-border xl:hidden">
         {isLoading ? (
           Array.from({ length: 4 }).map((_, index) => (
             <li key={index} className="p-4">
@@ -235,8 +253,8 @@ export function AccountsTable({
         total={total}
         pageSize={pageSize}
         onPageChange={onPageChange}
-        className="px-1 pt-2"
+        className="border-t border-border/50 px-4 py-3"
       />
-    </div>
+    </section>
   );
 }

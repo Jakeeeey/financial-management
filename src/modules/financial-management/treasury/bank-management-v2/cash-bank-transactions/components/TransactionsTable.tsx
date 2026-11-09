@@ -17,6 +17,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -25,7 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatNumber } from "@/lib/utils";
 
 import { phtToday } from "../pht";
 import { StatusBadge } from "./StatusBadge";
@@ -133,6 +134,9 @@ export function TransactionsTable({
             Credit memos, debit memos, interest earned and fund transfers, newest first.
           </p>
         </div>
+        <Badge variant="outline" className="shrink-0 tabular-nums text-[11px]">
+          {formatNumber(total)} transactions
+        </Badge>
       </header>
 
       {filters}

@@ -3,9 +3,10 @@
 import { Eye } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatNumber } from "@/lib/utils";
 
 import { toPhtDateString } from "../pht";
 import { PAGE_SIZE } from "../constants";
@@ -43,7 +44,20 @@ export function SlipsTable({
   const rows = slips.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border/50 border-t-[3px] border-t-emerald-500/70">
+    <section
+      aria-label="Deposit slips"
+      className="overflow-hidden rounded-2xl border border-border/50 border-t-[3px] border-t-emerald-500/70 bg-card shadow-sm"
+    >
+      <header className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold">Deposit slips</h2>
+          <p className="text-xs text-muted-foreground">Slips already prepared and how far their items have cleared.</p>
+        </div>
+        <Badge variant="outline" className="tabular-nums text-[11px]">
+          {formatNumber(slips.length)} slips
+        </Badge>
+      </header>
+
       <SlipFiltersBar slips={allSlips} filters={filters} onChange={onFiltersChange} />
 
       {isLoading ? (
@@ -176,6 +190,6 @@ export function SlipsTable({
           />
         </>
       )}
-    </div>
+    </section>
   );
 }

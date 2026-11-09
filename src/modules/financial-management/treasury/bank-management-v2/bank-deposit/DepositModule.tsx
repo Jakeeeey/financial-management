@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { AssetDetailDialog } from "./components/AssetDetailDialog";
-import { DepositKpis, PendingSlipsNote } from "./components/DepositKpis";
+import { DepositKpis } from "./components/DepositKpis";
 import { NewDepositDialog } from "./components/NewDepositDialog";
 import { SlipDetailDialog } from "./components/SlipDetailDialog";
 import { SlipsTable } from "./components/SlipsTable";
@@ -137,15 +137,13 @@ export function DepositModule() {
         <DepositKpis totals={totals} />
       )}
 
-      <Tabs value={tab} onValueChange={setTab} className="gap-3">
-        <TabsList className="min-h-11">
-          <TabsTrigger value="undeposited" className="min-h-11">
+      <Tabs value={tab} onValueChange={setTab} className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="undeposited" className="min-h-11 md:min-h-0">
             Undeposited collections
-            <span className="ml-2 text-xs tabular-nums text-muted-foreground">{assets.length}</span>
           </TabsTrigger>
-          <TabsTrigger value="slips" className="min-h-11">
+          <TabsTrigger value="slips" className="min-h-11 md:min-h-0">
             Deposit slips
-            <span className="ml-2 text-xs tabular-nums text-muted-foreground">{slips.length}</span>
           </TabsTrigger>
         </TabsList>
 
@@ -168,7 +166,6 @@ export function DepositModule() {
         </TabsContent>
 
         <TabsContent value="slips" className="space-y-3">
-          <PendingSlipsNote count={totals.pendingSlips} slipCount={slips.length} />
           <SlipsTable
             slips={filteredSlips}
             allSlips={slips}

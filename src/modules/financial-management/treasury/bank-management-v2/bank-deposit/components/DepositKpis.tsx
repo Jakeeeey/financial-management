@@ -81,14 +81,3 @@ export function DepositKpis({ totals }: { totals: Kpis }) {
     </div>
   );
 }
-
-/** Pending slips are shown separately so the header count stays honest. */
-export function PendingSlipsNote({ count, slipCount }: { count: number; slipCount: number }) {
-  return (
-    <p className="text-xs text-muted-foreground">
-      {slipCount === 0
-        ? "No deposit slips yet."
-        : `${count} slip${count === 1 ? "" : "s"} awaiting bank clearing out of ${slipCount}.`}
-    </p>
-  );
-}
