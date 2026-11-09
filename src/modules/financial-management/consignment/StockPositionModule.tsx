@@ -69,7 +69,10 @@ export default function StockPositionModule() {
       </div>
 
       {denied ? <div role="alert" className="rounded-lg border border-destructive/40 p-4 text-sm">You do not have access to Stock Position.</div> : <>
-        {data && <SummaryCards summary={data.summary} />}
+        {data && <div className="space-y-2">
+          <SummaryCards summary={data.summary} />
+          <p className="text-xs text-muted-foreground">Stock totals follow the filters. Exposure and warnings include all posted stock and Pending shipments for the matching agreements.</p>
+        </div>}
 
         <form className="flex flex-wrap items-end gap-3 rounded-lg border p-3" onSubmit={event => { event.preventDefault(); applyFilters(); }}>
           <div className="min-w-0 flex-1 basis-52"><label htmlFor="stock-agreement" className="mb-1 block text-sm font-medium">Agreement</label>
@@ -112,7 +115,7 @@ function SummaryCards({ summary }: { summary: NonNullable<ReturnType<typeof useS
     <Metric label="Posted base quantity" value={formatQuantity(summary.postedBaseQuantity)} />
     <Metric label="Posted inventory at cost" value={formatPeso(summary.postedCost)} />
     <Metric label="Pending commitments" value={formatPeso(summary.pendingCost)} />
-    <Metric label="Projected exposure" value={formatPeso(summary.projectedExposure)} />
+    <Metric label="Projected agreement exposure" value={formatPeso(summary.projectedExposure)} />
     <Metric label="Agreements over 90% / limit" value={`${summary.agreementsAboveNinety} / ${summary.agreementsOverLimit}`} />
   </section>;
 }
@@ -122,7 +125,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 function PositionTable({ positions, onShowMovements }: { positions: StockPositionRow[]; onShowMovements: (agreement: number, product: number) => void }) {
-  return <table className="w-full min-w-[940px] text-left text-sm"><caption className="sr-only">Posted consignment stock by agreement, product, and actual UOM</caption><thead className="border-b bg-muted/50"><tr>{["Agreement / consignee", "Product", "Actual UOM", "Posted quantity", "Base quantity", "Unit cost", "Posted cost", "Pending", "Exposure", "Actions"].map(label => <th key={label} className="px-3 py-2 font-medium">{label}</th>)}</tr></thead><tbody>
+  return <table className="w-full min-w-[940px] text-left text-sm"><caption className="sr-only">Posted consignment stock by agreement, product, and actual UOM</caption><thead className="border-b bg-muted/50"><tr>{["Agreement / consignee", "Product", "Actual UOM", "Posted quantity", "Base quantity", "Unit cost", "Posted cost", "Pending", "Agreement exposure", "Actions"].map(label => <th key={label} className="px-3 py-2 font-medium">{label}</th>)}</tr></thead><tbody>
     {positions.map(row => <tr key={`${row.agreementId}-${row.productId}-${row.uomId}`} className="border-b last:border-0">
       <td className="px-3 py-3"><p>{row.agreementReference}</p><p className="text-xs text-muted-foreground">{row.consigneeName}</p></td>
       <td className="px-3 py-3"><p>{row.productName ?? "-"}</p><p className="text-xs text-muted-foreground">{row.productCode ?? `#${row.productId}`}</p></td>
@@ -141,7 +144,7 @@ function PositionTable({ positions, onShowMovements }: { positions: StockPositio
 
 function PositionCard({ row, onShowMovements }: { row: StockPositionRow; onShowMovements: () => void }) {
   return <article className="rounded-lg border bg-card p-4"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-semibold">{row.productName ?? `Product #${row.productId}`}</p><p className="text-xs text-muted-foreground">{row.productCode ?? "-"} | {row.agreementReference} | {row.consigneeName}</p></div><span className="rounded-full border bg-muted/40 px-2 py-1 text-xs">{row.uomName ?? "UOM unavailable"}</span></div>
-    <dl className="mt-3 grid grid-cols-2 gap-2 text-sm"><div><dt className="text-xs text-muted-foreground">Posted quantity</dt><dd className="tabular-nums">{formatQuantity(row.postedQuantity)}</dd></div><div><dt className="text-xs text-muted-foreground">Base quantity</dt><dd className="tabular-nums">{formatQuantity(row.postedBaseQuantity)}</dd></div><div><dt className="text-xs text-muted-foreground">Posted cost</dt><dd className="tabular-nums">{formatPeso(row.postedCost)}</dd></div><div><dt className="text-xs text-muted-foreground">Pending cost</dt><dd className="tabular-nums">{formatPeso(row.pendingCost)}</dd></div><div><dt className="text-xs text-muted-foreground">Projected exposure</dt><dd className="tabular-nums">{formatPeso(row.projectedExposure)}</dd></div><div><dt className="text-xs text-muted-foreground">Utilization</dt><dd className="tabular-nums">{row.utilization == null ? "No limit" : `${row.utilization}%`}</dd></div></dl>
+    <dl className="mt-3 grid grid-cols-2 gap-2 text-sm"><div><dt className="text-xs text-muted-foreground">Posted quantity</dt><dd className="tabular-nums">{formatQuantity(row.postedQuantity)}</dd></div><div><dt className="text-xs text-muted-foreground">Base quantity</dt><dd className="tabular-nums">{formatQuantity(row.postedBaseQuantity)}</dd></div><div><dt className="text-xs text-muted-foreground">Posted cost</dt><dd className="tabular-nums">{formatPeso(row.postedCost)}</dd></div><div><dt className="text-xs text-muted-foreground">Pending cost</dt><dd className="tabular-nums">{formatPeso(row.pendingCost)}</dd></div><div><dt className="text-xs text-muted-foreground">Agreement exposure</dt><dd className="tabular-nums">{formatPeso(row.projectedExposure)}</dd></div><div><dt className="text-xs text-muted-foreground">Utilization</dt><dd className="tabular-nums">{row.utilization == null ? "No limit" : `${row.utilization}%`}</dd></div></dl>
     <Button size="sm" variant="outline" className="mt-3" onClick={onShowMovements}>View movements</Button>
   </article>;
 }
