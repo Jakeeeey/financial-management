@@ -20,7 +20,12 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     const actor = await currentActor();
     const data = await lockPeriod(
-      { companyId: parsed.data.companyId, taxYear: parsed.data.year, periodKey: parsed.data.periodKey },
+      {
+        companyId: parsed.data.companyId,
+        taxYear: parsed.data.year,
+        periodKey: parsed.data.periodKey,
+        reason: parsed.data.reason,
+      },
       actor,
     );
     return ok(data);

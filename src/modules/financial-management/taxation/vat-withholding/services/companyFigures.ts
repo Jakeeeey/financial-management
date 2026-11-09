@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { QuarterFigures, RegistryCompany } from "../types";
-import { groupedByDate } from "./companyClient";
+import { CompanyRequestError, groupedByDate } from "./companyClient";
 
 /**
  * Where the VAT figures come from.
@@ -17,6 +17,27 @@ const CANCELLED_SALES = ["Cancelled", "Void", "cancelled", "void"];
 export interface VatFigureResult {
   figures: QuarterFigures[];
   notices: string[];
+  /** Names of the sources that could not be read, in the order they were attempted. */
+  failed: string[];
+}
+
+/**
+ * Turns a transport failure into a sentence an accountant can act on.
+ * The raw strings ("fetch failed", "The operation was aborted due to timeout") are
+ * implementation noise and never belong in a panel.
+ */
+function readFailure(error: unknown): string {
+  if (error instanceof CompanyRequestError) {
+    if (error.status === 0) {
+      const raw = error.message.toLowerCase();
+      if (raw.includes("timeout") || raw.includes("aborted")) return "did not answer within 20 seconds";
+      return "could not be reached";
+    }
+    if (error.status === 401 || error.status === 403) return `refused the instance token (${error.status})`;
+    if (error.status === 404) return "has no such collection (404)";
+    return `answered with an error (${error.status})`;
+  }
+  return "could not be read";
 }
 
 function emptyQuarter(): QuarterFigures {
@@ -60,6 +81,7 @@ function bucket(
 
 export async function loadVatFigures(company: RegistryCompany, taxYear: number): Promise<VatFigureResult> {
   const notices: string[] = [];
+  const failed: string[] = [];
   const figures = emptyFigures();
   const from = `${taxYear}-01-01`;
   const to = `${taxYear}-12-31`;
@@ -76,7 +98,8 @@ export async function loadVatFigures(company: RegistryCompany, taxYear: number):
       quarter.cwt += sums.ewt_amount ?? 0;
     });
   } catch (error) {
-    notices.push(`Sales invoices could not be read: ${error instanceof Error ? error.message : String(error)}`);
+    failed.push("sales");
+    notices.push(`Sales invoices ${readFailure(error)}, so sales and output VAT are not shown rather than shown as zero.`);
   }
 
   try {
@@ -89,8 +112,9 @@ export async function loadVatFigures(company: RegistryCompany, taxYear: number):
       quarter.purchasesVat += sums.vat_amount ?? 0;
     });
   } catch (error) {
-    notices.push(`Purchase orders could not be read: ${error instanceof Error ? error.message : String(error)}`);
+    failed.push("purchases");
+    notices.push(`Purchase orders ${readFailure(error)}, so input VAT covers sales-side figures only.`);
   }
 
-  return { figures, notices };
+  return { figures, notices, failed };
 }

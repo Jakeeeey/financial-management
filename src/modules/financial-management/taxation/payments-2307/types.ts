@@ -69,6 +69,8 @@ export interface PaymentRow {
   remarks: string | null;
   createdAt: string;
   createdBy: number | null;
+  /** The name from the change log's CREATED row; null when the trail does not name one. */
+  createdByName: string | null;
 }
 
 export interface PeriodLockRow {

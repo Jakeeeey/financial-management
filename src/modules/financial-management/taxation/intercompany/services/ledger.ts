@@ -39,6 +39,23 @@ const PURCHASE_SUMS: Record<string, "sum"> = {
 interface CustomerRow {
   customer_code?: string | null;
   customer_tin?: string | null;
+  customer_name?: string | null;
+}
+
+/**
+ * Group companies are recorded on each other's customer tables under their trading name, not their
+ * group code: Men2 has no customer whose `customer_code` is "VTC", but it does have
+ * "VERTEX TECHNOLOGIES CORPORATION". A one-word phrase ("Cafeteria", "Manufacturing", "ACE") is not
+ * used as a key — it matches unrelated customers like "VINZ PIZZA MANUFACTURING".
+ */
+function namePhrase(companyName: string): string {
+  const stripped = companyName
+    .toUpperCase()
+    .replace(/[.,]/g, " ")
+    .replace(/\b(CORPORATION|CORP|COMPANY|CO|INC|INCORPORATED|HOLDINGS?|GROUP|PHILIPPINES?)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return stripped.split(" ").length >= 2 ? stripped : "";
 }
 
 export interface CompanyLedger {
@@ -243,16 +260,23 @@ export async function loadCompanyLedger(
 
   const peerCodes = peers.map((peer) => peer.code).filter((code) => code.length > 0);
   const peerTins = peers.map((peer) => normaliseTin(peer.tin)).filter((tin) => tin.length >= MIN_TIN_DIGITS);
+  const peersByPhrase = new Map<string, RegistryCompany>();
+  for (const peer of peers) {
+    const phrase = namePhrase(peer.name);
+    if (phrase) peersByPhrase.set(phrase, peer);
+  }
+
   const or: Record<string, unknown>[] = [];
   if (peerCodes.length > 0) or.push({ customer_code: { _in: peerCodes } });
   if (peerTins.length > 0) or.push({ customer_tin: { _in: peerTins } });
+  for (const phrase of peersByPhrase.keys()) or.push({ customer_name: { _icontains: phrase } });
 
   let customerOk = false;
   let customerFailure: string | null = null;
   if (or.length > 0) {
     try {
       const customers = await listRows<CustomerRow>(company.baseUrl, company.token, company.code, "customer", {
-        fields: ["customer_code", "customer_tin"],
+        fields: ["customer_code", "customer_tin", "customer_name"],
         filter: { _or: or },
         limit: 500,
       });
@@ -260,12 +284,19 @@ export async function loadCompanyLedger(
         const code = String(row.customer_code ?? "").trim();
         if (!code) continue;
         const tin = normaliseTin(row.customer_tin);
+        const name = String(row.customer_name ?? "").toUpperCase();
         const owner =
           peers.find((peer) => peer.code === code) ??
-          (tin.length >= MIN_TIN_DIGITS ? peers.find((peer) => normaliseTin(peer.tin) === tin) : undefined);
+          (tin.length >= MIN_TIN_DIGITS ? peers.find((peer) => normaliseTin(peer.tin) === tin) : undefined) ??
+          [...peersByPhrase.entries()].find(([phrase]) => name.includes(phrase))?.[1];
         if (owner) codeToPeer.set(code, owner);
       }
       customerOk = true;
+      if (codeToPeer.size === 0) {
+        notices.push(
+          `${company.code}: no customer record on this instance matches a group company by code, TIN or name, so its sales cannot be attributed to a peer.`,
+        );
+      }
     } catch (error) {
       customerFailure = message(error);
       notices.push(

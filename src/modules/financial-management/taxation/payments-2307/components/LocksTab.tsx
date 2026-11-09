@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PERIOD_KEYS, PERIOD_LABELS } from "../constants";
 import type { PeriodKey, PeriodLockRow } from "../types";
+import { LockDialog } from "./LockDialog";
 import { UnlockDialog } from "./UnlockDialog";
 
 const COLUMN_COUNT = 6;
@@ -18,12 +19,13 @@ interface LocksTabProps {
   locks: PeriodLockRow[];
   isLoading: boolean;
   isSaving: boolean;
-  onLock: (periodKey: PeriodKey) => Promise<void>;
+  onLock: (periodKey: PeriodKey, reason: string) => Promise<void>;
   onUnlock: (periodKey: PeriodKey, reason: string) => Promise<void>;
 }
 
 export function LocksTab({ locks, isLoading, isSaving, onLock, onUnlock }: LocksTabProps) {
   const [alert, setAlert] = useState<string | null>(null);
+  const [locking, setLocking] = useState<PeriodKey | null>(null);
   const [unlocking, setUnlocking] = useState<PeriodKey | null>(null);
 
   const latestByPeriod = useMemo(() => {
@@ -44,19 +46,20 @@ export function LocksTab({ locks, isLoading, isSaving, onLock, onUnlock }: Locks
     [latestByPeriod],
   );
 
-  async function lockPeriod(periodKey: PeriodKey) {
+  async function lockPeriod(periodKey: PeriodKey, reason: string) {
     setAlert(null);
     try {
-      await onLock(periodKey);
+      await onLock(periodKey, reason);
     } catch (error) {
       setAlert(error instanceof Error ? error.message : "The period was not locked.");
+      throw error;
     }
   }
 
   return (
     <section
       aria-label="Period locks"
-      className="overflow-hidden rounded-2xl border border-border/50 bg-card shadow-sm"
+      className="overflow-hidden rounded-2xl border border-border/50 border-t-[3px] border-t-amber-500/70 bg-card shadow-sm"
     >
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 px-4 py-3">
         <h2 className="text-sm font-semibold">Period locks</h2>
@@ -155,7 +158,7 @@ export function LocksTab({ locks, isLoading, isSaving, onLock, onUnlock }: Locks
                           type="button"
                           variant="outline"
                           size="sm"
-                          onClick={() => void lockPeriod(periodKey)}
+                          onClick={() => setLocking(periodKey)}
                           disabled={isSaving}
                           className="min-h-11 md:min-h-0"
                         >
@@ -176,11 +179,21 @@ export function LocksTab({ locks, isLoading, isSaving, onLock, onUnlock }: Locks
         </Table>
       </div>
 
+      <LockDialog
+        periodKey={locking}
+        isSaving={isSaving}
+        onClose={() => setLocking(null)}
+        onSubmit={async (reason: string) => {
+          if (locking === null) return;
+          await lockPeriod(locking, reason);
+        }}
+      />
+
       <UnlockDialog
         periodKey={unlocking}
         isSaving={isSaving}
         onClose={() => setUnlocking(null)}
-        onSubmit={async (reason) => {
+        onSubmit={async (reason: string) => {
           if (unlocking === null) return;
           await onUnlock(unlocking, reason);
         }}

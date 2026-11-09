@@ -54,9 +54,9 @@ export async function loadVatWithholding(
       company: toCompanyOption(company),
       profile,
       figures: emptyFigures(),
-      notices: [
-        `${company.name} could not be reached: ${company.unreachableReason ?? "no answer from its endpoint"}. Figures below are empty, not zero.`,
-      ],
+      notices: [],
+      figuresAvailable: false,
+      failedSources: ["the company instance"],
     };
     return {
       companies: options,
@@ -87,6 +87,11 @@ export async function loadVatWithholding(
     profile,
     figures: figureResult.figures,
     notices,
+    // Output VAT is the headline, so a missing sales register makes the whole panel unknown.
+    figuresAvailable: !figureResult.failed.includes("sales"),
+    failedSources: figureResult.failed.map((source) =>
+      source === "sales" ? "sales invoices" : "purchase orders",
+    ),
   };
 
   return {

@@ -16,6 +16,7 @@ import {
   roundMoney,
   updateItem,
 } from "./directus";
+import { assertPeriodUnlocked } from "./locks.service";
 import { RowNotFoundError, ScopeMismatchError } from "./rowErrors";
 
 const COLLECTION = "tax_payment";
@@ -70,7 +71,38 @@ function mapPayment(raw: Record<string, unknown>): PaymentRow {
     remarks: asString(raw.remarks) || null,
     createdAt: asString(raw.created_at),
     createdBy: raw.created_by == null ? null : asNumber(raw.created_by),
+    createdByName: null,
   };
+}
+
+/**
+ * `tax_payment.created_by` is a user id, and the users collection is not readable from this
+ * module, so the name comes from the change log row written at creation time.
+ */
+async function loadCreatorNames(companyId: number, taxYear: number): Promise<Map<number, string>> {
+  const names = new Map<number, string>();
+  try {
+    const { rows } = await listItems<Record<string, unknown>>("tax_change_log", {
+      fields: ["entity_ref", "actor_name"],
+      filter: {
+        _and: [
+          { company_id: { _eq: companyId } },
+          { tax_year: { _eq: taxYear } },
+          { entity: { _eq: "tax_payment" } },
+          { field: { _eq: "CREATED" } },
+        ],
+      },
+      limit: -1,
+    });
+    for (const row of rows) {
+      const id = Number(asString(row.entity_ref));
+      const name = asString(row.actor_name).trim();
+      if (Number.isInteger(id) && id > 0 && name) names.set(id, name);
+    }
+  } catch {
+    // A trail that cannot be read leaves the id, which is still honest.
+  }
+  return names;
 }
 
 export async function loadPayments(companyId: number, taxYear: number): Promise<PaymentLedger> {
@@ -82,7 +114,9 @@ export async function loadPayments(companyId: number, taxYear: number): Promise<
       sort: "-paid_on,-id",
       limit: -1,
     });
-    return { payments: rows.map(mapPayment), notices };
+    const payments = rows.map(mapPayment);
+    const names = await loadCreatorNames(companyId, taxYear);
+    return { payments: payments.map((row) => ({ ...row, createdByName: names.get(row.id) ?? null })), notices };
   } catch (error) {
     notices.push(
       isCollectionUnavailable(error)
@@ -105,6 +139,7 @@ function writePayload(input: PaymentInput): Record<string, unknown> {
 }
 
 export async function createPayment(input: PaymentInput, actor: Actor): Promise<{ id: number }> {
+  await assertPeriodUnlocked(input.companyId, input.taxYear, input.periodKey);
   const created = await createItem<Record<string, unknown>>(COLLECTION, {
     company_id: input.companyId,
     tax_year: input.taxYear,
@@ -142,6 +177,8 @@ export async function updatePayment(id: number, input: PaymentInput, actor: Acto
 
   const before = mapPayment(existing);
   if (before.companyId !== input.companyId || before.taxYear !== input.taxYear) throw new ScopeMismatchError();
+  await assertPeriodUnlocked(before.companyId, before.taxYear, before.periodKey);
+  if (input.periodKey !== before.periodKey) await assertPeriodUnlocked(input.companyId, input.taxYear, input.periodKey);
 
   await updateItem<Record<string, unknown>>(COLLECTION, id, writePayload(input));
 
@@ -182,6 +219,7 @@ export async function deletePayment(id: number, actor: Actor): Promise<{ id: num
   if (!existing) throw new RowNotFoundError("payment", id);
 
   const before = mapPayment(existing);
+  await assertPeriodUnlocked(before.companyId, before.taxYear, before.periodKey);
   await deleteItem(COLLECTION, id);
   await appendChangeLog(
     {

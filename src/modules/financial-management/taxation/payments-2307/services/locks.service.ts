@@ -27,6 +27,8 @@ export interface LockInput {
   companyId: number;
   taxYear: number;
   periodKey: PeriodKey;
+  /** Why the period is being locked; written to the change log. */
+  reason?: string | null;
 }
 
 export interface UnlockInput extends LockInput {
@@ -36,6 +38,14 @@ export interface UnlockInput extends LockInput {
 export interface LockLedger {
   locks: PeriodLockRow[];
   notices: string[];
+}
+
+/** Raised when a write would land inside a locked period. */
+export class PeriodLockedError extends Error {
+  constructor(periodKey: string) {
+    super(`${periodKey} is locked, so nothing can be recorded in it. Unlock the period first, then record the correction.`);
+    this.name = "PeriodLockedError";
+  }
 }
 
 /** Raised when the period is not currently locked, so there is nothing to release. */
@@ -98,6 +108,25 @@ async function findLock(companyId: number, taxYear: number, periodKey: PeriodKey
   return rows.length > 0 ? mapLock(rows[0]) : null;
 }
 
+/**
+ * A lock is only worth taking if it blocks writes. Every payment and certificate mutation asks this
+ * first, so a locked quarter cannot collect figures behind the lock's back.
+ */
+export async function assertPeriodUnlocked(
+  companyId: number,
+  taxYear: number,
+  periodKey: PeriodKey,
+): Promise<void> {
+  let lock: PeriodLockRow | null = null;
+  try {
+    lock = await findLock(companyId, taxYear, periodKey);
+  } catch {
+    // The lock table not being readable must not block ordinary work; it is reported in the desk.
+    return;
+  }
+  if (lock && lock.unlockedAt === null) throw new PeriodLockedError(periodKey);
+}
+
 export async function lockPeriod(input: LockInput, actor: Actor): Promise<{ id: number; locked: boolean }> {
   const existing = await findLock(input.companyId, input.taxYear, input.periodKey);
   const stamp = phtStamp();
@@ -135,7 +164,7 @@ export async function lockPeriod(input: LockInput, actor: Actor): Promise<{ id: 
       field: "LOCKED",
       beforeValue: existing ? formatValues({ locked_at: existing.lockedAt, unlocked_at: existing.unlockedAt }) : null,
       afterValue: formatValues({ locked_at: stamp, by: actor.userName ?? actor.userId }),
-      reason: existing?.unlockReason ?? null,
+      reason: input.reason?.trim() ? input.reason.trim() : (existing?.unlockReason ?? null),
     },
     actor,
   );

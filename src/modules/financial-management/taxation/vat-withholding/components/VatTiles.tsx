@@ -34,7 +34,7 @@ export function VatTiles({ vat, profile }: { vat: VatComputation; profile: Entit
   return (
     <section
       aria-label="VAT summary"
-      className="overflow-hidden rounded-2xl border border-border/50 border-t-[3px] border-t-emerald-500/70 bg-card shadow-sm"
+      className="overflow-hidden rounded-2xl border border-border/50 border-t-[3px] border-t-sky-500/70 bg-card shadow-sm"
     >
       <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/30 px-4 py-2.5">
         <h2 className="min-w-0 truncate text-sm font-semibold">

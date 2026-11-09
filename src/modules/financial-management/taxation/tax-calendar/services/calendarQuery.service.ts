@@ -114,7 +114,12 @@ export async function listCalendar(taxYear: number, companyId: number | null): P
   for (const company of scoped) {
     try {
       const input = await buildCompanyInput(company, taxYear);
-      obligations.push(...buildObligations(input, taxYear, paidKeys, today));
+      const rows = buildObligations(input, taxYear, paidKeys, today);
+      // A company that did not answer has no amount; zero would read as a real figure.
+      if (!company.reachable) {
+        for (const row of rows) row.estimated = null;
+      }
+      obligations.push(...rows);
     } catch (error) {
       notices.push(
         `${company.code}: filings could not be prepared (${error instanceof Error ? error.message : "unknown error"}).`,
@@ -127,7 +132,7 @@ export async function listCalendar(taxYear: number, companyId: number | null): P
   const unreachable = companies.filter((company) => !company.reachable);
   if (unreachable.length > 0) {
     notices.push(
-      `Not readable: ${unreachable.map((company) => `${company.code} (${company.unreachableReason ?? "no answer"})`).join(", ")}. Their filings show a zero estimate until the endpoint answers.`,
+      `Not readable: ${unreachable.map((company) => `${company.code} (${company.unreachableReason ?? "no answer"})`).join(", ")}. Their filings carry no estimate until the endpoint answers, rather than a zero.`,
     );
   }
 

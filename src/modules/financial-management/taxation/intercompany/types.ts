@@ -197,6 +197,8 @@ export interface IntercompanyMonthlyRow {
 export interface IntercompanyPayload {
   companies: RegistryCompany[];
   pairs: IntercompanyPair[];
+  /** Documents whose counterparty could not be read: a hit, not a zero. */
+  oneSided: number;
   monthly: IntercompanyMonthlyRow[];
   notices: string[];
 }

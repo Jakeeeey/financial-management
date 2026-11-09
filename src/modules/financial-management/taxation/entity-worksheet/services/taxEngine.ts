@@ -193,6 +193,11 @@ export function buildLines(
     section: WorksheetLine["section"],
     hint?: string,
     emphasis?: boolean,
+    /**
+     * Cumulative rows (1702Q is year-to-date) must not be added up: the year figure is the
+     * Q4 value, not the sum of four running totals.
+     */
+    yearMode: "SUM" | "LAST" = "SUM",
   ): WorksheetLine => ({
     key: lineNo,
     lineNo,
@@ -201,7 +206,7 @@ export function buildLines(
     section,
     source: emphasis ? "COMPUTED" : "DERIVED",
     values,
-    yearValue: round(sum(values)),
+    yearValue: round(yearMode === "LAST" ? (values[values.length - 1] ?? 0) : sum(values)),
     emphasis,
   });
 
@@ -224,7 +229,7 @@ export function buildLines(
   lines.push(
     line("8", "Less: NOLCO applied", computation.nolcoUsed, "DEDUCTIONS", "Carryover lots live on the overview"),
     line("9", "Net taxable income", computation.netTaxableIncome, "DEDUCTIONS", undefined, true),
-    line("10", "Income tax due, year to date", computation.taxDue, "TAX", "1702Q is cumulative"),
+    line("10", "Income tax due, year to date", computation.taxDue, "TAX", "1702Q is cumulative", false, "LAST"),
     line("11", "Tax withheld by outside customers", cwt, "TAX"),
     line("12", "Payable on this return", computation.payable, "TAX", undefined, true),
   );

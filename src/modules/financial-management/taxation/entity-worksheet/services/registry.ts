@@ -58,15 +58,24 @@ export async function listRegistryCompanies(): Promise<RegistryCompany[]> {
   return companies;
 }
 
+/**
+ * Nine endpoints pinged per request made every page pay the slowest one twice. Reachability
+ * wobbles on a timescale of minutes, so the answers are reused for a minute.
+ */
+const HEALTH_TTL_MS = 60_000;
+let healthCache: { at: number; rows: RegistryCompany[] } | null = null;
+
 /** Pings every endpoint in parallel; an unreachable company keeps its row and carries the reason. */
-export async function listRegistryCompaniesWithHealth(): Promise<RegistryCompany[]> {
+export async function listRegistryCompaniesWithHealth(options: { fresh?: boolean } = {}): Promise<RegistryCompany[]> {
+  if (!options.fresh && healthCache && Date.now() - healthCache.at < HEALTH_TTL_MS) return healthCache.rows;
+
   const companies = await listRegistryCompanies();
   const health = await Promise.all(
     companies.map(async (company) => ({ companyId: company.companyId, ...(await ping(company.baseUrl, company.token)) })),
   );
   const byId = new Map(health.map((entry) => [entry.companyId, entry]));
 
-  return companies.map((company) => {
+  const rowsWithHealth = companies.map((company) => {
     const entry = byId.get(company.companyId);
     return {
       ...company,
@@ -74,6 +83,9 @@ export async function listRegistryCompaniesWithHealth(): Promise<RegistryCompany
       unreachableReason: entry?.ok ? null : (entry?.reason ?? "No answer"),
     };
   });
+
+  healthCache = { at: Date.now(), rows: rowsWithHealth };
+  return rowsWithHealth;
 }
 
 export async function getRegistryCompany(companyId: number): Promise<RegistryCompany | null> {

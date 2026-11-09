@@ -26,11 +26,17 @@ export async function listCompanies(): Promise<RegistryCompany[]> {
   return listRegistryCompaniesWithHealth();
 }
 
-export async function loadEntitySnapshot(companyId: number, taxYear: number): Promise<EntitySnapshot> {
-  const company = await getRegistryCompany(companyId);
+export async function loadEntitySnapshot(
+  companyId: number,
+  taxYear: number,
+  /** Already health-checked rows from the route; without this the registry is pinged twice per page. */
+  knownCompanies?: RegistryCompany[],
+): Promise<EntitySnapshot> {
+  const companies = knownCompanies ?? (await listCompanies());
+  const company = companies.find((entry) => entry.companyId === companyId) ?? (await getRegistryCompany(companyId));
   if (!company) throw new TaxonomyLookupError(`Company ${companyId} is not in the registry.`);
 
-  const peers = (await listCompanies()).filter((peer) => peer.companyId !== companyId);
+  const peers = companies.filter((peer) => peer.companyId !== companyId);
   const profile = await loadProfile(companyId, taxYear);
 
   if (!company.reachable) {
@@ -61,10 +67,12 @@ export async function loadEntitySnapshot(companyId: number, taxYear: number): Pr
       lines: buildLines(empty, computation, profile),
       matches: [],
       notices: [...notices, ...computation.notices],
+      figuresAvailable: false,
+      failedSources: ["the company instance"],
     };
   }
 
-  const { figures, matches, notices } = await loadFigures(company, taxYear, peers);
+  const { figures, matches, notices, failed } = await loadFigures(company, taxYear, peers);
   const computation = computeTax(figures, profile);
   const vat = computeVat(figures, profile);
 
@@ -77,5 +85,8 @@ export async function loadEntitySnapshot(companyId: number, taxYear: number): Pr
     lines: buildLines(figures, computation, profile),
     matches,
     notices: [...notices, ...computation.notices],
+    // Gross income is the headline; without the sales register the whole sheet is unknown.
+    figuresAvailable: !failed.includes("sales"),
+    failedSources: failed.map((source) => (source === "sales" ? "sales invoices" : "purchase orders")),
   };
 }

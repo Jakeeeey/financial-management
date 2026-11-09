@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
+import { Skeleton } from "@/components/ui/skeleton";
 import { AlertTriangle, CalendarClock, RefreshCw } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -51,17 +53,24 @@ export function TaxCalendarModule() {
   const [month, setMonth] = useState<number | null>(null);
   const calendar = useTaxCalendar(year);
 
+  // Months 0-11 are the tax year; 12-15 are the following January-April, where the
+  // annual returns for this year fall.
+  const LAST_MONTH = 15;
   const activeMonth = month ?? (year === currentYear ? Number(today.slice(5, 7)) - 1 : 0);
-  const monthKey = `${year}-${String(activeMonth + 1).padStart(2, "0")}`;
+  const displayYear = activeMonth > 11 ? year + 1 : year;
+  const displayMonth = activeMonth % 12;
+  const monthKey = `${displayYear}-${String(displayMonth + 1).padStart(2, "0")}`;
   const monthCount = useMemo(
     () => calendar.events.filter((item) => item.date.startsWith(monthKey)).length,
     [calendar.events, monthKey],
   );
 
   const notices = calendar.notices.filter((notice) => notice !== HOLIDAY_CAVEAT);
+  /** True while the figures on screen belong to the year the reader just left. */
+  const stale = calendar.settledYear !== null && calendar.settledYear !== year;
 
   return (
-    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 p-2 sm:p-4">
+    <div className="mx-auto w-full max-w-[1600px] space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold sm:text-2xl">Tax Calendar</h1>
@@ -89,6 +98,9 @@ export function TaxCalendarModule() {
               ))}
             </SelectContent>
           </Select>
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/fm/taxation/payments-2307">Record payments</Link>
+          </Button>
           <Button variant="outline" size="sm" onClick={calendar.refetch} disabled={calendar.isLoading}>
             <RefreshCw className={calendar.isLoading ? "h-4 w-4 animate-spin" : "h-4 w-4"} aria-hidden />
             <span className="ml-2 hidden sm:inline">Refresh</span>
@@ -96,7 +108,14 @@ export function TaxCalendarModule() {
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {stale ? (
+        <div className="grid gap-3 sm:grid-cols-3" aria-busy="true">
+          {Array.from({ length: 3 }, (_, index) => (
+            <Skeleton key={index} className="h-[92px] rounded-2xl" />
+          ))}
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-3">
         <Tile
           label="Still to file"
           value={formatNumber(calendar.counts.due + calendar.counts.overdue)}
@@ -115,13 +134,9 @@ export function TaxCalendarModule() {
           hint="Unfiled estimates only"
           tone={calendar.counts.estimated > 0 ? "warning" : "neutral"}
         />
-        <Tile
-          label="Filings tracked"
-          value={formatNumber(calendar.counts.total)}
-          hint="Every company"
-          tone="neutral"
-        />
-      </div>
+
+        </div>
+      )}
 
       {calendar.error && (
         <Alert variant="destructive">
@@ -157,12 +172,14 @@ export function TaxCalendarModule() {
 
         <TabsContent value="calendar">
           <CalendarMonth
-            year={year}
-            month={activeMonth}
+            month={displayMonth}
+            year={displayYear}
+            canPrev={activeMonth > 0}
+            canNext={activeMonth < LAST_MONTH}
             items={calendar.events}
             today={today}
-            isLoading={calendar.isLoading}
-            onMonthChange={(next) => setMonth(next)}
+            isLoading={calendar.isLoading || stale}
+            onMonthChange={(next) => setMonth(Math.min(LAST_MONTH, Math.max(0, next)))}
           />
         </TabsContent>
 
@@ -172,7 +189,7 @@ export function TaxCalendarModule() {
             total={calendar.total}
             companies={calendar.companies}
             filters={calendar.filters}
-            isLoading={calendar.isLoading}
+            isLoading={calendar.isLoading || stale}
             page={calendar.page}
             pageCount={calendar.pageCount}
             pageSize={calendar.pageSize}

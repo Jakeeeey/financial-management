@@ -26,11 +26,11 @@ export function Payments2307Module() {
   const lockedPeriods = new Set(desk.locks.filter((lock) => lock.unlockedAt === null).map((lock) => lock.periodKey)).size;
 
   return (
-    <div className="mx-auto max-w-[1600px] space-y-6">
+    <div className="mx-auto w-full max-w-[1600px] space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold sm:text-2xl">Payments &amp; 2307</h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
             2307 certificates, remittances and quarter locks for one company and tax year.
           </p>
         </div>

@@ -124,6 +124,10 @@ export interface VatSnapshot {
   profile: EntityProfile;
   figures: QuarterFigures[];
   notices: string[];
+  /** False when the sales register itself could not be read: the figures are unknown, not zero. */
+  figuresAvailable: boolean;
+  /** Human-readable names of the sources that failed, e.g. "sales invoices". */
+  failedSources: string[];
 }
 
 /** The whole `GET /api/fm/taxation/vat-withholding` payload. */

@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 
 import { CompanyRequestError } from "./companyClient";
 import { DirectusError } from "./directus";
-import { NotLockedError } from "./locks.service";
+import { NotLockedError, PeriodLockedError } from "./locks.service";
 import { RowNotFoundError, ScopeMismatchError } from "./rowErrors";
 
 export function ok<T>(data: T): NextResponse {
@@ -25,6 +25,7 @@ export function handleRouteError(tag: string, error: unknown): NextResponse {
   if (error instanceof RowNotFoundError) return fail(error.message, 404);
   if (error instanceof ScopeMismatchError) return fail(error.message, 409);
   if (error instanceof NotLockedError) return fail(error.message, 409);
+  if (error instanceof PeriodLockedError) return fail(error.message, 409);
   if (error instanceof DirectusError || error instanceof CompanyRequestError) {
     return fail(error.message, 502);
   }

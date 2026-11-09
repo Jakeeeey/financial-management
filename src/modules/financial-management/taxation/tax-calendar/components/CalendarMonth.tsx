@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -9,10 +9,20 @@ import { cn } from "@/lib/utils";
 
 import { CalendarDayDialog } from "./CalendarDayDialog";
 import { formatLongDate, monthCells, monthLabel } from "./calendarDates";
+import { chipStateClass, formChipClass } from "../constants";
 import { holidaysFor, HOLIDAY_CAVEAT, nonWorkingReason } from "../services/holidays";
 import type { CalendarDayItem } from "../types";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+/** Same hues the chips use, in the order a tax team reads them. */
+const LEGEND = [
+  { label: "Income tax", className: "bg-indigo-500/15 ring-indigo-500/40" },
+  { label: "VAT", className: "bg-sky-500/15 ring-sky-500/40" },
+  { label: "Withholding", className: "bg-amber-500/15 ring-amber-500/40" },
+  { label: "Certificates", className: "bg-violet-500/15 ring-violet-500/40" },
+  { label: "Overdue", className: "bg-transparent ring-2 ring-red-500/60" },
+] as const;
 
 /** One month of deadlines as a real calendar, plus the day drilldown. */
 export function CalendarMonth({
@@ -21,6 +31,8 @@ export function CalendarMonth({
   items,
   today,
   isLoading,
+  canPrev = true,
+  canNext = true,
   onMonthChange,
 }: {
   year: number;
@@ -29,9 +41,12 @@ export function CalendarMonth({
   items: CalendarDayItem[];
   today: string;
   isLoading: boolean;
+  canPrev?: boolean;
+  canNext?: boolean;
   onMonthChange: (month: number) => void;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
+  const opener = useRef<string | null>(null);
 
   const holidays = useMemo(() => holidaysFor(year), [year]);
   const cells = useMemo(() => monthCells(year, month), [year, month]);
@@ -56,7 +71,7 @@ export function CalendarMonth({
   return (
     <section
       aria-label="Month grid"
-      className="overflow-hidden rounded-2xl border border-border/50 border-t-[3px] border-t-sky-500/70 bg-card shadow-sm"
+      className="overflow-hidden rounded-2xl border border-border/50 border-t-[3px] border-t-teal-500/70 bg-card shadow-sm"
     >
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 px-3 py-3 sm:px-4">
         <Button
@@ -64,7 +79,7 @@ export function CalendarMonth({
           variant="outline"
           size="sm"
           onClick={() => onMonthChange(month - 1)}
-          disabled={month === 0}
+          disabled={!canPrev}
         >
           <ChevronLeft className="h-4 w-4" aria-hidden />
           <span className="ml-1">Previous</span>
@@ -72,7 +87,7 @@ export function CalendarMonth({
         <p aria-live="polite" className="text-sm font-semibold tabular-nums">
           {monthLabel(year, month)}
         </p>
-        <Button type="button" variant="outline" size="sm" onClick={() => onMonthChange(month + 1)} disabled={month === 11}>
+        <Button type="button" variant="outline" size="sm" onClick={() => onMonthChange(month + 1)} disabled={!canNext}>
           <span className="mr-1">Next</span>
           <ChevronRight className="h-4 w-4" aria-hidden />
         </Button>
@@ -126,8 +141,8 @@ export function CalendarMonth({
                     {dayItems.slice(0, 2).map((item) => (
                       <span
                         key={`${item.formCode}-${item.period}-${item.companyName}`}
-                        className="truncate rounded bg-muted px-1 text-[11px] leading-4 font-medium"
-                        title={`${item.formCode} · ${item.companyName} · ${item.period}`}
+                        className={cn("truncate rounded px-1 text-[11px] leading-4 font-medium", formChipClass(item.formCode), chipStateClass(item.status))}
+                        title={`${item.formCode} | ${item.companyName} | ${item.period}`}
                       >
                         {item.formCode}
                       </span>
@@ -143,6 +158,7 @@ export function CalendarMonth({
             const cellClass = cn(
               "flex min-h-[56px] flex-col rounded-lg border border-border/40 bg-card p-1 text-left sm:min-h-[88px] sm:p-1.5",
               !cell.inMonth && "bg-muted/30",
+              cell.inMonth && reason && "bg-amber-50/60 dark:bg-amber-950/15",
               isToday && "border-primary ring-1 ring-primary/40",
             );
 
@@ -158,7 +174,11 @@ export function CalendarMonth({
               <button
                 key={cell.iso}
                 type="button"
-                onClick={() => setSelected(cell.iso)}
+                data-day-cell={cell.iso}
+                onClick={() => {
+                  opener.current = cell.iso;
+                  setSelected(cell.iso);
+                }}
                 aria-current={isToday ? "date" : undefined}
                 aria-label={`${formatLongDate(cell.iso)}, ${dayItems.length} obligation${dayItems.length === 1 ? "" : "s"}${reason ? `, not a working day: ${reason.toLowerCase()}` : ""}`}
                 className={cn(
@@ -177,15 +197,29 @@ export function CalendarMonth({
         {!isLoading && monthCount === 0 ? (
           <p className="text-xs text-muted-foreground">No deadline falls in {monthLabel(year, month)}.</p>
         ) : null}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 text-[11px] text-muted-foreground">
+          {LEGEND.map((entry) => (
+            <span key={entry.label} className="inline-flex items-center gap-1.5">
+              <span className={cn("h-2.5 w-2.5 rounded-sm ring-1 ring-inset", entry.className)} aria-hidden />
+              {entry.label}
+            </span>
+          ))}
+        </div>
         <p className="text-xs text-muted-foreground">{HOLIDAY_CAVEAT}</p>
       </div>
 
       <CalendarDayDialog
+        onOpenChange={(open) => {
+          setSelected(open ? selected : null);
+          if (!open && opener.current) {
+            const iso = opener.current;
+            requestAnimationFrame(() => {
+              document.querySelector<HTMLElement>(`[data-day-cell="${iso}"]`)?.focus();
+            });
+          }
+        }}
         date={selected}
         items={selectedItems}
-        onOpenChange={(open) => {
-          if (!open) setSelected(null);
-        }}
       />
     </section>
   );

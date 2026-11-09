@@ -42,10 +42,9 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const [companies, snapshot] = await Promise.all([
-      listCompanies(),
-      loadEntitySnapshot(parsed.data.companyId, parsed.data.year),
-    ]);
+    // One health pass, reused by both halves: previously each call pinged all nine endpoints.
+    const companies = await listCompanies();
+    const snapshot = await loadEntitySnapshot(parsed.data.companyId, parsed.data.year, companies);
     return NextResponse.json({ success: true, data: { companies, snapshot } });
   } catch (error) {
     if (error instanceof TaxonomyLookupError) {

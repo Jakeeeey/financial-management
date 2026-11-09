@@ -78,15 +78,15 @@ export function nonWorkingReason(iso: string, holidays: Map<string, string>): st
 /** Moves a due date forward to the next working day, returning the reason when it moved. */
 export function moveToWorkingDay(iso: string, holidays: Map<string, string>): { date: string; reason: string | null } {
   let cursor = parseIso(iso);
-  let reason: string | null = null;
+  const reasons: string[] = [];
   for (let guard = 0; guard < 10; guard += 1) {
     const current = toIso(cursor);
     const blocked = nonWorkingReason(current, holidays);
-    if (!blocked) return { date: current, reason };
-    reason = reason ?? blocked;
+    if (!blocked) return { date: current, reason: reasons.join(", then ") || null };
+    if (!reasons.includes(blocked)) reasons.push(blocked);
     cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
   }
-  return { date: toIso(cursor), reason };
+  return { date: toIso(cursor), reason: reasons.join(", then ") || null };
 }
 
 export function addDays(iso: string, days: number): string {

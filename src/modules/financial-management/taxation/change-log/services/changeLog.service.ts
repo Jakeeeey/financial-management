@@ -15,7 +15,8 @@ const FIELDS = [
   "field",
   "before_value",
   "after_value",
-  "actor",
+  "actor_id",
+  "actor_name",
   "occurred_at",
   "reason",
 ];
@@ -32,7 +33,7 @@ function toRow(raw: RawRow): ChangeLogRow {
     field: asString(raw.field) || null,
     beforeValue: asString(raw.before_value) || null,
     afterValue: asString(raw.after_value) || null,
-    actor: asString(raw.actor) || null,
+    actor: asString(raw.actor_name) || (raw.actor_id == null ? null : `#${asNumber(raw.actor_id)}`),
     occurredAt: asString(raw.occurred_at) || null,
     reason: asString(raw.reason) || null,
   };
@@ -84,7 +85,7 @@ export async function listChangeLog(
       return {
         rows: [],
         total: 0,
-        notice: `The change log table is not available yet (Directus ${error.status}). Run .omo/drafts/taxation-schema.sql, then reload.`,
+        notice: "The change log cannot be read right now, so no edits are listed. Reload to try again.",
       };
     }
     throw error;

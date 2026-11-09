@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatCurrency, formatNumber } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 
 import { DateField } from "./DateField";
 import { OptionCombobox } from "./OptionCombobox";
@@ -18,7 +18,7 @@ import { TablePager } from "./TablePager";
 import { CALENDAR_CATEGORIES, CALENDAR_STATUSES, toneClass, statusTone } from "../constants";
 import type { CalendarFilter, CalendarObligation, CalendarStatus } from "../types";
 
-const COLUMNS = 8;
+const COLUMNS = 7;
 
 const STATUS_LABEL: Record<CalendarStatus, string> = {
   PAID: "Recorded as paid",
@@ -74,15 +74,12 @@ export function CalendarTable({
   return (
     <section
       aria-label="Tax calendar"
-      className="overflow-hidden rounded-2xl border border-border/50 border-t-[3px] border-t-sky-500/70 bg-card shadow-sm"
+      className="overflow-hidden rounded-2xl border border-border/50 border-t-[3px] border-t-teal-500/70 bg-card shadow-sm"
     >
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/50 px-4 py-3">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold">Filing calendar</h2>
         </div>
-        <Badge variant="outline" className="tabular-nums text-[11px]">
-          {formatNumber(total)} filings
-        </Badge>
       </header>
 
       <div className="border-b border-border/50 px-4 py-3">
@@ -156,7 +153,6 @@ export function CalendarTable({
               <TableHead className="w-[120px]">Category</TableHead>
               <TableHead className="w-[150px] text-right">Estimate</TableHead>
               <TableHead className="w-[150px]">Status</TableHead>
-              <TableHead className="w-[260px]">Note</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

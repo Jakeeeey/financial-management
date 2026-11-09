@@ -106,8 +106,25 @@ export function CertificatePanel({ register }: { register: CertificateRegister }
                 <TableCell className="font-medium">{row.quarter}</TableCell>
                 <TableCell className={numeric}>{formatCurrency(row.expected)}</TableCell>
                 <TableCell className={numeric}>{formatCurrency(row.onCertificates)}</TableCell>
-                <TableCell className={cn(numeric, row.difference !== 0 && "font-medium")}>
-                  {formatCurrency(row.difference)}
+                <TableCell
+                  className={cn(
+                    numeric,
+                    "font-medium",
+                    row.difference < 0
+                      ? "text-red-700 dark:text-red-400"
+                      : row.difference > 0
+                        ? "text-amber-700 dark:text-amber-400"
+                        : "text-muted-foreground",
+                  )}
+                  title={
+                    row.difference < 0
+                      ? "Certificates on file cover less than the invoices withheld"
+                      : row.difference > 0
+                        ? "Certificates on file exceed the invoices withheld"
+                        : "Expected and on certificates agree"
+                  }
+                >
+                  {formatCurrency(Math.abs(row.difference) < 0.005 ? 0 : row.difference)}
                 </TableCell>
               </TableRow>
             ))}
@@ -115,7 +132,7 @@ export function CertificatePanel({ register }: { register: CertificateRegister }
         </Table>
       </div>
 
-      <div aria-label="2307 certificate filters" className="mt-4 border-b border-border/50 px-4 py-3">
+      <div aria-label="2307 certificate filters" hidden={register.rows.length === 0} className="mt-4 border-b border-border/50 px-4 py-3">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto]">
           <div className="space-y-1.5">
             <Label

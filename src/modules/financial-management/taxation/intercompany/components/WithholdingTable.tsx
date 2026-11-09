@@ -55,7 +55,7 @@ export function WithholdingTable({ rows, isLoading }: { rows: WithholdingRow[]; 
   const dirty = q !== "" || verdict !== "ALL" || basis !== "ALL";
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-border/50 border-t-[3px] border-t-amber-500/70 bg-card shadow-sm">
+    <section className="overflow-hidden rounded-2xl border border-border/50 bg-card shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-2 border-b bg-muted/30 px-4 py-3">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold">Withholding by pair</h2>

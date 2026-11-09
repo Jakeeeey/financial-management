@@ -100,8 +100,9 @@ export function useWorksheet(initialYear: number) {
       companies.map((company) => ({
         value: String(company.companyId),
         label: `${company.code} · ${company.name}`,
-        searchText: `${company.code} ${company.name}`,
-        description: company.reachable ? company.baseUrl : `Unreachable — ${company.unreachableReason ?? "no answer"}`,
+        // The endpoint URL used to render here and swallowed the row: a host name is not a label.
+        searchText: `${company.code} ${company.name} ${company.baseUrl}`,
+        description: company.reachable ? undefined : `Unreachable — ${company.unreachableReason ?? "no answer"}`,
       })),
     [companies],
   );

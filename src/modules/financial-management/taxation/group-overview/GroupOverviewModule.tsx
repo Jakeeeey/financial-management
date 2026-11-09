@@ -31,9 +31,15 @@ export function GroupOverviewModule({ initialYear }: { initialYear: number }) {
   const { data, isLoading, error, year, setYear, refetch } = useGroupOverview(initialYear);
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+    <div className="mx-auto w-full max-w-[1600px] space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold sm:text-2xl">Group Overview</h1>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+            Income tax, VAT and withholding across the group, with every gap named.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <label htmlFor="group-overview-year" className="text-xs font-medium text-muted-foreground">
             Tax year
           </label>
@@ -49,11 +55,11 @@ export function GroupOverviewModule({ initialYear }: { initialYear: number }) {
               ))}
             </SelectContent>
           </Select>
+          <Button variant="outline" size="sm" onClick={refetch} disabled={isLoading}>
+            <RefreshCw className={isLoading ? "animate-spin" : undefined} />
+            Refresh
+          </Button>
         </div>
-        <Button variant="outline" size="sm" onClick={refetch} disabled={isLoading}>
-          <RefreshCw className={isLoading ? "animate-spin" : undefined} />
-          Refresh
-        </Button>
       </div>
 
       {error && !data ? (

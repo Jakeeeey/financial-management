@@ -121,10 +121,10 @@ export function usePayments2307() {
   const removePayment = useCallback((id: number) => mutate(() => deletePayment(id)), [mutate]);
 
   const lock = useCallback(
-    async (periodKey: PeriodKey) => {
+    async (periodKey: PeriodKey, reason: string) => {
       const { companyId: scopeId, year: scopeYear } = scopeRef.current;
       if (scopeId === null) throw new Error("Pick a company before locking a period.");
-      await mutate(() => lockPeriod({ companyId: scopeId, year: scopeYear, periodKey }));
+      await mutate(() => lockPeriod({ companyId: scopeId, year: scopeYear, periodKey, reason }));
     },
     [mutate],
   );

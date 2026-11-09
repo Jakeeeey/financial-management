@@ -22,7 +22,7 @@ export function ChangeLogModule() {
   const log = useChangeLog(year);
 
   return (
-    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 p-2 sm:p-4">
+    <div className="mx-auto w-full max-w-[1600px] space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold sm:text-2xl">Change Log</h1>

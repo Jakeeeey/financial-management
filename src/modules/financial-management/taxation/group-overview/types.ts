@@ -122,6 +122,10 @@ export interface GroupCompanyRow {
 
 export interface GroupTotals {
   taxDue: number;
+  /** Tax due on the companies that are still payable, so `taxDueOnPayable − creditsOnPayable = netPayable`. */
+  taxDueOnPayable: number;
+  /** Credits belonging to those same companies. Credits inside an overpaid company stay there. */
+  creditsOnPayable: number;
   netPayable: number;
   overpaid: number;
   vatPayable: number;

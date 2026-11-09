@@ -35,6 +35,7 @@ import {
   roundMoney,
   updateItem,
 } from "./directus";
+import { assertPeriodUnlocked } from "./locks.service";
 import { RowNotFoundError, ScopeMismatchError } from "./rowErrors";
 
 const COLLECTION = "tax_2307";
@@ -347,6 +348,7 @@ function writePayload(input: CertificateInput): Record<string, unknown> {
 }
 
 export async function createCertificate(input: CertificateInput, actor: Actor): Promise<{ id: number }> {
+  await assertPeriodUnlocked(input.companyId, input.taxYear, input.periodKey);
   const created = await createItem<Record<string, unknown>>(COLLECTION, {
     company_id: input.companyId,
     tax_year: input.taxYear,
@@ -390,6 +392,8 @@ export async function updateCertificate(
 
   const before = mapCertificate(existing);
   if (before.companyId !== input.companyId || before.taxYear !== input.taxYear) throw new ScopeMismatchError();
+  await assertPeriodUnlocked(before.companyId, before.taxYear, before.periodKey);
+  if (input.periodKey !== before.periodKey) await assertPeriodUnlocked(input.companyId, input.taxYear, input.periodKey);
 
   await updateItem<Record<string, unknown>>(COLLECTION, id, writePayload(input));
 
@@ -432,6 +436,7 @@ export async function deleteCertificate(id: number, actor: Actor): Promise<{ id:
   if (!existing) throw new RowNotFoundError("2307 certificate", id);
 
   const before = mapCertificate(existing);
+  await assertPeriodUnlocked(before.companyId, before.taxYear, before.periodKey);
   await deleteItem(COLLECTION, id);
   await appendChangeLog(
     {
@@ -586,6 +591,7 @@ export async function prefillCertificates(
       notices.push(`Only the first ${PREFILL_LIMIT} purchase orders were read; later quarters may be incomplete.`);
     }
 
+    let unnamedSuppliers = 0;
     for (const row of purchases) {
       const index = quarterOf(asString(row.date));
       if (index === null) continue;
@@ -593,16 +599,29 @@ export async function prefillCertificates(
       const withheld = asNumber(row.withholding_tax_amount);
       if (income <= 0 || withheld <= 0) continue;
 
+      // Some instances store a supplier number in supplier_name and refuse the supplier register
+      // (403), so a certificate built from it would name its issuer "40".
+      const supplierName = asString(row.supplier_name).trim();
+      if (supplierName === "" || /^\d+$/.test(supplierName)) {
+        unnamedSuppliers += 1;
+        continue;
+      }
+
       pushAggregate(
         aggregates,
         {
           direction: "ISSUED",
           periodKey: QUARTER_KEYS[index],
-          counterpartyName: asString(row.supplier_name) || "Supplier",
+          counterpartyName: supplierName,
           counterpartyTin: null,
         },
         income,
         withheld,
+      );
+    }
+    if (unnamedSuppliers > 0) {
+      notices.push(
+        `Purchase orders carry a supplier number rather than a supplier name on this instance, and the supplier register cannot be read, so no issued 2307 was prefilled for ${unnamedSuppliers} document(s). Enter those from the suppliers' certificates.`,
       );
     }
   } catch (error) {
@@ -613,6 +632,24 @@ export async function prefillCertificates(
     notices.push("No invoice in this year carries a withholding amount, so there was nothing to prefill.");
     return { created: 0, skipped: 0, notices };
   }
+
+  const lockedPeriods = new Set<PeriodKey>();
+  for (const periodKey of QUARTER_KEYS) {
+    try {
+      await assertPeriodUnlocked(company.companyId, taxYear, periodKey);
+    } catch {
+      lockedPeriods.add(periodKey);
+    }
+  }
+  if (lockedPeriods.size > 0) {
+    notices.push(
+      `${[...lockedPeriods].join(", ")} ${lockedPeriods.size === 1 ? "is" : "are"} locked, so nothing was prefilled into ${lockedPeriods.size === 1 ? "it" : "them"}.`,
+    );
+  }
+  for (const periodKey of lockedPeriods) {
+    for (const [key, draft] of aggregates) if (draft.periodKey === periodKey) aggregates.delete(key);
+  }
+  if (aggregates.size === 0) return { created: 0, skipped: 0, notices };
 
   let existing: Array<Omit<CertificateRow, "status">> = [];
   try {
@@ -640,6 +677,8 @@ export async function prefillCertificates(
     const source: CertificateSource = draft.direction === "RECEIVED" ? "SALES_INVOICE" : "PURCHASE_ORDER";
 
     try {
+      // A prefilled certificate is a write like any other: a locked quarter must refuse it.
+      await assertPeriodUnlocked(company.companyId, taxYear, draft.periodKey);
       const saved = await createItem<Record<string, unknown>>(COLLECTION, {
         company_id: company.companyId,
         tax_year: taxYear,

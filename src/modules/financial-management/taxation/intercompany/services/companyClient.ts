@@ -38,8 +38,14 @@ async function requestJson<T>(baseUrl: string, token: string, path: string, comp
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new CompanyRequestError(`Cannot reach ${companyCode}: ${message}`, 0, companyCode);
+    // Transport strings ("fetch failed", "The operation was aborted due to timeout") reach the
+    // page as panel copy, so they are translated here, once, for every caller.
+    const raw = error instanceof Error ? error.message.toLowerCase() : "";
+    const reason =
+      raw.includes("timeout") || raw.includes("abort")
+        ? "did not answer within 20 seconds"
+        : "refused the connection";
+    throw new CompanyRequestError(`Cannot reach ${companyCode}: ${reason}`, 0, companyCode);
   }
 
   const text = await response.text().catch(() => "");

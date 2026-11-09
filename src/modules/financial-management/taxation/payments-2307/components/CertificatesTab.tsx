@@ -4,6 +4,16 @@ import { useMemo, useState } from "react";
 import { FileDown, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -75,6 +85,7 @@ export function CertificatesTab({
   const [editing, setEditing] = useState<CertificateRow | null>(null);
   const [deleting, setDeleting] = useState<CertificateRow | null>(null);
   const [viewing, setViewing] = useState<CertificateRow | null>(null);
+  const [confirmPrefill, setConfirmPrefill] = useState(false);
   const [prefillNote, setPrefillNote] = useState<string | null>(null);
   const [prefillError, setPrefillError] = useState<string | null>(null);
 
@@ -85,9 +96,11 @@ export function CertificatesTab({
       certificate,
     }));
 
-    // A past period the ledger says should carry withholding, with nothing recorded.
+    // A period the ledger says should carry withholding but no certificate covers: whether or not a
+    // smaller certificate exists, the gap has to stay on screen or the shortfall disappears.
+    const covered = new Set(certificates.map((certificate) => `${certificate.direction}|${certificate.periodKey}`));
     const gapRows: Row[] = expected
-      .filter((period) => period.status === "NOT_ENTERED")
+      .filter((period) => period.expected > 0 && !covered.has(`${period.direction}|${period.periodKey}`))
       .map((period) => ({ kind: "gap", key: `g-${period.direction}-${period.periodKey}`, period }));
 
     return [...certificatesRows, ...gapRows].sort((left, right) => {
@@ -111,6 +124,24 @@ export function CertificatesTab({
   const visible = rows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   const withheldTotal = certificates.reduce((sum, certificate) => sum + certificate.taxWithheld, 0);
+  const gapCount = rows.filter((row) => row.kind === "gap").length;
+
+  // A short certificate hides the gap it leaves, so expected and recorded stay side by side — but only
+  // for periods that disagree. A matched period is already visible as the register's own amount.
+  const expectation = useMemo(() => {
+    const recorded = new Map<string, number>();
+    for (const certificate of certificates) {
+      const key = `${certificate.direction}|${certificate.periodKey}`;
+      recorded.set(key, (recorded.get(key) ?? 0) + certificate.taxWithheld);
+    }
+    return expected
+      .map((period) => {
+        const key = `${period.direction}|${period.periodKey}`;
+        const covered = recorded.get(key) ?? 0;
+        return { period, recorded: covered, difference: covered - period.expected };
+      })
+      .filter((row) => row.period.expected > 0 && Math.abs(row.difference) > 0.005);
+  }, [certificates, expected]);
 
   async function prefill() {
     setPrefillError(null);
@@ -137,7 +168,7 @@ export function CertificatesTab({
   return (
     <section
       aria-label="2307 certificates"
-      className="overflow-hidden rounded-2xl border border-border/50 bg-card shadow-sm"
+      className="overflow-hidden rounded-2xl border border-border/50 border-t-[3px] border-t-amber-500/70 bg-card shadow-sm"
     >
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 px-4 py-3">
         <h2 className="text-sm font-semibold">2307 certificates</h2>
@@ -148,11 +179,16 @@ export function CertificatesTab({
           <Badge variant="outline" className="tabular-nums text-[11px]">
             {formatCurrency(withheldTotal)} withheld
           </Badge>
+          {gapCount > 0 ? (
+            <Badge variant="outline" className="tabular-nums text-[11px]">
+              {formatNumber(gapCount)} gap{gapCount === 1 ? "" : "s"}
+            </Badge>
+          ) : null}
           <Button
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => void prefill()}
+            onClick={() => setConfirmPrefill(true)}
             disabled={isSaving || isLoading}
             className="min-h-11 md:min-h-0"
           >
@@ -179,6 +215,61 @@ export function CertificatesTab({
           <Alert>
             <AlertDescription>{prefillNote}</AlertDescription>
           </Alert>
+        </div>
+      ) : null}
+
+      {expectation.length > 0 ? (
+        <div className="border-b border-border/50 bg-muted/20 px-4 py-3">
+          <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Periods where certificates do not match the ledger
+          </h3>
+          <div className="mt-2 overflow-x-auto">
+            <Table aria-label="Expected against recorded">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Direction</TableHead>
+                  <TableHead>Period</TableHead>
+                  <TableHead className="text-right">Expected</TableHead>
+                  <TableHead className="text-right">Recorded</TableHead>
+                  <TableHead className="text-right">Difference</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {expectation.map(({ period, recorded, difference }) => (
+                  <TableRow key={`${period.direction}-${period.periodKey}`}>
+                    <TableCell className="whitespace-nowrap text-xs">{DIRECTION_LABELS[period.direction]}</TableCell>
+                    <TableCell className="whitespace-nowrap text-xs">{PERIOD_LABELS[period.periodKey]}</TableCell>
+                    <TableCell className="text-right tabular-nums" title="Expected from the ledger">
+                      {formatCurrency(period.expected)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{formatCurrency(recorded)}</TableCell>
+                    <TableCell
+                      className={
+                        difference < -0.005
+                          ? "text-right tabular-nums text-red-600 dark:text-red-400"
+                          : difference > 0.005
+                            ? "text-right tabular-nums text-amber-600 dark:text-amber-400"
+                            : "text-right tabular-nums text-muted-foreground"
+                      }
+                      title={
+                        difference < -0.005
+                          ? "Short: less has been recorded than the ledger says was withheld"
+                          : difference > 0.005
+                            ? "Over: more has been recorded than the ledger says was withheld"
+                            : "Matched within ₱1"
+                      }
+                    >
+                      {formatCurrency(difference)}
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={period.status} label={certificateStatusLabel(period.status)} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       ) : null}
 
@@ -372,6 +463,32 @@ export function CertificatesTab({
           if (deleting) await onDelete(deleting.id);
         }}
       />
+      <AlertDialog open={confirmPrefill} onOpenChange={setConfirmPrefill}>
+        <AlertDialogContent className="w-[95vw] sm:max-w-[520px]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Write certificates from the invoices?</AlertDialogTitle>
+            <AlertDialogDescription>
+              One certificate is written per customer and quarter that carries withholding, stamped to this company and
+              year. Certificates that already exist for the same period are skipped. Nothing is filed with BIR — this is
+              a working register.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSaving}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isSaving}
+              onClick={(event) => {
+                event.preventDefault();
+                setConfirmPrefill(false);
+                void prefill();
+              }}
+            >
+              {isSaving ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+              Write certificates
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }

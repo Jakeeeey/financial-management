@@ -173,9 +173,11 @@ export async function loadIntercompanyLedger({ companyId, year }: LedgerRequest)
   const linked = new Map([...ledgers].filter(([, ledger]) => ledger.reachable));
   const pairs = buildPairs(linked);
 
+  let oneSided = 0;
   for (const ledger of linked.values()) {
     for (const sale of ledger.sales) {
       if (sale.documents > 0 && !linked.has(sale.peerCode)) {
+        oneSided += 1;
         notices.push(
           `${ledger.company.code} invoiced ${sale.peerName} (${sale.documents} document(s), ${sale.base.toFixed(2)}), but that company is unreadable, so the pair is left out rather than shown one-sided.`,
         );
@@ -189,11 +191,13 @@ export async function loadIntercompanyLedger({ companyId, year }: LedgerRequest)
     notices.push(`${selected.code} is unreachable, so its monthly breakdown is empty for ${year}.`);
   }
 
-  if (pairs.length === 0 && registry.length > 1) {
+  // "Nothing names a group company" is only true when nothing did. A one-sided document is a hit
+  // whose counterparty could not answer.
+  if (pairs.length === 0 && registry.length > 1 && oneSided === 0) {
     notices.push(
       `No invoice in ${year} names another group company as its customer, and no purchase order names one as its supplier.`,
     );
   }
 
-  return { companies, pairs, monthly: monthlyRows(selectedLedger), notices };
+  return { companies, pairs, oneSided, monthly: monthlyRows(selectedLedger), notices };
 }

@@ -32,8 +32,14 @@ async function requestJson<T>(baseUrl: string, token: string, path: string, comp
       signal: AbortSignal.timeout(20_000),
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new CompanyRequestError(`Cannot reach ${companyCode}: ${message}`, 0, companyCode);
+    // Transport strings ("fetch failed", "The operation was aborted due to timeout") reach the
+    // page as panel copy, so they are translated here, once, for every caller.
+    const raw = error instanceof Error ? error.message.toLowerCase() : "";
+    const reason =
+      raw.includes("timeout") || raw.includes("abort")
+        ? "did not answer within 20 seconds"
+        : "refused the connection";
+    throw new CompanyRequestError(`Cannot reach ${companyCode}: ${reason}`, 0, companyCode);
   }
 
   const text = await response.text().catch(() => "");
@@ -57,10 +63,23 @@ export async function ping(baseUrl: string, token: string): Promise<{ ok: boolea
       headers: { Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(8_000),
     });
-    if (!response.ok) return { ok: false, reason: `refused the ping (${response.status})` };
+    if (!response.ok) {
+      const text =
+        response.status === 401 || response.status === 403
+          ? `refused the instance token (${response.status})`
+          : `answered its ping with an error (${response.status})`;
+      return { ok: false, reason: text };
+    }
     return { ok: true, reason: null };
   } catch (error) {
-    return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+    // "fetch failed" and "The operation was aborted due to timeout" are browser internals;
+    // this string is rendered to an accountant as the reason a company is missing.
+    const raw = error instanceof Error ? error.message.toLowerCase() : "";
+    const reason =
+      raw.includes("timeout") || raw.includes("abort")
+        ? "did not answer within 8 seconds"
+        : "refused the connection";
+    return { ok: false, reason };
   }
 }
 

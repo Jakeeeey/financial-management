@@ -138,7 +138,11 @@ export async function loadGroupOverview(taxYear: number): Promise<GroupOverviewD
       acc.taxDue += row.taxDue;
       acc.withholding += row.withholding;
       acc.vatPayable += row.vatPayable;
-      if (row.netPosition > 0) acc.netPayable += row.netPosition;
+      if (row.netPosition > 0) {
+        acc.netPayable += row.netPosition;
+        acc.taxDueOnPayable += row.taxDue;
+        acc.creditsOnPayable += row.credits;
+      }
       if (row.netPosition < 0) acc.overpaid += -row.netPosition;
       if (row.status === "OVERPAID") acc.overpaidCompanies += 1;
       if (row.status === "UNREADABLE") acc.unreadableCompanies += 1;
@@ -147,6 +151,8 @@ export async function loadGroupOverview(taxYear: number): Promise<GroupOverviewD
     },
     {
       taxDue: 0,
+      taxDueOnPayable: 0,
+      creditsOnPayable: 0,
       netPayable: 0,
       overpaid: 0,
       vatPayable: 0,
@@ -159,6 +165,8 @@ export async function loadGroupOverview(taxYear: number): Promise<GroupOverviewD
   );
 
   totals.taxDue = roundMoney(totals.taxDue);
+  totals.taxDueOnPayable = roundMoney(totals.taxDueOnPayable);
+  totals.creditsOnPayable = roundMoney(totals.creditsOnPayable);
   totals.netPayable = roundMoney(totals.netPayable);
   totals.overpaid = roundMoney(totals.overpaid);
   totals.vatPayable = roundMoney(totals.vatPayable);

@@ -114,7 +114,6 @@ export function buildObligations(
     push("2307", label, `${label} ${year}`, addDays(quarterEnd, 20), "WITHHOLDING", null, "Certificates issued to suppliers and group companies.");
 
     const withholdingMonths = [quarter * 3, quarter * 3 + 1];
-    const remittance = withholdingMonths.reduce((sum, month) => sum + (monthlyWithholding[month] ?? 0), 0);
 
     for (const month of withholdingMonths) {
       const label0 = `${String(month + 1).padStart(2, "0")} ${year}`;
@@ -135,8 +134,9 @@ export function buildObligations(
       `${label} ${year}`,
       endOfMonth(year, (quarter + 1) * 3 + 1),
       "WITHHOLDING",
-      remittance,
-      "Quarterly summary of the two 0619-E remittances above.",
+      // 0619-E covers the quarter's first two months; this return carries the third.
+      monthlyWithholding[quarter * 3 + 2] ?? 0,
+      "Covers the third month of the quarter; the first two were remitted on 0619-E.",
     );
   }
 

@@ -53,11 +53,13 @@ function SkeletonRows() {
 export function PairMatrix({
   pairs,
   isLoading,
-  year,
+  oneSided,  year,
   onSelectPair,
 }: {
   pairs: IntercompanyPair[];
   isLoading: boolean;
+  /** Documents with a group counterparty whose own ledger could not be read. */
+  oneSided: number;
   year: number;
   onSelectPair: (pair: IntercompanyPair) => void;
 }) {
@@ -67,7 +69,7 @@ export function PairMatrix({
     "cursor-pointer focus-visible:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-border/50 border-t-[3px] border-t-teal-500/70 bg-card shadow-sm">
+    <section className="overflow-hidden rounded-2xl border border-border/50 border-t-[3px] border-t-violet-500/70 bg-card shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-2 border-b bg-muted/30 px-4 py-3">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold">Pair matrix</h2>
@@ -88,7 +90,11 @@ export function PairMatrix({
       {isLoading && pairs.length === 0 ? (
         <SkeletonRows />
       ) : pairs.length === 0 ? (
-        <p className="px-4 py-6 text-sm text-muted-foreground">No pair has a document in {year}.</p>
+        <p className="px-4 py-6 text-sm text-muted-foreground">
+          {oneSided > 0
+            ? `${oneSided} document${oneSided === 1 ? "" : "s"} name${oneSided === 1 ? "s" : ""} a group company, but the other side could not be read, so no pair can be confirmed for ${year}.`
+            : `No pair has a document in ${year}.`}
+        </p>
       ) : (
         <>
           <div className="hidden xl:block">

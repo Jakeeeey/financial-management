@@ -6,7 +6,6 @@ import { AlertTriangle, ChevronDown, RefreshCw } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -22,19 +21,37 @@ import { useIntercompany } from "./hooks/useIntercompany";
 import type { IntercompanyPair } from "./types";
 import { buildWithholdingRows } from "./withholding";
 
-const MAX_VISIBLE_NOTES = 6;
-
 /**
  * The service puts the structural caveat first (registry coverage, unreachable ledgers), so the
  * head of the list is the one worth reading; the rest fold away.
  */
+/**
+ * Notes arrive as "CODE: reason" once per company, so seven companies produce seven copies of one
+ * sentence. Grouping by reason turns that wall into one line naming the codes.
+ */
+function groupNotices(notices: string[]): string[] {
+  const byReason = new Map<string, string[]>();
+  const ungrouped: string[] = [];
+  for (const notice of notices) {
+    const match = /^([A-Z0-9]{2,6}):\s+(.+)$/.exec(notice);
+    if (!match) {
+      ungrouped.push(notice);
+      continue;
+    }
+    const codes = byReason.get(match[2]);
+    if (codes) codes.push(match[1]);
+    else byReason.set(match[2], [match[1]]);
+  }
+  const grouped = [...byReason.entries()].map(([reason, codes]) =>
+    codes.length === 1 ? `${codes[0]}: ${reason}` : `${codes.join(", ")}: ${reason}`,
+  );
+  return [...ungrouped, ...grouped];
+}
+
 function Notices({ notices }: { notices: string[] }) {
   const [open, setOpen] = useState(false);
-  const [lead, ...rest] = notices;
+  const [lead, ...rest] = useMemo(() => groupNotices(notices), [notices]);
   if (!lead) return null;
-
-  const visible = rest.slice(0, MAX_VISIBLE_NOTES);
-  const truncated = rest.length > MAX_VISIBLE_NOTES;
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -51,11 +68,13 @@ function Notices({ notices }: { notices: string[] }) {
                 <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />
               </CollapsibleTrigger>
               <CollapsibleContent className="w-full">
+                {/* Every note is listed once expanded; a "…" after six hid the reasons people read this for. */}
                 <ul className="list-disc space-y-1 pl-4 text-xs text-muted-foreground">
-                  {visible.map((notice, index) => (
-                    <li key={index}>{notice}</li>
+                  {rest.map((notice, index) => (
+                    <li key={index} className="break-words">
+                      {notice}
+                    </li>
                   ))}
-                  {truncated ? <li aria-hidden>…</li> : null}
                 </ul>
               </CollapsibleContent>
             </>
@@ -85,6 +104,8 @@ export function IntercompanyModule() {
   const pairs = useMemo(() => data?.pairs ?? [], [data]);
   const monthly = data?.monthly ?? [];
   const notices = data?.notices ?? [];
+  const unreadable = (data?.companies ?? []).filter((company) => !company.reachable);
+  const oneSided = data?.oneSided ?? 0;
   const withholding = useMemo(() => buildWithholdingRows(pairs), [pairs]);
   const companyLabel = selectedCompany
     ? `${selectedCompany.code} — ${selectedCompany.name}`
@@ -93,47 +114,40 @@ export function IntercompanyModule() {
       : "Loading companies";
 
   return (
-    <div className="space-y-4">
-      <section
-        aria-label="Intercompany scope"
-        className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-border/50 bg-card px-4 py-3 shadow-sm"
-      >
+    <div className="mx-auto w-full max-w-[1600px] space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold">Intercompany ledger</h2>
-          <p className="max-w-2xl text-xs text-muted-foreground">
-            Derived by matching sales invoices to purchase orders across the group&apos;s companies, month by month.
+          <h1 className="text-xl font-semibold sm:text-2xl">Intercompany Ledger</h1>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+            Sales invoices matched to purchase orders across the group&apos;s companies, month by month.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="w-[280px] space-y-1.5">
-            <Label htmlFor="intercompany-company">Company</Label>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="w-[280px]">
             <OptionCombobox
-              id="intercompany-company"
               options={companyOptions}
               value={companyId ? String(companyId) : ""}
               onChange={(value) => value && ledger.selectCompany(Number(value))}
               placeholder="Choose a company"
               searchPlaceholder="Search companies…"
               emptyLabel="No company matches."
+              aria-label="Company"
             />
           </div>
 
-          <div className="w-[120px] space-y-1.5">
-            <Label htmlFor="intercompany-year">Tax year</Label>
-            <Select value={String(year)} onValueChange={(value) => ledger.selectYear(Number(value))}>
-              <SelectTrigger id="intercompany-year" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="max-h-60">
-                {years.map((option) => (
-                  <SelectItem key={option} value={String(option)}>
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <Select value={String(year)} onValueChange={(value) => ledger.selectYear(Number(value))}>
+            <SelectTrigger className="w-[120px]" aria-label="Tax year">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="max-h-60">
+              {years.map((option) => (
+                <SelectItem key={option} value={String(option)}>
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
           <Button
             type="button"
@@ -146,13 +160,31 @@ export function IntercompanyModule() {
             <RefreshCw className={isLoading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
           </Button>
         </div>
-      </section>
+      </div>
 
       {error ? (
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>Could not build the intercompany ledger</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      {unreadable.length > 0 ? (
+        <Alert>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>
+            {unreadable.length} {unreadable.length === 1 ? "company" : "companies"} could not be read
+          </AlertTitle>
+          <AlertDescription>
+            <p className="break-words">
+              {unreadable
+                .map((company) => `${company.code} (${company.unreachableReason ?? "no answer"})`)
+                .join(" · ")}
+              . Their documents are missing from this ledger, so a pair they would have formed is absent rather than
+              zero.
+            </p>
+          </AlertDescription>
         </Alert>
       ) : null}
 
@@ -166,13 +198,20 @@ export function IntercompanyModule() {
 
       <Tabs defaultValue="matrix" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="matrix" className="min-h-11 md:min-h-0">Pair matrix ({pairs.length})</TabsTrigger>
-          <TabsTrigger value="monthly" className="min-h-11 md:min-h-0">Monthly breakdown ({monthly.length})</TabsTrigger>
-          <TabsTrigger value="withholding" className="min-h-11 md:min-h-0">Withholding ({withholding.length})</TabsTrigger>
+          {/* Counts stay blank until the payload lands: "0 pairs" while loading is a claim, not a placeholder. */}
+          <TabsTrigger value="matrix" className="min-h-11 md:min-h-0">
+            {isLoading ? "Pair matrix" : `Pair matrix (${pairs.length})`}
+          </TabsTrigger>
+          <TabsTrigger value="monthly" className="min-h-11 md:min-h-0">
+            {isLoading ? "Monthly breakdown" : `Monthly breakdown (${monthly.length})`}
+          </TabsTrigger>
+          <TabsTrigger value="withholding" className="min-h-11 md:min-h-0">
+            {isLoading ? "Withholding" : `Withholding (${withholding.length})`}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="matrix" className="space-y-4">
-          <PairMatrix pairs={pairs} isLoading={isLoading} year={year} onSelectPair={setSelected} />
+          <PairMatrix pairs={pairs} isLoading={isLoading} oneSided={oneSided} year={year} onSelectPair={setSelected} />
         </TabsContent>
 
         <TabsContent value="monthly" className="space-y-4">

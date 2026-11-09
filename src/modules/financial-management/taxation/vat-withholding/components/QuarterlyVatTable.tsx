@@ -51,14 +51,14 @@ export function QuarterlyVatTable({ figures, vat }: { figures: QuarterFigures[];
             <caption className="sr-only">Output and input VAT per quarter, carried in and carried forward</caption>
             <thead>
               <tr className="border-b bg-muted/40 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                <th scope="col" className="px-3 py-2 font-semibold">Quarter</th>
-                <th scope="col" className="px-3 py-2 font-semibold">Zero-rated sales</th>
-                <th scope="col" className="px-3 py-2 text-right font-semibold">VATable sales</th>
-                <th scope="col" className="px-3 py-2 text-right font-semibold">Output VAT</th>
-                <th scope="col" className="px-3 py-2 text-right font-semibold">Input VAT</th>
-                <th scope="col" className="px-3 py-2 text-right font-semibold">Carried in</th>
-                <th scope="col" className="px-3 py-2 text-right font-semibold">Payable</th>
-                <th scope="col" className="px-3 py-2 text-right font-semibold">Carry out</th>
+                <th scope="col" className="px-4 py-2 font-semibold">Quarter</th>
+                <th scope="col" className="px-4 py-2 font-semibold">Zero-rated sales</th>
+                <th scope="col" className="px-4 py-2 text-right font-semibold">VATable sales</th>
+                <th scope="col" className="px-4 py-2 text-right font-semibold">Output VAT</th>
+                <th scope="col" className="px-4 py-2 text-right font-semibold">Input VAT</th>
+                <th scope="col" className="px-4 py-2 text-right font-semibold">Carried in</th>
+                <th scope="col" className="px-4 py-2 text-right font-semibold">Payable</th>
+                <th scope="col" className="py-2 pl-4 pr-5 text-right font-semibold">Carry out</th>
               </tr>
             </thead>
             <tbody>
@@ -71,16 +71,16 @@ export function QuarterlyVatTable({ figures, vat }: { figures: QuarterFigures[];
                   onKeyDown={(event) => rowKeyDown(event, row.index)}
                   className="cursor-pointer border-b transition-colors last:border-0 hover:bg-muted/30 focus-visible:bg-muted/40 focus-visible:outline-none"
                 >
-                  <td className="px-3 py-2.5 font-medium">{row.quarter}</td>
-                  <td className="px-3 py-2.5 text-xs text-muted-foreground" title="Zero-rated sales are not recorded in this system">
+                  <td className="px-4 py-2.5 font-medium">{row.quarter}</td>
+                  <td className="px-4 py-2.5 text-xs text-muted-foreground" title="Zero-rated sales are not recorded in this system">
                     Not recorded
                   </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{money(row.sales)}</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{money(row.output)}</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{money(row.input)}</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{money(row.carriedIn)}</td>
-                  <td className="px-3 py-2.5 text-right font-medium tabular-nums">{money(row.payable)}</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{money(row.carryOut)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{money(row.sales)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{money(row.output)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{money(row.input)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{money(row.carriedIn)}</td>
+                  <td className="px-4 py-2.5 text-right font-medium tabular-nums">{money(row.payable)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{money(row.carryOut)}</td>
                 </tr>
               ))}
             </tbody>

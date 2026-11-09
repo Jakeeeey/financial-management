@@ -108,6 +108,10 @@ export interface EntitySnapshot {
   lines: WorksheetLine[];
   matches: IntercompanyMatch[];
   notices: string[];
+  /** False when the sales register could not be read: the worksheet is unknown, not zero. */
+  figuresAvailable: boolean;
+  /** Human-readable names of the sources that failed, e.g. "sales invoices". */
+  failedSources: string[];
 }
 
 export interface IntercompanyMatch {

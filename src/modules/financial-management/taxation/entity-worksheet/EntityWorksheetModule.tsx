@@ -5,11 +5,9 @@ import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { formatCurrency } from "@/lib/utils";
 
 import { OptionCombobox } from "./components/OptionCombobox";
 import { ProfileCard } from "./components/ProfileCard";
@@ -17,6 +15,12 @@ import { WorksheetTable } from "./components/WorksheetTable";
 import { useWorksheet } from "./hooks/useWorksheet";
 import { REGIME_LABELS, TAX_YEARS } from "./constants";
 import type { EntityProfile } from "./types";
+
+/** Reasons arrive as clauses ("refused the connection"), so they need a full stop before the next sentence. */
+function terminated(reason: string) {
+  const trimmed = reason.trim();
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
 
 /** Profile facts a person has stated, i.e. moved off the default. */
 function statedFields(profile: EntityProfile): number {
@@ -40,51 +44,49 @@ export function EntityWorksheetModule() {
 
   const current = snapshot?.company ?? companies.find((company) => company.companyId === worksheet.companyId);
 
+  /**
+   * The hook keeps the previous payload while the next one loads, which is right for a refresh
+   * and wrong for a different company or year: Men2's worksheet under RC2's name is a lie.
+   */
+  const stale =
+    snapshot != null &&
+    (snapshot.company.companyId !== worksheet.companyId || snapshot.profile.taxYear !== worksheet.year);
+
   return (
-    <div className="space-y-4">
-      <section
-        aria-label="Worksheet scope"
-        className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-border/50 bg-card px-4 py-3 shadow-sm"
-      >
+    <div className="mx-auto w-full max-w-[1600px] space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold">Entity worksheet</h2>
-          <p className="max-w-2xl text-xs text-muted-foreground">
-            Quarterly 1702Q income tax built from this company&apos;s own ledgers — estimates for review, not filings.
+          <h1 className="text-xl font-semibold sm:text-2xl">Entity Worksheet</h1>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+            Quarterly 1702Q income tax built from one company&apos;s own ledgers — estimates for review, not filings.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="w-[280px] max-w-full space-y-1.5">
-            <Label htmlFor="worksheet-company">Company</Label>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="w-[280px] max-w-full">
             <OptionCombobox
-              id="worksheet-company"
               options={companyOptions}
               value={worksheet.companyId ? String(worksheet.companyId) : ""}
               onChange={(value) => value && worksheet.selectCompany(Number(value))}
               placeholder="Choose a company"
               searchPlaceholder="Search companies…"
               emptyLabel="No company matches."
+              aria-label="Company"
             />
           </div>
 
-          <div className="w-[120px] space-y-1.5">
-            <Label htmlFor="worksheet-year">Tax year</Label>
-            <Select
-              value={String(worksheet.year)}
-              onValueChange={(value) => worksheet.selectYear(Number(value))}
-            >
-              <SelectTrigger id="worksheet-year" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="max-h-60">
-                {TAX_YEARS.map((year) => (
-                  <SelectItem key={year} value={String(year)}>
-                    {year}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <Select value={String(worksheet.year)} onValueChange={(value) => worksheet.selectYear(Number(value))}>
+            <SelectTrigger className="w-[120px]" aria-label="Tax year">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="max-h-60">
+              {TAX_YEARS.map((year) => (
+                <SelectItem key={year} value={String(year)}>
+                  {year}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
           <Button
             type="button"
@@ -96,7 +98,7 @@ export function EntityWorksheetModule() {
             Refresh
           </Button>
         </div>
-      </section>
+      </div>
 
       {error ? (
         <Alert variant="destructive">
@@ -111,10 +113,30 @@ export function EntityWorksheetModule() {
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>{current.code} is not reachable</AlertTitle>
           <AlertDescription>
-            {current.unreachableReason ?? "No answer from its Directus endpoint."} Figures stay at zero until the
-            endpoint answers.
+            {terminated(current.unreachableReason ?? "No answer from its Directus endpoint")} Figures are not
+            shown until the endpoint answers.
           </AlertDescription>
         </Alert>
+      ) : null}
+
+      {!error && current && current.reachable && snapshot && !stale && !snapshot.figuresAvailable ? (
+        <Alert>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>
+            No figures for {current.name} in {worksheet.year}
+          </AlertTitle>
+          <AlertDescription>
+            The {snapshot.failedSources.join(" and ")} could not be read, so the worksheet is unknown rather than
+            zero. Nothing is shown until the source answers.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      {stale ? (
+        <div className="space-y-4">
+          <Skeleton className="h-20 w-full rounded-2xl" />
+          <Skeleton className="h-96 w-full rounded-2xl" />
+        </div>
       ) : null}
 
       {isLoading && !snapshot ? (
@@ -130,42 +152,12 @@ export function EntityWorksheetModule() {
         </p>
       ) : null}
 
-      {snapshot ? (
+      {snapshot && !stale && !error && snapshot.company.reachable && snapshot.figuresAvailable ? (
         <>
-          <section
-            aria-label="Tax summary"
-            className="flex flex-wrap items-center gap-6 rounded-2xl border border-border/50 bg-card px-4 py-3 shadow-sm"
-          >
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Regime</p>
-              <Badge variant="outline" className="mt-1 max-w-full truncate text-[11px] font-semibold">
-                {REGIME_LABELS[snapshot.profile.regime]}
-              </Badge>
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Net taxable income</p>
-              <p className="tabular-nums text-sm font-semibold">{formatCurrency(snapshot.computation.annual.netTaxableIncome)}</p>
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Income tax due</p>
-              <p className="tabular-nums text-sm font-semibold">{formatCurrency(snapshot.computation.annual.taxDue)}</p>
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Credits</p>
-              <p className="tabular-nums text-sm font-semibold">{formatCurrency(snapshot.computation.annual.taxCredits)}</p>
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Net position</p>
-              <p className="tabular-nums text-sm font-semibold">{formatCurrency(snapshot.computation.annual.netPosition)}</p>
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Rate applied</p>
-              <p className="tabular-nums text-sm font-semibold">{(snapshot.computation.rateApplied * 100).toFixed(0)}%</p>
-            </div>
-          </section>
+          
 
           <Tabs defaultValue="worksheet" className="space-y-4">
-            <div className="-mx-1 overflow-x-auto px-1">
+            <div className="-mx-1 flex items-center gap-3 overflow-x-auto px-1">
               <TabsList>
                 <TabsTrigger value="worksheet" className="min-h-11 md:min-h-0">
                   Worksheet
@@ -179,6 +171,9 @@ export function EntityWorksheetModule() {
                   </TabsTrigger>
                 ) : null}
               </TabsList>
+              <Badge variant="outline" className="shrink-0 text-[11px] font-medium">
+                {REGIME_LABELS[snapshot.profile.regime]}
+              </Badge>
             </div>
 
             <TabsContent value="worksheet">

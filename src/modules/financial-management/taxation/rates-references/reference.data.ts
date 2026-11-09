@@ -76,8 +76,8 @@ export const REFERENCE_GROUPS: ReferenceGroup[] = [
       {
         key: "nolco",
         label: "NOLCO carry-over",
-        value: "3 years",
-        note: "5 years for losses of 2020 and 2021.",
+        value: "3 years, or 5 for 2020 and 2021 losses",
+        note: "Counted from the year the loss arose; the desk expires each lot on its own origin year.",
       },
     ],
   },
@@ -91,13 +91,13 @@ export const REFERENCE_GROUPS: ReferenceGroup[] = [
         key: "output",
         label: "Output VAT",
         value: "12/112 of the VAT-inclusive invoice total",
-        note: "Sales invoices in this ERP store the VAT inside `total_amount`.",
+        note: "Sales invoice totals already include the VAT, so output VAT is 12/112 of the total.",
       },
       {
         key: "input",
         label: "Input VAT",
         value: "VAT on purchases from VAT-registered suppliers",
-        note: "Purchase orders carry their own `vat_amount`.",
+        note: "Purchase orders record their VAT separately, so input VAT is read from that field.",
       },
       {
         key: "carry",
@@ -122,7 +122,7 @@ export const REFERENCE_GROUPS: ReferenceGroup[] = [
       {
         key: "fee",
         label: "Management or professional fee",
-        value: "Seller's own rate",
+        value: "15%, 10% or 2%, whichever the seller is registered under",
         note: "15%, 10% or 2%, taken from the seller's profile.",
       },
       { key: "services", label: "Services", value: "2%", note: "Including construction contracts." },

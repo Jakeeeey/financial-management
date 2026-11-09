@@ -105,7 +105,7 @@ export function PaymentsTab({
   return (
     <section
       aria-label="Tax payments"
-      className="overflow-hidden rounded-2xl border border-border/50 bg-card shadow-sm"
+      className="overflow-hidden rounded-2xl border border-border/50 border-t-[3px] border-t-amber-500/70 bg-card shadow-sm"
     >
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 px-4 py-3">
         <h2 className="text-sm font-semibold">Payments</h2>
@@ -131,7 +131,7 @@ export function PaymentsTab({
         </div>
       </header>
 
-      <div aria-label="Tax payment filters" className="border-b border-border/50 px-4 py-3">
+      <div aria-label="Tax payment filters" hidden={payments.length === 0} className="border-b border-border/50 px-4 py-3">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,0.9fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
           <div className="space-y-1.5">
             <Label htmlFor="payment-filter-search" className="text-[11px] font-medium text-muted-foreground">
@@ -292,7 +292,7 @@ export function PaymentsTab({
                     </span>
                   </TableCell>
                   <TableCell className="tabular-nums" title={payment.createdBy ? `User ${payment.createdBy}` : ""}>
-                    {payment.createdBy ? `#${payment.createdBy}` : "—"}
+                    {payment.createdByName ?? (payment.createdBy ? `#${payment.createdBy}` : "—")}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">

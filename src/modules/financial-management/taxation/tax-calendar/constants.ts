@@ -1,4 +1,5 @@
-import type { DeductionMethod, PeriodKey, TaxRegime, WithholdingIncomeType } from "./types";
+import { cn } from "@/lib/utils";
+import type { CalendarStatus, DeductionMethod, PeriodKey, TaxRegime, WithholdingIncomeType } from "./types";
 
 export const TAX_YEARS = [2023, 2024, 2025, 2026, 2027] as const;
 
@@ -176,3 +177,39 @@ export const CALENDAR_STATUSES = [
   { value: "OVERDUE", label: "Overdue" },
   { value: "PAID", label: "Recorded as paid" },
 ] as const;
+
+/**
+ * A month grid is scanned by shape and colour before any text is read, so the form family earns
+ * a hue and the one alarming state (overdue) overrides it.
+ */
+export type FormFamily = "income" | "indirect" | "withholding" | "certificate" | "labour" | "other";
+
+export function formFamily(formCode: string): FormFamily {
+  if (formCode.startsWith("1702")) return "income";
+  if (formCode === "2550Q" || formCode === "2551Q") return "indirect";
+  if (formCode.startsWith("0619") || formCode.startsWith("1601")) return "withholding";
+  if (formCode.startsWith("2307")) return "certificate";
+  if (formCode.startsWith("1604")) return "labour";
+  return "other";
+}
+
+const FAMILY_CHIP: Record<FormFamily, string> = {
+  income: "bg-indigo-500/10 text-indigo-700 ring-indigo-500/25 dark:text-indigo-300",
+  indirect: "bg-sky-500/10 text-sky-700 ring-sky-500/25 dark:text-sky-300",
+  withholding: "bg-amber-500/10 text-amber-700 ring-amber-500/25 dark:text-amber-300",
+  certificate: "bg-violet-500/10 text-violet-700 ring-violet-500/25 dark:text-violet-300",
+  labour: "bg-teal-500/10 text-teal-700 ring-teal-500/25 dark:text-teal-300",
+  other: "bg-slate-500/10 text-slate-700 ring-slate-500/25 dark:text-slate-300",
+};
+
+export function formChipClass(formCode: string): string {
+  return cn("ring-1 ring-inset", FAMILY_CHIP[formFamily(formCode)]);
+}
+
+/** Overdue shouts, paid whispers, everything else speaks normally. */
+export function chipStateClass(status: CalendarStatus): string {
+  if (status === "OVERDUE") return "ring-2 ring-red-500/60 font-semibold";
+  if (status === "PAID") return "opacity-70";
+  if (status === "UNKNOWN") return "opacity-60";
+  return "";
+}

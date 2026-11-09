@@ -14,6 +14,28 @@ import { TablePager } from "./TablePager";
 
 const SEVERITY_TONE = { CRITICAL: "danger", HIGH: "warning", MEDIUM: "info" } as const;
 
+type FocusItem = GroupAttentionItem & { codes: string[] };
+
+/**
+ * Twelve of fourteen findings are one sentence with a different company in front, so identical
+ * findings share a line and list the companies they apply to.
+ */
+function collapseCodes(items: GroupAttentionItem[]): FocusItem[] {
+  const groups = new Map<string, FocusItem>();
+  for (const item of items) {
+    const key = `${item.severity}|${item.title}|${item.detail}`;
+    const existing = groups.get(key);
+    if (existing) {
+      if (item.companyCode !== "—" && !existing.codes.includes(item.companyCode)) {
+        existing.codes.push(item.companyCode);
+      }
+      continue;
+    }
+    groups.set(key, { ...item, codes: item.companyCode === "—" ? [] : [item.companyCode] });
+  }
+  return [...groups.values()];
+}
+
 /**
  * Everything the overview cannot state as a number: unreachable instances, instances
  * with nothing entered, and companies computed on a fallback profile.
@@ -52,7 +74,7 @@ export function AttentionPanel({ attention }: { attention: GroupAttentionItem[] 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
   const start = (safePage - 1) * PAGE_SIZE;
-  const visible = filtered.slice(start, start + PAGE_SIZE);
+  const visible = collapseCodes(filtered.slice(start, start + PAGE_SIZE));
   const dirty = severity !== "ALL" || q !== "";
 
   return (
@@ -142,7 +164,9 @@ export function AttentionPanel({ attention }: { attention: GroupAttentionItem[] 
             </Badge>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium" title={item.title}>
-                {item.companyCode !== "—" && <span className="mr-2 font-mono text-xs text-muted-foreground">{item.companyCode}</span>}
+                {item.codes.length > 0 && (
+                  <span className="mr-2 font-mono text-xs text-muted-foreground">{item.codes.join(", ")}</span>
+                )}
                 {item.title}
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground [overflow-wrap:anywhere]">{item.detail}</p>

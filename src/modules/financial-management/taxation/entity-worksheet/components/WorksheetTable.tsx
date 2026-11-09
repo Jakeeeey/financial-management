@@ -24,16 +24,20 @@ interface Props {
  * Every row already states how it is built, so there is nothing to drill into.
  */
 export function WorksheetTable({ lines, total }: Props) {
+  // Group sales, group cost of sales, other income, non-deductible expenses and NOLCO sit at zero on a
+  // clean year; five guaranteed-empty rows push the lines that matter off the fold.
+  const visible = lines.filter((line) => line.emphasis || line.values.some((value) => Math.abs(value) >= 0.005) || Math.abs(line.yearValue) >= 0.005);
+  const hidden = lines.length - visible.length;
   const sections = (Object.keys(SECTION_LABEL) as WorksheetLine["section"][]).filter((section) =>
     lines.some((line) => line.section === section),
   );
 
   return (
-    <section aria-label="Tax worksheet" className="overflow-hidden rounded-2xl border border-border/50 bg-card shadow-sm">
+    <section aria-label="Tax worksheet" className="overflow-hidden rounded-2xl border border-border/50 border-t-[3px] border-t-indigo-500/70 bg-card shadow-sm">
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border/50 px-4 py-3">
         <h2 className="min-w-0 text-sm font-semibold">1702Q worksheet</h2>
         <Badge variant="outline" className="tabular-nums text-[11px]">
-          {total} lines
+          {visible.length} of {total} lines
         </Badge>
       </header>
 
@@ -58,7 +62,7 @@ export function WorksheetTable({ lines, total }: Props) {
                     {SECTION_LABEL[section]}
                   </TableCell>
                 </TableRow>
-                {lines
+                {visible
                   .filter((line) => line.section === section)
                   .map((line) => (
                     <TableRow key={line.key} className={cn(line.emphasis && "bg-muted/20 font-medium")}>
@@ -86,6 +90,12 @@ export function WorksheetTable({ lines, total }: Props) {
           </TableBody>
         </Table>
       </div>
+
+      {hidden > 0 ? (
+        <p className="border-t border-border/50 px-4 py-2 text-[11px] text-muted-foreground">
+          {hidden} line{hidden === 1 ? "" : "s"} sit at zero for this year and are hidden.
+        </p>
+      ) : null}
     </section>
   );
 }

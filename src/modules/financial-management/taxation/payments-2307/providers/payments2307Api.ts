@@ -73,7 +73,12 @@ export function deletePayment(id: number): Promise<{ id: number }> {
   return request<{ id: number }>(`${BASE}/payments/${id}`, { method: "DELETE" });
 }
 
-export function lockPeriod(body: { companyId: number; year: number; periodKey: string }): Promise<{ id: number }> {
+export function lockPeriod(body: {
+  companyId: number;
+  year: number;
+  periodKey: string;
+  reason: string;
+}): Promise<{ id: number }> {
   return request<{ id: number }>(`${BASE}/locks`, jsonBody(body));
 }
 

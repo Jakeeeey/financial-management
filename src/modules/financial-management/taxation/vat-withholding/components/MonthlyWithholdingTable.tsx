@@ -40,11 +40,11 @@ export function MonthlyWithholdingTable({ rows }: { rows: MonthlyWithholdingRow[
             <caption className="sr-only">Withholding per month and the return it is filed on</caption>
             <thead>
               <tr className="border-b bg-muted/40 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                <th scope="col" className="px-3 py-2 font-semibold">Month</th>
-                <th scope="col" className="px-3 py-2 text-right font-semibold">Purchases subject to withholding</th>
-                <th scope="col" className="px-3 py-2 text-right font-semibold">Tax withheld</th>
-                <th scope="col" className="px-3 py-2 text-right font-semibold">0619-E due</th>
-                <th scope="col" className="px-3 py-2 text-right font-semibold">1601-EQ due</th>
+                <th scope="col" className="py-2 pl-5 pr-4 font-semibold">Month</th>
+                <th scope="col" className="px-4 py-2 text-right font-semibold">Purchases subject to withholding</th>
+                <th scope="col" className="px-4 py-2 text-right font-semibold">Tax withheld</th>
+                <th scope="col" className="px-4 py-2 text-right font-semibold">0619-E due</th>
+                <th scope="col" className="py-2 pl-4 pr-5 text-right font-semibold">1601-EQ due</th>
               </tr>
             </thead>
             <tbody>
@@ -60,7 +60,7 @@ export function MonthlyWithholdingTable({ rows }: { rows: MonthlyWithholdingRow[
                     row.quarterEnd && "bg-muted/20",
                   )}
                 >
-                  <td className="px-3 py-2.5">
+                  <td className="py-2.5 pl-5 pr-4">
                     <span className="flex min-w-0 items-center gap-2">
                       <span className="truncate font-medium" title={row.label}>
                         {row.label}
@@ -70,10 +70,10 @@ export function MonthlyWithholdingTable({ rows }: { rows: MonthlyWithholdingRow[
                       </Badge>
                     </span>
                   </td>
-                  <td className={numeric}>{formatCurrency(row.purchases)}</td>
-                  <td className={cn(numeric, "font-medium")}>{formatCurrency(row.withheld)}</td>
-                  <td className={numeric}>{due(row.agentDue)}</td>
-                  <td className={numeric}>{due(row.quarterlyDue)}</td>
+                  <td className={cn(numeric, "px-4 py-2.5")}>{formatCurrency(row.purchases)}</td>
+                  <td className={cn(numeric, "px-4 py-2.5 font-medium")}>{formatCurrency(row.withheld)}</td>
+                  <td className={cn(numeric, "px-4 py-2.5")}>{due(row.agentDue)}</td>
+                  <td className={cn(numeric, "px-4 py-2.5")}>{due(row.quarterlyDue)}</td>
                 </tr>
               ))}
             </tbody>

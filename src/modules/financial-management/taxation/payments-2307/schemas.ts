@@ -69,6 +69,7 @@ export const prefillBodySchema = z.object({ ...scopeShape });
 export const lockBodySchema = z.object({
   ...scopeShape,
   periodKey: periodKeySchema,
+  reason: z.string().trim().min(3, "Say why the period is being locked").max(300),
 });
 
 export const unlockBodySchema = z.object({
@@ -124,6 +125,12 @@ export const paymentFormSchema = z.object({
 });
 
 export type PaymentFormValues = z.infer<typeof paymentFormSchema>;
+
+export const lockFormSchema = z.object({
+  reason: z.string().trim().min(3, "Say why the period is being locked").max(300),
+});
+
+export type LockFormValues = z.infer<typeof lockFormSchema>;
 
 export const unlockFormSchema = z.object({
   reason: z.string().trim().min(3, "Say why the period is being unlocked").max(300),

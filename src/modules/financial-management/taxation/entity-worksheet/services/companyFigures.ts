@@ -19,6 +19,8 @@ export interface FigureResult {
   figures: QuarterFigures[];
   matches: IntercompanyMatch[];
   notices: string[];
+  /** Sources that could not be read at all, e.g. "sales". The figures are then unknown, not zero. */
+  failed: string[];
 }
 
 function emptyQuarter(): QuarterFigures {
@@ -116,6 +118,7 @@ export async function loadFigures(
   options: { intercompany?: boolean } = {},
 ): Promise<FigureResult> {
   const notices: string[] = [];
+  const failed: string[] = [];
   const figures = [0, 1, 2, 3].map(emptyQuarter);
   const from = `${taxYear}-01-01`;
   const to = `${taxYear}-12-31`;
@@ -124,15 +127,36 @@ export async function loadFigures(
     const sales = await groupedByDate(company.baseUrl, company.token, company.code, "sales_invoice", "invoice_date", {
       total_amount: "sum",
       vat_amount: "sum",
-      ewt_amount: "sum",
     }, from, to, { transaction_status: { _nin: CANCELLED_SALES } });
     bucket(figures, sales, (quarter, sums) => {
       quarter.sales += (sums.total_amount ?? 0) - (sums.vat_amount ?? 0);
       quarter.salesVat += sums.vat_amount ?? 0;
-      quarter.cwt += sums.ewt_amount ?? 0;
     });
+
+    // `ewt_amount` does not exist on every instance (Vertex has no such column, and Directus fails
+    // the whole grouped query when one summed field is unknown). Its own request keeps the sales
+    // figures instead of losing them to an optional column.
+    try {
+      const withheld = await groupedByDate(
+        company.baseUrl,
+        company.token,
+        company.code,
+        "sales_invoice",
+        "invoice_date",
+        { ewt_amount: "sum" },
+        from,
+        to,
+        { transaction_status: { _nin: CANCELLED_SALES } },
+      );
+      bucket(figures, withheld, (quarter, sums) => {
+        quarter.cwt += sums.ewt_amount ?? 0;
+      });
+    } catch {
+      notices.push("This instance has no tax-withheld column on its sales invoices, so credits are zero.");
+    }
   } catch (error) {
-    notices.push(`Sales: ${error instanceof Error ? error.message : String(error)}`);
+    failed.push("sales");
+    notices.push(`Sales invoices could not be read: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   try {
@@ -156,7 +180,8 @@ export async function loadFigures(
       quarter.purchasesVat += sums.vat_amount ?? 0;
     });
   } catch (error) {
-    notices.push(`Purchases: ${error instanceof Error ? error.message : String(error)}`);
+    failed.push("purchases");
+    notices.push(`Purchase orders could not be read: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   try {
@@ -255,7 +280,7 @@ export async function loadFigures(
     }
   }
 
-  return { figures, matches, notices };
+  return { figures, matches, notices, failed };
 }
 
 /** Year-level totals only — what the group overview needs, in four requests. */

@@ -15,17 +15,20 @@ import { CompanyDetailDialog } from "./CompanyDetailDialog";
 import { StatusBadge } from "./StatusBadge";
 import { TablePager } from "./TablePager";
 
-const COLUMNS = 9;
+const COLUMNS = 8;
+
+/** Companies with no figures get a dash: `₱0.00` would claim they earned nothing. */
+const NO_FIGURES: ReadonlySet<string> = new Set(["UNREADABLE", "NOT_ENTERED"]);
 
 function regimeLabel(row: GroupCompanyRow) {
   if (!row.regime) return row.reachable ? "Unknown" : "—";
   return REGIME_SHORT[row.regime] ?? row.regime;
 }
 
-/** A company that never answered has no figures; printing 0.00 would invent them. */
 function money(row: GroupCompanyRow, value: number) {
-  if (row.status === "UNREADABLE") return "—";
-  return formatCurrency(value);
+  if (NO_FIGURES.has(row.status)) return "—";
+  // formatCurrency opens negatives with an ASCII hyphen; the rest of the page uses U+2212.
+  return formatCurrency(Math.abs(value) < 0.005 ? 0 : value).replace(/^-/, "−");
 }
 
 /** The dialog counts the attention items that name this company. */
@@ -54,17 +57,31 @@ export function CompanyTable({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("ALL");
+  const [sort, setSort] = useState<"NET_DESC" | "NET_ASC" | "NAME">("NET_DESC");
+  const [lastFocus, setLastFocus] = useState<HTMLElement | null>(null);
 
-  const statuses = useMemo(() => Array.from(new Set(rows.map((row) => row.status))), [rows]);
+  const statuses = useMemo(() => {
+    const order = ["DUE", "OVERPAID", "SETTLED", "NOT_ENTERED", "UNREADABLE"];
+    const present = new Set(rows.map((row) => row.status));
+    return order.filter((value) => present.has(value as GroupCompanyRow["status"]));
+  }, [rows]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return rows.filter((row) => {
+    const matching = rows.filter((row) => {
       if (status !== "ALL" && row.status !== status) return false;
       if (!needle) return true;
       return `${row.code} ${row.name}`.toLowerCase().includes(needle);
     });
-  }, [rows, q, status]);
+    return matching.sort((a, b) => {
+      if (sort === "NAME") return a.name.localeCompare(b.name);
+      // Rows with no figures have no position to rank; keep them at the bottom either way.
+      const noA = NO_FIGURES.has(a.status);
+      const noB = NO_FIGURES.has(b.status);
+      if (noA !== noB) return noA ? 1 : -1;
+      return sort === "NET_ASC" ? a.netPosition - b.netPosition : b.netPosition - a.netPosition;
+    });
+  }, [rows, q, status, sort]);
 
   const total = filtered.length;
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -73,15 +90,28 @@ export function CompanyTable({
   const visible = filtered.slice(start, start + PAGE_SIZE);
   const dirty = q !== "" || status !== "ALL";
 
-  function openRow(row: GroupCompanyRow) {
+  function openRow(row: GroupCompanyRow, origin?: HTMLElement | null) {
+    setLastFocus(origin ?? null);
     setSelected(row);
     setDialogOpen(true);
+  }
+
+  function closeDialog(open: boolean) {
+    setDialogOpen(open);
+    if (open) return;
+    // The row can be re-created while the dialog closes, so look it up after the commit
+    // instead of holding a node that may already be detached.
+    const companyId = selected?.companyId;
+    requestAnimationFrame(() => {
+      const target = companyId == null ? null : document.querySelector<HTMLElement>(`[data-company-row="${companyId}"]`);
+      (target ?? lastFocus)?.focus();
+    });
   }
 
   function rowKeyDown(event: KeyboardEvent, row: GroupCompanyRow) {
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
-    openRow(row);
+    openRow(row, event.currentTarget as HTMLElement);
   }
 
   return (
@@ -156,19 +186,40 @@ export function CompanyTable({
         </div>
 
         <div className="hidden overflow-x-auto xl:block">
-          <table aria-label="Group tax position by company" className="w-full min-w-[980px] border-collapse text-sm">
+          <table aria-label="Group tax position by company" className="w-full min-w-[900px] border-collapse text-sm">
             <caption className="sr-only">
               Income tax due, credits, net position and VAT payable for every company in the group
             </caption>
             <thead>
               <tr className="border-b bg-muted/40 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                <th scope="col" className="px-4 py-2 font-semibold">Company</th>
+                <th scope="col" className="px-4 py-2 font-semibold" aria-sort={sort === "NAME" ? "ascending" : "none"}>
+                  <button
+                    type="button"
+                    onClick={() => setSort(sort === "NAME" ? "NET_DESC" : "NAME")}
+                    className="inline-flex items-center gap-1 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  >
+                    Company
+                    {sort === "NAME" && <span aria-hidden>↑</span>}
+                  </button>
+                </th>
                 <th scope="col" className="px-4 py-2 font-semibold">Regime</th>
                 <th scope="col" className="px-4 py-2 text-right font-semibold">Gross income</th>
-                <th scope="col" className="px-4 py-2 text-right font-semibold">Net taxable income</th>
                 <th scope="col" className="px-4 py-2 text-right font-semibold">Tax due</th>
                 <th scope="col" className="px-4 py-2 text-right font-semibold">Credits</th>
-                <th scope="col" className="px-4 py-2 text-right font-semibold">Net position</th>
+                <th
+                  scope="col"
+                  className="px-4 py-2 text-right font-semibold"
+                  aria-sort={sort === "NAME" ? "none" : sort === "NET_ASC" ? "ascending" : "descending"}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setSort(sort === "NET_ASC" ? "NET_DESC" : "NET_ASC")}
+                    className="inline-flex items-center gap-1 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  >
+                    Net position
+                    {sort !== "NAME" && <span aria-hidden>{sort === "NET_ASC" ? "↑" : "↓"}</span>}
+                  </button>
+                </th>
                 <th scope="col" className="px-4 py-2 text-right font-semibold">VAT payable</th>
                 <th scope="col" className="px-4 py-2 font-semibold">Status</th>
               </tr>
@@ -187,11 +238,12 @@ export function CompanyTable({
                 : visible.map((row) => (
                     <tr
                       key={row.companyId}
+                      data-company-row={row.companyId}
                       tabIndex={0}
                       aria-label={`Open ${row.name}`}
-                      onClick={() => openRow(row)}
+                      onClick={(event) => openRow(row, event.currentTarget)}
                       onKeyDown={(event) => rowKeyDown(event, row)}
-                      className="cursor-pointer border-b transition-colors last:border-0 hover:bg-muted/30 focus-visible:bg-muted/40 focus-visible:outline-none"
+                      className="cursor-pointer border-b transition-colors last:border-0 hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:outline-none"
                     >
                       <td className="max-w-[260px] px-4 py-2.5">
                         <div className="flex min-w-0 flex-col">
@@ -207,7 +259,6 @@ export function CompanyTable({
                         </span>
                       </td>
                       <td className="px-4 py-2.5 text-right tabular-nums">{money(row, row.grossIncome)}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{money(row, row.netTaxableIncome)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums">{money(row, row.taxDue)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums">{money(row, row.credits)}</td>
                       <td
@@ -247,11 +298,12 @@ export function CompanyTable({
             : visible.map((row) => (
                 <li
                   key={row.companyId}
+                  data-company-row={row.companyId}
                   tabIndex={0}
                   aria-label={`Open ${row.name}`}
-                  onClick={() => openRow(row)}
+                  onClick={(event) => openRow(row, event.currentTarget)}
                   onKeyDown={(event) => rowKeyDown(event, row)}
-                  className="cursor-pointer space-y-2 px-4 py-3 transition-colors hover:bg-muted/30 focus-visible:bg-muted/40 focus-visible:outline-none"
+                  className="cursor-pointer space-y-2 px-4 py-3 transition-colors hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:outline-none"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
@@ -322,7 +374,7 @@ export function CompanyTable({
         row={selected}
         attentionCount={selected ? countAttention(attention, selected) : 0}
         open={dialogOpen}
-        onOpenChange={setDialogOpen}
+        onOpenChange={closeDialog}
       />
     </>
   );

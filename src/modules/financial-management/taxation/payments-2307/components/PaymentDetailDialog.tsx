@@ -74,7 +74,7 @@ export function PaymentDetailDialog({ payment, onOpenChange }: Props) {
                   {payment.referenceNo ?? <Missing />}
                 </Detail>
                 <Detail label="Recorded by">
-                  {payment.createdBy === null ? <Missing /> : `#${payment.createdBy}`}
+                  {payment.createdByName ?? (payment.createdBy === null ? <Missing /> : `#${payment.createdBy}`)}
                 </Detail>
                 <Detail label="Recorded at" className="col-span-2 tabular-nums">
                   {recordedAt(payment.createdAt)}

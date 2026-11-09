@@ -15,6 +15,8 @@ export function useTaxCalendar(year: number) {
   const [page, setPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** The year the payload on screen was built for, so a switch never shows the old year's figures. */
+  const [settledYear, setSettledYear] = useState<number | null>(null);
   const requestId = useRef(0);
 
   const load = useCallback(async () => {
@@ -25,6 +27,7 @@ export function useTaxCalendar(year: number) {
       const next = await fetchCalendar(filters.companyId, year);
       if (id !== requestId.current) return;
       setPayload(next);
+      setSettledYear(year);
     } catch (cause) {
       if (id !== requestId.current) return;
       setPayload(null);
@@ -97,6 +100,7 @@ export function useTaxCalendar(year: number) {
     pageSize: CALENDAR_PAGE_SIZE,
     filters,
     setFilters,
+    settledYear,
     setPage,
     isLoading,
     error,
