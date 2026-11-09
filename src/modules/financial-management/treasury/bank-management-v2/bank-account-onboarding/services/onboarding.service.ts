@@ -109,7 +109,13 @@ async function assertUniqueAccountNumber(bankName: string, normalized: string): 
   if (taken) throw duplicateError();
 }
 
-async function assertLinkedGl(glCoaId: number): Promise<void> {
+async function assertLinkedGl(glCoaId: number, bankId?: number): Promise<void> {
+  const assigned = await listItems<RawRow>("bank_accounts", {
+    fields: ["bank_id"], filter: { gl_coa_id: { _eq: glCoaId }, ...(bankId ? { bank_id: { _neq: bankId } } : {}) }, limit: 1,
+  });
+  if (assigned.rows.length) throw new OnboardingValidationError("This GL account is already assigned to another bank account.", {
+    glCoaId: ["Use a dedicated GL account for each bank account."],
+  });
   const { accounts } = await readCashAccounts();
   // An unreadable chart of accounts must not block onboarding; posting still
   // validates the key against the mapping.
@@ -241,7 +247,7 @@ export async function updateAccount(id: number, body: UpdateAccountBody): Promis
   const existing = await readAccountById(id);
   if (!existing) throw new OnboardingNotFoundError("That account no longer exists.");
 
-  await assertLinkedGl(body.glCoaId);
+  await assertLinkedGl(body.glCoaId, id);
 
   const payload: Record<string, unknown> = {
     account_name: body.accountName.trim(),
