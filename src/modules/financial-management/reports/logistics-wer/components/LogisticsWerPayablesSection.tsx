@@ -10,7 +10,7 @@ import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Copy, Loader2, Pa
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { todayManilaDate, formatWerTimestamp } from "../utils/date";
-import { displayWerStatus } from "../utils/status";
+import { displayWerStatus, isLogisticsWerPayableStatus } from "../utils/status";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -159,10 +159,10 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
 
   const eligibility = detail.supplierEligibility ?? null;
   const submissions = detail.submissions ?? [];
-  const isForClearance = (planStatus || "").toLowerCase() === "for clearance";
+  const isPayableStatus = isLogisticsWerPayableStatus(planStatus);
 
   useEffect(() => {
-    if ((!isForClearance && submissions.length === 0) || coasLoaded) return;
+    if ((!isPayableStatus && submissions.length === 0) || coasLoaded) return;
     let active = true;
     fetchPayableCoas()
       .then((options) => {
@@ -180,10 +180,10 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
     return () => {
       active = false;
     };
-  }, [coasLoaded, isForClearance, submissions.length]);
+  }, [coasLoaded, isPayableStatus, submissions.length]);
 
   useEffect(() => {
-    if ((!isForClearance && submissions.length === 0) || organizationOptionsLoaded) return;
+    if ((!isPayableStatus && submissions.length === 0) || organizationOptionsLoaded) return;
     let active = true;
     Promise.all([fetchPayableDivisions()])
       .then(([divisionOptions]) => {
@@ -199,7 +199,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
     return () => {
       active = false;
     };
-  }, [isForClearance, organizationOptionsLoaded, submissions.length]);
+  }, [isPayableStatus, organizationOptionsLoaded, submissions.length]);
 
   const loadSubmissionDetails = async (submissionId: number) => {
     if (
@@ -702,7 +702,7 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    {(status === "draft" || status === "returned") && isForClearance && !detail.isLiquidated && (
+                    {(status === "draft" || status === "returned") && isPayableStatus && !detail.isLiquidated && (
                       <Button
                         type="button"
                         variant="outline"
@@ -835,12 +835,12 @@ export function LogisticsWerPayablesSection({ planId, planStatus, detail, onChan
         </Alert>
       )}
 
-      {!isForClearance ? (
+      {!isPayableStatus ? (
         <Alert>
           <AlertCircle className="size-4" />
           <AlertTitle>Read-only</AlertTitle>
           <AlertDescription>
-            New payables can only be recorded while the plan is in For Clearance state. Posted plans are read-only.
+            New payables can only be recorded while the plan is in For Clearance or Posted state and is not liquidated.
           </AlertDescription>
         </Alert>
       ) : detail.isLiquidated ? (

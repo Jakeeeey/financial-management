@@ -1,5 +1,6 @@
 import { publicWerFailure, werFailureStatus, WerDependencyError } from "../../_errors";
 import { calculateExpenseVariance, type ExpenseVariance } from "@/modules/financial-management/reports/logistics-wer/utils/budget-balances";
+import { isLogisticsWerPayableStatus } from "@/modules/financial-management/reports/logistics-wer/utils/status";
 import { NextRequest, NextResponse } from "next/server";
 import {
   DRAFT_COLLECTION,
@@ -417,15 +418,11 @@ export async function POST(
         return NextResponse.json({ draft: updated, outcome: "applied", submissionId: submission.id, requestId });
       }
 
-      const planStatus = (baseline.status || "").toLowerCase();
-      if (planStatus === "posted") {
-        return error("Posted dispatch plans are read-only for new payable submissions.", 409);
-      }
       if (baseline.isLiquidated) {
         return error("Liquidated dispatch plans are read-only for new payable submissions.", 409);
       }
-      if (planStatus !== "for clearance") {
-        return error(`Payables can only be recorded for plans in For Clearance state (current: ${baseline.status || "unknown"}).`, 409);
+      if (!isLogisticsWerPayableStatus(baseline.status)) {
+        return error(`Payables can only be recorded for plans in For Clearance or Posted state (current: ${baseline.status || "unknown"}).`, 409);
       }
 
       const assignedDepartment = await resolveDriverDepartment(baseline.driverId);

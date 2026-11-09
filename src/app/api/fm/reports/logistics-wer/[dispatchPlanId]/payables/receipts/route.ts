@@ -1,4 +1,5 @@
 import { RECEIPT_SIZE_ERROR, validateReceiptFile } from "@/modules/financial-management/reports/logistics-wer/utils/receipt-upload";
+import { isLogisticsWerPayableStatus } from "@/modules/financial-management/reports/logistics-wer/utils/status";
 import { NextRequest, NextResponse } from "next/server";
 import {
   getPlanBaseline,
@@ -44,8 +45,8 @@ export async function POST(
   if (baseline.isLiquidated) {
     return error("Receipts cannot be staged for liquidated dispatch plans.", 409);
   }
-  if ((baseline.status || "").toLowerCase() !== "for clearance") {
-    return error("Receipts can only be staged for plans in For Clearance state.", 409);
+  if (!isLogisticsWerPayableStatus(baseline.status)) {
+    return error("Receipts can only be staged for plans in For Clearance or Posted state.", 409);
   }
 
   let formData: FormData;
