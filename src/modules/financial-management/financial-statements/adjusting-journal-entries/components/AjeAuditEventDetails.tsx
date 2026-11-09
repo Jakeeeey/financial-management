@@ -23,7 +23,7 @@ export function AjeAuditEventDetails({ event }: { event: AjeAuditEvent }) {
         </div>)}
       </dl>}
       {display.postingLines.length > 0 && <div className="max-w-full overflow-x-auto rounded-md border">
-        <table className="w-full min-w-[28rem] text-sm" aria-label="Recorded journal lines">
+        <table className="w-full min-w-[26rem] text-sm" aria-label="Recorded journal lines">
           <caption className="sr-only">Journal lines recorded when this event occurred</caption>
           <thead className="bg-muted/40"><tr>
             <th scope="col" className="px-3 py-2 text-left font-medium">Account</th>
