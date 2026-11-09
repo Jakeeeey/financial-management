@@ -23,10 +23,33 @@ const overrides = {
   "../../../_payables": { requireSessionUserId: async () => 1, getPlanBaseline: async () => ({ status: "For Clearance" }) },
   "next/server": { NextResponse: { json: (body, init) => Response.json(body, init) } },
 };
-async function upload(file) {
+async function upload(file, baseline = { status: "For Clearance" }, userId = 1) {
   const form = new FormData(); form.set("file", file);
-  return load(route, overrides).POST({ formData: async () => form }, { params: Promise.resolve({ dispatchPlanId: "1" }) });
+  return load(route, { ...overrides, "../../../_payables": {
+    requireSessionUserId: async () => userId, getPlanBaseline: async () => baseline,
+  } }).POST({ formData: async () => form }, { params: Promise.resolve({ dispatchPlanId: "1" }) });
 }
+
+test("Posted receipts use the same upload workflow and retain liquidation and authentication locks", async () => {
+  const original = globalThis.fetch;
+  let writes = 0;
+  globalThis.fetch = async () => { writes++; return Response.json({ data: { id: "receipt-posted" } }); };
+  const file = new File(["pdf"], "receipt.pdf", { type: "application/pdf" });
+  try {
+    for (const status of ["For Clearance", "Posted"]) {
+      for (const isLiquidated of [false, null]) assert.equal((await upload(file, { status, isLiquidated })).status, 201);
+      const before = writes;
+      assert.equal((await upload(file, { status, isLiquidated: true })).status, 409);
+      assert.equal(writes, before);
+    }
+    const before = writes;
+    for (const status of ["For Approval", "For Dispatch", "For Inbound", "Cancelled", null]) {
+      assert.equal((await upload(file, { status })).status, 409);
+    }
+    assert.equal((await upload(file, { status: "Posted" }, null)).status, 401);
+    assert.equal(writes, before);
+  } finally { globalThis.fetch = original; }
+});
 test("invalid uploads are rejected before reaching storage; upstream 413 is preserved", async () => {
   const original = globalThis.fetch;
   let calls = 0;

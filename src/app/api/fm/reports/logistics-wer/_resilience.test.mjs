@@ -142,3 +142,93 @@ test("a degraded refresh is rejected rather than replacing existing financial va
     await assert.rejects(api.fetchLogisticsWerDetails(1), /Service temporarily busy/);
   } finally { globalThis.fetch = original; }
 });
+
+function payableFixture({ status = "For Clearance", isLiquidated = false, userId = 2, owner = 2, submissionStatus = "draft", disbursementId = null } = {}) {
+  const writes = [];
+  const baseline = { status, isLiquidated, driverId: 3 };
+  const draft = { id: 3, status: submissionStatus, departmentId: 8, submittedBy: owner, disbursementId, totalAmount: 100,
+    lines: [{ id: 10, lineNo: 1, amount: 100, coaId: 1024, divisionId: 1, date: "2026-11-09", receipts: [] }] };
+  const dependencies = {
+    DRAFT_COLLECTION: "drafts", DRAFT_LINE_COLLECTION: "lines", DRAFT_RECEIPT_COLLECTION: "receipts", BudgetContextError: class extends Error {},
+    requireSessionUserId: async () => userId, withPlanLock: async (_, task) => task(),
+    getPlanBaseline: async () => baseline,
+    getPlanSubmission: async () => ({ planId: 1, submission: draft }),
+    resolveDriverDepartment: async () => ({ departmentId: 8 }),
+    resolveDriverSupplier: async () => ({ eligible: true, supplierId: 4 }),
+    getPlanRemaining: async () => ({ allocatedBudget: 1000, reserved: 0, budgetBalancesByCoa: [{ coaId: 1024, allocatedAmount: 1000, reservedAmount: 0 }] }),
+    directusFetch: async () => ({ data: [] }),
+    directusWrite: async (method, url, body) => {
+      writes.push({ method, url, body });
+      if (url === "/items/drafts" || url === "/items/drafts/3") {
+        if (body?.status) draft.status = body.status;
+        if (body?.total_amount !== undefined) draft.totalAmount = body.total_amount;
+        return { data: { id: 3 } };
+      }
+      return { data: { id: 11 } };
+    },
+  };
+  const api = load(`${directory}/[dispatchPlanId]/payables/route.ts`, {
+    "../../_payables": dependencies, "next/server": responseMock,
+  });
+  const send = (action = "submit", submissionId) => api.POST({ json: async () => ({ action, submissionId, departmentId: 8,
+    lines: [{ ...(submissionId ? { id: 10 } : {}), coaId: 1024, divisionId: 1, amount: 100, date: "2026-11-09", receiptFileIds: [] }] }) },
+  { params: Promise.resolve({ dispatchPlanId: "1" }) });
+  return { send, writes, baseline };
+}
+
+test("For Clearance and Posted plans save and submit new and editable payable lines before liquidation", async () => {
+  for (const status of ["For Clearance", "Posted"]) {
+    for (const isLiquidated of [false, null]) {
+      for (const action of ["save-draft", "submit"]) {
+        for (const submissionId of [undefined, 3]) {
+          const { send, writes } = payableFixture({ status, isLiquidated });
+          const response = await send(action, submissionId);
+          const result = await response.json();
+          assert.equal(response.status, submissionId ? 200 : 201, `${status}: ${JSON.stringify(result)}`);
+          assert.equal(result.draft.status, action === "submit" ? "submitted" : "draft");
+          assert.ok(writes.some(write => write.url.startsWith("/items/lines")));
+          assert.ok(writes.every(write => !write.url.includes("post_dispatch_plan") && !write.url.includes("disbursement")));
+        }
+      }
+    }
+  }
+});
+
+test("liquidated or ineligible-status plans reject payable writes before persistence", async () => {
+  const blocked = [
+    ...["For Clearance", "Posted"].map(status => ({ status, isLiquidated: true })),
+    ...["For Approval", "For Dispatch", "For Inbound", "Cancelled", null].map(status => ({ status, isLiquidated: false })),
+  ];
+  for (const state of blocked) {
+    for (const action of ["save-draft", "submit"]) {
+      const { send, writes } = payableFixture(state);
+      const response = await send(action);
+      assert.equal(response.status, 409);
+      if (state.isLiquidated) assert.match((await response.json()).message, /Liquidated/);
+      assert.deepEqual(writes, []);
+    }
+  }
+});
+
+test("a fresh persisted liquidation state blocks a previously eligible Posted form", async () => {
+  const { send, writes, baseline } = payableFixture();
+  baseline.status = "Posted";
+  assert.equal((await send("save-draft")).status, 201);
+  writes.length = 0;
+  baseline.isLiquidated = true;
+  assert.equal((await send("submit")).status, 409);
+  assert.deepEqual(writes, []);
+});
+
+test("Posted payable edits retain authentication, ownership and converted-record protection", async () => {
+  for (const [options, expected] of [
+    [{ userId: null }, 401], [{ owner: 9 }, 403], [{ submissionStatus: "submitted" }, 409],
+    [{ submissionStatus: "approved", disbursementId: 9 }, 409],
+  ]) {
+    const { send, writes } = payableFixture({ status: "Posted", ...options });
+    assert.equal((await send("save-draft", 3)).status, expected);
+    assert.deepEqual(writes, []);
+  }
+  const returned = payableFixture({ status: "Posted", submissionStatus: "returned" });
+  assert.equal((await returned.send("save-draft", 3)).status, 200);
+});

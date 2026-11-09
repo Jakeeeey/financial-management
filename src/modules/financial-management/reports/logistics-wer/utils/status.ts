@@ -5,6 +5,11 @@ export function isLogisticsWerVisibleStatus(status: string | null): boolean {
   return LOGISTICS_WER_VISIBLE_STATUSES.some((allowedStatus) => allowedStatus.toLowerCase() === normalized);
 }
 
+export function isLogisticsWerPayableStatus(status: string | null): boolean {
+  const normalized = (status || "").trim().toLowerCase();
+  return normalized === "for clearance" || normalized === "posted";
+}
+
 export function dispatchPlanStatusClassName(status: string | null): string {
   const normalized = (status || "").toLowerCase();
   if (normalized.includes("cancel") || normalized.includes("reject")) return "border-red-200 bg-red-50 text-red-700";

@@ -56,10 +56,6 @@ export function AjeAuditEventDetails({ event }: { event: AjeAuditEvent }) {
         </div> : <p className="mt-1 text-sm text-muted-foreground">No field changes recorded.</p>}
       </section>}
     </>}
-    {display?.notice && <p role="status" className="rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">{display.notice}</p>}
-    {display && <details className="rounded-md border px-3 py-2">
-      <summary className="cursor-pointer text-xs font-medium text-muted-foreground">View recorded data</summary>
-      <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted/30 p-3 text-xs">{JSON.stringify({ action:event.action, changes:event.changes }, null, 2)}</pre>
-    </details>}
+    {display?.notice && <p role="status" className="rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">{posting ? "Recorded posting details are unavailable." : "Recorded details are unavailable."}</p>}
   </>;
 }
