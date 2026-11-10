@@ -8,9 +8,9 @@ export function exportTime(value: string | null) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).formatToParts(date).map(part => [part.type, part.value]));
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second} PHT`;
 }
-export function exportMetadata(data: ReconcileExportData) {
+export function exportMetadata(data: Pick<ReconcileExportData, "period" | "entity" | "generatedAt" | "generatedBy">) {
   const { period: p } = data;
-  return [data.entity?.name || "Entity not set", [p.bank.bankName, p.bank.branch, p.bank.maskedAccountNumber].filter(Boolean).join(" | "), `Currency ${p.currency} | Period ended ${p.periodEnd || "Not set"} | ${p.status === "CLOSED" ? "Closed" : "Open"}`, `Generated ${exportTime(data.generatedAt)} by ${data.generatedBy.name}`, `Ledger snapshot: ${exportTime(p.ledgerAsOf)}`];
+  return [data.entity?.name || "Entity not set", [p.bank.bankName, p.bank.branch, p.bank.maskedAccountNumber].filter(Boolean).join(" | "), `Currency ${p.currency} | Period ended ${p.periodEnd || "Not set"} | ${p.status === "CLOSED" ? "Closed" : "Open"}`, `Generated ${exportTime(data.generatedAt)} by ${data.generatedBy.name}`, `Ledger snapshot: ${exportTime(p.ledgerAsOf)}${p.lifecycle?.revision ? ` | Closure revision ${p.lifecycle.revision}, ${exportTime(p.lifecycle.closedAt || null)} by ${p.lifecycle.closedBy?.name || "Unknown"}` : ""}`];
 }
 export function summaryRows(data: ReconcileExportData): { label: string; value: string | null; money?: boolean }[] {
   const { period: p, reconciliation: r } = data;

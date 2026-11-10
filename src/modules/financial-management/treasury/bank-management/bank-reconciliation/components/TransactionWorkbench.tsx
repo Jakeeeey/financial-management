@@ -10,6 +10,7 @@ import { refreshSetupLedger } from "../providers/bankReconciliationSetupApi";
 import { autoMatchTransactions, matchTransactions, undoTransactionMatches } from "../providers/bankReconciliationTransactionsApi";
 import { LineTreatment, MatchSelection, ReconciliationProof, type Selection } from "./MatchingControls";
 import { highlightedText, transactionMoney } from "../utils/transactionDisplay";
+import { bankReconciliationRequestId } from "../utils/request-id";
 
 type Draft = { date: string; reference: string; description: string; amount: string };
 type Run = <T extends { period: ReconciliationPeriod }>(command: (period: ReconciliationPeriod) => Promise<T>) => Promise<T>;
@@ -60,7 +61,7 @@ function Pane({ side, data, period, query, busy, onPage, command, selected, onTo
   }
   return <section aria-label={`${prefix} transactions`} className="min-w-0 space-y-3 rounded-lg border bg-card p-4">
     <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold">{title}</h2>{data && <p className="mt-1 text-xs text-muted-foreground">Showing {data.filtered} of {data.total} · {data.total} lines · {data.matched} matched · {data.open} open · {transactionMoney(data.net, period?.currency || "PHP")} net</p>}</div>
-      <div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant="outline" disabled={locked} onClick={() => { setAdding(v => !v); if (!adding) setDraft({ date: period?.periodEnd || "", reference: "", description: "", amount: "" }); }}>{adding ? "Close entry" : "Add line"}</Button><Button type="button" size="sm" variant="outline" onClick={() => { void template(); }}>Template</Button><Button type="button" size="sm" variant="outline" disabled={locked} onClick={() => fileInput.current?.click()}>Import Excel</Button><input ref={fileInput} aria-label={`${prefix} Excel file`} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="sr-only" disabled={locked} onChange={e => { const file = e.target.files?.[0]; e.target.value = ""; if (file) { upload.current = { file, requestId: crypto.randomUUID() }; void importFile(); } }} /></div>
+      <div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant="outline" disabled={locked} onClick={() => { setAdding(v => !v); if (!adding) setDraft({ date: period?.periodEnd || "", reference: "", description: "", amount: "" }); }}>{adding ? "Close entry" : "Add line"}</Button><Button type="button" size="sm" variant="outline" onClick={() => { void template(); }}>Template</Button><Button type="button" size="sm" variant="outline" disabled={locked} onClick={() => fileInput.current?.click()}>Import Excel</Button><input ref={fileInput} aria-label={`${prefix} Excel file`} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="sr-only" disabled={locked} onChange={e => { const file = e.target.files?.[0]; e.target.value = ""; if (file) { upload.current = { file, requestId: bankReconciliationRequestId() }; void importFile(); } }} /></div>
     </div>
     {!bank && <><div className="flex flex-wrap items-center gap-3"><Button type="button" size="sm" variant="outline" disabled={locked || Boolean(period?.ledgerBlockers.length)} onClick={() => { setError(""); void command(async p => ({ period: await refreshSetupLedger(p) })).catch(e => setError(e.message)); }}>Refresh ledger</Button>{period?.ledgerAsOf && <span className="text-xs text-muted-foreground">Last refreshed: {period.ledgerAsOf.replace("T", " ")}</span>}</div>{period?.ledgerBalance == null && <p className="text-xs text-muted-foreground">Manual and imported lines can be entered here. Resolve the setup blockers to load posted GL transactions and the actual balance.</p>}</>}
     {adding && <form className="grid gap-3 rounded-md bg-muted/30 p-3 sm:grid-cols-2" onSubmit={e => { e.preventDefault(); void submit(); }}>
@@ -78,15 +79,15 @@ export function TransactionWorkbench({ period, run, busy, setBusy }: { period: R
   const [filter, setFilter] = useState<TransactionFilter>("ALL"), [query, setQuery] = useState("");
   const [bankPage, setBankPage] = useState(1), [ledgerPage, setLedgerPage] = useState(1), [data, setData] = useState<TransactionData | null>(null), [error, setError] = useState(""), [loading, setLoading] = useState(false);
   const [selection, setSelection] = useState<Selection>({ BANK: [], LEDGER: [] }), [message, setMessage] = useState("");
-  useEffect(() => { setSelection({ BANK: [], LEDGER: [] }); }, [period?.id, period?.version]);
+  useEffect(() => { setSelection({ BANK: [], LEDGER: [] }); }, [period?.id, period?.version, period?.lifecycle?.closureId]);
   useEffect(() => { setMessage(""); }, [period?.id]);
   useEffect(() => {
     if (!period?.id) return;
     let active = true; setLoading(true);
-    const timer = setTimeout(() => { getTransactions(period.id, filter, query, bankPage, ledgerPage).then(result => { if (active) { setData(result); setError(""); } }).catch(e => { if (active) setError(e.message); }).finally(() => { if (active) setLoading(false); }); }, 200);
+    const timer = setTimeout(() => { getTransactions(period.id, filter, query, bankPage, ledgerPage, period.lifecycle?.closureId).then(result => { if (active) { setData(result); setError(""); } }).catch(e => { if (active) setError(e.message); }).finally(() => { if (active) setLoading(false); }); }, 200);
     return () => { active = false; clearTimeout(timer); };
-  }, [period?.id, period?.version, filter, query, bankPage, ledgerPage]);
-  const current = data?.period.id === period?.id ? data : null;
+  }, [period?.id, period?.version, period?.lifecycle?.closureId, filter, query, bankPage, ledgerPage]);
+  const current = data?.period.id === period?.id && data?.period.lifecycle?.closureId === period?.lifecycle?.closureId ? data : null;
   async function command(operation: (p: ReconciliationPeriod) => Promise<TransactionResult>) {
     setBusy(true);
     try { const result = await run(operation); setBankPage(1); setLedgerPage(1); setSelection({ BANK: [], LEDGER: [] }); return result; }
