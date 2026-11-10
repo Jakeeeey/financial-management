@@ -1,3 +1,12 @@
+export function transactionCents(value: string): bigint {
+  const negative = value.startsWith("-"), [whole, fraction = ""] = value.replace(/^[+-]/, "").split(".");
+  const cents = BigInt(whole || "0") * 100n + BigInt(fraction.padEnd(2, "0"));
+  return negative ? -cents : cents;
+}
+export function centsAmount(cents: bigint): string {
+  const absolute = cents < 0n ? -cents : cents;
+  return `${cents < 0n ? "-" : ""}${absolute / 100n}.${String(absolute % 100n).padStart(2, "0")}`;
+}
 export function transactionMoney(value: string, currency: string) {
   const negative = value.startsWith("-"), [whole, fraction = ""] = value.replace(/^[+-]/, "").split(".");
   const parts = new Intl.NumberFormat("en-PH", { style: "currency", currency: /^[A-Z]{3}$/.test(currency) ? currency : "PHP", minimumFractionDigits: 2, maximumFractionDigits: 2 }).formatToParts(BigInt(whole || "0"));
