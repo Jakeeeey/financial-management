@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getBankConfiguration, getOpenPeriod, getSetupPeriod, saveSetupPeriod, SetupError } from "../providers/bankReconciliationSetupApi";
 import type { BankConfiguration, PeriodDraft, ReconciliationPeriod } from "../setup-types";
+import { getPeriodHistory } from "../providers/bankReconciliationLifecycleApi";
 
 export type SetupFields = { bankId: number; companyId: number | null; currency: string; periodEnd: string; statementOpening: string; statementEnding: string };
 export function setupMoney(value: string): string | null {
@@ -25,7 +26,7 @@ export function usePeriodSetup() {
   const commands = useRef<Promise<unknown>>(Promise.resolve());
 
   const change = useCallback((patch: Partial<SetupFields>) => {
-    if (!current.current) return;
+    if (!current.current || record.current?.status === "CLOSED") return;
     current.current = { ...current.current, ...patch }; setDraft(current.current); setStatus("Unsaved changes");
   }, []);
   const accept = useCallback((result: ReconciliationPeriod) => {
@@ -66,6 +67,9 @@ export function usePeriodSetup() {
   const load = useCallback((result: ReconciliationPeriod) => {
     const next = fields(result); current.current = next; setDraft(next); saved.current = JSON.stringify(payload(next)); conflict.current = false;
     accept(result); setError(""); setStatus(result.status === "CLOSED" ? "Closed period" : "Setup saved");
+    const url = new URL(window.location.href); url.searchParams.set("periodId", String(result.id));
+    if (result.lifecycle?.closureId) url.searchParams.set("closureId", String(result.lifecycle.closureId)); else url.searchParams.delete("closureId");
+    window.history.replaceState(null, "", url);
   }, [accept]);
   const selectBank = useCallback(async (id: number, companyId: number | null) => {
     setLoading(true); setError("");
@@ -74,6 +78,8 @@ export function usePeriodSetup() {
       const [configuration, opened] = await Promise.all([getBankConfiguration(id), getOpenPeriod(id)]);
       if (opened.period) load(opened.period);
       else {
+        const history = await getPeriodHistory("", 1, id);
+        if (history.items.length) { const latest = history.items[0]; load(await getSetupPeriod(latest.id, latest.closureId || undefined)); return; }
         record.current = null; setPeriod(null); setBank(configuration); saved.current = ""; conflict.current = false;
         current.current = { bankId: id, companyId: configuration.companyId ?? companyId, currency: configuration.currency, periodEnd: "", statementOpening: "", statementEnding: "" };
         setDraft(current.current); setStatus("Unsaved changes");
@@ -84,20 +90,21 @@ export function usePeriodSetup() {
   const reload = useCallback(async () => {
     if (!record.current) return;
     setLoading(true);
-    try { if (pending.current) await pending.current.catch(() => null); load(await getSetupPeriod(record.current.id)); } catch (e) { setError(e instanceof Error ? e.message : "Unable to reload setup."); }
+    try { if (pending.current) await pending.current.catch(() => null); load(await getSetupPeriod(record.current.id, record.current.lifecycle?.closureId)); } catch (e) { setError(e instanceof Error ? e.message : "Unable to reload setup."); }
     finally { setLoading(false); }
   }, [load]);
   const clear = useCallback(() => {
     current.current = null; record.current = null; saved.current = ""; conflict.current = false;
     setDraft(null); setPeriod(null); setBank(null); setStatus(""); setError("");
-    const url = new URL(window.location.href); url.searchParams.delete("periodId"); window.history.replaceState(null, "", url);
+    const url = new URL(window.location.href); url.searchParams.delete("periodId"); url.searchParams.delete("closureId"); window.history.replaceState(null, "", url);
   }, []);
   useEffect(() => {
     const id = new URL(window.location.href).searchParams.get("periodId");
     if (!id || !/^[1-9]\d*$/.test(id)) return;
     let active = true;
     setLoading(true);
-    getSetupPeriod(Number(id)).then(result => { if (active) load(result); }).catch(e => { if (active) setError(e.message); }).finally(() => { if (active) setLoading(false); });
+    const revision = new URL(window.location.href).searchParams.get("closureId");
+    getSetupPeriod(Number(id), revision && /^[1-9]\d*$/.test(revision) ? Number(revision) : undefined).then(result => { if (active) load(result); }).catch(e => { if (active) setError(e.message); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [load]);
   useEffect(() => {
@@ -105,5 +112,11 @@ export function usePeriodSetup() {
     const timer = setTimeout(() => { void save().catch(() => {}); }, 650);
     return () => clearTimeout(timer);
   }, [draft, loading, period?.status, save]);
-  return { draft, period, bank, loading, status, error, change, save, run, selectBank, load, accept, reload, clear, setBank, setError };
+  const selectPeriod = useCallback(async (id: number, closureId?: number) => {
+    setLoading(true); setError("");
+    try { await save(); load(await getSetupPeriod(id, closureId)); }
+    catch (e) { setError(e instanceof Error ? e.message : "Unable to load period."); throw e; }
+    finally { setLoading(false); }
+  }, [load, save]);
+  return { draft, period, bank, loading, status, error, change, save, run, selectBank, selectPeriod, load, accept, reload, clear, setBank, setError };
 }

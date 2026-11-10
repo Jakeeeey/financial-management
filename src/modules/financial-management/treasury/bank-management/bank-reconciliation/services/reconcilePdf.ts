@@ -8,10 +8,13 @@ import { exportMetadata, ReconcileExportError, summaryRows } from "./reconcileEx
 
 // Next.js already ships this font. Reuse it; do not install or download font assets.
 let font: Promise<string> | undefined;
-export async function buildReconcilePdf(data: ReconcileExportData) {
+export function bundledPdfFont() {
   font ??= readFile(join(process.cwd(), "node_modules/next/dist/compiled/@vercel/og/Geist-Regular.ttf")).then(buffer => buffer.toString("base64")).catch(error => { font = undefined; throw error; });
+  return font;
+}
+export async function buildReconcilePdf(data: ReconcileExportData) {
   const doc = new jsPDF({ format: "a4", orientation: "landscape", compress: true, putOnlyUsedFonts: true });
-  doc.addFileToVFS("Geist-Regular.ttf", await font); doc.addFont("Geist-Regular.ttf", "Reconcile", "normal"); doc.setFont("Reconcile", "normal");
+  doc.addFileToVFS("Geist-Regular.ttf", await bundledPdfFont()); doc.addFont("Geist-Regular.ttf", "Reconcile", "normal"); doc.setFont("Reconcile", "normal");
   const metadata = exportMetadata(data), width = doc.internal.pageSize.getWidth(), height = doc.internal.pageSize.getHeight(), margin = 13;
   const currency = data.period.currency, money = (value: string | null) => value == null ? "Unavailable" : transactionMoney(value, currency);
   doc.setFontSize(7); const footer = doc.splitTextToSize(metadata[3], width - margin * 2 - 34) as string[];

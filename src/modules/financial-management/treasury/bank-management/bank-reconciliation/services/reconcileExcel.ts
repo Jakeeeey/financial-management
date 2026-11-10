@@ -4,7 +4,7 @@ import { transactionCents } from "../utils/transactionDisplay";
 import { exportMetadata, ReconcileExportError, summaryRows } from "./reconcileExport";
 
 const MONEY = '#,##0.00;(#,##0.00);"-"';
-function numeric(value: string | null, field: string): number | string {
+export function numeric(value: string | null, field: string): number | string {
   if (value == null) return "Unavailable";
   const number = Number(value), fixed = number.toFixed(2), excelFixed = Number(number.toPrecision(15)).toFixed(2);
   if (!/^-?\d+\.\d{2}$/.test(fixed) || !/^-?\d+\.\d{2}$/.test(excelFixed) || transactionCents(fixed) !== transactionCents(value) || transactionCents(excelFixed) !== transactionCents(value)) {
@@ -12,7 +12,7 @@ function numeric(value: string | null, field: string): number | string {
   }
   return number;
 }
-function text(value: string) {
+export function text(value: string) {
   if (value.length > 32767) throw new ReconcileExportError("A reconciliation field exceeds Excel's 32,767-character cell limit. Download PDF for the full content.");
   return value;
 }

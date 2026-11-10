@@ -6,6 +6,7 @@ export type TransactionFilter = "ALL" | "TO_REVIEW" | "MATCHED";
 export type TransactionLine = {
   id: number; date: string; reference: string; description: string; amount: string;
   origin: "MANUAL" | "IMPORT" | "GL"; sourceKey: string | null; status: string;
+  carriedFromPeriodId?: number | null; carriedFromLineId?: number | null;
   matchId: number | null; workbenchPosted: boolean; stale: boolean; offsetAccount: string; canDelete: boolean;
   canMatch: boolean; canUnmatch: boolean; canEditTreatment: boolean; canEditOffset: boolean; needsAccount: boolean;
   matchLabel: string | null; matchDifference: string | null; matchClassification: "BOOK_ERROR" | "BANK_ERROR" | null;
