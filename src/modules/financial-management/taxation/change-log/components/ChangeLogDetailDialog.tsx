@@ -3,6 +3,7 @@
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
+import { entityLabel } from "../constants";
 import type { ChangeLogRow } from "../types";
 
 function Detail({ label, children }: { label: string; children: React.ReactNode }) {
@@ -31,7 +32,7 @@ export function ChangeLogDetailDialog({
         <div className="flex max-h-[85vh] flex-col overflow-hidden">
           <DialogHeader className="border-b px-6 py-4">
             <DialogTitle className="line-clamp-1">
-              {row ? `${row.entity.replace(/_/g, " ").toLowerCase()} · ${row.field ?? "record"}` : "Change"}
+              {row ? `${entityLabel(row.entity)} · ${row.field ?? "record"}` : "Change"}
             </DialogTitle>
             <DialogDescription className="line-clamp-2 max-w-md">
               {row ? row.occurredAt ?? "No timestamp recorded" : null}
@@ -43,7 +44,7 @@ export function ChangeLogDetailDialog({
               <dl className="grid grid-cols-1 gap-x-8 gap-y-4 text-sm sm:grid-cols-2">
                 <Detail label="Company">{companyName ?? `Company ${row.companyId}`}</Detail>
                 <Detail label="Actor">{row.actor ?? "Not recorded"}</Detail>
-                <Detail label="Entity">{row.entity.replace(/_/g, " ").toLowerCase()}</Detail>
+                <Detail label="Entity">{entityLabel(row.entity)}</Detail>
                 <Detail label="Reference">{row.entityRef ?? "—"}</Detail>
                 <Detail label="Field">{row.field ?? "—"}</Detail>
                 <Detail label="Recorded">{row.occurredAt ?? "—"}</Detail>

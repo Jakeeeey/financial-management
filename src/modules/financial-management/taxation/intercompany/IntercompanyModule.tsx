@@ -179,7 +179,7 @@ export function IntercompanyModule() {
           <AlertDescription>
             <p className="break-words">
               {unreadable
-                .map((company) => `${company.code} (${company.unreachableReason ?? "no answer"})`)
+                .map((company) => `${company.code}: ${company.unreachableReason ?? "no answer"}`)
                 .join(" · ")}
               . Their documents are missing from this ledger, so a pair they would have formed is absent rather than
               zero.

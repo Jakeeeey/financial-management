@@ -164,14 +164,29 @@ export const TAX_TONES: Record<string, Tone> = {
 
 export const CHANGE_LOG_PAGE_SIZE = 20;
 
+/** The exact `tax_change_log.entity` values the writers store, so the filter can match them. */
 export const CHANGE_LOG_ENTITIES = [
-  "PROFILE",
-  "WORKSHEET",
-  "CERTIFICATE_2307",
-  "PAYMENT",
-  "PERIOD_LOCK",
-  "CARRYOVER",
+  "tax_company_profile",
+  "tax_rate_settings",
+  "tax_withholding_rates",
+  "tax_payment",
+  "tax_2307",
+  "tax_period_lock",
 ] as const;
+
+const ENTITY_LABELS: Record<string, string> = {
+  tax_company_profile: "Profile",
+  tax_rate_settings: "Rate version",
+  tax_withholding_rates: "Withholding rate",
+  tax_payment: "Payment",
+  tax_2307: "2307 certificate",
+  tax_period_lock: "Period lock",
+};
+
+/** A readable name for a stored entity, falling back to the raw value rather than hiding it. */
+export function entityLabel(entity: string): string {
+  return ENTITY_LABELS[entity] ?? entity.replace(/_/g, " ").toLowerCase();
+}
 
 export const EMPTY_CHANGE_LOG_FILTER = {
   companyId: null,

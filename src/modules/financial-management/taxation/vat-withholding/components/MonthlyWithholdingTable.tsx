@@ -35,7 +35,7 @@ export function MonthlyWithholdingTable({ rows }: { rows: MonthlyWithholdingRow[
   return (
     <>
       <section className="overflow-hidden rounded-2xl border border-border/50 bg-card shadow-sm">
-        <div className="hidden overflow-x-auto xl:block">
+        <div className="hidden overflow-x-auto min-[1300px]:block">
           <table aria-label="Monthly withholding" className="w-full min-w-[900px] border-collapse text-sm">
             <caption className="sr-only">Withholding per month and the return it is filed on</caption>
             <thead>
@@ -80,7 +80,7 @@ export function MonthlyWithholdingTable({ rows }: { rows: MonthlyWithholdingRow[
           </table>
         </div>
 
-        <ul className="divide-y xl:hidden">
+        <ul className="divide-y min-[1300px]:hidden">
           {rows.map((row) => (
             <li
               key={row.month}

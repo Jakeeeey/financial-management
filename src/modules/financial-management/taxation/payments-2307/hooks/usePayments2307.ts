@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { phtToday } from "../pht";
 import type { CertificateBody, PaymentBody } from "../schemas";
@@ -72,14 +73,21 @@ export function usePayments2307() {
     [load],
   );
 
-  /** Every write refetches; nothing is patched into place optimistically. */
+  /**
+   * Every write refetches; nothing is patched into place optimistically. The refetch is part
+   * of the mutation, so the toast only fires once the desk actually shows the new row.
+   */
   const mutate = useCallback(
-    async (action: () => Promise<unknown>) => {
+    async (action: () => Promise<unknown>, success?: string) => {
       setIsSaving(true);
       try {
         await action();
         const scope = scopeRef.current;
         await load(scope.companyId, scope.year, { quiet: true });
+        if (success) toast.success(success);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "The change was not saved.");
+        throw error;
       } finally {
         setIsSaving(false);
       }
@@ -88,16 +96,19 @@ export function usePayments2307() {
   );
 
   const saveCertificate = useCallback(
-    (body: CertificateBody) => mutate(() => createCertificate(body)),
+    (body: CertificateBody) => mutate(() => createCertificate(body), "2307 certificate recorded."),
     [mutate],
   );
 
   const amendCertificate = useCallback(
-    (id: number, body: CertificateBody) => mutate(() => updateCertificate(id, body)),
+    (id: number, body: CertificateBody) => mutate(() => updateCertificate(id, body), "2307 certificate updated."),
     [mutate],
   );
 
-  const removeCertificate = useCallback((id: number) => mutate(() => deleteCertificate(id)), [mutate]);
+  const removeCertificate = useCallback(
+    (id: number) => mutate(() => deleteCertificate(id), "2307 certificate deleted."),
+    [mutate],
+  );
 
   const runPrefill = useCallback(async (): Promise<PrefillResult> => {
     const { companyId: scopeId, year: scopeYear } = scopeRef.current;
@@ -112,20 +123,20 @@ export function usePayments2307() {
     }
   }, [load]);
 
-  const savePayment = useCallback((body: PaymentBody) => mutate(() => createPayment(body)), [mutate]);
+  const savePayment = useCallback((body: PaymentBody) => mutate(() => createPayment(body), "Payment recorded."), [mutate]);
 
   const amendPayment = useCallback(
-    (id: number, body: PaymentBody) => mutate(() => updatePayment(id, body)),
+    (id: number, body: PaymentBody) => mutate(() => updatePayment(id, body), "Payment updated."),
     [mutate],
   );
 
-  const removePayment = useCallback((id: number) => mutate(() => deletePayment(id)), [mutate]);
+  const removePayment = useCallback((id: number) => mutate(() => deletePayment(id), "Payment deleted."), [mutate]);
 
   const lock = useCallback(
     async (periodKey: PeriodKey, reason: string) => {
       const { companyId: scopeId, year: scopeYear } = scopeRef.current;
       if (scopeId === null) throw new Error("Pick a company before locking a period.");
-      await mutate(() => lockPeriod({ companyId: scopeId, year: scopeYear, periodKey, reason }));
+      await mutate(() => lockPeriod({ companyId: scopeId, year: scopeYear, periodKey, reason }), `${periodKey} locked.`);
     },
     [mutate],
   );
@@ -134,7 +145,7 @@ export function usePayments2307() {
     async (periodKey: PeriodKey, reason: string) => {
       const { companyId: scopeId, year: scopeYear } = scopeRef.current;
       if (scopeId === null) throw new Error("Pick a company before unlocking a period.");
-      await mutate(() => unlockPeriod(periodKey, { companyId: scopeId, year: scopeYear, reason }));
+      await mutate(() => unlockPeriod(periodKey, { companyId: scopeId, year: scopeYear, reason }), `${periodKey} unlocked.`);
     },
     [mutate],
   );

@@ -6,6 +6,20 @@ import {
   IntercompanyLookupError,
   loadIntercompanyLedger,
 } from "@/modules/financial-management/taxation/intercompany/services/intercompany.service";
+import type {
+  IntercompanyPayload,
+  RegistryCompany,
+} from "@/modules/financial-management/taxation/intercompany/types";
+
+// The registry row carries a Directus token that opens a company's whole database, so the
+// browser gets only what the picker and the notices render.
+function publicCompany(company: RegistryCompany): RegistryCompany {
+  return { ...company, baseUrl: "", token: "" };
+}
+
+function publicPayload(payload: IntercompanyPayload): IntercompanyPayload {
+  return { ...payload, companies: payload.companies.map(publicCompany) };
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,7 +49,7 @@ export async function GET(request: NextRequest) {
       { companyId: parsed.data.companyId, year: parsed.data.year },
       { fresh },
     );
-    return NextResponse.json({ success: true, data });
+    return NextResponse.json({ success: true, data: publicPayload(data) });
   } catch (error) {
     if (error instanceof IntercompanyLookupError) {
       return NextResponse.json({ success: false, error: error.message }, { status: error.status });

@@ -27,6 +27,21 @@ export async function listCompanies(): Promise<RegistryCompany[]> {
   return listRegistryCompaniesWithHealth();
 }
 
+/**
+ * The registry row minus everything the browser must never hold. The token opens that
+ * company's whole database, so the payload only carries what the picker renders.
+ */
+export function publicCompany(company: RegistryCompany): Omit<RegistryCompany, "baseUrl" | "token" | "springUrl" | "springToken"> {
+  return {
+    companyId: company.companyId,
+    code: company.code,
+    name: company.name,
+    tin: company.tin,
+    reachable: company.reachable,
+    unreachableReason: company.unreachableReason,
+  };
+}
+
 function emptyFigures(): QuarterFigures[] {
   return [0, 1, 2, 3].map(() => ({
     sales: 0,

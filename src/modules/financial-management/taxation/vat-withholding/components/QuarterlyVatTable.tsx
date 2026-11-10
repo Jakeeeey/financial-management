@@ -46,7 +46,7 @@ export function QuarterlyVatTable({ figures, vat }: { figures: QuarterFigures[];
   return (
     <>
       <section className="overflow-hidden rounded-2xl border border-border/50 bg-card shadow-sm">
-        <div className="hidden overflow-x-auto xl:block">
+        <div className="hidden overflow-x-auto min-[1300px]:block">
           <table aria-label="Quarterly VAT" className="w-full min-w-[900px] border-collapse text-sm">
             <caption className="sr-only">Output and input VAT per quarter, carried in and carried forward</caption>
             <thead>
@@ -87,7 +87,7 @@ export function QuarterlyVatTable({ figures, vat }: { figures: QuarterFigures[];
           </table>
         </div>
 
-        <ul className="divide-y xl:hidden">
+        <ul className="divide-y min-[1300px]:hidden">
           {rows.map((row) => (
             <li
               key={row.quarter}

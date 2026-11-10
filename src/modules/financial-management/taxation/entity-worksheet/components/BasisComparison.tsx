@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { formatCurrency } from "@/lib/utils";
 
@@ -85,4 +85,5 @@ export function BasisComparison({ scenarios, year }: { scenarios: TaxScenario[];
     </section>
   );
 }
+
 

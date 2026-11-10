@@ -97,12 +97,12 @@ export function RatesReferencesModule() {
       </div>
 
       <Tabs value={active ?? firstWithEntries} onValueChange={setPicked} className="space-y-4">
-        <TabsList className="h-auto flex-wrap justify-start">
-          <TabsTrigger value="configuration" className="min-h-11 md:min-h-0">
+        <TabsList className="h-auto w-full flex-nowrap justify-start overflow-x-auto">
+          <TabsTrigger value="configuration" className="min-h-11 shrink-0 md:min-h-0">
             Configuration
           </TabsTrigger>
           {groups.map((group) => (
-            <TabsTrigger key={group.key} value={group.key} className="min-h-11 md:min-h-0">
+            <TabsTrigger key={group.key} value={group.key} className="min-h-11 shrink-0 md:min-h-0">
               {group.title}
               <span className="ml-1.5 tabular-nums text-[11px] text-muted-foreground">({group.entries.length})</span>
             </TabsTrigger>

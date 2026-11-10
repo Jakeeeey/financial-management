@@ -10,7 +10,8 @@ const STATUS_TONE: Record<PairStatus, Tone> = {
   MATCHED: "success",
   DIFFERENT: "warning",
   MISSING: "neutral",
-  NOT_LINKABLE: "info",
+  // Nothing can be reconciled here, so the pill must not borrow the informational blue.
+  NOT_LINKABLE: "danger",
 };
 
 export function statusLabel(pair: IntercompanyPair): string {

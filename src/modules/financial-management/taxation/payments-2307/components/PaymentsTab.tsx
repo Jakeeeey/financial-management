@@ -239,7 +239,7 @@ export function PaymentsTab({
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="hidden overflow-x-auto min-[1300px]:block">
         <Table aria-label="Tax payments">
           <TableHeader>
             <TableRow>
@@ -329,6 +329,58 @@ export function PaymentsTab({
           </TableBody>
         </Table>
       </div>
+
+      {!isLoading && visible.length > 0 ? (
+        <ul className="divide-y min-[1300px]:hidden">
+          {visible.map((payment) => (
+            <li key={payment.id} className="space-y-3 px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-medium tabular-nums">{payment.formCode}</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {PAYMENT_PERIOD_LABELS[payment.periodKey]} · paid {payment.paidOn}
+                  </p>
+                </div>
+                <p className="shrink-0 tabular-nums font-medium">{formatCurrency(payment.amount)}</p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-11 flex-1"
+                  onClick={() => setViewing(payment)}
+                >
+                  Details
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-11 flex-1"
+                  aria-label={`Edit ${payment.formCode} payment`}
+                  onClick={() => {
+                    setEditing(payment);
+                    setDialogOpen(true);
+                  }}
+                >
+                  Edit
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-11 flex-1"
+                  aria-label={`Delete ${payment.formCode} payment`}
+                  onClick={() => setDeleting(payment)}
+                >
+                  Delete
+                </Button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
       <TablePager
         page={safePage}
