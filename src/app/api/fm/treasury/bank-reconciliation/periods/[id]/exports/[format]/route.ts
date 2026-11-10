@@ -28,17 +28,19 @@ export async function POST(request: NextRequest, context: Context) {
   try {
     const { id, format } = await context.params;
     if (!/^[1-9]\d{0,17}$/.test(id) || (format !== "xlsx" && format !== "pdf")) return fail("Unknown reconciliation export.", 404);
-    const body = await request.json().catch(() => null) as { version?: unknown; bankVersion?: unknown } | null;
+    const body = await request.json().catch(() => null) as { version?: unknown; bankVersion?: unknown; closureId?: unknown } | null;
     if (!Number.isSafeInteger(body?.version) || !Number.isSafeInteger(body?.bankVersion) || Number(body?.version) < 0 || Number(body?.bankVersion) < 0) return fail("Send the saved period and bank configuration versions.", 400);
+    if (body?.closureId !== undefined && (!Number.isSafeInteger(body.closureId) || Number(body.closureId) < 1)) return fail("Choose a valid closure revision.", 400);
     request.signal.throwIfAborted();
     const query = new URLSearchParams({ version: String(body!.version), bankVersion: String(body!.bankVersion), format });
+    if (body?.closureId !== undefined) query.set("closureId", String(body.closureId));
     const source = await proxySpring(`${ROOT}/periods/${id}/export-data?${query}`, { signal: request.signal }, undefined, 60000); sources.push(source);
     if (!source.ok) return upstream(source);
     const data = await source.json() as ReconcileExportData;
     if (!/^[A-Za-z0-9._-]{1,160}$/.test(data.filename) || !data.filename.endsWith(`.${format}`)) throw new Error("Invalid export filename.");
     const bytes = format === "xlsx" ? await buildReconcileExcel(data) : await buildReconcilePdf(data);
     request.signal.throwIfAborted();
-    const audit = await proxySpring(`${ROOT}/periods/${id}/exports`, { method: "POST", body: JSON.stringify({ version: data.period.version, bankVersion: data.period.bank.version, format, filename: data.filename, generatedAt: data.generatedAt }), signal: request.signal }, refreshedAccessToken(source), 60000); sources.push(audit);
+    const audit = await proxySpring(`${ROOT}/periods/${id}/exports`, { method: "POST", body: JSON.stringify({ version: data.period.version, bankVersion: data.period.bank.version, format, filename: data.filename, generatedAt: data.generatedAt, ...(data.period.lifecycle?.closureId ? { closureId: data.period.lifecycle.closureId } : {}) }), signal: request.signal }, refreshedAccessToken(source), 60000); sources.push(audit);
     if (!audit.ok) return upstream(audit);
     if ((await audit.json()).recorded !== true) throw new Error("Export audit was not confirmed.");
     request.signal.throwIfAborted();
