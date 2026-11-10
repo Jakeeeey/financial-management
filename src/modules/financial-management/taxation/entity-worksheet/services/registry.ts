@@ -16,6 +16,8 @@ interface CompanyListRow {
   company_tin?: string | null;
   directus?: string | null;
   directus_token?: string | null;
+  springboot?: string | null;
+  springboot_token?: string | null;
   status?: string | null;
 }
 
@@ -26,6 +28,8 @@ const FIELDS = [
   "company_tin",
   "directus",
   "directus_token",
+  "springboot",
+  "springboot_token",
   "status",
 ];
 
@@ -51,6 +55,8 @@ export async function listRegistryCompanies(): Promise<RegistryCompany[]> {
       tin: asString(row.company_tin) || null,
       baseUrl,
       token,
+      springUrl: asString(row.springboot) || null,
+      springToken: asString(row.springboot_token) || null,
       reachable: true,
       unreachableReason: null,
     });

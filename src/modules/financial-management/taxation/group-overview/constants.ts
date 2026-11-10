@@ -85,6 +85,35 @@ export function accentClass(tone: Tone): string {
   return TONE_ACCENT[tone];
 }
 
+/** Solid tone for a rail that must run the full height of a panel (a border only paints where content is). */
+const TONE_RAIL: Record<Tone, string> = {
+  success: "bg-emerald-500",
+  warning: "bg-amber-500",
+  danger: "bg-red-500",
+  info: "bg-blue-500",
+  neutral: "bg-muted-foreground/40",
+};
+
+export function railClass(tone: Tone): string {
+  return TONE_RAIL[tone];
+}
+
+/**
+ * Tone for a box edge. Unlike the rail, an edge is drawn by the border box itself,
+ * so it follows a rounded corner instead of poking through it.
+ */
+const TONE_EDGE: Record<Tone, string> = {
+  success: "border-t-emerald-500",
+  warning: "border-t-amber-500",
+  danger: "border-t-red-500",
+  info: "border-t-blue-500",
+  neutral: "border-t-border",
+};
+
+export function edgeClass(tone: Tone): string {
+  return TONE_EDGE[tone];
+}
+
 export function statusTone(status: string): Tone {
   switch (status.toUpperCase()) {
     case "LOCKED":
@@ -131,3 +160,4 @@ export const TAX_TONES: Record<string, Tone> = {
   SCIT: "warning",
   INCOME_TAX_HOLIDAY: "neutral",
 };
+

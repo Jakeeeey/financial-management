@@ -161,3 +161,4 @@ export const TAX_TONES: Record<string, Tone> = {
   SCIT: "warning",
   INCOME_TAX_HOLIDAY: "neutral",
 };
+

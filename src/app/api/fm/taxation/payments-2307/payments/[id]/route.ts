@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { paymentBodySchema } from "@/modules/financial-management/taxation/payments-2307/schemas";
 import { currentActor } from "@/modules/financial-management/taxation/payments-2307/services/actor";
+import { clearDeskCache } from "@/modules/financial-management/taxation/payments-2307/services/desk.service";
 import { toPaymentInput } from "@/modules/financial-management/taxation/payments-2307/services/inputMappers";
 import { deletePayment, updatePayment } from "@/modules/financial-management/taxation/payments-2307/services/payments.service";
 import {
@@ -32,6 +33,7 @@ export async function PATCH(request: Request, { params }: Params): Promise<NextR
 
     const actor = await currentActor();
     const data = await updatePayment(id, toPaymentInput(parsed.data), actor);
+    clearDeskCache(parsed.data.companyId);
     return ok(data);
   } catch (error) {
     return handleRouteError("PATCH payments/[id]", error);
@@ -45,6 +47,8 @@ export async function DELETE(_request: Request, { params }: Params): Promise<Nex
 
     const actor = await currentActor();
     const data = await deletePayment(id, actor);
+    // A delete carries no company, and the id alone does not name one without a second read.
+    clearDeskCache();
     return ok(data);
   } catch (error) {
     return handleRouteError("DELETE payments/[id]", error);

@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { z } from "zod";
 
+import { COOKIE_NAME } from "@/lib/auth-utils";
 import { listCompanies, loadEntitySnapshot, TaxonomyLookupError } from "@/modules/financial-management/taxation/entity-worksheet/services/worksheet.service";
+import { clearSnapshotCache } from "@/modules/financial-management/taxation/entity-worksheet/services/worksheet.service";
 import { saveProfile } from "@/modules/financial-management/taxation/entity-worksheet/services/profile.service";
+import { clearGroupCache } from "@/modules/financial-management/taxation/group-overview/services/groupOverview.service";
 import { DirectusError } from "@/modules/financial-management/taxation/entity-worksheet/services/directus";
 
 export const runtime = "nodejs";
@@ -44,7 +48,14 @@ export async function GET(request: NextRequest) {
   try {
     // One health pass, reused by both halves: previously each call pinged all nine endpoints.
     const companies = await listCompanies();
-    const snapshot = await loadEntitySnapshot(parsed.data.companyId, parsed.data.year, companies);
+    // The Spring itemized views take the user's own session token; reading it here keeps the
+    // desk on the same credentials as the rest of the app instead of adding a service account.
+    const cookieStore = await cookies();
+    const springToken = cookieStore.get(COOKIE_NAME)?.value ?? null;
+    const fresh = request.nextUrl.searchParams.get("refresh") === "1";
+    const snapshot = await loadEntitySnapshot(parsed.data.companyId, parsed.data.year, companies, springToken, {
+      fresh,
+    });
     return NextResponse.json({ success: true, data: { companies, snapshot } });
   } catch (error) {
     if (error instanceof TaxonomyLookupError) {
@@ -70,6 +81,8 @@ export async function PATCH(request: NextRequest) {
       { ...parsed.data, notes: parsed.data.notes ?? null },
       { userId: null, userName: null },
     );
+    clearSnapshotCache(parsed.data.companyId, parsed.data.taxYear);
+    clearGroupCache(parsed.data.taxYear);
     return NextResponse.json({ success: true, data: saved });
   } catch (error) {
     if (error instanceof DirectusError) {

@@ -121,7 +121,7 @@ export function CompanyTable({
           <div className="min-w-0">
             <h2 className="text-sm font-semibold">Company positions</h2>
             <p className="text-[11px] text-muted-foreground">
-              Open a row for the regime, VAT and withholding behind these columns.
+              Open a row for the VAT and withholding behind these columns.
             </p>
           </div>
           <Badge variant="outline" className="tabular-nums text-[11px]">
@@ -188,7 +188,7 @@ export function CompanyTable({
         <div className="hidden overflow-x-auto xl:block">
           <table aria-label="Group tax position by company" className="w-full min-w-[900px] border-collapse text-sm">
             <caption className="sr-only">
-              Income tax due, credits, net position and VAT payable for every company in the group
+              Sales net of VAT, deductible expenses, gross income, tax due, net position and status for every company in the group
             </caption>
             <thead>
               <tr className="border-b bg-muted/40 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
@@ -199,13 +199,14 @@ export function CompanyTable({
                     className="inline-flex items-center gap-1 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                   >
                     Company
-                    {sort === "NAME" && <span aria-hidden>↑</span>}
+                    {sort === "NAME" && <span aria-hidden>←</span>}
                   </button>
                 </th>
                 <th scope="col" className="px-4 py-2 font-semibold">Regime</th>
+                <th scope="col" className="px-4 py-2 text-right font-semibold">Sales, net of VAT</th>
+                <th scope="col" className="px-4 py-2 text-right font-semibold">Deductible expenses</th>
                 <th scope="col" className="px-4 py-2 text-right font-semibold">Gross income</th>
                 <th scope="col" className="px-4 py-2 text-right font-semibold">Tax due</th>
-                <th scope="col" className="px-4 py-2 text-right font-semibold">Credits</th>
                 <th
                   scope="col"
                   className="px-4 py-2 text-right font-semibold"
@@ -217,10 +218,9 @@ export function CompanyTable({
                     className="inline-flex items-center gap-1 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                   >
                     Net position
-                    {sort !== "NAME" && <span aria-hidden>{sort === "NET_ASC" ? "↑" : "↓"}</span>}
+                    {sort !== "NAME" && <span aria-hidden>{sort === "NET_ASC" ? "←" : "↓"}</span>}
                   </button>
                 </th>
-                <th scope="col" className="px-4 py-2 text-right font-semibold">VAT payable</th>
                 <th scope="col" className="px-4 py-2 font-semibold">Status</th>
               </tr>
             </thead>
@@ -258,9 +258,10 @@ export function CompanyTable({
                           {regimeLabel(row)}
                         </span>
                       </td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">{money(row, row.sales)}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">{money(row, row.expenses)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums">{money(row, row.grossIncome)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums">{money(row, row.taxDue)}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{money(row, row.credits)}</td>
                       <td
                         className={cn(
                           "px-4 py-2.5 text-right font-medium tabular-nums",
@@ -269,7 +270,6 @@ export function CompanyTable({
                       >
                         {money(row, row.netPosition)}
                       </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{money(row, row.vatPayable)}</td>
                       <td className="px-4 py-2.5">
                         <StatusBadge status={row.status} />
                       </td>
@@ -318,6 +318,14 @@ export function CompanyTable({
                   </div>
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                     <div className="flex justify-between gap-2">
+                      <dt className="text-muted-foreground">Sales, net of VAT</dt>
+                      <dd className="tabular-nums">{money(row, row.sales)}</dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-muted-foreground">Deductible expenses</dt>
+                      <dd className="tabular-nums">{money(row, row.expenses)}</dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
                       <dt className="text-muted-foreground">Gross income</dt>
                       <dd className="tabular-nums">{money(row, row.grossIncome)}</dd>
                     </div>
@@ -343,10 +351,6 @@ export function CompanyTable({
                       >
                         {money(row, row.netPosition)}
                       </dd>
-                    </div>
-                    <div className="flex justify-between gap-2">
-                      <dt className="text-muted-foreground">VAT payable</dt>
-                      <dd className="tabular-nums">{money(row, row.vatPayable)}</dd>
                     </div>
                   </dl>
                 </li>
@@ -379,3 +383,5 @@ export function CompanyTable({
     </>
   );
 }
+
+

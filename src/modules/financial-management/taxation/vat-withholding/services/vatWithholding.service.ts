@@ -2,12 +2,14 @@ import "server-only";
 
 import type {
   CompanyOption,
+  QuarterFigures,
   RegistryCompany,
   VatSnapshot,
   VatWithholdingData,
 } from "../types";
 import { computeVat } from "./taxEngine";
-import { emptyFigures, loadVatFigures } from "./companyFigures";
+import { loadFigures } from "./companyFigures";
+import { loadTaxRates } from "./taxRates.service";
 import { loadMonthlyWithholding, emptyMonthly } from "./monthlyWithholding";
 import { emptyRegister, loadCertificates } from "./certificates.service";
 import { loadProfile } from "./profile.service";
@@ -38,15 +40,68 @@ export function toCompanyOption(company: RegistryCompany): CompanyOption {
   };
 }
 
+function emptyQuarter(): QuarterFigures {
+  return {
+    sales: 0,
+    salesVat: 0,
+    discounts: 0,
+    returns: 0,
+    returnsVat: 0,
+    purchases: 0,
+    purchasesVat: 0,
+    cogsProductCost: 0,
+    expenses: 0,
+    cwt: 0,
+    icSales: 0,
+    icPurchases: 0,
+    icSalesByCompany: {},
+    icPurchasesByCompany: {},
+  };
+}
+
+function emptyFigures(): QuarterFigures[] {
+  return [0, 1, 2, 3].map(emptyQuarter);
+}
+
+/**
+ * Reading nine companies' registers costs seconds per company-year, and the desk
+ * re-requests the same company-year on every switch. The token is not part of the key:
+ * it decides whether the Spring sales view can be read, not whose figures they are.
+ */
+const CACHE_TTL_MS = 10 * 60_000;
+
+/** A session-less read falls back to the invoice register, so it must not answer for a signed-in one. */
+function authKey(springToken: string | null | undefined): string {
+  return springToken ? springToken.slice(-8) : "anon";
+}
+const cache = new Map<string, { at: number; data: VatWithholdingData }>();
+
 export async function loadVatWithholding(
   companyId: number,
   taxYear: number,
   companies: RegistryCompany[],
+  options: { fresh?: boolean; springToken?: string | null } = {},
+): Promise<VatWithholdingData> {
+  const key = `${companyId}:${taxYear}:${authKey(options.springToken)}`;
+  const hit = cache.get(key);
+  if (!options.fresh && hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.data;
+
+  const data = await buildVatWithholding(companyId, taxYear, companies, options.springToken ?? null);
+  cache.set(key, { at: Date.now(), data });
+  return data;
+}
+
+async function buildVatWithholding(
+  companyId: number,
+  taxYear: number,
+  companies: RegistryCompany[],
+  springToken: string | null,
 ): Promise<VatWithholdingData> {
   const company = companies.find((entry) => entry.companyId === companyId);
   if (!company) throw new CompanyNotFoundError(companyId);
 
-  const options = companies.map(toCompanyOption);
+  const companyOptions = companies.map(toCompanyOption);
+  const rates = await loadTaxRates(company, taxYear);
 
   if (!company.reachable) {
     const { profile } = await loadProfile(companyId, taxYear);
@@ -59,9 +114,9 @@ export async function loadVatWithholding(
       failedSources: ["the company instance"],
     };
     return {
-      companies: options,
+      companies: companyOptions,
       snapshot,
-      vat: computeVat(snapshot.figures, profile),
+      vat: computeVat(snapshot.figures, profile, rates),
       monthly: emptyMonthly(),
       certificates: emptyRegister(),
     };
@@ -69,7 +124,7 @@ export async function loadVatWithholding(
 
   const [{ profile, stored }, figureResult, monthlyResult] = await Promise.all([
     loadProfile(companyId, taxYear),
-    loadVatFigures(company, taxYear),
+    loadFigures(company, taxYear, [], { springToken }),
     loadMonthlyWithholding(company, taxYear),
   ]);
 
@@ -95,10 +150,12 @@ export async function loadVatWithholding(
   };
 
   return {
-    companies: options,
+    companies: companyOptions,
     snapshot,
-    vat: computeVat(figureResult.figures, profile),
+    vat: computeVat(figureResult.figures, profile, rates),
     monthly: monthlyResult.monthly,
     certificates,
   };
 }
+
+

@@ -53,6 +53,59 @@ async function requestJson<T>(baseUrl: string, token: string, path: string, comp
   return (text ? JSON.parse(text) : {}) as T;
 }
 
+type AggregateRow = Record<string, number | string | { sum?: Record<string, number | string>; count?: number | string }>;
+
+/** Sums one or more money fields for a filtered set. Returns zeros when the collection is empty. */
+export async function sumFields(
+  baseUrl: string,
+  token: string,
+  companyCode: string,
+  collection: string,
+  fields: string[],
+  filter: Record<string, unknown>,
+): Promise<Record<string, number>> {
+  const params = new URLSearchParams();
+  params.set("filter", JSON.stringify(filter));
+  for (const field of fields) params.append("aggregate[sum]", field);
+
+  const payload = await requestJson<{ data?: AggregateRow[] }>(
+    baseUrl,
+    token,
+    `/items/${collection}?${params.toString()}`,
+    companyCode,
+  );
+  const row = payload.data?.[0];
+  const sums: Record<string, number> = {};
+  const sumBag = (row?.sum ?? {}) as Record<string, number | string>;
+  for (const field of fields) {
+    const raw = sumBag[field];
+    sums[field] = typeof raw === "number" ? raw : Number(raw ?? 0) || 0;
+  }
+  return sums;
+}
+
+/** Reads a bounded list. Used only for small lookup tables (customers that belong to the group). */
+export async function listRows<T>(
+  baseUrl: string,
+  token: string,
+  companyCode: string,
+  collection: string,
+  options: { fields: string[]; filter?: Record<string, unknown>; limit?: number },
+): Promise<T[]> {
+  const params = new URLSearchParams();
+  params.set("fields", options.fields.join(","));
+  params.set("limit", String(options.limit ?? 200));
+  if (options.filter) params.set("filter", JSON.stringify(options.filter));
+
+  const payload = await requestJson<{ data?: T[] }>(
+    baseUrl,
+    token,
+    `/items/${collection}?${params.toString()}`,
+    companyCode,
+  );
+  return payload.data ?? [];
+}
+
 /** True when the instance answers its own ping. */
 export async function ping(baseUrl: string, token: string): Promise<{ ok: boolean; reason: string | null }> {
   // Directus answers /server/ping with the plain text "pong", not JSON, so this cannot

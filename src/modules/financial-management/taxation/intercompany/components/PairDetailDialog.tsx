@@ -208,3 +208,4 @@ export function PairDetailDialog({ pair, monthly, companyCode, onOpenChange }: P
     </Dialog>
   );
 }
+

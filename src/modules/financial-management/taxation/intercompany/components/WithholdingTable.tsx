@@ -246,3 +246,4 @@ export function WithholdingTable({ rows, isLoading }: { rows: WithholdingRow[]; 
     </section>
   );
 }
+

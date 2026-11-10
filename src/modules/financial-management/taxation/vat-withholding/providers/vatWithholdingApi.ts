@@ -14,9 +14,11 @@ export async function fetchVatWithholding(
   companyId: number | null,
   year: number,
   signal?: AbortSignal,
+  fresh = false,
 ): Promise<VatWithholdingData> {
   const query = new URLSearchParams({ year: String(year) });
   if (companyId != null) query.set("companyId", String(companyId));
+  if (fresh) query.set("refresh", "1");
   const response = await fetch(`${ENDPOINT}?${query.toString()}`, {
     cache: "no-store",
     signal,
@@ -29,3 +31,4 @@ export async function fetchVatWithholding(
   }
   return payload.data;
 }
+

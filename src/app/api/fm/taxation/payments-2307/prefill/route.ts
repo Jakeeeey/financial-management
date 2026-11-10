@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { prefillBodySchema } from "@/modules/financial-management/taxation/payments-2307/schemas";
 import { currentActor } from "@/modules/financial-management/taxation/payments-2307/services/actor";
 import { prefillCertificates } from "@/modules/financial-management/taxation/payments-2307/services/certificates.service";
+import { clearDeskCache } from "@/modules/financial-management/taxation/payments-2307/services/desk.service";
 import { getRegistryCompany } from "@/modules/financial-management/taxation/payments-2307/services/registry";
 import { fail, handleRouteError, ok, readJson } from "@/modules/financial-management/taxation/payments-2307/services/responses";
 
@@ -26,6 +27,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     const actor = await currentActor();
     const data = await prefillCertificates(company, parsed.data.year, actor);
+    clearDeskCache(parsed.data.companyId);
     return ok(data);
   } catch (error) {
     return handleRouteError("POST prefill", error);

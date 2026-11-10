@@ -18,12 +18,12 @@ export function useChangeLog(year: number) {
   const [error, setError] = useState<string | null>(null);
   const requestId = useRef(0);
 
-  const load = useCallback(async (next: ChangeLogFilter) => {
+  const load = useCallback(async (next: ChangeLogFilter, fresh = false) => {
     const id = ++requestId.current;
     setIsLoading(true);
     setError(null);
     try {
-      const payload = await fetchChangeLog(next);
+      const payload = await fetchChangeLog(next, fresh);
       if (id !== requestId.current) return;
       setRows(payload.rows);
       setTotal(payload.total);
@@ -52,7 +52,7 @@ export function useChangeLog(year: number) {
   }, []);
 
   const refetch = useCallback(() => {
-    void load(filters);
+    void load(filters, true);
   }, [filters, load]);
 
   return {
@@ -71,3 +71,4 @@ export function useChangeLog(year: number) {
     refetch,
   };
 }
+

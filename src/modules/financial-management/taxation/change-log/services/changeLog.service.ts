@@ -62,6 +62,12 @@ function buildFilter(filter: ChangeLogFilter): Record<string, unknown> {
   return and.length ? { _and: and } : {};
 }
 
+type ChangeLogPage = { rows: ChangeLogRow[]; total: number; notice?: string };
+
+/** Short on purpose: other modules append to this table, so the only freshness signal is time. */
+const CHANGE_LOG_CACHE_TTL_MS = 30_000;
+const changeLogCache = new Map<string, { at: number; data: ChangeLogPage }>();
+
 /**
  * Reads the taxation change log.
  *
@@ -70,7 +76,27 @@ function buildFilter(filter: ChangeLogFilter): Record<string, unknown> {
  */
 export async function listChangeLog(
   filter: ChangeLogFilter,
-): Promise<{ rows: ChangeLogRow[]; total: number; notice?: string }> {
+  options: { fresh?: boolean } = {},
+): Promise<ChangeLogPage> {
+  const key = JSON.stringify(filter);
+  const hit = changeLogCache.get(key);
+  if (!options.fresh && hit && Date.now() - hit.at < CHANGE_LOG_CACHE_TTL_MS) return hit.data;
+
+  const page = await buildChangeLogPage(filter);
+  // The unreadable-table notice is a failure, not a result; caching it would pin the error for the TTL.
+  if (!page.notice) {
+    // Every filter combination is its own key, so the map is capped: a session that pages and
+    // searches must not grow it without bound in a long-lived server process.
+    if (changeLogCache.size >= 200) {
+      const oldest = changeLogCache.keys().next().value;
+      if (oldest !== undefined) changeLogCache.delete(oldest);
+    }
+    changeLogCache.set(key, { at: Date.now(), data: page });
+  }
+  return page;
+}
+
+async function buildChangeLogPage(filter: ChangeLogFilter): Promise<ChangeLogPage> {
   try {
     const { rows, total } = await listItems<RawRow>(COLLECTION, {
       fields: FIELDS,
@@ -91,3 +117,4 @@ export async function listChangeLog(
     throw error;
   }
 }
+

@@ -1,8 +1,8 @@
 import "server-only";
 
-import { PERIOD_KEYS } from "../constants";
+import { PAYMENT_PERIOD_KEYS } from "../constants";
 import { phtStamp } from "../pht";
-import type { PaymentRow, PeriodKey } from "../types";
+import type { PaymentPeriodKey, PaymentRow } from "../types";
 import type { Actor } from "./actor";
 import { appendChangeLog, changedFields, formatValues } from "./changeLog";
 import {
@@ -40,7 +40,7 @@ const TRACKED_FIELDS = ["period_key", "form_code", "paid_on", "amount", "referen
 export interface PaymentInput {
   companyId: number;
   taxYear: number;
-  periodKey: PeriodKey;
+  periodKey: PaymentPeriodKey;
   formCode: string;
   paidOn: string;
   amount: number;
@@ -63,7 +63,7 @@ function mapPayment(raw: Record<string, unknown>): PaymentRow {
     id: asNumber(raw.id),
     companyId: asNumber(raw.company_id),
     taxYear: asNumber(raw.tax_year),
-    periodKey: (PERIOD_KEYS as string[]).includes(period) ? (period as PeriodKey) : "ANNUAL",
+    periodKey: (PAYMENT_PERIOD_KEYS as string[]).includes(period) ? (period as PaymentPeriodKey) : "ANNUAL",
     formCode: asString(raw.form_code),
     paidOn: dateOnly(raw.paid_on),
     amount: roundMoney(asNumber(raw.amount)),

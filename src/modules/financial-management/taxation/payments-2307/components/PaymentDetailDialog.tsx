@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn, formatCurrency, formatDateTime } from "@/lib/utils";
 
-import { PERIOD_LABELS } from "../constants";
+import { PAYMENT_PERIOD_LABELS } from "../constants";
 import type { PaymentRow } from "../types";
 
 function Detail({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
@@ -51,7 +51,7 @@ export function PaymentDetailDialog({ payment, onOpenChange }: Props) {
             <DialogDescription className="flex flex-wrap items-center gap-2">
               {payment ? (
                 <>
-                  <span>{PERIOD_LABELS[payment.periodKey]}</span>
+                  <span>{PAYMENT_PERIOD_LABELS[payment.periodKey]}</span>
                   <span aria-hidden>·</span>
                   <span className="tabular-nums">{formatCurrency(payment.amount)}</span>
                 </>
@@ -63,7 +63,7 @@ export function PaymentDetailDialog({ payment, onOpenChange }: Props) {
             <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
               <dl className="grid grid-cols-2 gap-4">
                 <Detail label="Form">{payment.formCode}</Detail>
-                <Detail label="Period">{PERIOD_LABELS[payment.periodKey]}</Detail>
+                <Detail label="Period">{PAYMENT_PERIOD_LABELS[payment.periodKey]}</Detail>
                 <Detail label="Paid on" className="tabular-nums">
                   {payment.paidOn}
                 </Detail>
@@ -100,3 +100,4 @@ export function PaymentDetailDialog({ payment, onOpenChange }: Props) {
     </Dialog>
   );
 }
+

@@ -24,8 +24,9 @@ function unwrap<T>(payload: Envelope<T>): T {
   return payload.data;
 }
 
-export async function fetchGroupOverview(year: number): Promise<GroupOverviewData> {
-  const response = await fetch(`${BASE}?year=${year}`, { cache: "no-store" });
+export async function fetchGroupOverview(year: number, fresh = false): Promise<GroupOverviewData> {
+  const suffix = fresh ? "&refresh=1" : "";
+  const response = await fetch(`${BASE}?year=${year}${suffix}`, { cache: "no-store" });
   const payload = (await response.json()) as Envelope<GroupOverviewData>;
   return unwrap(payload);
 }

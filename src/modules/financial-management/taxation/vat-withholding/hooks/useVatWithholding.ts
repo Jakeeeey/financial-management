@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { VatWithholdingData } from "../types";
 import { fetchVatWithholding } from "../providers/vatWithholdingApi";
@@ -16,6 +16,7 @@ export function useVatWithholding(companyId: number | null, year: number) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
+  const wantFresh = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -25,7 +26,9 @@ export function useVatWithholding(companyId: number | null, year: number) {
       setError(null);
       setIsLoading(true);
       try {
-        const payload = await fetchVatWithholding(companyId, year, controller.signal);
+        const fresh = wantFresh.current;
+        wantFresh.current = false;
+        const payload = await fetchVatWithholding(companyId, year, controller.signal, fresh);
         if (cancelled) return;
         setData(payload);
       } catch (caught) {
@@ -42,7 +45,11 @@ export function useVatWithholding(companyId: number | null, year: number) {
     };
   }, [companyId, year, nonce]);
 
-  const refetch = useCallback(() => setNonce((value) => value + 1), []);
+  const refetch = useCallback(() => {
+    wantFresh.current = true;
+    setNonce((value) => value + 1);
+  }, []);
 
   return { data, isLoading, error, refetch };
 }
+

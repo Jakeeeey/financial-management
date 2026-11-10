@@ -235,3 +235,4 @@ export function percentageTaxDue(figures: QuarterFigures[]): number {
 }
 
 export const RATES = { VAT_RATE, CORPORATE_RATE, MCIT_RATE, OSD_RATE };
+

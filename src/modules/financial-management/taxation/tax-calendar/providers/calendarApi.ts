@@ -7,9 +7,14 @@ export interface CalendarPayload {
   today: string;
 }
 
-export async function fetchCalendar(companyId: number | null, year: number): Promise<CalendarPayload> {
+export async function fetchCalendar(
+  companyId: number | null,
+  year: number,
+  fresh = false,
+): Promise<CalendarPayload> {
   const params = new URLSearchParams({ year: String(year) });
   if (companyId) params.set("companyId", String(companyId));
+  if (fresh) params.set("refresh", "1");
 
   const response = await fetch(`/api/fm/taxation/tax-calendar?${params.toString()}`, { cache: "no-store" });
   const body = (await response.json().catch(() => ({}))) as
@@ -21,3 +26,4 @@ export async function fetchCalendar(companyId: number | null, year: number): Pro
   }
   return body.data;
 }
+

@@ -18,13 +18,16 @@ export function useTaxCalendar(year: number) {
   /** The year the payload on screen was built for, so a switch never shows the old year's figures. */
   const [settledYear, setSettledYear] = useState<number | null>(null);
   const requestId = useRef(0);
+  const wantFresh = useRef(false);
 
   const load = useCallback(async () => {
     const id = ++requestId.current;
     setIsLoading(true);
     setError(null);
     try {
-      const next = await fetchCalendar(filters.companyId, year);
+      const fresh = wantFresh.current;
+      wantFresh.current = false;
+      const next = await fetchCalendar(filters.companyId, year, fresh);
       if (id !== requestId.current) return;
       setPayload(next);
       setSettledYear(year);
@@ -104,6 +107,11 @@ export function useTaxCalendar(year: number) {
     setPage,
     isLoading,
     error,
-    refetch: load,
+    refetch: useCallback(() => {
+      wantFresh.current = true;
+      void load();
+    }, [load]),
   };
 }
+
+

@@ -22,7 +22,7 @@ export function useGroupOverview(initialYear: number) {
 
     (async () => {
       try {
-        const payload = await fetchGroupOverview(year);
+        const payload = await fetchGroupOverview(year, reloadKey > 0);
         if (!cancelled) setData(payload);
       } catch (caught) {
         if (cancelled) return;

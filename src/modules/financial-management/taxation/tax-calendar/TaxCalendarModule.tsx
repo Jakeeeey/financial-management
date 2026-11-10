@@ -180,6 +180,12 @@ export function TaxCalendarModule() {
             today={today}
             isLoading={calendar.isLoading || stale}
             onMonthChange={(next) => setMonth(Math.min(LAST_MONTH, Math.max(0, next)))}
+            onToday={() => {
+              const todayYear = Number(today.slice(0, 4));
+              const todayMonth = Number(today.slice(5, 7)) - 1;
+              const index = todayYear === year ? todayMonth : todayYear === year + 1 ? 12 + todayMonth : 0;
+              setMonth(Math.min(LAST_MONTH, Math.max(0, index)));
+            }}
           />
         </TabsContent>
 

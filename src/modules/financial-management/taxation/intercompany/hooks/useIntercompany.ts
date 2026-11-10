@@ -37,11 +37,11 @@ export function useIntercompany(initialYear: number): IntercompanyHook {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async (nextCompanyId: number | null, nextYear: number) => {
+  const load = useCallback(async (nextCompanyId: number | null, nextYear: number, fresh = false) => {
     setIsLoading(true);
     setError(null);
     try {
-      const payload = await fetchIntercompany(nextCompanyId, nextYear);
+      const payload = await fetchIntercompany(nextCompanyId, nextYear, fresh);
       setData(payload);
     } catch (caught) {
       setError(caught instanceof IntercompanyApiError ? caught.message : "The intercompany ledger could not be loaded.");
@@ -81,14 +81,14 @@ export function useIntercompany(initialYear: number): IntercompanyHook {
   );
 
   const refetch = useCallback(() => {
-    void load(companyId, year);
+    void load(companyId, year, true);
   }, [load, companyId, year]);
 
   const companyOptions = useMemo<ComboboxOption[]>(
     () =>
       (data?.companies ?? []).map((company) => ({
         value: String(company.companyId),
-        label: `${company.code} — ${company.name}`,
+        label: `${company.code} − ${company.name}`,
         searchText: `${company.code} ${company.name}`,
         description: company.reachable ? undefined : `unreachable: ${company.unreachableReason ?? "no answer"}`,
       })),
@@ -113,3 +113,5 @@ export function useIntercompany(initialYear: number): IntercompanyHook {
     selectYear,
   };
 }
+
+

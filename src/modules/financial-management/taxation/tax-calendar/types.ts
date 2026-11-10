@@ -16,6 +16,9 @@ export interface RegistryCompany {
   tin: string | null;
   baseUrl: string;
   token: string;
+  /** Spring endpoint, when the registry row carries one. Sales come from its itemized view. */
+  springUrl: string | null;
+  springToken: string | null;
   reachable: boolean;
   unreachableReason: string | null;
 }
@@ -24,10 +27,14 @@ export interface RegistryCompany {
 export interface QuarterFigures {
   sales: number;
   salesVat: number;
+  /** Header discounts; the itemized view nets them out of its product totals. */
+  discounts: number;
   returns: number;
   returnsVat: number;
   purchases: number;
   purchasesVat: number;
+  /** Σ(line quantity × product standard cost), allocated across the quarter by line amount. */
+  cogsProductCost: number;
   expenses: number;
   cwt: number;
   icSales: number;
@@ -52,6 +59,51 @@ export interface EntityProfile {
   taxAgentFeeRate: number;
   priorYearExcessCredit: number;
   notes: string | null;
+}
+
+/** Rates read from the company's own `tax_rates` row, falling back to the built-in defaults. */
+export interface TaxRates {
+  vat: number;
+  percentage: number;
+  corporate: number;
+  smallCorporate: number;
+  mcit: number;
+  osd: number;
+  scit: number;
+  withholding: number;
+  /** Money ceilings for the 20% corporation rate, in pesos. */
+  smallCorporateNtiCeiling: number;
+  smallCorporateAssetCeiling: number;
+  /** Taxable year of operations from which MCIT applies. */
+  mcitStartYear: number;
+  source: "DATABASE" | "DEFAULTS";
+  /** Which columns the row did not carry, e.g. ["CorporateRate"]. */
+  missing: string[];
+}
+
+/** Two defensible readings of "cost of sales", both shown rather than one chosen. */
+export type CostBasis = "PRODUCT_COST" | "PURCHASES";
+
+export interface TaxScenario {
+  basis: CostBasis;
+  label: string;
+  grossIncome: number[];
+  deductions: number[];
+  netTaxableIncome: number[];
+  taxDue: number[];
+  payable: number[];
+  annual: {
+    grossIncome: number;
+    deductions: number;
+    netTaxableIncome: number;
+    regular: number;
+    mcit: number;
+    taxDue: number;
+    netPosition: number;
+  };
+  mcitApplied: boolean;
+  smallCorporation: boolean;
+  rate: number;
 }
 
 /** A line of the 1702Q worksheet: what it is, where it came from, and the four quarters. */
@@ -89,6 +141,9 @@ export interface TaxComputation {
   smallCorporation: boolean;
   mcitApplied: boolean;
   notices: string[];
+  /** Headline scenario (product standard cost) first, then the purchase-order reading. */
+  scenarios: TaxScenario[];
+  rates: TaxRates;
 }
 
 export interface VatComputation {
@@ -177,3 +232,4 @@ export interface CalendarFilter {
   from: string;
   to: string;
 }
+

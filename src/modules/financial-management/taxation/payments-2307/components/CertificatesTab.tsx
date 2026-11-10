@@ -43,10 +43,6 @@ const SOURCE_LABELS: Record<string, string> = {
 
 const COLUMN_COUNT = 11;
 
-type Row =
-  | { kind: "certificate"; key: string; certificate: CertificateRow }
-  | { kind: "gap"; key: string; period: ExpectedPeriod };
-
 function periodOrder(periodKey: string): number {
   return PERIOD_KEYS.indexOf(periodKey as (typeof PERIOD_KEYS)[number]);
 }
@@ -89,42 +85,22 @@ export function CertificatesTab({
   const [prefillNote, setPrefillNote] = useState<string | null>(null);
   const [prefillError, setPrefillError] = useState<string | null>(null);
 
-  const rows = useMemo<Row[]>(() => {
-    const certificatesRows: Row[] = certificates.map((certificate) => ({
-      kind: "certificate",
-      key: `c-${certificate.id}`,
-      certificate,
-    }));
-
-    // A period the ledger says should carry withholding but no certificate covers: whether or not a
-    // smaller certificate exists, the gap has to stay on screen or the shortfall disappears.
-    const covered = new Set(certificates.map((certificate) => `${certificate.direction}|${certificate.periodKey}`));
-    const gapRows: Row[] = expected
-      .filter((period) => period.expected > 0 && !covered.has(`${period.direction}|${period.periodKey}`))
-      .map((period) => ({ kind: "gap", key: `g-${period.direction}-${period.periodKey}`, period }));
-
-    return [...certificatesRows, ...gapRows].sort((left, right) => {
-      const leftPeriod = left.kind === "certificate" ? left.certificate.periodKey : left.period.periodKey;
-      const rightPeriod = right.kind === "certificate" ? right.certificate.periodKey : right.period.periodKey;
-      const byPeriod = periodOrder(leftPeriod) - periodOrder(rightPeriod);
+  // The register lists certificates only. A period the ledger expects but no certificate covers is
+  // reported once, in the panel under the table, instead of as a grey row repeating the same figure.
+  const rows = useMemo<CertificateRow[]>(() => {
+    return certificates.slice().sort((left, right) => {
+      const byPeriod = periodOrder(left.periodKey) - periodOrder(right.periodKey);
       if (byPeriod !== 0) return byPeriod;
-
-      const leftDirection = left.kind === "certificate" ? left.certificate.direction : left.period.direction;
-      const rightDirection = right.kind === "certificate" ? right.certificate.direction : right.period.direction;
-      if (leftDirection !== rightDirection) return leftDirection === "RECEIVED" ? -1 : 1;
-
-      const leftName = left.kind === "certificate" ? left.certificate.counterpartyName : "";
-      const rightName = right.kind === "certificate" ? right.certificate.counterpartyName : "";
-      return leftName.localeCompare(rightName);
+      if (left.direction !== right.direction) return left.direction === "RECEIVED" ? -1 : 1;
+      return left.counterpartyName.localeCompare(right.counterpartyName);
     });
-  }, [certificates, expected]);
+  }, [certificates]);
 
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
   const visible = rows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   const withheldTotal = certificates.reduce((sum, certificate) => sum + certificate.taxWithheld, 0);
-  const gapCount = rows.filter((row) => row.kind === "gap").length;
 
   // A short certificate hides the gap it leaves, so expected and recorded stay side by side — but only
   // for periods that disagree. A matched period is already visible as the register's own amount.
@@ -166,12 +142,18 @@ export function CertificatesTab({
   }
 
   return (
+    <div className="space-y-4">
     <section
       aria-label="2307 certificates"
       className="overflow-hidden rounded-2xl border border-border/50 border-t-[3px] border-t-amber-500/70 bg-card shadow-sm"
     >
-      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 px-4 py-3">
-        <h2 className="text-sm font-semibold">2307 certificates</h2>
+      <header className="flex flex-wrap items-start justify-between gap-2 border-b border-border/50 px-4 py-3">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold">Certificates on file</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            One row per certificate. Click a row for the full record.
+          </p>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline" className="tabular-nums text-[11px]">
             {formatNumber(certificates.length)} certificates
@@ -179,11 +161,6 @@ export function CertificatesTab({
           <Badge variant="outline" className="tabular-nums text-[11px]">
             {formatCurrency(withheldTotal)} withheld
           </Badge>
-          {gapCount > 0 ? (
-            <Badge variant="outline" className="tabular-nums text-[11px]">
-              {formatNumber(gapCount)} gap{gapCount === 1 ? "" : "s"}
-            </Badge>
-          ) : null}
           <Button
             type="button"
             variant="outline"
@@ -218,63 +195,8 @@ export function CertificatesTab({
         </div>
       ) : null}
 
-      {expectation.length > 0 ? (
-        <div className="border-b border-border/50 bg-muted/20 px-4 py-3">
-          <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Periods where certificates do not match the ledger
-          </h3>
-          <div className="mt-2 overflow-x-auto">
-            <Table aria-label="Expected against recorded">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Direction</TableHead>
-                  <TableHead>Period</TableHead>
-                  <TableHead className="text-right">Expected</TableHead>
-                  <TableHead className="text-right">Recorded</TableHead>
-                  <TableHead className="text-right">Difference</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {expectation.map(({ period, recorded, difference }) => (
-                  <TableRow key={`${period.direction}-${period.periodKey}`}>
-                    <TableCell className="whitespace-nowrap text-xs">{DIRECTION_LABELS[period.direction]}</TableCell>
-                    <TableCell className="whitespace-nowrap text-xs">{PERIOD_LABELS[period.periodKey]}</TableCell>
-                    <TableCell className="text-right tabular-nums" title="Expected from the ledger">
-                      {formatCurrency(period.expected)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{formatCurrency(recorded)}</TableCell>
-                    <TableCell
-                      className={
-                        difference < -0.005
-                          ? "text-right tabular-nums text-red-600 dark:text-red-400"
-                          : difference > 0.005
-                            ? "text-right tabular-nums text-amber-600 dark:text-amber-400"
-                            : "text-right tabular-nums text-muted-foreground"
-                      }
-                      title={
-                        difference < -0.005
-                          ? "Short: less has been recorded than the ledger says was withheld"
-                          : difference > 0.005
-                            ? "Over: more has been recorded than the ledger says was withheld"
-                            : "Matched within ₱1"
-                      }
-                    >
-                      {formatCurrency(difference)}
-                    </TableCell>
-                    <TableCell>
-                      <StatusBadge status={period.status} label={certificateStatusLabel(period.status)} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </div>
-      ) : null}
-
       <div className="overflow-x-auto">
-        <Table aria-label="2307 certificates">
+        <Table aria-label="2307 certificates" className="min-w-[1020px]">
           <TableHeader>
             <TableRow>
               <TableHead className="min-w-[220px]">Issuer / payee</TableHead>
@@ -306,49 +228,48 @@ export function CertificatesTab({
                 </TableCell>
               </TableRow>
             ) : (
-              visible.map((row) =>
-                row.kind === "certificate" ? (
+              visible.map((row) => (
                   <TableRow
-                    key={row.key}
+                    key={row.id}
                     tabIndex={0}
-                    aria-label={`Open certificate from ${row.certificate.counterpartyName}`}
+                    aria-label={`Open certificate from ${row.counterpartyName}`}
                     className="cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
-                    onClick={() => setViewing(row.certificate)}
+                    onClick={() => setViewing(row)}
                     onKeyDown={(event) => {
                       if (event.target !== event.currentTarget) return;
                       if (event.key !== "Enter" && event.key !== " ") return;
                       event.preventDefault();
-                      setViewing(row.certificate);
+                      setViewing(row);
                     }}
                   >
                     <TableCell>
-                      <div className="max-w-[240px] truncate font-medium" title={row.certificate.counterpartyName}>
-                        {row.certificate.counterpartyName}
+                      <div className="max-w-[240px] truncate font-medium" title={row.counterpartyName}>
+                        {row.counterpartyName}
                       </div>
                       <div className="text-[11px] text-muted-foreground">
-                        {DIRECTION_LABELS[row.certificate.direction]}
+                        {DIRECTION_LABELS[row.direction]}
                       </div>
                     </TableCell>
                     <TableCell className="tabular-nums">
-                      <span className="block max-w-[130px] truncate" title={row.certificate.counterpartyTin ?? ""}>
-                        {row.certificate.counterpartyTin ?? "—"}
+                      <span className="block max-w-[130px] truncate" title={row.counterpartyTin ?? ""}>
+                        {row.counterpartyTin ?? "—"}
                       </span>
                     </TableCell>
-                    <TableCell>{PERIOD_LABELS[row.certificate.periodKey]}</TableCell>
+                    <TableCell>{PERIOD_LABELS[row.periodKey]}</TableCell>
                     <TableCell>
-                      <span className="block max-w-[140px] truncate" title={WITHHOLDING_LABELS[row.certificate.incomeType]}>
-                        {WITHHOLDING_LABELS[row.certificate.incomeType]}
+                      <span className="block max-w-[140px] truncate" title={WITHHOLDING_LABELS[row.incomeType]}>
+                        {WITHHOLDING_LABELS[row.incomeType]}
                       </span>
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{formatCurrency(row.certificate.incomeAmount)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatNumber(row.certificate.taxRate, "en-PH", 2)}%</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatCurrency(row.certificate.taxWithheld)}</TableCell>
-                    <TableCell className="tabular-nums">{row.certificate.dateReceived ?? "—"}</TableCell>
-                    <TableCell>{SOURCE_LABELS[row.certificate.source] ?? row.certificate.source}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatCurrency(row.incomeAmount)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatNumber(row.taxRate, "en-PH", 2)}%</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatCurrency(row.taxWithheld)}</TableCell>
+                    <TableCell className="tabular-nums">{row.dateReceived ?? "—"}</TableCell>
+                    <TableCell>{SOURCE_LABELS[row.source] ?? row.source}</TableCell>
                     <TableCell>
                       <StatusBadge
-                        status={row.certificate.status}
-                        label={certificateStatusLabel(row.certificate.status)}
+                        status={row.status}
+                        label={certificateStatusLabel(row.status)}
                       />
                     </TableCell>
                     <TableCell className="text-right">
@@ -357,10 +278,10 @@ export function CertificatesTab({
                           type="button"
                           variant="ghost"
                           size="icon"
-                          aria-label={`Edit certificate from ${row.certificate.counterpartyName}`}
+                          aria-label={`Edit certificate from ${row.counterpartyName}`}
                           onClick={(event) => {
                             event.stopPropagation();
-                            openEdit(row.certificate);
+                            openEdit(row);
                           }}
                         >
                           <Pencil className="size-4" />
@@ -369,37 +290,16 @@ export function CertificatesTab({
                           type="button"
                           variant="ghost"
                           size="icon"
-                          aria-label={`Delete certificate from ${row.certificate.counterpartyName}`}
+                          aria-label={`Delete certificate from ${row.counterpartyName}`}
                           onClick={(event) => {
                             event.stopPropagation();
-                            setDeleting(row.certificate);
+                            setDeleting(row);
                           }}
                         >
                           <Trash2 className="size-4" />
                         </Button>
                       </div>
                     </TableCell>
-                  </TableRow>
-                ) : (
-                  <TableRow key={row.key} className="bg-muted/30">
-                    <TableCell>
-                      <div className="font-medium text-muted-foreground">No certificate recorded</div>
-                      <div className="text-[11px] text-muted-foreground">{DIRECTION_LABELS[row.period.direction]}</div>
-                    </TableCell>
-                    <TableCell>—</TableCell>
-                    <TableCell>{PERIOD_LABELS[row.period.periodKey]}</TableCell>
-                    <TableCell>—</TableCell>
-                    <TableCell className="text-right">—</TableCell>
-                    <TableCell className="text-right">—</TableCell>
-                    <TableCell className="text-right tabular-nums" title="Expected from the ledger">
-                      {formatCurrency(row.period.expected)}
-                    </TableCell>
-                    <TableCell>—</TableCell>
-                    <TableCell>—</TableCell>
-                    <TableCell>
-                      <StatusBadge status={row.period.status} label={certificateStatusLabel(row.period.status)} />
-                    </TableCell>
-                    <TableCell className="text-right text-xs text-muted-foreground">expected</TableCell>
                   </TableRow>
                 ),
               )
@@ -417,6 +317,78 @@ export function CertificatesTab({
         isLoading={isLoading}
         className="border-t border-border/50 px-4 py-3"
       />
+    </section>
+
+    <section
+      aria-label="Expected against recorded"
+      className="overflow-hidden rounded-2xl border border-border/50 bg-card shadow-sm"
+    >
+      <header className="flex flex-wrap items-start justify-between gap-2 border-b border-border/50 px-4 py-3">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold">What the ledger expects</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Periods where the certificates on file do not match the withholding in the ledger.
+          </p>
+        </div>
+        <Badge variant="outline" className="tabular-nums text-[11px]">
+          {expectation.length === 0 ? "All matched" : `${formatNumber(expectation.length)} to reconcile`}
+        </Badge>
+      </header>
+
+      {expectation.length === 0 ? (
+        <p className="px-4 py-8 text-center text-sm text-muted-foreground">
+          Every period the ledger expects carries a certificate.
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <Table aria-label="Expected against recorded" className="min-w-[720px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[30%] pl-5">Direction</TableHead>
+                <TableHead className="w-[12%]">Period</TableHead>
+                <TableHead className="w-[16%] text-right">Expected</TableHead>
+                <TableHead className="w-[16%] text-right">Recorded</TableHead>
+                <TableHead className="w-[16%] text-right">Difference</TableHead>
+                <TableHead className="w-[150px] pr-5">Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {expectation.map(({ period, recorded, difference }) => (
+                <TableRow key={`${period.direction}-${period.periodKey}`}>
+                  <TableCell className="whitespace-nowrap pl-5 text-xs">{DIRECTION_LABELS[period.direction]}</TableCell>
+                  <TableCell className="whitespace-nowrap text-xs">{PERIOD_LABELS[period.periodKey]}</TableCell>
+                  <TableCell className="text-right tabular-nums" title="Withholding the ledger says was withheld">
+                    {formatCurrency(period.expected)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{formatCurrency(recorded)}</TableCell>
+                  <TableCell
+                    className={
+                      difference < -0.005
+                        ? "text-right tabular-nums text-red-600 dark:text-red-400"
+                        : difference > 0.005
+                          ? "text-right tabular-nums text-amber-600 dark:text-amber-400"
+                          : "text-right tabular-nums text-muted-foreground"
+                    }
+                    title={
+                      difference < -0.005
+                        ? "Short: less has been recorded than the ledger says was withheld"
+                        : difference > 0.005
+                          ? "Over: more has been recorded than the ledger says was withheld"
+                          : "Matched within ₱1"
+                    }
+                  >
+                    {formatCurrency(difference)}
+                  </TableCell>
+                  <TableCell className="pr-5">
+                    <StatusBadge status={period.status} label={certificateStatusLabel(period.status)} />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </section>
 
       <CertificateDetailDialog
         certificate={viewing}
@@ -489,6 +461,8 @@ export function CertificatesTab({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </section>
+    </div>
   );
 }
+
+

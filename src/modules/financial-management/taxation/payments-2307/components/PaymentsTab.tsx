@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency, formatNumber } from "@/lib/utils";
-import { PAGE_SIZE, PERIOD_KEYS, PERIOD_LABELS } from "../constants";
+import { PAGE_SIZE, PAYMENT_PERIOD_KEYS, PAYMENT_PERIOD_LABELS } from "../constants";
 import type { PaymentBody } from "../schemas";
 import type { PaymentRow } from "../types";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
@@ -79,7 +79,7 @@ export function PaymentsTab({
       if (paidFrom && payment.paidOn < paidFrom) return false;
       if (paidTo && payment.paidOn > paidTo) return false;
       if (!needle) return true;
-      return [payment.formCode, payment.referenceNo, payment.remarks, PERIOD_LABELS[payment.periodKey]].some((value) =>
+      return [payment.formCode, payment.referenceNo, payment.remarks, PAYMENT_PERIOD_LABELS[payment.periodKey]].some((value) =>
         (value ?? "").toLowerCase().includes(needle),
       );
     });
@@ -189,9 +189,9 @@ export function PaymentsTab({
               </SelectTrigger>
               <SelectContent className="max-h-60">
                 <SelectItem value="ALL">All periods</SelectItem>
-                {PERIOD_KEYS.map((key) => (
+                {PAYMENT_PERIOD_KEYS.map((key) => (
                   <SelectItem key={key} value={key}>
-                    {PERIOD_LABELS[key]}
+                    {PAYMENT_PERIOD_LABELS[key]}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -283,7 +283,7 @@ export function PaymentsTab({
                   }}
                 >
                   <TableCell className="font-medium tabular-nums">{payment.formCode}</TableCell>
-                  <TableCell>{PERIOD_LABELS[payment.periodKey]}</TableCell>
+                  <TableCell>{PAYMENT_PERIOD_LABELS[payment.periodKey]}</TableCell>
                   <TableCell className="tabular-nums">{payment.paidOn}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatCurrency(payment.amount)}</TableCell>
                   <TableCell>
@@ -372,7 +372,7 @@ export function PaymentsTab({
         title="Delete this payment?"
         description={
           deleting
-            ? `${deleting.formCode}, ${PERIOD_LABELS[deleting.periodKey]}, ${formatCurrency(deleting.amount)}. The change log keeps the deleted values.`
+            ? `${deleting.formCode}, ${PAYMENT_PERIOD_LABELS[deleting.periodKey]}, ${formatCurrency(deleting.amount)}. The change log keeps the deleted values.`
             : ""
         }
         isSaving={isSaving}
@@ -386,3 +386,4 @@ export function PaymentsTab({
     </section>
   );
 }
+

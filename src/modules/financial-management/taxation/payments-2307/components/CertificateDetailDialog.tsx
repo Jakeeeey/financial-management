@@ -121,3 +121,4 @@ export function CertificateDetailDialog({ certificate, onOpenChange }: Props) {
     </Dialog>
   );
 }
+

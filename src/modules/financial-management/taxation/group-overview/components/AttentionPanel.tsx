@@ -192,3 +192,4 @@ export function AttentionPanel({ attention }: { attention: GroupAttentionItem[] 
     </section>
   );
 }
+

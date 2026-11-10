@@ -87,3 +87,4 @@ export async function appendChangeLog(entry: ChangeLogEntry, actor: Actor): Prom
     return false;
   }
 }
+

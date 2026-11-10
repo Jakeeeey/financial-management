@@ -305,3 +305,4 @@ export async function loadYearTotals(company: RegistryCompany, taxYear: number) 
 
   return totals;
 }
+

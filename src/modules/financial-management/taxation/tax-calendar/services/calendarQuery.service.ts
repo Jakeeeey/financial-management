@@ -1,14 +1,15 @@
 import "server-only";
 
-import { groupedByDate } from "./companyClient";
+import { groupedByDate, sumFields } from "./companyClient";
 import { loadFigures } from "./companyFigures";
 import { loadProfile } from "./profile.service";
+import { loadTaxRates } from "./taxRates.service";
 import { computeTax, computeVat } from "./taxEngine";
 import { buildObligations, calendarNotices, type CompanyCalendarInput } from "./calendar.service";
 import { asString, listItems } from "./directus";
 import { listRegistryCompaniesWithHealth } from "./registry";
 import { phtToday } from "../pht";
-import type { CalendarObligation, RegistryCompany } from "../types";
+import type { CalendarObligation, QuarterFigures, RegistryCompany } from "../types";
 
 /** Reads the recorded payments so a filing can show as paid instead of due. */
 async function loadPaidKeys(taxYear: number): Promise<Set<string>> {
@@ -29,8 +30,10 @@ async function loadPaidKeys(taxYear: number): Promise<Set<string>> {
 }
 
 /** Withholding recorded on purchase orders, bucketed into twelve months. */
-async function loadMonthlyWithholding(company: RegistryCompany, taxYear: number): Promise<number[]> {
-  const months = new Array<number>(12).fill(0);
+async function loadMonthlyWithholding(company: RegistryCompany, taxYear: number): Promise<(number | null)[]> {
+  const months = new Array<number | null>(12).fill(null);
+  const from = `${taxYear}-01-01`;
+  const to = `${taxYear}-12-31`;
   try {
     const rows = await groupedByDate(
       company.baseUrl,
@@ -39,57 +42,74 @@ async function loadMonthlyWithholding(company: RegistryCompany, taxYear: number)
       "purchase_order",
       "date",
       { withholding_tax_amount: "sum" },
-      `${taxYear}-01-01`,
-      `${taxYear}-12-31`,
+      from,
+      to,
     );
     for (const row of rows) {
       const month = Number(row.date.slice(5, 7));
-      if (month >= 1 && month <= 12) months[month - 1] += row.sums.withholding_tax_amount ?? 0;
+      if (month >= 1 && month <= 12) months[month - 1] = (months[month - 1] ?? 0) + (row.sums.withholding_tax_amount ?? 0);
     }
+    // A register with no withheld amount anywhere cannot tell "nothing was withheld" from
+    // "nobody recorded it"; the calendar says so instead of printing a confident zero.
+    const recorded = await sumFields(company.baseUrl, company.token, company.code, "purchase_order", [
+      "withholding_tax_amount",
+    ], { _and: [{ date: { _gte: from } }, { date: { _lte: to } }, { withholding_tax_amount: { _gt: 0 } }] });
+    if (!recorded.withholding_tax_amount) return new Array<number | null>(12).fill(null);
   } catch {
-    return months;
+    return new Array<number | null>(12).fill(null);
   }
   return months;
 }
 
-async function buildCompanyInput(company: RegistryCompany, taxYear: number): Promise<CompanyCalendarInput> {
+function emptyQuarter(): QuarterFigures {
+  return {
+    sales: 0,
+    salesVat: 0,
+    discounts: 0,
+    returns: 0,
+    returnsVat: 0,
+    purchases: 0,
+    purchasesVat: 0,
+    cogsProductCost: 0,
+    expenses: 0,
+    cwt: 0,
+    icSales: 0,
+    icPurchases: 0,
+    icSalesByCompany: {},
+    icPurchasesByCompany: {},
+  };
+}
+
+async function buildCompanyInput(
+  company: RegistryCompany,
+  taxYear: number,
+  springToken: string | null,
+): Promise<CompanyCalendarInput> {
   const profile = await loadProfile(company.companyId, taxYear);
 
   if (!company.reachable) {
-    const empty = [0, 1, 2, 3].map(() => ({
-      sales: 0,
-      salesVat: 0,
-      returns: 0,
-      returnsVat: 0,
-      purchases: 0,
-      purchasesVat: 0,
-      expenses: 0,
-      cwt: 0,
-      icSales: 0,
-      icPurchases: 0,
-      icSalesByCompany: {},
-      icPurchasesByCompany: {},
-    }));
+    const empty = [0, 1, 2, 3].map(emptyQuarter);
     return {
       company,
       profile,
       computation: computeTax(empty, profile),
       vat: computeVat(empty, profile),
-      monthlyWithholding: new Array<number>(12).fill(0),
+      monthlyWithholding: new Array<number | null>(12).fill(null),
       quarterlySales: [0, 0, 0, 0],
     };
   }
 
-  const [{ figures }, monthlyWithholding] = await Promise.all([
-    loadFigures(company, taxYear, []),
+  const [{ figures }, monthlyWithholding, rates] = await Promise.all([
+    loadFigures(company, taxYear, [], { springToken }),
     loadMonthlyWithholding(company, taxYear),
+    loadTaxRates(company, taxYear),
   ]);
 
   return {
     company,
     profile,
-    computation: computeTax(figures, profile),
-    vat: computeVat(figures, profile),
+    computation: computeTax(figures, profile, rates),
+    vat: computeVat(figures, profile, rates),
     monthlyWithholding,
     quarterlySales: figures.map((quarter) => quarter.sales + quarter.icSales),
   };
@@ -102,8 +122,34 @@ export interface CalendarResult {
   today: string;
 }
 
+/**
+ * Nine companies of registers per year, re-read on every switch. The token is not part of
+ * the key: it decides whether the Spring sales view can be read, not whose filings they are.
+ */
+const CACHE_TTL_MS = 10 * 60_000;
+const cache = new Map<string, { at: number; data: CalendarResult }>();
+
 /** Every filing in the group for one tax year, across every company the registry knows. */
-export async function listCalendar(taxYear: number, companyId: number | null): Promise<CalendarResult> {
+export async function listCalendar(
+  taxYear: number,
+  companyId: number | null,
+  options: { fresh?: boolean; springToken?: string | null } = {},
+): Promise<CalendarResult> {
+  const day = new Date().toISOString().slice(0, 10);
+  const key = `${taxYear}:${companyId ?? "all"}:${options.springToken ? options.springToken.slice(-8) : "anon"}:${day}`;
+  const hit = cache.get(key);
+  if (!options.fresh && hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.data;
+
+  const data = await buildCalendar(taxYear, companyId, options.springToken ?? null);
+  cache.set(key, { at: Date.now(), data });
+  return data;
+}
+
+async function buildCalendar(
+  taxYear: number,
+  companyId: number | null,
+  springToken: string | null,
+): Promise<CalendarResult> {
   const today = phtToday();
   const [companies, paidKeys] = await Promise.all([listRegistryCompaniesWithHealth(), loadPaidKeys(taxYear)]);
 
@@ -113,7 +159,7 @@ export async function listCalendar(taxYear: number, companyId: number | null): P
   const obligations: CalendarObligation[] = [];
   for (const company of scoped) {
     try {
-      const input = await buildCompanyInput(company, taxYear);
+      const input = await buildCompanyInput(company, taxYear, springToken);
       const rows = buildObligations(input, taxYear, paidKeys, today);
       // A company that did not answer has no amount; zero would read as a real figure.
       if (!company.reachable) {
@@ -148,3 +194,6 @@ export async function listCalendar(taxYear: number, companyId: number | null): P
     today,
   };
 }
+
+
+

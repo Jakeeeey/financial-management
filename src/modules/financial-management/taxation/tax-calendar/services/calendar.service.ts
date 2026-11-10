@@ -19,7 +19,8 @@ export interface CompanyCalendarInput {
   computation: TaxComputation;
   vat: VatComputation;
   /** Withholding recorded on purchase orders, 12 entries, January first. */
-  monthlyWithholding: number[];
+  /** Null when the instance records no withholding at all, which is not the same as zero. */
+  monthlyWithholding: (number | null)[];
   /** Total VATable sales + intercompany sales per quarter, for the percentage tax. */
   quarterlySales: number[];
 }
@@ -123,7 +124,7 @@ export function buildObligations(
         label0,
         isoOf(month === 11 ? year + 1 : year, month === 11 ? 2 : month + 2, monthlyDueDay(profile)),
         "WITHHOLDING",
-        monthlyWithholding[month] ?? 0,
+        monthlyWithholding[month] ?? null,
         null,
       );
     }
@@ -135,7 +136,7 @@ export function buildObligations(
       endOfMonth(year, (quarter + 1) * 3 + 1),
       "WITHHOLDING",
       // 0619-E covers the quarter's first two months; this return carries the third.
-      monthlyWithholding[quarter * 3 + 2] ?? 0,
+      monthlyWithholding[quarter * 3 + 2] ?? null,
       "Covers the third month of the quarter; the first two were remitted on 0619-E.",
     );
   }
@@ -177,3 +178,4 @@ export function buildObligations(
 export function calendarNotices(year: number): string[] {
   return [HOLIDAY_CAVEAT, `Filing dates for ${year} follow the FSD calendar table; confirm any proclamation change before filing.`];
 }
+

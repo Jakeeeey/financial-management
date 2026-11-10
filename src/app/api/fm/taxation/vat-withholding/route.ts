@@ -1,6 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { z } from "zod";
 
+import { COOKIE_NAME } from "@/lib/auth-utils";
 import { phtToday } from "@/modules/financial-management/taxation/vat-withholding/pht";
 import { DirectusError } from "@/modules/financial-management/taxation/vat-withholding/services/directus";
 import { listRegistryCompaniesWithHealth } from "@/modules/financial-management/taxation/vat-withholding/services/registry";
@@ -17,8 +19,8 @@ const querySchema = z.object({
   year: z.coerce.number().int().min(2000).max(2100).default(Number(phtToday().slice(0, 4))),
 });
 
-export async function GET(request: Request) {
-  const url = new URL(request.url);
+export async function GET(request: NextRequest) {
+  const url = request.nextUrl;
   const parsed = querySchema.safeParse({
     companyId: url.searchParams.get("companyId") ?? undefined,
     year: url.searchParams.get("year") ?? undefined,
@@ -31,14 +33,17 @@ export async function GET(request: Request) {
     );
   }
 
+  const fresh = url.searchParams.get("refresh") === "1";
+  const springToken = (await cookies()).get(COOKIE_NAME)?.value ?? null;
+
   try {
-    const companies = await listRegistryCompaniesWithHealth();
+    const companies = await listRegistryCompaniesWithHealth({ fresh });
     // No company asked for: open on the first one in the registry rather than a guessed id.
     const companyId = parsed.data.companyId ?? companies[0]?.companyId;
     if (!companyId) {
       return NextResponse.json({ success: false, error: "No active company in the registry" }, { status: 404 });
     }
-    const data = await loadVatWithholding(companyId, parsed.data.year, companies);
+    const data = await loadVatWithholding(companyId, parsed.data.year, companies, { fresh, springToken });
     return NextResponse.json({ success: true, data });
   } catch (error) {
     if (error instanceof CompanyNotFoundError) {

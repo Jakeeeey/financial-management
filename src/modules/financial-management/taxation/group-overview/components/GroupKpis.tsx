@@ -4,7 +4,7 @@ import type { GroupTotals } from "../types";
 
 const int = (value: number) => formatNumber(value, "en-PH", 0);
 
-/** `-0.001` renders as “−₱0.00”, which reads like a real debit. */
+/** `-0.001` renders as "-₱0.00", which reads like a real debit. */
 
 const DOT: Record<Tone, string> = {
   success: "bg-emerald-500",
@@ -115,3 +115,5 @@ export function GroupKpis({ totals }: { totals: GroupTotals }) {
     </div>
   );
 }
+
+

@@ -129,7 +129,26 @@ export interface LedgerRequest {
   year: number;
 }
 
-export async function loadIntercompanyLedger({ companyId, year }: LedgerRequest): Promise<IntercompanyPayload> {
+/** Reading every instance's year is the expensive part; switching company or tab should not repeat it. */
+const LEDGER_CACHE_TTL_MS = 5 * 60_000;
+const ledgerCache = new Map<string, { at: number; data: IntercompanyPayload }>();
+
+export async function loadIntercompanyLedger(
+  { companyId, year }: LedgerRequest,
+  options: { fresh?: boolean } = {},
+): Promise<IntercompanyPayload> {
+  const key = `${companyId ?? "all"}:${year}`;
+  const hit = ledgerCache.get(key);
+  if (!options.fresh && hit && Date.now() - hit.at < LEDGER_CACHE_TTL_MS) return hit.data;
+
+  // A throw above or inside the build never reaches the cache, so a failed read is never served.
+  const data = await buildIntercompanyLedger(companyId, year);
+  // A payload carrying notices may be missing an unreachable instance; cache only a clean read.
+  if (data.notices.length === 0) ledgerCache.set(key, { at: Date.now(), data });
+  return data;
+}
+
+async function buildIntercompanyLedger(companyId: number | undefined, year: number): Promise<IntercompanyPayload> {
   const registry = await listRegistryCompanies();
   if (companyId !== undefined && !registry.find((company) => company.companyId === companyId)) {
     throw new IntercompanyLookupError(`Company ${companyId} is not an active entry in the company registry.`, 404);
@@ -201,3 +220,4 @@ export async function loadIntercompanyLedger({ companyId, year }: LedgerRequest)
 
   return { companies, pairs, oneSided, monthly: monthlyRows(selectedLedger), notices };
 }
+

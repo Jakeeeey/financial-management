@@ -1,8 +1,8 @@
 import "server-only";
 
-import { PERIOD_KEYS } from "../constants";
+import { lockPeriodOf, PERIOD_KEYS } from "../constants";
 import { phtStamp } from "../pht";
-import type { PeriodKey, PeriodLockRow } from "../types";
+import type { PaymentPeriodKey, PeriodKey, PeriodLockRow } from "../types";
 import type { Actor } from "./actor";
 import { appendChangeLog, formatValues } from "./changeLog";
 import { asNumber, asString, createItem, isCollectionUnavailable, listItems, updateItem } from "./directus";
@@ -115,16 +115,18 @@ async function findLock(companyId: number, taxYear: number, periodKey: PeriodKey
 export async function assertPeriodUnlocked(
   companyId: number,
   taxYear: number,
-  periodKey: PeriodKey,
+  periodKey: PaymentPeriodKey,
 ): Promise<void> {
+  const lockPeriod = lockPeriodOf(periodKey);
   let lock: PeriodLockRow | null = null;
   try {
-    lock = await findLock(companyId, taxYear, periodKey);
+    // A month is frozen by its quarter's lock, so check the lock the filing actually falls in.
+    lock = await findLock(companyId, taxYear, lockPeriod);
   } catch {
     // The lock table not being readable must not block ordinary work; it is reported in the desk.
     return;
   }
-  if (lock && lock.unlockedAt === null) throw new PeriodLockedError(periodKey);
+  if (lock && lock.unlockedAt === null) throw new PeriodLockedError(lockPeriod);
 }
 
 export async function lockPeriod(input: LockInput, actor: Actor): Promise<{ id: number; locked: boolean }> {

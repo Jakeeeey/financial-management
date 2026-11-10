@@ -21,8 +21,12 @@ function toQuery(filter: ChangeLogFilter): string {
   return params.toString();
 }
 
-export async function fetchChangeLog(filter: ChangeLogFilter): Promise<ChangeLogPayload> {
-  const response = await fetch(`/api/fm/taxation/change-log?${toQuery(filter)}`, { cache: "no-store" });
+export async function fetchChangeLog(filter: ChangeLogFilter, fresh = false): Promise<ChangeLogPayload> {
+  const query = toQuery(filter);
+  const response = await fetch(
+    `/api/fm/taxation/change-log?${query}${fresh ? "&refresh=1" : ""}`,
+    { cache: "no-store" },
+  );
   const body = (await response.json().catch(() => ({}))) as
     | { success: true; data: ChangeLogPayload }
     | { success: false; error?: string };
@@ -34,3 +38,4 @@ export async function fetchChangeLog(filter: ChangeLogFilter): Promise<ChangeLog
 }
 
 export const PAGE_SIZE = CHANGE_LOG_PAGE_SIZE;
+
