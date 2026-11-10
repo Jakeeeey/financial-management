@@ -56,6 +56,11 @@ export function BatchClearDialog({ checks, open, isSaving, onOpenChange, onSubmi
     return check.checkDate.length >= 10 && value < check.checkDate.slice(0, 10);
   });
   const total = checks.reduce((sum, check) => sum + check.amount, 0);
+  const sharedDate = checks.length > 0 ? dateFor(checks[0]) : "";
+  const allSameDate = checks.length > 1 && checks.every((check) => dateFor(check) === sharedDate);
+  const batchDisabledTitle = allSameDate
+    ? "Every selected check already has this clearing date. Change one row to enable the batch controls."
+    : undefined;
 
   async function handleSubmit() {
     setTouched(true);
@@ -73,43 +78,50 @@ export function BatchClearDialog({ checks, open, isSaving, onOpenChange, onSubmi
               Confirm cleared by bank: {checks.length} {checks.length === 1 ? "check" : "checks"}
             </DialogTitle>
             <DialogDescription className="line-clamp-2 max-w-2xl">
-              The date the bank shows each check paid (issued) or credited (received). This moves the amount out of GL
-              232100 into the bank GL.
+              The date the bank shows each check paid (issued) or credited (received). Recording it moves the amount
+              into the bank account.
             </DialogDescription>
           </DialogHeader>
 
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
-            <div className="grid items-end gap-3 sm:grid-cols-[minmax(0,220px)_auto]">
-              <div className="space-y-1.5">
-                <Label htmlFor="batch-clear-date" className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Same date for all
-                </Label>
-                <DateField
-                  id="batch-clear-date"
-                  inDialog
-                  value={sameDate}
-                  maxDate={today}
-                  onChange={(value) => setSameDate(value)}
-                />
+            {checks.length > 1 ? (
+              <div className="grid items-end gap-3 sm:grid-cols-[minmax(0,220px)_auto]">
+                <div className="space-y-1.5">
+                  <Label
+                    htmlFor="batch-clear-date"
+                    className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+                  >
+                    Same date for all
+                  </Label>
+                  <DateField
+                    id="batch-clear-date"
+                    inDialog
+                    value={sameDate}
+                    maxDate={today}
+                    disabled={allSameDate}
+                    title={batchDisabledTitle}
+                    onChange={(value) => setSameDate(value)}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={allSameDate}
+                  title={batchDisabledTitle}
+                  onClick={() => setDates(Object.fromEntries(checks.map((check) => [check.id, sameDate])))}
+                >
+                  Apply to all
+                </Button>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setDates(Object.fromEntries(checks.map((check) => [check.id, sameDate])))}
-              >
-                Apply to all
-              </Button>
-            </div>
+            ) : null}
 
-            <div className="overflow-hidden rounded-xl border border-border/50">
-              <Table>
+            <div className="overflow-x-auto rounded-xl border border-border/50">
+              <Table className="min-w-[720px]">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[130px]">Check no.</TableHead>
-                    <TableHead className="w-[100px]">Direction</TableHead>
-                    <TableHead className="max-w-[160px]">Account</TableHead>
-                    <TableHead className="max-w-[180px]">Payee / customer</TableHead>
+                    <TableHead className="w-[140px]">Check no.</TableHead>
+                    <TableHead className="max-w-[200px]">Payee / customer</TableHead>
                     <TableHead className="w-[120px] text-right">Amount</TableHead>
                     <TableHead className="w-[110px]">Check date</TableHead>
                     <TableHead className="w-[170px]">
@@ -131,13 +143,7 @@ export function BatchClearDialog({ checks, open, isSaving, onOpenChange, onSubmi
                             <span className="block truncate text-xs text-muted-foreground">{check.draweeBank}</span>
                           ) : null}
                         </TableCell>
-                        <TableCell className="text-sm">{check.direction === "ISSUED" ? "Issued" : "Received"}</TableCell>
-                        <TableCell className="max-w-[160px] text-sm">
-                          <span className="block truncate" title={check.bankAccountLabel}>
-                            {check.bankAccountLabel}
-                          </span>
-                        </TableCell>
-                        <TableCell className="max-w-[180px] text-sm">
+                        <TableCell className="max-w-[200px] text-sm">
                           <span className="block truncate" title={check.payee ?? check.payor ?? undefined}>
                             {check.payee ?? check.payor ?? "—"}
                           </span>
@@ -162,8 +168,8 @@ export function BatchClearDialog({ checks, open, isSaving, onOpenChange, onSubmi
                 </TableBody>
                 <TableFooter>
                   <TableRow>
-                    <TableCell colSpan={4} className="text-sm font-medium">
-                      {checks.length} check(s)
+                    <TableCell colSpan={2} className="text-sm font-medium">
+                      Total
                     </TableCell>
                     <TableCell className="text-right text-sm font-semibold tabular-nums">{formatCurrency(total)}</TableCell>
                     <TableCell colSpan={2} />

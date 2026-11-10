@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-import { phtDisplayStamp, phtToday } from "../pht";
+import { phtDateLabel, phtToday } from "../pht";
 import { OptionCombobox } from "./OptionCombobox";
 import type { CheckbookSeries } from "../types";
 
@@ -162,7 +162,7 @@ export function CheckbookDialog({ open, onOpenChange, accounts, isSaving, loadSe
                 </Alert>
               ) : series.length === 0 ? (
                 <p className="rounded-lg border border-border/50 px-4 py-6 text-center text-sm text-muted-foreground">
-                  No checkbook series yet. Until one exists, issuing a check has no leaf number to take.
+                  No checkbook series yet. Until one exists, issuing a check has no check number to take.
                 </p>
               ) : (
                 <div className="overflow-x-auto rounded-lg border border-border/50">
@@ -172,9 +172,9 @@ export function CheckbookDialog({ open, onOpenChange, accounts, isSaving, loadSe
                         <TableHead className="w-[90px]">Series</TableHead>
                         <TableHead className="max-w-[240px]">Account</TableHead>
                         <TableHead className="w-[170px]">Range</TableHead>
-                        <TableHead className="w-[110px]">Next leaf</TableHead>
+                        <TableHead className="w-[120px]">Next check no.</TableHead>
                         <TableHead className="w-[110px] text-right">Remaining</TableHead>
-                        <TableHead className="w-[170px]">Registered (PHT)</TableHead>
+                        <TableHead className="w-[130px]">Registered</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -196,7 +196,7 @@ export function CheckbookDialog({ open, onOpenChange, accounts, isSaving, loadSe
                               {remaining === 0 ? "Exhausted" : entry.nextNo ?? entry.seriesStart}
                             </TableCell>
                             <TableCell className="text-right text-sm tabular-nums">{remaining}</TableCell>
-                            <TableCell className="whitespace-nowrap text-sm">{phtDisplayStamp(entry.createdAt)}</TableCell>
+                            <TableCell className="whitespace-nowrap text-sm">{phtDateLabel(entry.createdAt)}</TableCell>
                           </TableRow>
                         );
                       })}
@@ -205,7 +205,7 @@ export function CheckbookDialog({ open, onOpenChange, accounts, isSaving, loadSe
                 </div>
               )}
               <p className="text-xs text-muted-foreground">
-                Today is {phtToday()} (PHT). A series must belong to the account the checks are drawn on.
+                Today is {phtDateLabel(phtToday())}. A series must belong to the account the checks are drawn on.
               </p>
             </div>
           </div>

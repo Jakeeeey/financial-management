@@ -13,6 +13,8 @@ import { StatusBadge } from "./StatusBadge";
 
 interface TransfersClearingPanelProps {
   clearing: TransactionRow[];
+  /** Keys a settlement needs and this instance has not mapped yet; empty when it can post. */
+  mappingMissing: string[];
   isLoading: boolean;
   isSaving: boolean;
   onSettle: (row: TransactionRow) => void;
@@ -20,8 +22,16 @@ interface TransfersClearingPanelProps {
 }
 
 /** PENDING transfers parked in transfer-in-transit, each settleable once its value date arrives. */
-export function TransfersClearingPanel({ clearing, isLoading, isSaving, onSettle, onOpenRow }: TransfersClearingPanelProps) {
+export function TransfersClearingPanel({
+  clearing,
+  mappingMissing,
+  isLoading,
+  isSaving,
+  onSettle,
+  onOpenRow,
+}: TransfersClearingPanelProps) {
   const today = phtToday();
+  const blocked = mappingMissing.length > 0;
 
   return (
     <section
@@ -32,13 +42,24 @@ export function TransfersClearingPanel({ clearing, isLoading, isSaving, onSettle
         <div className="min-w-0">
           <h2 className="text-sm font-semibold">Transfers in clearing</h2>
           <p className="text-xs text-muted-foreground">
-            Money already out of the source account, waiting for its value date.
+            The money already left the source account; settling books it into the destination account.
           </p>
         </div>
         <Badge variant="outline" className="tabular-nums text-[11px]">
           {formatNumber(clearing.length)} transfers
         </Badge>
       </header>
+
+      {blocked ? (
+        <div className="mx-4 mb-3 rounded-xl border border-amber-500/40 bg-amber-50/60 px-4 py-3 text-sm dark:bg-amber-950/20">
+          <p className="font-medium text-amber-900 dark:text-amber-200">Settling needs one GL mapping first.</p>
+          <p className="mt-1 text-amber-800 dark:text-amber-300">
+            This instance has no account mapped to <span className="font-mono text-xs">{mappingMissing.join(", ")}</span>,
+            so a settlement cannot post. Accounting sets it in the <span className="font-mono text-xs">bank_gl_mapping</span>{" "}
+            table; these {formatNumber(clearing.length)} transfers settle as soon as it exists.
+          </p>
+        </div>
+      ) : null}
 
       {isLoading && clearing.length === 0 ? (
         <div className="space-y-2 p-4">
@@ -110,12 +131,18 @@ export function TransfersClearingPanel({ clearing, isLoading, isSaving, onSettle
                           type="button"
                           size="sm"
                           variant="outline"
-                          disabled={!canSettle || isSaving}
-                          title={canSettle ? undefined : "Value date not reached"}
+                          disabled={!canSettle || isSaving || blocked}
+                          title={
+                            blocked
+                              ? `Map ${mappingMissing.join(", ")} in bank_gl_mapping first`
+                              : canSettle
+                                ? undefined
+                                : "Value date not reached"
+                          }
                           onClick={() => onSettle(row)}
                           aria-label={`Settle transfer ${row.refNo}`}
                         >
-                          Settle leg 2
+                          Settle
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -171,11 +198,12 @@ export function TransfersClearingPanel({ clearing, isLoading, isSaving, onSettle
                       type="button"
                       size="sm"
                       variant="outline"
-                      disabled={!canSettle || isSaving}
+                      disabled={!canSettle || isSaving || blocked}
+                      title={blocked ? `Map ${mappingMissing.join(", ")} in bank_gl_mapping first` : undefined}
                       onClick={() => onSettle(row)}
                       aria-label={`Settle transfer ${row.refNo}`}
                     >
-                      Settle leg 2
+                      Settle
                     </Button>
                   </div>
                 </li>

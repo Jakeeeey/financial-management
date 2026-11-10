@@ -4,6 +4,7 @@ import { PAGE_SIZE } from "../constants";
 import type { TransactionFilters, TransactionKind, TransactionRow, TransactionsPayload } from "../types";
 import { listAccounts, listExpenseAccounts, toAccountOption } from "./accounts.service";
 import { asNumber, asString, DirectusError, listItems } from "./directus";
+import { transferMappingState } from "./gl.service";
 
 /**
  * The combined Cash & Bank Transactions list.
@@ -82,6 +83,7 @@ export async function listTransactions(filters: TransactionFilters): Promise<Tra
     filters.kind === "TRANSFER" ? { rows: [], total: 0 } : await readMemos(filters, labels, bankIds, notices);
   const transferResult = await readTransfers(filters, labels, bankIds, notices);
   const clearing = await readPendingTransfers(labels, notices);
+  const mappingMissing = clearing.length > 0 ? await transferMappingState() : [];
 
   const merged = [...memoResult.rows, ...transferResult.rows].sort((a, b) => {
     if (a.row.date !== b.row.date) return a.row.date < b.row.date ? 1 : -1;
@@ -100,6 +102,8 @@ export async function listTransactions(filters: TransactionFilters): Promise<Tra
     accounts: accountResult.accounts.map(toAccountOption),
     expenseAccounts,
     clearing: clearing.map((entry) => entry.row),
+    mappingMissing,
+    kinds: [...new Set(merged.map((entry) => entry.row.kind))],
     notice: notices.length ? [...new Set(notices)].join(" ") : null,
   };
 }

@@ -73,6 +73,18 @@ export function CheckModule() {
 
   const selectedChecks = checks.filter((check) => selected.has(check.id));
 
+  const registerTotal =
+    counts.PENDING + counts.RECEIVED + counts.IN_CLEARING + counts.CLEARED + counts.RETURNED + counts.CANCELLED;
+  const isFiltered =
+    Boolean(filters.q) ||
+    (filters.direction ?? "ALL") !== "ALL" ||
+    (filters.status ?? "ALL") !== "ALL" ||
+    (filters.flag ?? "ALL") !== "ALL" ||
+    filters.accountId !== undefined ||
+    filters.bank !== undefined ||
+    filters.from !== undefined ||
+    filters.to !== undefined;
+
   const tiles = [
     {
       key: "OPEN",
@@ -126,26 +138,29 @@ export function CheckModule() {
         </Alert>
       )}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-        {tiles.map((tile) => (
-          <Card
-            key={tile.key}
-            className={cn(
-              "overflow-hidden border-border/50 border-l-[3px] bg-gradient-to-br to-transparent shadow-none",
-              accentClass(tile.tone),
-            )}
-          >
-            <CardContent className="p-3">
-              <div className="flex items-start justify-between gap-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{tile.label}</p>
-                <span className={cn("shrink-0 rounded-lg border p-1.5", toneClass(tile.tone))} aria-hidden="true">
-                  <tile.icon className="h-4 w-4" />
-                </span>
-              </div>
-              <p className="mt-1 text-lg font-semibold tabular-nums">{formatNumber(tile.count)}</p>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+          {tiles.map((tile) => (
+            <Card
+              key={tile.key}
+              className={cn(
+                "overflow-hidden border-border/50 border-l-[3px] bg-gradient-to-br to-transparent shadow-none",
+                accentClass(tile.tone),
+              )}
+            >
+              <CardContent className="p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{tile.label}</p>
+                  <span className={cn("shrink-0 rounded-lg border p-1.5", toneClass(tile.tone))} aria-hidden="true">
+                    <tile.icon className="h-4 w-4" />
+                  </span>
+                </div>
+                <p className="mt-1 text-lg font-semibold tabular-nums">{formatNumber(tile.count)}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">Totals cover the whole register, not the filtered view.</p>
       </div>
 
       <CheckFlow />
@@ -160,6 +175,9 @@ export function CheckModule() {
           />
         }
         checks={checks}
+        total={registerTotal}
+        filtered={isFiltered}
+        inClearingCount={counts.IN_CLEARING}
         isLoading={isLoading}
         page={page}
         onPageChange={setPage}

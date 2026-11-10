@@ -57,6 +57,10 @@ export interface TransactionsPayload {
   expenseAccounts: ExpenseAccountOption[];
   /** PENDING transfers still parked in TRANSFER_IN_TRANSIT. */
   clearing: TransactionRow[];
+  /** GL mapping keys a transfer settlement needs and this instance has not mapped. */
+  mappingMissing: string[];
+  /** Document kinds the current result set actually holds, so the filter never offers a dead option. */
+  kinds: TransactionKind[];
   /** Set when a not-yet-created collection made part of the page unavailable. */
   notice: string | null;
 }

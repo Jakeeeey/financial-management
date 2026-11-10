@@ -101,10 +101,10 @@ export function EditAccountDialog({
           <form onSubmit={form.handleSubmit(handleSubmit)} className="flex max-h-[85vh] flex-col overflow-hidden">
             <DialogHeader className="border-b px-6 py-4">
               <DialogTitle className="line-clamp-1">
-                Edit {account ? `${account.bankName} ${account.accountNumber}` : "account"}
+                {account ? account.bankName : "Edit account"}
               </DialogTitle>
-              <DialogDescription>
-                Update the holder, branch, type, linked GL, status or effective date.
+              <DialogDescription className="tabular-nums">
+                {account ? account.accountNumber : "Account number unavailable"}
               </DialogDescription>
             </DialogHeader>
 

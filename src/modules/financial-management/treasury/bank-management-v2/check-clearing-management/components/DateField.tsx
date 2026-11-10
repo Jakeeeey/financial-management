@@ -27,6 +27,7 @@ interface DateFieldProps {
   /** Set inside a Dialog: a portalled popover is dismissed by the dialog's layer on click. */
   inDialog?: boolean;
   className?: string;
+  title?: string;
   "aria-label"?: string;
   "aria-invalid"?: boolean;
   "aria-describedby"?: string;
@@ -56,6 +57,7 @@ export function DateField({
   maxDate,
   inDialog = false,
   className,
+  title,
   ...aria
 }: DateFieldProps) {
   const selected = parseDateValue(value);
@@ -73,6 +75,7 @@ export function DateField({
           type="button"
           variant="outline"
           disabled={disabled}
+          title={title}
           aria-label={aria["aria-label"]}
           aria-invalid={aria["aria-invalid"]}
           aria-describedby={aria["aria-describedby"]}

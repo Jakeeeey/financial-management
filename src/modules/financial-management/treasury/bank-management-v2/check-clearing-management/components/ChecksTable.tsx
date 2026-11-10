@@ -71,6 +71,12 @@ type Props = {
   selected: Set<number>;
   onSelectionChange: (next: Set<number>) => void;
   onBulkClear: () => void;
+  /** Register-wide row count across every status; the header chip reports it. */
+  total: number;
+  /** True when any register filter is active, so the chip can read "N of M". */
+  filtered: boolean;
+  /** Register-wide in-clearing count, the same number the IN CLEARING tile shows. */
+  inClearingCount: number;
   /** Filter band rendered inside the register card, like every other V2 table. */
   filters: ReactNode;
 };
@@ -85,6 +91,9 @@ export function ChecksTable({
   selected,
   onSelectionChange,
   onBulkClear,
+  total,
+  filtered,
+  inClearingCount,
   filters,
 }: Props) {
 
@@ -94,7 +103,7 @@ export function ChecksTable({
   const safePage = Math.min(page, pageCount);
   const rows = checks.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
-  const clearable = checks.filter(canClear);
+  const inClearingRows = checks.filter((row) => row.status === "IN_CLEARING" && canClear(row));
   const pageClearable = rows.filter(canClear);
   const allOnPageSelected = pageClearable.length > 0 && pageClearable.every((row) => selected.has(row.id));
   const selectedRows = checks.filter((row) => selected.has(row.id));
@@ -127,7 +136,9 @@ export function ChecksTable({
           <p className="text-xs text-muted-foreground">Click a row for its details and audit trail.</p>
         </div>
         <Badge variant="outline" className="tabular-nums text-[11px]">
-          {formatNumber(checks.length)} checks
+          {filtered
+            ? `${formatNumber(checks.length)} of ${formatNumber(total)} checks`
+            : `${formatNumber(total)} checks`}
         </Badge>
       </header>
 
@@ -154,10 +165,17 @@ export function ChecksTable({
               type="button"
               variant="outline"
               size="sm"
-              disabled={clearable.length === 0}
-              onClick={() => onSelectionChange(new Set(clearable.map((row) => row.id)))}
+              disabled={inClearingRows.length === 0}
+              title={
+                inClearingRows.length === 0
+                  ? "No in-clearing checks in the current view."
+                  : filtered
+                    ? "Selects the in-clearing checks in the current view."
+                    : undefined
+              }
+              onClick={() => onSelectionChange(new Set(inClearingRows.map((row) => row.id)))}
             >
-              Select all in clearing ({clearable.length})
+              Select all in clearing ({formatNumber(inClearingCount)})
             </Button>
           </>
         ) : (
@@ -334,6 +352,9 @@ export function ChecksTable({
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium" title={check.checkNo}>
                   {check.checkNo} · {check.direction === "ISSUED" ? "Issued" : "Received"}
+                </p>
+                <p className="truncate text-xs" title={check.payee ?? check.payor ?? undefined}>
+                  {check.payee ?? check.payor ?? "—"}
                 </p>
                 <p className="truncate text-xs text-muted-foreground" title={check.bankAccountLabel}>
                   {check.bankAccountLabel} · {toPhtDateString(check.checkDate)}

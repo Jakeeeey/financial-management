@@ -5,7 +5,7 @@ import { Info, Plus, RefreshCw } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { cn, formatNumber } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 import { useOnboarding } from "./hooks/useOnboarding";
 import type { BankAccountV2 } from "./types";
@@ -19,6 +19,7 @@ export function OnboardingModule() {
   const {
     accounts,
     total,
+    registerTotal,
     options,
     notice,
     filters,
@@ -45,7 +46,7 @@ export function OnboardingModule() {
         <div className="min-w-0 space-y-1">
           <h1 className="text-xl font-semibold sm:text-2xl">Bank &amp; Account Onboarding</h1>
           <p className="text-sm text-muted-foreground">
-            {isLoading ? "Loading the register…" : `${formatNumber(total)} account${total === 1 ? "" : "s"} in the register`}
+            The accounts the group collects into, pays from and disburses out of.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -100,16 +101,13 @@ export function OnboardingModule() {
         accounts={accounts}
         isLoading={isLoading}
         total={total}
+        registerTotal={registerTotal}
+        isFiltered={activeFilterCount > 0}
         page={page}
         pageSize={pageSize}
         onEdit={setEditing}
         onPageChange={setPage}
       />
-
-      <p className="text-xs text-muted-foreground">
-        Active accounts appear in purchase order payment, sales order collection and disbursement lists. Dormant and
-        closed accounts do not.
-      </p>
 
       <RegisterAccountDialog
         open={registerOpen}

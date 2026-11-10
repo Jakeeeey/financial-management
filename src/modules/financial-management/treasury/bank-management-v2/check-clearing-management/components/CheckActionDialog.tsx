@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { ChevronDown, Loader2 } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -14,6 +13,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -22,7 +28,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { cn, formatCurrency } from "@/lib/utils";
 
-import { actionTone, CHECK_RETURN_REASONS, toneClass } from "../constants";
+import { CHECK_RETURN_REASONS, statusLabel } from "../constants";
 import { phtDate, phtDisplayStamp, toPhtDateString } from "../pht";
 import { DateField } from "./DateField";
 import { StatusBadge } from "./StatusBadge";
@@ -56,6 +62,9 @@ const SOURCE_LABELS: Record<string, string> = {
   DISBURSEMENT: "Disbursement",
   REPLACEMENT: "Replacement",
 };
+
+/** The one action worth a primary button per status; everything else lives in the menu. */
+const PRIMARY_ACTIONS: CheckAction[] = ["RELEASE", "DEPOSIT", "CLEAR", "REPLACE"];
 
 function Detail({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -118,6 +127,11 @@ export function CheckActionDialog({
   const amountError = action === "REPLACE" && !(Number(amountValue) > 0) ? "Enter an amount greater than zero." : "";
   const hasErrors = Boolean(reasonError || amountError);
   const journalEvents = events?.filter((entry) => entry.journalNo) ?? [];
+  const availableActions = allowedActions(check).filter((entry) => entry.action !== "VIEW");
+  const primaryAction = availableActions.find((entry) => PRIMARY_ACTIONS.includes(entry.action)) ?? availableActions[0];
+  const menuActions = availableActions.filter((entry) => entry.action !== primaryAction?.action);
+  const safeActions = menuActions.filter((entry) => !entry.destructive);
+  const destructiveActions = menuActions.filter((entry) => entry.destructive);
 
   async function handleSubmit() {
     if (!check || !action || action === "VIEW") return;
@@ -145,43 +159,35 @@ export function CheckActionDialog({
             <DialogTitle className="line-clamp-1">{isView ? `Check ${check.checkNo}` : prompt?.title}</DialogTitle>
             <DialogDescription className="line-clamp-2 max-w-md">
               {isView
-                ? `${check.direction === "ISSUED" ? "Issued" : "Received"} · ${check.bankAccountLabel}`
+                ? `${statusLabel(check.status)} · ${check.direction === "ISSUED" ? "issued by us" : "received from customer"}`
                 : prompt?.body}
             </DialogDescription>
           </DialogHeader>
 
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
             <dl className="grid grid-cols-1 gap-x-8 gap-y-4 text-sm sm:grid-cols-2">
-              <Detail label="Check no.">
-                {check.checkNo}
-                {check.draweeBank ? <span className="text-muted-foreground"> · {check.draweeBank}</span> : null}
-              </Detail>
-              <Detail label="Status">
-                <span className="flex flex-wrap items-center gap-1">
-                  <StatusBadge status={check.status} />
-                  {check.isPdc ? (
-                    <Badge variant="outline" className={cn(toneClass("neutral"), "text-[10px] font-semibold")}>
-                      PDC
-                    </Badge>
-                  ) : null}
-                  {check.isStale ? (
-                    <Badge variant="outline" className={cn(toneClass("danger"), "text-[10px] font-semibold")}>
-                      Stale · {check.ageDays} days
-                    </Badge>
-                  ) : null}
-                </span>
-              </Detail>
-              <Detail label="Direction">
-                {check.direction === "ISSUED" ? "Issued by us" : "Received from customer"}
-              </Detail>
-              <Detail label="Amount">
-                <span className="tabular-nums">{formatCurrency(check.amount)}</span>
-              </Detail>
-              <Detail label={check.direction === "ISSUED" ? "Payee" : "Customer"}>
-                {check.payee ?? check.payor ?? "—"}
-              </Detail>
-              <Detail label="Check date">{toPhtDateString(check.checkDate)}</Detail>
-              <Detail label="Bank account">{check.bankAccountLabel}</Detail>
+              {!isView ? (
+                <>
+                  <Detail label="Check no.">
+                    {check.checkNo}
+                    {check.draweeBank ? <span className="text-muted-foreground"> · {check.draweeBank}</span> : null}
+                  </Detail>
+                  <Detail label="Status">
+                    <StatusBadge status={check.status} />
+                  </Detail>
+                  <Detail label="Direction">
+                    {check.direction === "ISSUED" ? "Issued by us" : "Received from customer"}
+                  </Detail>
+                  <Detail label="Amount">
+                    <span className="tabular-nums">{formatCurrency(check.amount)}</span>
+                  </Detail>
+                  <Detail label={check.direction === "ISSUED" ? "Payee" : "Customer"}>
+                    {check.payee ?? check.payor ?? "—"}
+                  </Detail>
+                  <Detail label="Check date">{toPhtDateString(check.checkDate)}</Detail>
+                  <Detail label="Bank account">{check.bankAccountLabel}</Detail>
+                </>
+              ) : null}
               <Detail label="Source">
                 {SOURCE_LABELS[check.sourceType] ?? check.sourceType}
                 {check.sourceRef ? <span className="text-muted-foreground"> · {check.sourceRef}</span> : null}
@@ -221,7 +227,7 @@ export function CheckActionDialog({
                     id="replacement-check-no"
                     value={replacementNo}
                     maxLength={40}
-                    placeholder="Left blank uses the next leaf"
+                    placeholder="Left blank uses the next check number"
                     onChange={(event) => setReplacementNo(event.target.value)}
                   />
                 </div>
@@ -267,13 +273,15 @@ export function CheckActionDialog({
 
             {isView && (
               <>
-                <div className="border-t pt-4">
-                  <p className="mb-2 text-sm font-semibold">Audit trail</p>
-                  {events === null ? (
+                {events === null ? (
+                  <div className="border-t pt-4">
                     <Skeleton className="h-16 w-full" />
-                  ) : events.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No events recorded yet.</p>
-                  ) : (
+                  </div>
+                ) : null}
+
+                {events !== null && events.length > 0 ? (
+                  <div className="border-t pt-4">
+                    <p className="mb-2 text-sm font-semibold">Audit trail</p>
                     <ul className="max-h-[280px] space-y-3 overflow-y-auto">
                       {events.map((entry) => (
                         <li key={entry.id} className="flex gap-3 text-sm">
@@ -304,18 +312,12 @@ export function CheckActionDialog({
                         </li>
                       ))}
                     </ul>
-                  )}
-                </div>
+                  </div>
+                ) : null}
 
-                <div className="border-t pt-4">
-                  <p className="mb-2 text-sm font-semibold">Journal entries ({journalEvents.length})</p>
-                  {events === null ? (
-                    <Skeleton className="h-10 w-full" />
-                  ) : journalEvents.length === 0 ? (
-                    <p className="rounded-lg border border-dashed px-4 py-3 text-sm text-muted-foreground">
-                      Nothing posts until this check clears the bank.
-                    </p>
-                  ) : (
+                {journalEvents.length > 0 ? (
+                  <div className="border-t pt-4">
+                    <p className="mb-2 text-sm font-semibold">Journal entries</p>
                     <ul className="space-y-1 rounded-lg border px-4 py-3 text-sm">
                       {journalEvents.map((entry) => (
                         <li key={entry.id} className="flex items-center justify-between gap-2">
@@ -326,8 +328,8 @@ export function CheckActionDialog({
                         </li>
                       ))}
                     </ul>
-                  )}
-                </div>
+                  </div>
+                ) : null}
               </>
             )}
           </div>
@@ -336,25 +338,52 @@ export function CheckActionDialog({
           <DialogFooter className="border-t bg-muted/20 px-6 py-4">
             {isView ? (
               <>
-                {allowedActions(check)
-                  .filter((entry) => entry.action !== "VIEW")
-                  .map((entry) => (
-                    <Button
-                      key={entry.action}
-                      type="button"
-                      variant="outline"
-                      className={cn("font-medium", toneClass(actionTone(entry.action)))}
-                      disabled={isSaving}
-                      onClick={() => onSelectAction(entry.action)}
-                    >
-                      {entry.label}
-                    </Button>
-                  ))}
+                {menuActions.length > 0 ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button type="button" variant="outline" disabled={isSaving}>
+                        More actions
+                        <ChevronDown className="ml-2 h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-[210px]">
+                      {safeActions.map((entry) => (
+                        <DropdownMenuItem key={entry.action} onSelect={() => onSelectAction(entry.action)}>
+                          {entry.label}
+                        </DropdownMenuItem>
+                      ))}
+                      {destructiveActions.length > 0 ? (
+                        <>
+                          <DropdownMenuSeparator />
+                          {destructiveActions.map((entry) => (
+                            <DropdownMenuItem
+                              key={entry.action}
+                              onSelect={() => onSelectAction(entry.action)}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              {entry.label}
+                            </DropdownMenuItem>
+                          ))}
+                        </>
+                      ) : null}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : null}
                 <DialogClose asChild>
                   <Button type="button" variant="outline" disabled={isSaving}>
                     Close
                   </Button>
                 </DialogClose>
+                {primaryAction ? (
+                  <Button
+                    type="button"
+                    className="font-medium"
+                    disabled={isSaving}
+                    onClick={() => onSelectAction(primaryAction.action)}
+                  >
+                    {primaryAction.label}
+                  </Button>
+                ) : null}
               </>
             ) : (
               <>

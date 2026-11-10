@@ -130,9 +130,7 @@ export function TransactionsTable({
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 bg-muted/30 px-4 py-3">
         <div className="min-w-0">
           <h2 className="truncate text-sm font-semibold">Bank transactions</h2>
-          <p className="truncate text-xs text-muted-foreground">
-            Credit memos, debit memos, interest earned and fund transfers, newest first.
-          </p>
+          <p className="truncate text-xs text-muted-foreground">Newest first, each with its journal entry.</p>
         </div>
         <Badge variant="outline" className="shrink-0 tabular-nums text-[11px]">
           {formatNumber(total)} transactions
@@ -166,7 +164,7 @@ export function TransactionsTable({
               <TableHeader className="bg-muted/30">
                 <TableRow>
                   <TableHead className="w-[120px]">Date (PHT)</TableHead>
-                  <TableHead className="min-w-[190px]">Account</TableHead>
+                  <TableHead className="min-w-[280px]">Account</TableHead>
                   <TableHead className="w-[130px]">Reference</TableHead>
                   <TableHead className="min-w-[200px]">Payee / description</TableHead>
                   <TableHead className="w-[150px]">Type</TableHead>
@@ -194,12 +192,12 @@ export function TransactionsTable({
                   >
                     <TableCell className="tabular-nums">{row.date}</TableCell>
                     <TableCell>
-                      <span className="block max-w-[240px] truncate" title={row.accountLabel}>
+                      <span className="block max-w-[300px] truncate" title={row.accountLabel}>
                         {row.accountLabel}
                       </span>
                       {row.counterpartLabel ? (
                         <span
-                          className="block max-w-[240px] truncate text-xs text-muted-foreground"
+                          className="block max-w-[300px] truncate text-xs text-muted-foreground"
                           title={`to ${row.counterpartLabel}`}
                         >
                           to {row.counterpartLabel}

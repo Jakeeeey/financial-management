@@ -96,6 +96,16 @@ export function toPhtDateString(value: string | Date | number | null | undefined
   return iso ? iso.slice(0, 10) : "";
 }
 
+const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** `2 Nov 2026` for a stored date, in PHT; `—` when there is no date. */
+export function phtDateLabel(value: string | Date | number | null | undefined): string {
+  const date = toPhtDateString(value);
+  if (!date) return "—";
+  const [year, month, day] = date.split("-").map(Number);
+  return `${day} ${MONTH_LABELS[month - 1] ?? ""} ${year}`;
+}
+
 /** Whole days between a stored stamp and now, in PHT. Negative values mean future. */
 export function daysSince(value: string | Date | number | null | undefined): number {
   const date = toPhtDateString(value);

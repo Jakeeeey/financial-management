@@ -311,6 +311,8 @@ export interface OnboardingQuery extends OnboardingFilterState {
 }
 
 export interface OnboardingListing extends Paginated<BankAccountV2> {
+  /** Accounts in the register before filters, so a filtered count is never read as the total. */
+  registerTotal: number;
   options: OnboardingOptions;
   notice?: string;
 }

@@ -81,7 +81,7 @@ export function CheckFlow() {
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Until a check clears it sits in GL 232100 (check clearing), so the bank GL only ever shows cash the bank has
+          Until a check clears it stays in the check-clearing account, so the bank account only shows cash the bank has
           actually paid or credited. Post-dated checks keep their status and carry a PDC tag until their check date.
         </p>
       </CollapsibleContent>

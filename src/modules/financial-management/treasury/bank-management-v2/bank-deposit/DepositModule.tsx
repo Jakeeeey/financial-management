@@ -153,6 +153,9 @@ export function DepositModule() {
             totalCount={assets.length}
             filters={filters}
             selected={selected}
+            selectedAmount={assets
+              .filter((asset) => selected.has(asset.collectionDetailId))
+              .reduce((sum, asset) => sum + asset.amount, 0)}
             isLoading={isLoading}
             page={assetsPage}
             onPageChange={setAssetsPage}

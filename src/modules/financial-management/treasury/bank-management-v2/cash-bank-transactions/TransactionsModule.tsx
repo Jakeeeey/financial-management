@@ -2,10 +2,8 @@
 
 import { useState } from "react";
 import { Plus } from "lucide-react";
-
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { formatNumber } from "@/lib/utils";
 
 import { CancelMemoDialog } from "./components/CancelMemoDialog";
 import { InlineAlert } from "./components/InlineAlert";
@@ -35,6 +33,8 @@ export function TransactionsModule() {
     accounts,
     expenseAccounts,
     clearing,
+    mappingMissing,
+    knownKinds,
     notice,
     isLoading,
     isSaving,
@@ -55,7 +55,7 @@ export function TransactionsModule() {
         <div className="min-w-0">
           <h1 className="text-xl font-semibold tracking-tight">Cash &amp; Bank Transactions</h1>
           <p className="text-sm text-muted-foreground">
-            Credit memos, debit memos, interest and fund transfers, each posted as a journal entry.
+            Money in and out of the group&apos;s bank accounts, each posted as a journal entry.
           </p>
         </div>
         <Button onClick={() => setDialogOpen(true)} className="min-h-11 shrink-0 md:min-h-0">
@@ -78,10 +78,10 @@ export function TransactionsModule() {
       <Tabs defaultValue="transactions" className="space-y-4">
         <TabsList>
           <TabsTrigger value="transactions" className="min-h-11 md:min-h-0">
-            Bank transactions ({formatNumber(total)})
+            Bank transactions
           </TabsTrigger>
           <TabsTrigger value="clearing" className="min-h-11 md:min-h-0">
-            Transfers in clearing ({formatNumber(clearing.length)})
+            Transfers in clearing
           </TabsTrigger>
         </TabsList>
 
@@ -102,6 +102,7 @@ export function TransactionsModule() {
               <TransactionFiltersBar
                 filters={filters}
                 accounts={accounts}
+                kinds={knownKinds}
                 onChange={patchFilters}
                 onReset={resetFilters}
               />
@@ -112,6 +113,7 @@ export function TransactionsModule() {
         <TabsContent value="clearing">
           <TransfersClearingPanel
             clearing={clearing}
+            mappingMissing={mappingMissing}
             isLoading={isLoading}
             isSaving={isSaving}
             onSettle={(row) => void settle(row)}

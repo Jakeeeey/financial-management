@@ -284,6 +284,13 @@ async function readOptions(rows: RawRow[]): Promise<{ options: OnboardingOptions
     id: typeRegistry.find((option) => option.name.toLowerCase() === name.toLowerCase())?.id ?? null,
     name,
   }));
+  // A register row can carry a type the form never offered; it must still be filterable.
+  for (const row of rows) {
+    const name = asString(row.account_type);
+    if (name !== "" && !accountTypes.some((type) => type.name.toLowerCase() === name.toLowerCase())) {
+      accountTypes.push({ id: null, name });
+    }
+  }
 
   return {
     options: {
@@ -331,6 +338,7 @@ export async function listAccounts(query: OnboardingQuery): Promise<OnboardingLi
     page,
     pageSize,
     total,
+    registerTotal: accountRead.rows.length,
     options,
     notice: [accountRead.notice, optionsNotice].filter(Boolean).join(" ") || undefined,
   };

@@ -13,7 +13,7 @@ import {
   settleFundTransfer,
 } from "../providers/transactionsApi";
 import type { MemoBody, TransferBody } from "../schemas";
-import type { TransactionFilters, TransactionRow, TransactionsPayload } from "../types";
+import type { TransactionFilters, TransactionKind, TransactionRow, TransactionsPayload } from "../types";
 
 function messageOf(error: unknown): string {
   if (error instanceof ApiError) return error.message;
@@ -33,12 +33,15 @@ export function useTransactions() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Kept across loads so filtering to one kind never hides the others from the picker.
+  const [knownKinds, setKnownKinds] = useState<TransactionKind[]>([]);
 
   const load = useCallback(async (next: TransactionFilters) => {
     setIsLoading(true);
     try {
       const data = await fetchTransactions(next);
       setPayload(data);
+      setKnownKinds((current) => [...new Set([...current, ...data.kinds])]);
       setError(null);
     } catch (loadError) {
       setError(messageOf(loadError));
@@ -132,6 +135,8 @@ export function useTransactions() {
     accounts: payload?.accounts ?? [],
     expenseAccounts: payload?.expenseAccounts ?? [],
     clearing: payload?.clearing ?? [],
+    mappingMissing: payload?.mappingMissing ?? [],
+    knownKinds,
     notice: payload?.notice ?? null,
     isLoading,
     isSaving,
