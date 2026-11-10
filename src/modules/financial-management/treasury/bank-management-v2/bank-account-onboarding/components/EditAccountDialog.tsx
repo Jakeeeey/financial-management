@@ -96,7 +96,7 @@ export function EditAccountDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[95vw] rounded-2xl p-0 sm:max-w-[600px]">
+      <DialogContent showCloseButton={false} className="w-[95vw] rounded-2xl p-0 sm:max-w-[600px]">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="flex max-h-[85vh] flex-col overflow-hidden">
             <DialogHeader className="border-b px-6 py-4">
@@ -153,7 +153,7 @@ export function EditAccountDialog({
                       <Select value={field.value} onValueChange={field.onChange}>
                         <FormControl>
                           <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Choose the type" />
+                            <SelectValue className="truncate" placeholder="Choose the type" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent className="max-h-80">
@@ -180,7 +180,7 @@ export function EditAccountDialog({
                       <Select value={field.value} onValueChange={field.onChange}>
                         <FormControl>
                           <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Choose the status" />
+                            <SelectValue className="truncate" placeholder="Choose the status" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent className="max-h-80">
@@ -225,7 +225,7 @@ export function EditAccountDialog({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        Effective date <span className="text-destructive">*</span>
+                        Onboarded on <span className="text-destructive">*</span>
                       </FormLabel>
                       <FormControl>
                         <DateField

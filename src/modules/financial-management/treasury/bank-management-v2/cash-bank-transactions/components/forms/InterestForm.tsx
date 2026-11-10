@@ -19,10 +19,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency } from "@/lib/utils";
 
 import { INTEREST_TAX_RATES } from "../../constants";
-import { phtToday } from "../../pht";
+import { phtDate, phtToday } from "../../pht";
 import { ApiError } from "../../providers/transactionsApi";
 import { interestFormSchema, toAmount, type InterestFormValues, type MemoBody } from "../../schemas";
 import type { AccountOption } from "../../types";
+
 import { DateField } from "../DateField";
 import { InlineAlert } from "../InlineAlert";
 import { OptionCombobox } from "../OptionCombobox";
@@ -117,10 +118,10 @@ export function InterestForm({ formId, accounts, isSaving, onSubmit, onPosted }:
                     onChange={field.onChange}
                     inDialog
                     disabled={isSaving}
+                    maxDate={phtDate()}
                     placeholder="Pick the value date"
                   />
                 </FormControl>
-                <FormDescription>Today or earlier.</FormDescription>
                 <FormMessage />
               </FormItem>
             )}
@@ -161,7 +162,7 @@ export function InterestForm({ formId, accounts, isSaving, onSubmit, onPosted }:
               <Select value={field.value} onValueChange={field.onChange} disabled={isSaving}>
                 <FormControl>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Choose the tax rate" />
+                    <SelectValue className="truncate" placeholder="Choose the tax rate" />
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent className="max-h-80">

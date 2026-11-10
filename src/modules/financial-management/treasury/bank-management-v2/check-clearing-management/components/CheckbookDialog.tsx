@@ -91,7 +91,7 @@ export function CheckbookDialog({ open, onOpenChange, accounts, isSaving, loadSe
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="w-[95vw] p-0 sm:max-w-[760px] rounded-2xl">
+      <DialogContent showCloseButton={false} className="w-[95vw] p-0 sm:max-w-[760px] rounded-2xl">
         <form onSubmit={handleSubmit} className="flex max-h-[88vh] flex-col overflow-hidden">
           <DialogHeader className="border-b px-6 py-4">
             <DialogTitle>Checkbook series</DialogTitle>

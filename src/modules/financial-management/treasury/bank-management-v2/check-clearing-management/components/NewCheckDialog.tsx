@@ -66,6 +66,9 @@ export function NewCheckDialog({ open, onOpenChange, accounts, isSaving, onIssue
     draweeBank: receive.draweeBank.trim() ? "" : "Enter the drawee bank.",
   };
 
+  const issueBlocked = Object.values(issueErrors).some(Boolean);
+  const receiveBlocked = Object.values(receiveErrors).some(Boolean);
+
   async function submitIssue(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setTouched(true);
@@ -124,7 +127,7 @@ export function NewCheckDialog({ open, onOpenChange, accounts, isSaving, onIssue
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="w-[95vw] sm:max-w-[600px] p-0 rounded-2xl">
+      <DialogContent showCloseButton={false} className="w-[95vw] sm:max-w-[600px] p-0 rounded-2xl">
         <div className="flex max-h-[85vh] flex-col overflow-hidden">
           <DialogHeader className="border-b px-6 py-4">
             <DialogTitle>Add a check</DialogTitle>
@@ -136,8 +139,8 @@ export function NewCheckDialog({ open, onOpenChange, accounts, isSaving, onIssue
           <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1 overflow-hidden">
             <div className="px-6 pt-4">
               <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="issue">Issue a check</TabsTrigger>
-                <TabsTrigger value="receive">Record received</TabsTrigger>
+                <TabsTrigger value="issue" className="min-h-11 md:min-h-0">Issue a check</TabsTrigger>
+                <TabsTrigger value="receive" className="min-h-11 md:min-h-0">Record received</TabsTrigger>
               </TabsList>
             </div>
 
@@ -296,7 +299,7 @@ export function NewCheckDialog({ open, onOpenChange, accounts, isSaving, onIssue
                 Cancel
               </Button>
             </DialogClose>
-            <Button type="submit" form={tab === "issue" ? "issue-check-form" : "receive-check-form"} disabled={isSaving || accounts.length === 0}>
+            <Button type="submit" form={tab === "issue" ? "issue-check-form" : "receive-check-form"} disabled={isSaving || accounts.length === 0 || (tab === "issue" ? issueBlocked : receiveBlocked)}>
               {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {tab === "issue" ? "Issue check" : "Record check"}
             </Button>

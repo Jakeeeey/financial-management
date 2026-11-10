@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Ban, CheckCheck, FileClock, LoaderCircle, Plus, Undo2 } from "lucide-react";
+import { Ban, CheckCheck, FileClock, LoaderCircle, Plus, Undo2 , ScrollText} from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -103,7 +103,12 @@ export function CheckModule() {
     <div className="mx-auto max-w-[1600px] space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold sm:text-2xl">Check &amp; Clearing Management</h1>
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl bg-primary/10 p-3 text-primary">
+              <ScrollText className="size-5" />
+            </div>
+            <h1 className="text-xl font-semibold sm:text-2xl">Check &amp; Clearing Management</h1>
+          </div>
           <p className="text-sm text-muted-foreground">
             Track issued and received checks from release to clearing, returns and replacements.
           </p>

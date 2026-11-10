@@ -68,7 +68,7 @@ export function OnboardingFilters({ filters, options, activeFilterCount, onChang
           </Label>
           <Select value={filters.accountType} onValueChange={(value) => onChange("accountType", value)}>
             <SelectTrigger id="onboarding-account-type" className="w-full">
-              <SelectValue placeholder="All types" />
+              <SelectValue className="truncate" placeholder="All types" />
             </SelectTrigger>
             <SelectContent className="max-h-80">
               <SelectItem value={ALL_OPTION}>All types</SelectItem>
@@ -87,7 +87,7 @@ export function OnboardingFilters({ filters, options, activeFilterCount, onChang
           </Label>
           <Select value={filters.status} onValueChange={(value) => onChange("status", value)}>
             <SelectTrigger id="onboarding-status" className="w-full">
-              <SelectValue placeholder="All statuses" />
+              <SelectValue className="truncate" placeholder="All statuses" />
             </SelectTrigger>
             <SelectContent className="max-h-80">
               <SelectItem value={ALL_OPTION}>All statuses</SelectItem>
@@ -106,7 +106,7 @@ export function OnboardingFilters({ filters, options, activeFilterCount, onChang
           </Label>
           <Select value={filters.currency} onValueChange={(value) => onChange("currency", value)}>
             <SelectTrigger id="onboarding-currency" className="w-full">
-              <SelectValue placeholder="All currencies" />
+              <SelectValue className="truncate" placeholder="All currencies" />
             </SelectTrigger>
             <SelectContent className="max-h-80">
               <SelectItem value={ALL_OPTION}>All currencies</SelectItem>

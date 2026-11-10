@@ -71,7 +71,7 @@ export function BatchClearDialog({ checks, open, isSaving, onOpenChange, onSubmi
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="w-[95vw] rounded-2xl p-0 sm:max-w-[900px]">
+      <DialogContent showCloseButton={false} className="w-[95vw] rounded-2xl p-0 sm:max-w-[800px]">
         <div className="flex max-h-[88vh] flex-col overflow-hidden">
           <DialogHeader className="border-b px-6 py-4">
             <DialogTitle className="line-clamp-1">

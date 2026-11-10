@@ -129,7 +129,7 @@ export function TransactionFiltersBar({ filters, accounts, kinds, onChange, onRe
           onValueChange={(value) => onChange({ kind: value as TransactionFilters["kind"] })}
         >
           <SelectTrigger id="transaction-kind" size="sm" className="w-full">
-            <SelectValue placeholder="All types" />
+            <SelectValue className="truncate" placeholder="All types" />
           </SelectTrigger>
           <SelectContent className="max-h-60">
             <SelectItem value={ALL}>All types</SelectItem>
@@ -153,7 +153,7 @@ export function TransactionFiltersBar({ filters, accounts, kinds, onChange, onRe
           onValueChange={(value) => onChange({ status: value === ALL ? "" : value })}
         >
           <SelectTrigger id="transaction-status" size="sm" className="w-full">
-            <SelectValue placeholder="Any status" />
+            <SelectValue className="truncate" placeholder="Any status" />
           </SelectTrigger>
           <SelectContent className="max-h-60">
             <SelectItem value={ALL}>Any status</SelectItem>

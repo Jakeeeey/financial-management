@@ -108,7 +108,7 @@ export function RegisterAccountDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[95vw] rounded-2xl p-0 sm:max-w-[700px]">
+      <DialogContent showCloseButton={false} className="w-[95vw] rounded-2xl p-0 sm:max-w-[700px]">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="flex max-h-[85vh] flex-col overflow-hidden">
             <DialogHeader className="border-b px-6 py-4">
@@ -203,7 +203,7 @@ export function RegisterAccountDialog({
                       <Select value={field.value} onValueChange={field.onChange}>
                         <FormControl>
                           <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Choose the type" />
+                            <SelectValue className="truncate" placeholder="Choose the type" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent className="max-h-80">

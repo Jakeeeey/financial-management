@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Info, Plus, RefreshCw } from "lucide-react";
+import { Info, Plus, RefreshCw , Landmark} from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -44,7 +44,12 @@ export function OnboardingModule() {
     <div className="mx-auto max-w-[1600px] space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-1">
-          <h1 className="text-xl font-semibold sm:text-2xl">Bank &amp; Account Onboarding</h1>
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl bg-primary/10 p-3 text-primary">
+              <Landmark className="size-5" />
+            </div>
+            <h1 className="text-xl font-semibold sm:text-2xl">Bank &amp; Account Onboarding</h1>
+          </div>
           <p className="text-sm text-muted-foreground">
             The accounts the group collects into, pays from and disburses out of.
           </p>

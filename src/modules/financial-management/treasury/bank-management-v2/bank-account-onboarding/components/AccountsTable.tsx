@@ -1,6 +1,6 @@
 "use client";
 
-import { Landmark, Pencil } from "lucide-react";
+import { Landmark, MoreVertical, Pencil } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +12,12 @@ import { formatCurrency, formatNumber } from "@/lib/utils";
 import { toPhtDateString } from "../pht";
 import type { BankAccountV2 } from "../types";
 import { StatusBadge } from "./StatusBadge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { TablePager } from "./TablePager";
 
 const COLUMN_COUNT = 9;
@@ -81,7 +87,7 @@ export function AccountsTable({
 
       {filters}
 
-      <div className="hidden overflow-x-auto xl:block">
+      <div className="hidden overflow-x-auto min-[1300px]:block">
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/30 hover:bg-muted/30">
@@ -169,16 +175,21 @@ export function AccountsTable({
                       <StatusBadge status={account.status} />
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Edit ${account.bankName} ${account.accountNumber}`}
-                        title="Edit account"
-                        onClick={() => onEdit(account)}
-                      >
-                        <Pencil className="size-4" />
-                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Actions for ${account.bankName} ${account.accountNumber}`}
+                          >
+                            <MoreVertical className="size-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-44">
+                          <DropdownMenuItem onSelect={() => onEdit(account)}>Edit account</DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </TableCell>
                   </TableRow>
                 ))
@@ -187,7 +198,7 @@ export function AccountsTable({
           </Table>
       </div>
 
-      <ul className="divide-y divide-border xl:hidden">
+      <ul className="divide-y divide-border min-[1300px]:hidden">
         {isLoading ? (
           Array.from({ length: 4 }).map((_, index) => (
             <li key={index} className="p-4">

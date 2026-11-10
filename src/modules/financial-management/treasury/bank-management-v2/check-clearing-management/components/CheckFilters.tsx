@@ -99,7 +99,7 @@ export function CheckFilters({ accountOptions, bankOptions, filters, onChange }:
             onValueChange={(value) => onChange({ ...filters, direction: value })}
           >
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="All directions" />
+              <SelectValue className="truncate" placeholder="All directions" />
             </SelectTrigger>
             <SelectContent className="max-h-60">
               <SelectItem value="ALL">All directions</SelectItem>
@@ -113,7 +113,7 @@ export function CheckFilters({ accountOptions, bankOptions, filters, onChange }:
           <Label className="text-[11px] font-medium text-muted-foreground">Status</Label>
           <Select value={filters.status ?? "ALL"} onValueChange={(value) => onChange({ ...filters, status: value })}>
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="All statuses" />
+              <SelectValue className="truncate" placeholder="All statuses" />
             </SelectTrigger>
             <SelectContent className="max-h-60">
               {STATUS_FILTERS.map((status) => (
@@ -129,7 +129,7 @@ export function CheckFilters({ accountOptions, bankOptions, filters, onChange }:
           <Label className="text-[11px] font-medium text-muted-foreground">Flag</Label>
           <Select value={filters.flag ?? "ALL"} onValueChange={(value) => onChange({ ...filters, flag: value })}>
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="Any" />
+              <SelectValue className="truncate" placeholder="Any" />
             </SelectTrigger>
             <SelectContent className="max-h-60">
               {FLAG_FILTERS.map((flag) => (

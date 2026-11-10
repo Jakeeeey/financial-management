@@ -52,11 +52,10 @@ export function TransfersClearingPanel({
 
       {blocked ? (
         <div className="mx-4 mb-3 rounded-xl border border-amber-500/40 bg-amber-50/60 px-4 py-3 text-sm dark:bg-amber-950/20">
-          <p className="font-medium text-amber-900 dark:text-amber-200">Settling needs one GL mapping first.</p>
+          <p className="font-medium text-amber-900 dark:text-amber-200">Settling needs one account set up first.</p>
           <p className="mt-1 text-amber-800 dark:text-amber-300">
-            This instance has no account mapped to <span className="font-mono text-xs">{mappingMissing.join(", ")}</span>,
-            so a settlement cannot post. Accounting sets it in the <span className="font-mono text-xs">bank_gl_mapping</span>{" "}
-            table; these {formatNumber(clearing.length)} transfers settle as soon as it exists.
+            These {formatNumber(clearing.length)} transfers are waiting on the clearing account for money in transit.
+            Accounting has not set it up yet, so a settlement cannot post; they settle as soon as it exists.
           </p>
         </div>
       ) : null}
@@ -134,7 +133,7 @@ export function TransfersClearingPanel({
                           disabled={!canSettle || isSaving || blocked}
                           title={
                             blocked
-                              ? `Map ${mappingMissing.join(", ")} in bank_gl_mapping first`
+                              ? "Ask accounting to set up the clearing account for money in transit."
                               : canSettle
                                 ? undefined
                                 : "Value date not reached"
@@ -199,7 +198,7 @@ export function TransfersClearingPanel({
                       size="sm"
                       variant="outline"
                       disabled={!canSettle || isSaving || blocked}
-                      title={blocked ? `Map ${mappingMissing.join(", ")} in bank_gl_mapping first` : undefined}
+                      title={blocked ? "Ask accounting to set up the clearing account for money in transit." : undefined}
                       onClick={() => onSettle(row)}
                       aria-label={`Settle transfer ${row.refNo}`}
                     >

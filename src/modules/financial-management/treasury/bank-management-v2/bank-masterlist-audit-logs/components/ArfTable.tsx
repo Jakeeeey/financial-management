@@ -60,12 +60,16 @@ export function ArfTable({
             <h2 className="text-sm font-semibold">ARF findings</h2>
             <p className="text-xs text-muted-foreground">Worst first. Every finding names the module that resolves it.</p>
           </div>
-          <Badge variant="outline" className="tabular-nums text-[11px]">
+          <Badge
+            variant="outline"
+            className="tabular-nums text-[11px]"
+            title="Live count from a fresh scan. Earlier scan entries in Movement Logs record the counts at the time they ran."
+          >
             {formatNumber(total)} findings
           </Badge>
         </header>
         {filters}
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto xl:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -131,6 +135,42 @@ export function ArfTable({
             </TableBody>
           </Table>
         </div>
+
+        <ul className="divide-y divide-border xl:hidden">
+          {findings.length === 0 && (
+            <li className="p-6 text-center text-sm text-muted-foreground">No audit finding matches these filters.</li>
+          )}
+          {rows.map((finding) => {
+            const meta = findingMeta(finding);
+            return (
+              <li key={finding.key} className="space-y-1.5 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="min-w-0 break-words font-medium">{finding.title}</p>
+                  <Badge variant="outline" className={toneClass(statusTone(finding.severity))}>
+                    {finding.severity}
+                  </Badge>
+                </div>
+                <p className="break-words text-xs text-muted-foreground">{finding.subModule}</p>
+                <p className="break-words text-sm">{finding.detail}</p>
+                {meta ? <p className="break-words text-xs text-muted-foreground">{meta}</p> : null}
+                {finding.goTo ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="-ml-2"
+                    onClick={() => onOpenModule?.(`/fm/treasury/bank-management-v2/${finding.goTo}`)}
+                  >
+                    {MODULE_LABEL[finding.goTo] ?? "Open module"}
+                    <ArrowUpRight className="ml-1.5 h-3.5 w-3.5" />
+                  </Button>
+                ) : (
+                  <span className="block text-xs text-muted-foreground">No action</span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
 
         <TablePager
           page={page}

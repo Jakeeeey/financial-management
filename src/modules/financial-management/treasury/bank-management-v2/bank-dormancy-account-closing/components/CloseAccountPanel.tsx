@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, Loader2, XCircle } from "lucide-react";
+import { CheckCircle2, Loader2, MinusCircle, XCircle } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -126,7 +126,9 @@ export function CloseAccountPanel({
               <ul className="space-y-2">
                 {preClosure.checks.map((check) => (
                   <li key={check.key} className="flex items-start gap-2 text-sm">
-                    {check.passed ? (
+                    {check.unverified ? (
+                      <MinusCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden />
+                    ) : check.passed ? (
                       <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" aria-hidden />
                     ) : (
                       <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" aria-hidden />
@@ -134,6 +136,11 @@ export function CloseAccountPanel({
                     <div className="min-w-0">
                       <p className={check.passed ? "font-medium" : "font-medium text-red-700 dark:text-red-400"}>
                         {check.label}
+                        {check.unverified ? (
+                          <span className="ml-2 text-[11px] font-normal text-amber-700 dark:text-amber-400">
+                            needs the bank&apos;s confirmation
+                          </span>
+                        ) : null}
                       </p>
                       <p className="text-xs break-words text-muted-foreground">{check.detail}</p>
                     </div>
@@ -201,7 +208,7 @@ export function CloseAccountPanel({
                   <Label htmlFor="closure-reason">Closure reason</Label>
                   <Select value={reason} onValueChange={setReason} disabled={!canClose}>
                     <SelectTrigger id="closure-reason" className="w-full truncate">
-                      <SelectValue placeholder="Choose a reason" />
+                      <SelectValue className="truncate" placeholder="Choose a reason" />
                     </SelectTrigger>
                     <SelectContent className="max-h-60">
                       {CLOSURE_REASONS.map((option) => (

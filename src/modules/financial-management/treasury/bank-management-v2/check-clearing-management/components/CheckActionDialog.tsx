@@ -153,7 +153,7 @@ export function CheckActionDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className={cn("w-[95vw] rounded-2xl p-0", isView ? "sm:max-w-[860px]" : "sm:max-w-[550px]")}>
+      <DialogContent showCloseButton={false} className={cn("w-[95vw] rounded-2xl p-0", isView ? "sm:max-w-[800px]" : "sm:max-w-[550px]")}>
         <div className="flex max-h-[85vh] flex-col overflow-hidden">
           <DialogHeader className="border-b px-6 py-4">
             <DialogTitle className="line-clamp-1">{isView ? `Check ${check.checkNo}` : prompt?.title}</DialogTitle>
@@ -205,7 +205,7 @@ export function CheckActionDialog({
                 </Label>
                 <Select value={returnReason} onValueChange={setReturnReason}>
                   <SelectTrigger id="return-reason" className="w-full">
-                    <SelectValue placeholder="Select reason" />
+                    <SelectValue className="truncate" placeholder="Select reason" />
                   </SelectTrigger>
                   <SelectContent className="max-h-80">
                     {CHECK_RETURN_REASONS.map((reason) => (
@@ -402,7 +402,7 @@ export function CheckActionDialog({
                         ? "bg-amber-600 text-white hover:bg-amber-700 dark:bg-amber-600 dark:hover:bg-amber-700"
                         : undefined
                   }
-                  disabled={isSaving}
+                  disabled={isSaving || hasErrors}
                   onClick={handleSubmit}
                 >
                   {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

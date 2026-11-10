@@ -18,10 +18,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 
 import { CREDIT_NATURE_OPTIONS } from "../../constants";
-import { phtToday } from "../../pht";
+import { phtDate, phtToday } from "../../pht";
 import { ApiError } from "../../providers/transactionsApi";
 import { creditFormSchema, toAmount, type CreditFormValues, type MemoBody } from "../../schemas";
 import type { AccountOption } from "../../types";
+
 import { DateField } from "../DateField";
 import { InlineAlert } from "../InlineAlert";
 import { OptionCombobox } from "../OptionCombobox";
@@ -110,10 +111,10 @@ export function CreditMemoForm({ formId, accounts, isSaving, onSubmit, onPosted 
                     onChange={field.onChange}
                     inDialog
                     disabled={isSaving}
+                    maxDate={phtDate()}
                     placeholder="Pick the value date"
                   />
                 </FormControl>
-                <FormDescription>Today or earlier.</FormDescription>
                 <FormMessage />
               </FormItem>
             )}
@@ -154,7 +155,7 @@ export function CreditMemoForm({ formId, accounts, isSaving, onSubmit, onPosted 
               <Select value={field.value} onValueChange={field.onChange} disabled={isSaving}>
                 <FormControl>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Choose the nature" />
+                    <SelectValue className="truncate" placeholder="Choose the nature" />
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent className="max-h-80">
