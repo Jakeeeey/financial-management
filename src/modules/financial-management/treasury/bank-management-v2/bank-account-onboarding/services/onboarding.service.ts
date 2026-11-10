@@ -195,8 +195,28 @@ async function postOpeningBalance(
   }
 }
 
+/**
+ * The v1 onboarding form collected these, so the columns are NOT NULL with no
+ * default and Directus rejects any insert that omits them. V2 does not ask for
+ * them, so they go in blank.
+ */
+const REQUIRED_COLUMNS = {
+  baranggay: "",
+  city: "",
+  contact_person: "",
+  email: "",
+  ifsc_code: "",
+  mobile_no: "",
+  province: "",
+  // bigint NOT NULL with no default: Directus rejects the insert without it.
+  reconciliation_version: 0,
+};
+
 /** Creates the account, registers unknown banks, then posts E01 once when funded. */
-export async function createAccount(body: RegisterAccountBody): Promise<RegisterAccountResult> {
+export async function createAccount(
+  body: RegisterAccountBody,
+  createdBy: number,
+): Promise<RegisterAccountResult> {
   const bankName = body.bankName.trim();
   const normalized = normaliseAccountNumber(body.accountNumber);
   if (normalized === "") {
@@ -209,13 +229,15 @@ export async function createAccount(body: RegisterAccountBody): Promise<Register
   await assertUniqueAccountNumber(bankName, normalized);
 
   const payload: Record<string, unknown> = {
+    ...REQUIRED_COLUMNS,
+    created_by: createdBy,
     bank_name: bankName,
     branch: body.branch.trim(),
     account_number: body.accountNumber.trim(),
     account_name: body.accountName.trim(),
     account_type: body.accountType,
     opening_balance: roundMoney(body.openingBalance),
-    bank_description: body.remarks?.trim() || null,
+    bank_description: body.remarks?.trim() ?? "",
     is_active: 1,
     created_at: phtStamp(),
     currency: body.accountType === "FCA" ? "USD" : "PHP",
@@ -284,6 +306,8 @@ async function writeAccount(
     if (!isSchemaError(error)) throw error;
 
     const legacy: Record<string, unknown> = {
+      ...REQUIRED_COLUMNS,
+      created_by: payload.created_by,
       bank_name: payload.bank_name,
       branch: payload.branch,
       account_number: payload.account_number,

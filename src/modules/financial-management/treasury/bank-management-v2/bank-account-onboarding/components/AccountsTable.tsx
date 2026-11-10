@@ -114,8 +114,10 @@ export function AccountsTable({
                     >
                       BA-{account.bankId}
                     </TableCell>
-                    <TableCell className="max-w-[240px] truncate font-medium" title={bankBranch(account)}>
-                      {bankBranch(account)}
+                    <TableCell className="max-w-[240px]">
+                      <div className="max-w-[220px] truncate font-medium" title={bankBranch(account)}>
+                        {bankBranch(account)}
+                      </div>
                     </TableCell>
                     <TableCell
                       className="max-w-[160px] truncate tabular-nums"

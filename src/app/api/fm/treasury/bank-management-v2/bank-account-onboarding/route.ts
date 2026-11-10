@@ -1,6 +1,8 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { COOKIE_NAME, decodeJwtPayload } from "@/lib/auth-utils";
 import { ALL_OPTION, ONBOARDING_PAGE_SIZE } from "@/modules/financial-management/treasury/bank-management-v2/bank-account-onboarding/constants";
 import { registerAccountBodySchema } from "@/modules/financial-management/treasury/bank-management-v2/bank-account-onboarding/schemas";
 import { listAccounts } from "@/modules/financial-management/treasury/bank-management-v2/bank-account-onboarding/services/accounts.service";
@@ -69,11 +71,24 @@ export async function POST(request: Request) {
     );
   }
 
+  const createdBy = await currentUserId();
+  if (!createdBy) {
+    return NextResponse.json({ success: false, error: "Sign in again to register an account." }, { status: 401 });
+  }
+
   try {
-    const data = await createAccount(parsed.data);
+    const data = await createAccount(parsed.data, createdBy);
     return NextResponse.json({ success: true, data }, { status: 201 });
   } catch (error) {
     const failure = describeOnboardingError(error, "[bank-management-v2] account onboarding failed");
     return NextResponse.json(failure.body, { status: failure.status });
   }
+}
+
+/** The signed-in user from the access-token cookie; `null` when the token carries no id. */
+async function currentUserId(): Promise<number | null> {
+  const store = await cookies();
+  const token = store.get(COOKIE_NAME)?.value;
+  const id = Number(token ? decodeJwtPayload(token)?.sub : NaN);
+  return Number.isInteger(id) && id > 0 ? id : null;
 }
