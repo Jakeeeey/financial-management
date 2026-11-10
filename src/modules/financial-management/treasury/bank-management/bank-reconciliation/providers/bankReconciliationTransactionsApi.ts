@@ -9,6 +9,13 @@ export function getTransactions(id: number, filter: TransactionFilter, search: s
 }
 export const addTransaction = (period: ReconciliationPeriod, side: TransactionSide, draft: { date: string; reference: string; description: string; amount: string }) => setupRequest<TransactionResult>(`periods/${period.id}/lines/${side}`, "POST", { ...draft, version: period.version });
 export const deleteTransaction = (period: ReconciliationPeriod, side: TransactionSide, id: number) => setupRequest<TransactionResult>(`periods/${period.id}/lines/${side}/${id}`, "DELETE", { version: period.version });
+export const matchTransactions = (period: ReconciliationPeriod, bankLineIds: number[], ledgerLineIds: number[], classification: string | null, offsetAccountId: number | null) => setupRequest<TransactionResult>(`periods/${period.id}/matches`, "POST", { version: period.version, bankLineIds, ledgerLineIds, classification, offsetAccountId });
+export const autoMatchTransactions = (period: ReconciliationPeriod) => setupRequest<TransactionResult>(`periods/${period.id}/matches/auto`, "POST", { version: period.version });
+export const undoTransactionMatches = (period: ReconciliationPeriod) => setupRequest<TransactionResult>(`periods/${period.id}/matches/undo`, "POST", { version: period.version });
+export const unmatchTransactions = (period: ReconciliationPeriod, id: number) => setupRequest<TransactionResult>(`periods/${period.id}/matches/${id}`, "DELETE", { version: period.version });
+export const setBankTreatment = (period: ReconciliationPeriod, id: number, treatment: string) => setupRequest<TransactionResult>(`periods/${period.id}/lines/BANK/${id}/treatment`, "PUT", { version: period.version, treatment });
+export const setBankOffset = (period: ReconciliationPeriod, id: number, offsetAccountId: number | null) => setupRequest<TransactionResult>(`periods/${period.id}/lines/BANK/${id}/offset-account`, "PUT", { version: period.version, offsetAccountId });
+export const setMatchOffset = (period: ReconciliationPeriod, id: number, offsetAccountId: number | null) => setupRequest<TransactionResult>(`periods/${period.id}/matches/${id}/offset-account`, "PUT", { version: period.version, offsetAccountId });
 export async function importTransactions(period: ReconciliationPeriod, side: TransactionSide, file: File, requestId: string): Promise<TransactionResult> {
   const body = new FormData(); body.set("file", file); body.set("version", String(period.version)); body.set("requestId", requestId);
   const response = await fetch(`${BASE}/periods/${period.id}/imports/${side}`, { method: "POST", body, credentials: "same-origin", cache: "no-store" });

@@ -110,10 +110,11 @@ function attachRefreshedCookies(response: NextResponse, refreshed: RefreshedToke
   }
 }
 
-async function fetchSpring(path: string, token: string, init?: RequestInit) {
+async function fetchSpring(path: string, token: string, init?: RequestInit, timeoutMs?: number) {
+  const timeout = timeoutMs ?? (/\/(post|retry)$/.test(path) ? 60000 : 15000);
   return fetch(`${getSpringBaseUrl()}${path}`, {
     ...init,
-    signal: init?.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(/\/(post|retry)$/.test(path) ? 60000 : 15000)]) : AbortSignal.timeout(/\/(post|retry)$/.test(path) ? 60000 : 15000),
+    signal: init?.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(timeout)]) : AbortSignal.timeout(timeout),
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "application/json",
@@ -129,7 +130,7 @@ export function refreshedAccessToken(response: Response) {
   return cookie?.split(";")[0].slice(COOKIE_NAME.length + 1);
 }
 
-export async function proxySpring(path: string, init?: RequestInit, tokenOverride?: string) {
+export async function proxySpring(path: string, init?: RequestInit, tokenOverride?: string, timeoutMs?: number) {
   const cookieStore = await cookies();
   const refreshToken = cookieStore.get(REFRESH_COOKIE_NAME)?.value;
   let token = tokenOverride || cookieStore.get(COOKIE_NAME)?.value;
@@ -148,12 +149,12 @@ export async function proxySpring(path: string, init?: RequestInit, tokenOverrid
       );
     }
 
-    let springRes = await fetchSpring(path, token, init);
+    let springRes = await fetchSpring(path, token, init, timeoutMs);
 
     if (springRes.status === 401 && refreshToken) {
       refreshed = await refreshAccessToken(refreshToken);
       if (refreshed?.accessToken) {
-        springRes = await fetchSpring(path, refreshed.accessToken, init);
+        springRes = await fetchSpring(path, refreshed.accessToken, init, timeoutMs);
       }
     }
 

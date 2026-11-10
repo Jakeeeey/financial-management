@@ -4,9 +4,11 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { ReconciliationPeriod } from "../setup-types";
-import { IMPORT_LAYOUTS, type ImportReport, type TransactionData, type TransactionFilter, type TransactionPane, type TransactionResult, type TransactionSide } from "../transaction-types";
+import { IMPORT_LAYOUTS, type ImportReport, type TransactionData, type TransactionFilter, type TransactionPane, type TransactionResult, type TransactionLine, type TransactionSide } from "../transaction-types";
 import { addTransaction, deleteTransaction, downloadTransactionTemplate, getTransactions, importTransactions } from "../providers/bankReconciliationTransactionsApi";
 import { refreshSetupLedger } from "../providers/bankReconciliationSetupApi";
+import { autoMatchTransactions, matchTransactions, undoTransactionMatches } from "../providers/bankReconciliationTransactionsApi";
+import { LineTreatment, MatchSelection, ReconciliationProof, type Selection } from "./MatchingControls";
 import { highlightedText, transactionMoney } from "../utils/transactionDisplay";
 
 type Draft = { date: string; reference: string; description: string; amount: string };
@@ -24,9 +26,10 @@ function ImportResult({ report }: { report: ImportReport }) {
 }
 type PaneProps = {
   side: TransactionSide; data?: TransactionPane; period: ReconciliationPeriod | null; query: string; busy: boolean;
+  selected: TransactionLine[]; onToggle: (line: TransactionLine) => void;
   onPage: (page: number) => void; command: (operation: (p: ReconciliationPeriod) => Promise<TransactionResult>) => Promise<TransactionResult>;
 };
-function Pane({ side, data, period, query, busy, onPage, command }: PaneProps) {
+function Pane({ side, data, period, query, busy, onPage, command, selected, onToggle }: PaneProps) {
   const bank = side === "BANK", title = bank ? "Bank statement" : "Books: Cash in Bank ledger", prefix = bank ? "Bank" : "Ledger";
   const fileInput = useRef<HTMLInputElement>(null), upload = useRef<{ file: File; requestId: string } | null>(null);
   const [adding, setAdding] = useState(false), [draft, setDraft] = useState<Draft>({ date: "", reference: "", description: "", amount: "" });
@@ -66,7 +69,7 @@ function Pane({ side, data, period, query, busy, onPage, command }: PaneProps) {
     </form>}
     {error && <div role="alert" className="space-y-2 rounded-md border border-destructive/40 p-3 text-sm text-destructive"><p>{error}</p>{retry && <Button type="button" size="sm" variant="outline" disabled={locked} onClick={() => { void importFile(); }}>Retry this upload</Button>}</div>}
     {report && <ImportResult key={report.id} report={report} />}
-    {data?.items.length ? <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left"><th className="p-2">Date</th><th className="p-2">Reference</th><th className="p-2">Description</th><th className="p-2 text-right">Amount</th><th className="p-2"><span className="sr-only">Actions</span></th></tr></thead><tbody>{data.items.map(line => <Fragment key={line.id}><tr className="align-top"><td className="min-w-28 whitespace-nowrap p-2"><Highlight value={line.date} query={query} /></td><td className="max-w-40 break-words p-2"><Highlight value={line.reference} query={query} /></td><td className="min-w-36 max-w-72 break-words p-2"><Highlight value={line.description} query={query} /></td><td className={`whitespace-nowrap p-2 text-right tabular-nums ${line.amount.startsWith("-") ? "" : "text-emerald-700 dark:text-emerald-400"}`}><Highlight value={transactionMoney(line.amount, period?.currency || "PHP")} query={query} /></td><td className="p-2">{line.canDelete && <Button type="button" size="sm" variant="ghost" aria-label={`Delete ${prefix.toLowerCase()} line ${line.reference || line.id}`} disabled={locked} onClick={() => { void remove(line.id); }}>Delete</Button>}</td></tr><tr className="border-b"><td colSpan={5} className="px-2 pb-3 pt-1 text-xs"><Highlight value={line.status} query={query} />{line.offsetAccount && <p className="mt-1 text-muted-foreground"><Highlight value={line.offsetAccount} query={query} /></p>}{line.sourceKey && <p className="mt-1 text-muted-foreground">Loaded from GL</p>}</td></tr></Fragment>)}</tbody></table></div> : <p className="py-5 text-sm text-muted-foreground">{!period ? "Select a bank account to begin." : query ? "No lines match this search." : data?.total ? "No lines in this view." : bank ? "Add or import the lines from your bank statement." : "Add, import, or load ledger lines for this period."}</p>}
+    {data?.items.length ? <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left"><th className="p-2"><span className="sr-only">Select</span></th><th className="p-2">Date</th><th className="p-2">Reference</th><th className="p-2">Description</th><th className="p-2 text-right">Amount</th><th className="p-2"><span className="sr-only">Actions</span></th></tr></thead><tbody>{data.items.map(line => <Fragment key={line.id}><tr className="align-top"><td className="p-2"><input type="checkbox" aria-label={`Select ${prefix.toLowerCase()} line ${line.reference || line.id}`} checked={selected.some(item => item.id === line.id)} disabled={locked || !(line.canMatch ?? line.canDelete)} onChange={() => onToggle(line)} /></td><td className="min-w-28 whitespace-nowrap p-2"><Highlight value={line.date} query={query} /></td><td className="max-w-40 break-words p-2"><Highlight value={line.reference} query={query} /></td><td className="min-w-36 max-w-72 break-words p-2"><Highlight value={line.description} query={query} /></td><td className={`whitespace-nowrap p-2 text-right tabular-nums ${line.amount.startsWith("-") ? "" : "text-emerald-700 dark:text-emerald-400"}`}><Highlight value={transactionMoney(line.amount, period?.currency || "PHP")} query={query} /></td><td className="p-2">{line.canDelete && <Button type="button" size="sm" variant="ghost" aria-label={`Delete ${prefix.toLowerCase()} line ${line.reference || line.id}`} disabled={locked} onClick={() => { void remove(line.id); }}>Delete</Button>}</td></tr><tr className="border-b"><td colSpan={6} className="px-2 pb-3 pt-1 text-xs"><Highlight value={line.status} query={query} />{line.offsetAccount && <p className="mt-1 text-muted-foreground"><Highlight value={line.offsetAccount} query={query} /></p>}{line.sourceKey && <p className="mt-1 text-muted-foreground">Loaded from GL</p>}{period && <LineTreatment line={line} side={side} period={period} busy={busy} command={command} onError={setError} />}</td></tr></Fragment>)}</tbody></table></div> : <p className="py-5 text-sm text-muted-foreground">{!period ? "Select a bank account to begin." : query ? "No lines match this search." : data?.total ? "No lines in this view." : bank ? "Add or import the lines from your bank statement." : "Add, import, or load ledger lines for this period."}</p>}
     {data && data.filtered > 0 && <div className="flex items-center justify-end gap-2 text-xs"><Button type="button" size="sm" variant="outline" disabled={data.page === 1} onClick={() => onPage(data.page - 1)}>Previous</Button><span>Page {data.page} of {Math.max(1, Math.ceil(data.filtered / data.pageSize))}</span><Button type="button" size="sm" variant="outline" disabled={data.page * data.pageSize >= data.filtered} onClick={() => onPage(data.page + 1)}>Next</Button></div>}
   </section>;
 }
@@ -74,6 +77,9 @@ function Pane({ side, data, period, query, busy, onPage, command }: PaneProps) {
 export function TransactionWorkbench({ period, run, busy, setBusy }: { period: ReconciliationPeriod | null; run: Run; busy: boolean; setBusy: (busy: boolean) => void }) {
   const [filter, setFilter] = useState<TransactionFilter>("ALL"), [query, setQuery] = useState("");
   const [bankPage, setBankPage] = useState(1), [ledgerPage, setLedgerPage] = useState(1), [data, setData] = useState<TransactionData | null>(null), [error, setError] = useState(""), [loading, setLoading] = useState(false);
+  const [selection, setSelection] = useState<Selection>({ BANK: [], LEDGER: [] }), [message, setMessage] = useState("");
+  useEffect(() => { setSelection({ BANK: [], LEDGER: [] }); }, [period?.id, period?.version]);
+  useEffect(() => { setMessage(""); }, [period?.id]);
   useEffect(() => {
     if (!period?.id) return;
     let active = true; setLoading(true);
@@ -83,13 +89,31 @@ export function TransactionWorkbench({ period, run, busy, setBusy }: { period: R
   const current = data?.period.id === period?.id ? data : null;
   async function command(operation: (p: ReconciliationPeriod) => Promise<TransactionResult>) {
     setBusy(true);
-    try { const result = await run(operation); setBankPage(1); setLedgerPage(1); return result; }
+    try { const result = await run(operation); setBankPage(1); setLedgerPage(1); setSelection({ BANK: [], LEDGER: [] }); return result; }
     finally { setBusy(false); }
   }
+  function toggle(side: TransactionSide, line: TransactionLine) {
+    setSelection(previous => ({ ...previous, [side]: previous[side].some(item => item.id === line.id) ? previous[side].filter(item => item.id !== line.id) : [...previous[side], line] }));
+  }
+  async function perform(operation: (p: ReconciliationPeriod) => Promise<TransactionResult>) {
+    setError(""); setMessage("");
+    try {
+      const result = await command(operation);
+      if (result.autoMatch) {
+        const report = result.autoMatch;
+        setMessage(`Matched ${report.groups} groups: ${report.passes.pass1} by reference, ${report.passes.pass2} by date, ${report.passes.bankToLedger + report.passes.ledgerToBank} grouped. ${report.ambiguousLines} ambiguous lines remain for review.${report.deferredLines ? ` Pass 3 reached its search limit; no groups from that pass were applied. Review ${report.deferredLines} deferred lines manually.` : ""}`);
+      } else if (result.undone !== undefined) setMessage(`${result.undone} matches undone; ${result.locked || 0} posted matches kept.`);
+      else if (result.matches?.length) setMessage(`Matched ${result.matches.map(match => match.label).join(", ")}.`);
+    } catch (e) { setError(e instanceof Error ? e.message : "Unable to update matches."); }
+  }
   return <section aria-label="Reconciliation transactions" className="space-y-4" aria-busy={loading}>
+    <ReconciliationProof summary={current?.reconciliation} currency={period?.currency || "PHP"} />
     <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-2">{([['ALL', 'All', current?.counts.all], ['TO_REVIEW', 'To review', current?.counts.toReview], ['MATCHED', 'Matched', current?.counts.matched]] as const).map(([value, label, count]) => <Button key={value} type="button" size="sm" variant={filter === value ? "default" : "outline"} aria-pressed={filter === value} onClick={() => { setFilter(value); setBankPage(1); setLedgerPage(1); }}>{label} ({count ?? 0})</Button>)}</div><Input aria-label="Search transactions" placeholder="Date, reference, description, status or amount…" className="w-full sm:max-w-md" maxLength={200} value={query} onChange={e => { setQuery(e.target.value); setBankPage(1); setLedgerPage(1); }} /></div>
+    <div className="flex flex-wrap gap-2"><Button type="button" disabled={!period || period.status === "CLOSED" || busy} onClick={() => { void perform(autoMatchTransactions); }}>Auto-match</Button><Button type="button" variant="outline" disabled={!period || period.status === "CLOSED" || busy || !current?.counts.matched} onClick={() => { void perform(undoTransactionMatches); }}>Undo unposted matches</Button></div>
+    {message && <p className="rounded-md border bg-muted/20 p-3 text-sm" aria-live="polite">{message}</p>}
     {period?.status === "CLOSED" && <p className="text-sm text-muted-foreground">This period is closed. Transactions are read-only.</p>}
     {error && <p role="alert" className="rounded-md border border-destructive/40 p-3 text-sm text-destructive">{error}</p>}
-    <div className="grid gap-4 xl:grid-cols-2"><Pane key={`bank-${period?.id || 0}`} side="BANK" data={current?.bank} period={period} query={query} busy={busy} onPage={setBankPage} command={command} /><Pane key={`ledger-${period?.id || 0}`} side="LEDGER" data={current?.ledger} period={period} query={query} busy={busy} onPage={setLedgerPage} command={command} /></div>
+    <div className="grid gap-4 xl:grid-cols-2"><Pane key={`bank-${period?.id || 0}`} side="BANK" data={current?.bank} period={period} query={query} busy={busy} onPage={setBankPage} command={command} selected={selection.BANK} onToggle={line => toggle("BANK", line)} /><Pane key={`ledger-${period?.id || 0}`} side="LEDGER" data={current?.ledger} period={period} query={query} busy={busy} onPage={setLedgerPage} command={command} selected={selection.LEDGER} onToggle={line => toggle("LEDGER", line)} /></div>
+    {period && selection.BANK.length + selection.LEDGER.length > 0 && <MatchSelection key={`${selection.BANK.map(line => line.id).join(",")}|${selection.LEDGER.map(line => line.id).join(",")}`} selected={selection} period={period} busy={busy} onClear={() => setSelection({ BANK: [], LEDGER: [] })} onMatch={(kind, account) => { void perform(p => matchTransactions(p, selection.BANK.map(line => line.id), selection.LEDGER.map(line => line.id), kind, account)); }} />}
   </section>;
 }
