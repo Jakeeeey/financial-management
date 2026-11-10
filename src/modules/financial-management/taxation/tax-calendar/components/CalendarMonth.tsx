@@ -22,6 +22,8 @@ const LEGEND = [
   { label: "VAT", className: "bg-sky-500" },
   { label: "Withholding", className: "bg-amber-500" },
   { label: "Certificates", className: "bg-violet-500" },
+  // Overdue overrides the category colour on the day chips, so the legend has to say so.
+  { label: "Overdue", className: "bg-red-500" },
 ] as const;
 
 const STATUS_RANK: Record<CalendarStatus, number> = { OVERDUE: 3, DUE: 2, PAID: 1, UNKNOWN: 0 };
@@ -134,9 +136,13 @@ export function CalendarMonth({
               </span>
             ))}
           </div>
-          <Badge variant="outline" className="tabular-nums text-[11px]">
-            {monthCount} {monthCount === 1 ? "filing" : "filings"}
-          </Badge>
+          {isLoading ? (
+            <Skeleton className="h-5 w-24 rounded-full" />
+          ) : (
+            <Badge variant="outline" className="tabular-nums text-[11px]">
+              {monthCount} {monthCount === 1 ? "filing" : "filings"}
+            </Badge>
+          )}
           {onToday ? (
             <Button type="button" variant="outline" size="sm" onClick={onToday}>
               Today

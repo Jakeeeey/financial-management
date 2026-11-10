@@ -18,7 +18,7 @@ import { TablePager } from "./TablePager";
 import { CALENDAR_CATEGORIES, CALENDAR_STATUSES, toneClass, statusTone } from "../constants";
 import type { CalendarFilter, CalendarObligation, CalendarStatus } from "../types";
 
-const COLUMNS = 7;
+const COLUMNS = 8;
 
 const STATUS_LABEL: Record<CalendarStatus, string> = {
   PAID: "Recorded as paid",
@@ -89,7 +89,7 @@ export function CalendarTable({
             value={filters.companyId === null ? "ALL" : String(filters.companyId)}
             onChange={(value) => onFiltersChange({ companyId: value === "ALL" ? null : Number(value) })}
             placeholder="Every company"
-            searchPlaceholder="Search companies…"
+            searchPlaceholder="Search companies..."
             emptyLabel="No company matches."
           />
           <Select value={filters.category} onValueChange={(value) => onFiltersChange({ category: value })}>
@@ -153,6 +153,7 @@ export function CalendarTable({
               <TableHead className="w-[120px]">Category</TableHead>
               <TableHead className="w-[150px] text-right">Estimate</TableHead>
               <TableHead className="w-[150px]">Status</TableHead>
+              <TableHead className="w-[250px]">Why the date moved</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -225,4 +226,5 @@ export function CalendarTable({
     </section>
   );
 }
+
 

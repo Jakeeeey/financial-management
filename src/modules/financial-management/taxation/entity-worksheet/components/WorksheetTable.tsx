@@ -41,7 +41,7 @@ export function WorksheetTable({ lines, total }: Props) {
         </Badge>
       </header>
 
-      <div className="overflow-x-auto">
+      <div className="hidden overflow-x-auto min-[1300px]:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -89,6 +89,41 @@ export function WorksheetTable({ lines, total }: Props) {
             ))}
           </TableBody>
         </Table>
+      </div>
+
+      <div className="min-[1300px]:hidden">
+        {sections.map((section) => (
+          <div key={section}>
+            <p className="border-y border-border/50 bg-muted/40 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {SECTION_LABEL[section]}
+            </p>
+            <ul className="divide-y divide-border/50">
+              {visible
+                .filter((line) => line.section === section)
+                .map((line) => (
+                  <li key={line.key} className={cn("space-y-2 px-4 py-3", line.emphasis && "bg-muted/20")}>
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="min-w-0 text-sm">
+                        <span className="tabular-nums text-xs text-muted-foreground">{line.lineNo} </span>
+                        {line.label}
+                      </p>
+                      <p className={cn("shrink-0 tabular-nums text-sm", line.emphasis && "font-medium")}>
+                        {formatCurrency(line.yearValue)}
+                      </p>
+                    </div>
+                    <dl className="grid grid-cols-4 gap-2 text-[11px]">
+                      {line.values.map((value, index) => (
+                        <div key={index}>
+                          <dt className="text-muted-foreground">Q{index + 1}</dt>
+                          <dd className="tabular-nums">{formatCurrency(value)}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </li>
+                ))}
+            </ul>
+          </div>
+        ))}
       </div>
 
       {hidden > 0 ? (

@@ -3,6 +3,7 @@ import "server-only";
 import { asNumber, asString, createItem, updateItem, listItems } from "./directus";
 import { phtStamp } from "../pht";
 import { DEFAULT_PROFILE } from "../constants";
+import { appendAudit, changedFields } from "./auditLog";
 import type { EntityProfile } from "../types";
 
 /**
@@ -28,6 +29,23 @@ interface ProfileRow {
   prior_year_excess_credit?: number | string | null;
   notes?: string | null;
 }
+
+/** The money-bearing profile columns the audit trail records one row per field for. */
+const AUDITED_FIELDS = [
+  "assets_excluding_land",
+  "taxable_year_of_operations",
+  "regime",
+  "registered_share",
+  "deduction_method",
+  "withholding_agent",
+  "has_top_withholding_status",
+  "vat_registered",
+  "efps_group",
+  "owns_real_property",
+  "tax_agent_fee_rate",
+  "prior_year_excess_credit",
+  "notes",
+];
 
 const FIELDS = [
   "id",
@@ -112,15 +130,32 @@ export async function saveProfile(
   };
 
   const { rows } = await listItems<ProfileRow>("tax_company_profile", {
-    fields: ["id"],
+    fields: FIELDS,
     filter: { _and: [{ company_id: { _eq: profile.companyId } }, { tax_year: { _eq: profile.taxYear } }] },
     limit: 1,
   });
 
+  const before = (rows[0] ?? {}) as Record<string, unknown>;
   if (rows[0]?.id) {
     await updateItem("tax_company_profile", rows[0].id, payload);
   } else {
     await createItem("tax_company_profile", { ...payload, created_at: phtStamp(), created_by: actor.userId });
+  }
+
+  // The Change Log page reads `tax_change_log`; without these rows a profile edit that
+  // moved the whole worksheet would leave no trace of who changed it or from what.
+  for (const change of changedFields(before, payload, AUDITED_FIELDS)) {
+    await appendAudit({
+      companyId: profile.companyId,
+      taxYear: profile.taxYear,
+      entity: "tax_company_profile",
+      entityRef: `${profile.companyId}:${profile.taxYear}`,
+      field: change.field,
+      beforeValue: change.beforeValue,
+      afterValue: change.afterValue,
+      reason: rows[0]?.id ? "Profile updated" : "Profile created",
+      actor,
+    });
   }
 
   return profile;

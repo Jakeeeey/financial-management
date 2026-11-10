@@ -4,6 +4,7 @@ import type { IntercompanyMatch, QuarterFigures, RegistryCompany } from "../type
 import { VAT_RATE } from "../constants";
 import { listRows, sumFields, CompanyRequestError, groupedByDate } from "./companyClient";
 import { loadSttSales, loadSpringExpenses, loadSpringSales } from "./stt.client";
+import { listItems } from "./directus";
 
 /**
  * Where every tax figure comes from.
@@ -73,6 +74,50 @@ function emptyQuarter(): QuarterFigures {
     icSalesByCompany: {},
     icPurchasesByCompany: {},
   };
+}
+
+/**
+ * Withholding the customers' 2307 certificates already credit.
+ *
+ * A customer withholds the tax and then issues the certificate, so the register and
+ * `sales_invoice.ewt_amount` describe the same money. Where a quarter has certificates the
+ * register wins, because that is the document the customer filed; summing both would count it
+ * twice. The same rule drives line 11 on the Entity Worksheet, so both screens must read it.
+ *
+ * The certificates live in the central Directus (that is where the 2307 desk writes them),
+ * not in each company's instance, so `company.baseUrl` is deliberately unused here.
+ */
+async function loadCertificateCredits(
+  company: RegistryCompany,
+  taxYear: number,
+): Promise<{ byQuarter: number[]; count: number } | null> {
+  try {
+    const { rows } = await listItems<{
+      period_key?: string | null;
+      tax_withheld?: number | string | null;
+    }>("tax_2307", {
+      fields: ["period_key", "tax_withheld"],
+      filter: {
+        _and: [
+          { company_id: { _eq: company.companyId } },
+          { tax_year: { _eq: taxYear } },
+          { direction: { _eq: "RECEIVED" } },
+        ],
+      },
+      limit: -1,
+    });
+    const byQuarter = [0, 0, 0, 0];
+    let count = 0;
+    for (const row of rows) {
+      const index = ["Q1", "Q2", "Q3", "Q4"].indexOf(String(row.period_key ?? "").toUpperCase());
+      if (index < 0) continue;
+      byQuarter[index] += Number(row.tax_withheld ?? 0) || 0;
+      count += 1;
+    }
+    return { byQuarter, count };
+  } catch {
+    return null;
+  }
 }
 
 function quarterOf(dateValue: string): number {
@@ -274,6 +319,23 @@ export async function loadFigures(
       });
     } catch {
       notices.push("This instance has no tax-withheld column on its sales invoices, so credits are zero.");
+    }
+
+    const certificates = await loadCertificateCredits(company, taxYear);
+    if (certificates === null) {
+      notices.push("The 2307 certificate register could not be read, so credits show invoice withholding only.");
+    } else if (certificates.count > 0) {
+      let replaced = 0;
+      figures.forEach((quarter, index) => {
+        const credited = certificates.byQuarter[index];
+        if (credited <= 0) return;
+        quarter.cwt = credited;
+        replaced += 1;
+      });
+      notices.push(
+        `Credits read ${certificates.count} received 2307 certificate${certificates.count === 1 ? "" : "s"} for ` +
+          `${replaced} quarter${replaced === 1 ? "" : "s"}; invoice withholding is used for quarters with no certificate.`,
+      );
     }
   } catch (error) {
     failed.push("sales");
@@ -561,6 +623,12 @@ export async function loadYearTotals(company: RegistryCompany, taxYear: number, 
     totals.cwt = sums.ewt_amount ?? 0;
   } catch {
     // Vertex has no ewt_amount column; credits stay zero rather than breaking the row.
+  }
+
+  const certificates = await loadCertificateCredits(company, taxYear);
+  if (certificates && certificates.count > 0) {
+    // Same rule as the worksheet and the per-company figures: the certificate register wins.
+    totals.cwt = certificates.byQuarter.reduce((sum, value) => sum + value, 0);
   }
 
   const stt = await loadSttSales(company, taxYear);

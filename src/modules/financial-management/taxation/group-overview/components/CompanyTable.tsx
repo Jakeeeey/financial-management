@@ -185,7 +185,7 @@ export function CompanyTable({
           </div>
         </div>
 
-        <div className="hidden overflow-x-auto xl:block">
+        <div className="hidden overflow-x-auto min-[1300px]:block">
           <table aria-label="Group tax position by company" className="w-full min-w-[900px] border-collapse text-sm">
             <caption className="sr-only">
               Sales net of VAT, deductible expenses, gross income, tax due, net position and status for every company in the group
@@ -286,7 +286,7 @@ export function CompanyTable({
           </table>
         </div>
 
-        <ul className="divide-y xl:hidden">
+        <ul className="divide-y min-[1300px]:hidden">
           {isLoading && total === 0
             ? Array.from({ length: 4 }).map((_, index) => (
                 <li key={`m-skeleton-${index}`} className="space-y-2 px-4 py-3">

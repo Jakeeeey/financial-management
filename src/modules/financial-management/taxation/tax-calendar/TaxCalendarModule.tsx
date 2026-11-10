@@ -68,6 +68,8 @@ export function TaxCalendarModule() {
   const notices = calendar.notices.filter((notice) => notice !== HOLIDAY_CAVEAT);
   /** True while the figures on screen belong to the year the reader just left. */
   const stale = calendar.settledYear !== null && calendar.settledYear !== year;
+  /** The first read takes a while; zeros beside skeletons read as a real, empty year. */
+  const pending = calendar.isLoading && calendar.settledYear === null;
 
   return (
     <div className="mx-auto w-full max-w-[1600px] space-y-6">
@@ -75,8 +77,8 @@ export function TaxCalendarModule() {
         <div className="min-w-0">
           <h1 className="text-xl font-semibold sm:text-2xl">Tax Calendar</h1>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Every BIR, SEC and LGU deadline for the group, moved to the next working day when it lands on a holiday or a
-            weekend.
+            Every BIR and LGU deadline for the group, moved to the next working day when it lands on a holiday or a
+            weekend. The SEC eFAST date appears for the years that have one.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -108,11 +110,17 @@ export function TaxCalendarModule() {
         </div>
       </div>
 
-      {stale ? (
-        <div className="grid gap-3 sm:grid-cols-3" aria-busy="true">
-          {Array.from({ length: 3 }, (_, index) => (
-            <Skeleton key={index} className="h-[92px] rounded-2xl" />
-          ))}
+      {stale || pending ? (
+        <div className="space-y-2" aria-busy="true">
+          <div className="grid gap-3 sm:grid-cols-3">
+            {Array.from({ length: 3 }, (_, index) => (
+              <Skeleton key={index} className="h-[92px] rounded-2xl" />
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Building the group calendar: every company&rsquo;s invoices, expenses and payments are read before the dates
+            can be shown. A page rebuilt within 10 minutes comes back from the cache instantly.
+          </p>
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-3">
@@ -163,10 +171,10 @@ export function TaxCalendarModule() {
       <Tabs defaultValue="calendar" className="space-y-4">
         <TabsList>
           <TabsTrigger value="calendar" className="min-h-11 md:min-h-0">
-            Calendar ({monthCount})
+            Calendar{pending ? "" : ` (${monthCount})`}
           </TabsTrigger>
           <TabsTrigger value="deadlines" className="min-h-11 md:min-h-0">
-            Deadlines ({calendar.counts.total})
+            Deadlines{pending ? "" : ` (${calendar.counts.total})`}
           </TabsTrigger>
         </TabsList>
 

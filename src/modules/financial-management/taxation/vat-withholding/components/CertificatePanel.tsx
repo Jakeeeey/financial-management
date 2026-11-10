@@ -213,7 +213,7 @@ export function CertificatePanel({ register }: { register: CertificateRegister }
         </div>
       </div>
 
-      <div className="mt-4 hidden overflow-x-auto xl:block">
+      <div className="mt-4 hidden overflow-x-auto min-[1300px]:block">
         <Table aria-label="2307 certificates received">
           <TableHeader>
             <TableRow>
@@ -264,7 +264,7 @@ export function CertificatePanel({ register }: { register: CertificateRegister }
         </Table>
       </div>
 
-      <ul className="divide-y xl:hidden">
+      <ul className="divide-y min-[1300px]:hidden">
         {visible.length === 0 ? (
           <li className="px-4 py-8 text-center text-sm text-muted-foreground">{emptyMessage}</li>
         ) : (

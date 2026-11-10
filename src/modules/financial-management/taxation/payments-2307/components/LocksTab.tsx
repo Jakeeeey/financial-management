@@ -77,7 +77,7 @@ export function LocksTab({ locks, isLoading, isSaving, onLock, onUnlock }: Locks
         </div>
       ) : null}
 
-      <div className="overflow-x-auto">
+      <div className="hidden overflow-x-auto min-[1300px]:block">
         <Table aria-label="Period locks">
           <TableHeader>
             <TableRow>
@@ -178,6 +178,49 @@ export function LocksTab({ locks, isLoading, isSaving, onLock, onUnlock }: Locks
           </TableBody>
         </Table>
       </div>
+
+      {!isLoading ? (
+        <ul className="divide-y min-[1300px]:hidden">
+          {PERIOD_KEYS.map((periodKey) => {
+            const lock = latestByPeriod.get(periodKey) ?? null;
+            const isLocked = lock !== null && lock.unlockedAt === null;
+            return (
+              <li key={periodKey} className="space-y-2 px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium">{PERIOD_LABELS[periodKey]}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {lock
+                        ? `${lock.lockedByName ?? (lock.lockedBy ? `#${lock.lockedBy}` : "—")} · ${lock.lockedAt.replace("T", " ")}`
+                        : "Never locked"}
+                    </p>
+                    {lock?.unlockedAt ? (
+                      <p className="truncate text-[11px] text-muted-foreground" title={lock.unlockReason ?? ""}>
+                        Unlocked {lock.unlockedAt.replace("T", " ")}
+                        {lock.unlockReason ? ` · ${lock.unlockReason}` : ""}
+                      </p>
+                    ) : null}
+                  </div>
+                  <Badge variant="outline" className="shrink-0 text-[11px] font-semibold">
+                    {lock === null ? "Never locked" : isLocked ? "Locked" : "Open"}
+                  </Badge>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-11 w-full"
+                  onClick={() => (isLocked ? setUnlocking(periodKey) : setLocking(periodKey))}
+                  disabled={isSaving}
+                >
+                  {isLocked ? <LockOpen className="mr-2 size-4" /> : <Lock className="mr-2 size-4" />}
+                  {isLocked ? "Unlock" : "Lock"}
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
 
       <LockDialog
         periodKey={locking}

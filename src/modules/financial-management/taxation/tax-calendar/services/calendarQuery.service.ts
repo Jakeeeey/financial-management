@@ -129,6 +129,23 @@ export interface CalendarResult {
 const CACHE_TTL_MS = 10 * 60_000;
 const cache = new Map<string, { at: number; data: CalendarResult }>();
 
+/** Companies read side by side. Each one costs several register queries, so the ceiling
+ *  keeps a nine-company group off the connection limit while still overlapping the waits. */
+const COMPANY_CONCURRENCY = 6;
+
+async function mapWithLimit<T, R>(items: T[], limit: number, run: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await run(items[index]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 /** Every filing in the group for one tax year, across every company the registry knows. */
 export async function listCalendar(
   taxYear: number,
@@ -156,8 +173,9 @@ async function buildCalendar(
   const scoped = companyId ? companies.filter((company) => company.companyId === companyId) : companies;
   const notices = calendarNotices(taxYear);
 
-  const obligations: CalendarObligation[] = [];
-  for (const company of scoped) {
+  // Nine companies read one after another took a hundred seconds; the waits are register
+  // latency, so they overlap. Order is rebuilt below, since the rows are sorted by date anyway.
+  const built = await mapWithLimit(scoped, COMPANY_CONCURRENCY, async (company) => {
     try {
       const input = await buildCompanyInput(company, taxYear, springToken);
       const rows = buildObligations(input, taxYear, paidKeys, today);
@@ -165,12 +183,19 @@ async function buildCalendar(
       if (!company.reachable) {
         for (const row of rows) row.estimated = null;
       }
-      obligations.push(...rows);
+      return { rows, notice: null as string | null };
     } catch (error) {
-      notices.push(
-        `${company.code}: filings could not be prepared (${error instanceof Error ? error.message : "unknown error"}).`,
-      );
+      return {
+        rows: [] as CalendarObligation[],
+        notice: `${company.code}: filings could not be prepared (${error instanceof Error ? error.message : "unknown error"}).`,
+      };
     }
+  });
+
+  const obligations: CalendarObligation[] = [];
+  for (const entry of built) {
+    if (entry.notice) notices.push(entry.notice);
+    obligations.push(...entry.rows);
   }
 
   obligations.sort((left, right) => left.dueDate.localeCompare(right.dueDate));

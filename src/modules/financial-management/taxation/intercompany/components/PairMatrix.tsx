@@ -14,16 +14,18 @@ import { TablePager } from "./TablePager";
 
 const PAGE_SIZE = 10;
 
+// The money column shows money or nothing; the reason a figure is missing belongs on the hint line.
 function reciprocalText(pair: IntercompanyPair): string {
-  if (pair.status === "NOT_LINKABLE") return "buyer's supplier field holds ids, not names";
-  if (pair.reciprocalAmount === null) return "no purchase order at the buyer";
+  if (pair.status === "NOT_LINKABLE") return "—";
+  if (pair.reciprocalAmount === null) return "—";
   const documents = `${pair.reciprocalInvoices} doc${pair.reciprocalInvoices === 1 ? "" : "s"}`;
   return `${formatCurrency(pair.reciprocalAmount)} · ${documents}`;
 }
 
 /** Cross-sided check: what the buyer's orders say about the seller's invoice. */
 function reciprocalHint(pair: IntercompanyPair): string | undefined {
-  if (pair.reciprocalAmount === null) return undefined;
+  if (pair.status === "NOT_LINKABLE") return "the buyer's supplier field holds ids, not names";
+  if (pair.reciprocalAmount === null) return "no purchase order at the buyer";
   const gap = pair.reciprocalAmount - pair.amount;
   if (Math.abs(gap) <= 1) return "within ₱1 of the seller's figure";
   return `buyer is ${formatCurrency(Math.abs(gap))} ${gap > 0 ? "higher" : "lower"} than the seller's figure`;

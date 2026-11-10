@@ -143,7 +143,7 @@ export function CarryoverTable({
             </div>
           )}
 
-          <div className="hidden overflow-x-auto xl:block">
+          <div className="hidden overflow-x-auto min-[1300px]:block">
             <table aria-label={`Carryover lots usable in ${year}`} className="w-full min-w-[820px] border-collapse text-sm">
               <caption className="sr-only">Carryover lots with their origin year, amount used and remaining balance</caption>
               <thead>
@@ -193,7 +193,7 @@ export function CarryoverTable({
             </table>
           </div>
 
-          <ul className="divide-y xl:hidden">
+          <ul className="divide-y min-[1300px]:hidden">
             {visible.map((lot) => (
               <li key={lot.id} className="space-y-2 px-4 py-3">
                 <div className="flex items-start justify-between gap-2">

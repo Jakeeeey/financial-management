@@ -20,13 +20,19 @@ import { ChangeLogDetailDialog } from "./ChangeLogDetailDialog";
 import { DateField } from "./DateField";
 import { OptionCombobox } from "./OptionCombobox";
 import { TablePager } from "./TablePager";
-import { CHANGE_LOG_ENTITIES } from "../constants";
+import { CHANGE_LOG_ENTITIES, entityLabel } from "../constants";
+import { phtDisplayStamp } from "../pht";
 import type { ChangeLogFilter, ChangeLogRow } from "../types";
 
 const COLUMNS = 8;
 
 function display(value: string | null): string {
-  return value && value.trim() ? value : "—";
+  return value && value.trim() ? value : "â€”";
+}
+
+/** Stored stamps arrive as raw ISO; the column is labelled PHT, so it prints PHT. */
+function displayStamp(value: string | null): string {
+  return value && value.trim() ? phtDisplayStamp(value) : "â€”";
 }
 
 export function ChangeLogTable({
@@ -61,6 +67,10 @@ export function ChangeLogTable({
     filters.from !== "" ||
     filters.to !== "";
 
+  // The API recomputes `total` under the filters, so `total` alone cannot tell an empty year
+  // from a search that matched nothing; the active filters can.
+  const emptyLabel = dirty ? "No entry matches these filters." : "No change has been recorded for this year yet.";
+
   const companyOptions = [
     { value: "ALL", label: "All companies" },
     ...companies.map((company) => ({
@@ -94,7 +104,7 @@ export function ChangeLogTable({
             value={filters.companyId === null ? "ALL" : String(filters.companyId)}
             onChange={(value) => onFiltersChange({ companyId: value === "ALL" ? null : Number(value) })}
             placeholder="All companies"
-            searchPlaceholder="Search companies…"
+            searchPlaceholder="Search companiesâ€¦"
             emptyLabel="No company matches."
           />
           <Select
@@ -108,7 +118,7 @@ export function ChangeLogTable({
               <SelectItem value="ALL">All entities</SelectItem>
               {CHANGE_LOG_ENTITIES.map((entity) => (
                 <SelectItem key={entity} value={entity}>
-                  {entity.replace(/_/g, " ").toLowerCase()}
+                  {entityLabel(entity)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -155,14 +165,14 @@ export function ChangeLogTable({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[190px]">When (PHT)</TableHead>
-              <TableHead className="w-[160px]">Company</TableHead>
-              <TableHead className="w-[130px]">Entity</TableHead>
-              <TableHead className="w-[160px]">Reference</TableHead>
-              <TableHead className="w-[130px]">Field</TableHead>
-              <TableHead className="w-[220px]">Before → after</TableHead>
-              <TableHead className="w-[120px]">Actor</TableHead>
-              <TableHead className="w-[200px]">Reason</TableHead>
+              <TableHead className="w-[140px]">When (PHT)</TableHead>
+              <TableHead className="w-[120px]">Company</TableHead>
+              <TableHead className="w-[100px]">Entity</TableHead>
+              <TableHead className="w-[110px]">Reference</TableHead>
+              <TableHead className="w-[90px]">Field</TableHead>
+              <TableHead className="w-[150px]">Before â†’ after</TableHead>
+              <TableHead className="w-[90px]">Actor</TableHead>
+              <TableHead className="w-[140px]">Reason</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -177,7 +187,7 @@ export function ChangeLogTable({
             ) : rows.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={COLUMNS} className="h-24 text-center text-sm text-muted-foreground">
-                  No change has been recorded for this year yet.
+                  {emptyLabel}
                 </TableCell>
               </TableRow>
             ) : (
@@ -199,41 +209,44 @@ export function ChangeLogTable({
                   >
                     <TableCell className="tabular-nums text-xs">
                       <span className="block truncate" title={row.occurredAt ?? undefined}>
-                        {display(row.occurredAt)}
+                        {displayStamp(row.occurredAt)}
                       </span>
                     </TableCell>
                     <TableCell>
-                      <span className="block max-w-[150px] truncate" title={company?.name ?? undefined}>
-                        {company?.name ?? (row.companyId ? `Company ${row.companyId}` : "—")}
+                      <span className="block max-w-[110px] truncate" title={company?.name ?? undefined}>
+                        {company?.name ?? (row.companyId ? `Company ${row.companyId}` : "â€”")}
                       </span>
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className="text-[11px]">
-                        {row.entity.replace(/_/g, " ").toLowerCase()}
+                        {entityLabel(row.entity)}
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <span className="block max-w-[150px] truncate" title={row.entityRef ?? undefined}>
+                      <span className="block max-w-[100px] truncate" title={row.entityRef ?? undefined}>
                         {display(row.entityRef)}
                       </span>
                     </TableCell>
                     <TableCell>
-                      <span className="block max-w-[120px] truncate" title={row.field ?? undefined}>
+                      <span className="block max-w-[80px] truncate" title={row.field ?? undefined}>
                         {display(row.field)}
                       </span>
                     </TableCell>
                     <TableCell className="text-xs">
-                      <span className="block max-w-[210px] truncate" title={`${row.beforeValue ?? ""} → ${row.afterValue ?? ""}`}>
-                        {display(row.beforeValue)} → {display(row.afterValue)}
-                      </span>
+                      <div
+                        className="line-clamp-2 max-w-[140px] break-words"
+                        title={`${row.beforeValue ?? ""} â†’ ${row.afterValue ?? ""}`}
+                      >
+                        {display(row.beforeValue)} â†’ {display(row.afterValue)}
+                      </div>
                     </TableCell>
                     <TableCell>
-                      <span className="block max-w-[110px] truncate" title={row.actor ?? undefined}>
+                      <span className="block max-w-[80px] truncate" title={row.actor ?? undefined}>
                         {display(row.actor)}
                       </span>
                     </TableCell>
                     <TableCell>
-                      <span className="block max-w-[190px] truncate" title={row.reason ?? undefined}>
+                      <span className="block max-w-[130px] truncate" title={row.reason ?? undefined}>
                         {display(row.reason)}
                       </span>
                     </TableCell>
@@ -254,7 +267,7 @@ export function ChangeLogTable({
           ))
         ) : rows.length === 0 ? (
           <li className="px-4 py-10 text-center text-sm text-muted-foreground">
-            No change has been recorded for this year yet.
+            {emptyLabel}
           </li>
         ) : (
           rows.map((row) => {
@@ -275,18 +288,18 @@ export function ChangeLogTable({
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-sm font-medium" title={company?.name ?? undefined}>
-                    {company?.name ?? (row.companyId ? `Company ${row.companyId}` : "—")}
+                    {company?.name ?? (row.companyId ? `Company ${row.companyId}` : "â€”")}
                   </span>
                   <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                    {display(row.occurredAt)}
+                    {displayStamp(row.occurredAt)}
                   </span>
                 </div>
                 <p className="truncate text-xs text-muted-foreground" title={row.reason ?? undefined}>
-                  {row.entity.replace(/_/g, " ").toLowerCase()}
-                  {row.field ? ` · ${row.field}` : ""} · {display(row.actor)}
+                  {entityLabel(row.entity)}
+                  {row.field ? ` Â· ${row.field}` : ""} Â· {display(row.actor)}
                 </p>
-                <p className="truncate text-xs" title={`${row.beforeValue ?? ""} → ${row.afterValue ?? ""}`}>
-                  {display(row.beforeValue)} → {display(row.afterValue)}
+                <p className="truncate text-xs" title={`${row.beforeValue ?? ""} â†’ ${row.afterValue ?? ""}`}>
+                  {display(row.beforeValue)} â†’ {display(row.afterValue)}
                 </p>
               </li>
             );
@@ -316,4 +329,5 @@ export function ChangeLogTable({
     </section>
   );
 }
+
 

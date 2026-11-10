@@ -120,10 +120,6 @@ function monthlyRows(ledger: CompanyLedger | undefined): IntercompanyMonthlyRow[
   return rows;
 }
 
-function unreachableNotice(company: RegistryCompany, reason: string | null): string {
-  return `${company.code} — ${company.name} could not be read (${reason ?? "no answer"}), so it is not in the matrix and its side of any pair is unverified.`;
-}
-
 export interface LedgerRequest {
   companyId?: number;
   year: number;
@@ -185,7 +181,8 @@ async function buildIntercompanyLedger(companyId: number | undefined, year: numb
       unreachableReason: ledger?.unreachableReason ?? null,
     });
     if (ledger) notices.push(...ledger.notices);
-    if (!isReachable) notices.push(unreachableNotice(company, ledger?.unreachableReason ?? null));
+    // The page renders one alert from `companies` naming each unreachable company with its
+    // reason, so a per-company notice here would print the same three names twice.
   }
 
   // Only reachable companies form pairs: an unreachable buyer can neither confirm nor deny.

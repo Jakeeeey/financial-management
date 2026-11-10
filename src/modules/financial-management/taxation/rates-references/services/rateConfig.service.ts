@@ -2,6 +2,7 @@ import "server-only";
 
 import { createItem, DirectusError, listItems, updateItem } from "./directus";
 import { listRegistryCompanies } from "./registry";
+import { appendRateAudit, diffValues, formatValues } from "./auditLog";
 import type {
   RateConfig,
   RateConfigCompany,
@@ -161,22 +162,70 @@ export async function loadRateConfig(companyId: number | null): Promise<RateConf
 
 export async function saveRateSetting(companyId: number, row: RateSettingRow): Promise<RateSettingRow> {
   const payload = settingsPayload(companyId, row);
-  if (row.rateId == null) {
-    const created = await createItem<Record<string, unknown>>("tax_rate_settings", payload);
-    return settingsRow(created);
+  const before = row.rateId == null ? null : await existingSetting(row.rateId);
+  const saved =
+    row.rateId == null
+      ? settingsRow(await createItem<Record<string, unknown>>("tax_rate_settings", payload))
+      : settingsRow(await updateItem<Record<string, unknown>>("tax_rate_settings", row.rateId, payload));
+
+  await appendRateAudit({
+    companyId,
+    entity: "tax_rate_settings",
+    entityRef: `effective ${row.effectiveFrom}`,
+    changes: before
+      ? diffValues(before, payload)
+      : [{ field: null, before: null, after: formatValues(payload) }],
+    reason: row.rateId == null ? "Rate version added" : "Rate version edited",
+  });
+  return saved;
+}
+
+/** The row as stored, so the audit trail can show what the edit replaced. */
+async function existingSetting(rateId: number): Promise<Record<string, unknown> | null> {
+  try {
+    const { rows } = await listItems<Record<string, unknown>>("tax_rate_settings", {
+      fields: SETTING_FIELDS,
+      filter: { rate_id: { _eq: rateId } },
+      limit: 1,
+    });
+    return rows[0] ?? null;
+  } catch {
+    return null;
   }
-  const updated = await updateItem<Record<string, unknown>>("tax_rate_settings", row.rateId, payload);
-  return settingsRow(updated);
+}
+
+/** Same reason as `existingSetting`, for the withholding table. */
+async function existingWithholding(rateId: number): Promise<Record<string, unknown> | null> {
+  try {
+    const { rows } = await listItems<Record<string, unknown>>("tax_withholding_rates", {
+      fields: WITHHOLDING_FIELDS,
+      filter: { rate_id: { _eq: rateId } },
+      limit: 1,
+    });
+    return rows[0] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function saveWithholdingRate(companyId: number, row: WithholdingRateRow): Promise<WithholdingRateRow> {
   const payload = withholdingPayload(companyId, row);
-  if (row.rateId == null) {
-    const created = await createItem<Record<string, unknown>>("tax_withholding_rates", payload);
-    return withholdingRow(created);
-  }
-  const updated = await updateItem<Record<string, unknown>>("tax_withholding_rates", row.rateId, payload);
-  return withholdingRow(updated);
+  const before = row.rateId == null ? null : await existingWithholding(row.rateId);
+  const saved =
+    row.rateId == null
+      ? withholdingRow(await createItem<Record<string, unknown>>("tax_withholding_rates", payload))
+      : withholdingRow(await updateItem<Record<string, unknown>>("tax_withholding_rates", row.rateId, payload));
+
+  await appendRateAudit({
+    companyId,
+    entity: "tax_withholding_rates",
+    entityRef: `${row.incomeType}:${row.rateTier ?? "all"}`,
+    changes: before
+      ? diffValues(before, payload)
+      : [{ field: null, before: null, after: formatValues(payload) }],
+    reason: row.rateId == null ? "Withholding rate added" : "Withholding rate edited",
+  });
+  return saved;
 }
 
 export { RateTableError };

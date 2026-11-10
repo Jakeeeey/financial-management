@@ -195,7 +195,7 @@ export function CertificatesTab({
         </div>
       ) : null}
 
-      <div className="overflow-x-auto">
+      <div className="hidden overflow-x-auto min-[1300px]:block">
         <Table aria-label="2307 certificates" className="min-w-[1020px]">
           <TableHeader>
             <TableRow>
@@ -307,6 +307,68 @@ export function CertificatesTab({
           </TableBody>
         </Table>
       </div>
+
+      {!isLoading && visible.length > 0 ? (
+        <ul className="divide-y min-[1300px]:hidden">
+          {visible.map((row) => (
+            <li key={row.id} className="space-y-3 px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate font-medium" title={row.counterpartyName}>
+                    {row.counterpartyName}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {DIRECTION_LABELS[row.direction]} · {PERIOD_LABELS[row.periodKey]} ·{" "}
+                    {WITHHOLDING_LABELS[row.incomeType]}
+                  </p>
+                </div>
+                <StatusBadge status={row.status} label={certificateStatusLabel(row.status)} />
+              </div>
+              <dl className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <dt className="text-muted-foreground">Withheld</dt>
+                  <dd className="tabular-nums font-medium">{formatCurrency(row.taxWithheld)}</dd>
+                </div>
+                <div className="text-right">
+                  <dt className="text-muted-foreground">Income at {formatNumber(row.taxRate, "en-PH", 2)}%</dt>
+                  <dd className="tabular-nums">{formatCurrency(row.incomeAmount)}</dd>
+                </div>
+              </dl>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-11 flex-1"
+                  onClick={() => setViewing(row)}
+                >
+                  Details
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-11 flex-1"
+                  aria-label={`Edit certificate from ${row.counterpartyName}`}
+                  onClick={() => openEdit(row)}
+                >
+                  Edit
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-11 flex-1"
+                  aria-label={`Delete certificate from ${row.counterpartyName}`}
+                  onClick={() => setDeleting(row)}
+                >
+                  Delete
+                </Button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
       <TablePager
         page={safePage}
