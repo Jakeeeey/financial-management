@@ -10,6 +10,7 @@ import { usePeriodSetup } from "./hooks/usePeriodSetup";
 import { ReferenceChoice } from "./components/ReferenceChoice";
 import { CreateReferenceDialog, type NewReference } from "./components/CreateReferenceDialog";
 import { TransactionWorkbench } from "./components/TransactionWorkbench";
+import { ReconcileExports } from "./components/ReconcileExports";
 import type { AccountReference, BankAccountReference, CompanyReference } from "./reference-types";
 import type { BankConfiguration } from "./setup-types";
 
@@ -81,6 +82,7 @@ export default function BankReconciliationSetupModule() {
     <div className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-semibold tracking-tight">Reconcile</h1><p className="mt-2 text-sm text-muted-foreground">Compare bank statement lines with the Cash in Bank ledger. Add transactions, import templates, or refresh posted ledger lines.</p></div>
       <div className="flex gap-2"><Button type="button" variant="outline" disabled={!draft || setup.loading || busy || closed} onClick={() => { void setup.save().catch(() => {}); }}>Save setup</Button>{period && <Button type="button" variant="outline" disabled={busy} onClick={() => { void setup.reload(); }}>Reload setup</Button>}</div>
     </div>
+    <ReconcileExports key={bank?.id || 0} ready={Boolean(draft)} busy={busy || setup.loading} setBusy={setBusy} run={setup.run} />
     <section aria-label="Period setup" className="space-y-5 rounded-lg border bg-card p-4 sm:p-6">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <ReferenceChoice label="Entity" resource="companies" selected={company} disabled={setup.loading || busy || closed} onSelect={item => { void selectCompany(item as CompanyReference); }} onAdd={() => setNewKind("companies")} />

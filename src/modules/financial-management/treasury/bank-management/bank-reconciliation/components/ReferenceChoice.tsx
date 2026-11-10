@@ -13,10 +13,10 @@ export function referenceLabel(item: Reference) {
   return "bankName" in item ? `${item.bankName} · ${item.branch} · ${item.maskedAccountNumber || "Account number unavailable"}` : `${item.code} · ${item.name}`;
 }
 
-export function ReferenceChoice({ label, resource, selected, onSelect, disabled, companyId, bankGroup, currentAssets, onAdd }: {
+export function ReferenceChoice({ label, resource, selected, onSelect, disabled, companyId, bankGroup, currentAssets, onAdd, onClear, excludeIds }: {
   label: string; resource: BankReconciliationReferenceResource; selected: Reference | null;
   onSelect: (item: Reference) => void; disabled?: boolean; companyId?: number; bankGroup?: string;
-  currentAssets?: boolean; onAdd?: () => void;
+  currentAssets?: boolean; onAdd?: () => void; onClear?: () => void; excludeIds?: number[];
 }) {
   const [open, setOpen] = useState(false), [search, setSearch] = useState(""), [page, setPage] = useState(1);
   const [items, setItems] = useState<Reference[]>([]), [total, setTotal] = useState(0), [loading, setLoading] = useState(false), [error, setError] = useState("");
@@ -42,14 +42,16 @@ export function ReferenceChoice({ label, resource, selected, onSelect, disabled,
           <CommandList className="max-h-64 overflow-y-auto overscroll-contain"><CommandEmpty>{loading ? "Loading choices..." : error || "No matching choices."}</CommandEmpty>
             {!loading && !error && <CommandGroup>{items.filter(item => !bankGroup || !("bankName" in item) || `${item.bankName} · ${item.branch}` === bankGroup).map(item => {
               const unsuitable = currentAssets && "classification" in item && item.classification !== "BS / CURRENT ASSETS";
-              return <CommandItem key={item.id} value={String(item.id)} disabled={Boolean(unsuitable)} onSelect={() => { onSelect(item); setOpen(false); }}>
+              const excluded = excludeIds?.includes(item.id);
+              return <CommandItem key={item.id} value={String(item.id)} disabled={Boolean(unsuitable || excluded)} onSelect={() => { onSelect(item); setOpen(false); }}>
                 <Check className={`mr-2 size-4 shrink-0 ${selected?.id === item.id ? "opacity-100" : "opacity-0"}`} />
-                <span className="min-w-0 whitespace-normal break-words">{referenceLabel(item)}{"classification" in item && <small className="block text-muted-foreground">{item.status} · {item.classification}{unsuitable ? " · Select a Current Assets account" : ""}</small>}</span>
+                <span className="min-w-0 whitespace-normal break-words">{referenceLabel(item)}{"classification" in item && <small className="block text-muted-foreground">{item.status} · {item.classification}{unsuitable ? " · Select a Current Assets account" : excluded ? " · Cash in Bank cannot be its own offset" : ""}</small>}</span>
               </CommandItem>;
             })}</CommandGroup>}
           </CommandList>
           <div className="flex flex-wrap items-center justify-between gap-2 border-t p-2">
             {onAdd && <Button type="button" variant="ghost" size="sm" onClick={() => { setOpen(false); onAdd(); }}>Add new…</Button>}
+            {onClear && selected && <Button type="button" variant="ghost" size="sm" onClick={() => { setOpen(false); onClear(); }}>Clear selection</Button>}
             <div className="flex shrink-0 items-center gap-2 whitespace-nowrap"><Button type="button" size="sm" variant="outline" disabled={loading || page === 1} onClick={() => setPage(p => p - 1)}>Previous</Button><span className="text-xs">Page {page}</span><Button type="button" size="sm" variant="outline" disabled={loading || page * 25 >= total} onClick={() => setPage(p => p + 1)}>Next</Button></div>
           </div>
         </Command>
