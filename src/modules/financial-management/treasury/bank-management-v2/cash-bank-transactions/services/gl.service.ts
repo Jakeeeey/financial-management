@@ -104,8 +104,21 @@ export async function resolveJournalEntry(draft: JournalEntryDraft): Promise<Res
   };
 }
 
-/** Raised when a posting cannot proceed; the route turns it into a 409 with the keys. */
-export class PostingBlockedError extends Error {
+/**
+ * Whether settling a transfer can post at all, so the listing can say so before a click
+ * fails. An unreadable mapping table is reported as ready: the settle route still guards it.
+ */
+export async function transferMappingState(): Promise<string[]> {
+  try {
+    const mapping = await listGlMapping();
+    const row = mapping.find((entry) => entry.mappingKey.toUpperCase() === "TRANSFER_IN_TRANSIT");
+    return row && "coaId" in row && row.coaId ? [] : ["TRANSFER_IN_TRANSIT"];
+  } catch {
+    return [];
+  }
+}
+
+/** Raised when a posting cannot proceed; the route turns it into a 409 with the keys. */export class PostingBlockedError extends Error {
   missingMappingKeys: string[];
 
   constructor(message: string, missingMappingKeys: string[] = []) {

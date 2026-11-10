@@ -48,7 +48,7 @@ export function TransactionDetailDialog({ row, isSaving, onOpenChange, onSettle,
 
   return (
     <Dialog open={row !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[95vw] rounded-2xl p-0 sm:max-w-[720px]">
+      <DialogContent showCloseButton={false} className="w-[95vw] rounded-2xl p-0 sm:max-w-[720px]">
         {row ? (
           <div className="flex max-h-[85vh] flex-col overflow-hidden">
             <DialogHeader className="border-b px-6 py-4">
@@ -104,16 +104,16 @@ export function TransactionDetailDialog({ row, isSaving, onOpenChange, onSettle,
                   Cancel memo
                 </Button>
               ) : null}
-              {canSettle ? (
-                <Button type="button" disabled={isSaving} onClick={() => onSettle(row)}>
-                  Settle leg 2
-                </Button>
-              ) : null}
               <DialogClose asChild>
                 <Button type="button" variant="outline">
                   Close
                 </Button>
               </DialogClose>
+              {canSettle ? (
+                <Button type="button" disabled={isSaving} onClick={() => onSettle(row)}>
+                  Settle leg 2
+                </Button>
+              ) : null}
             </DialogFooter>
           </div>
         ) : null}

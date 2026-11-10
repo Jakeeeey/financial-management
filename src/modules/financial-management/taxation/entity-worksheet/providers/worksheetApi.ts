@@ -33,8 +33,9 @@ export interface WorksheetPayload {
   snapshot: EntitySnapshot;
 }
 
-export async function fetchWorksheet(companyId: number, year: number): Promise<WorksheetPayload> {
-  const response = await fetch(`${BASE}?companyId=${companyId}&year=${year}`, { cache: "no-store" });
+export async function fetchWorksheet(companyId: number, year: number, fresh = false): Promise<WorksheetPayload> {
+  const suffix = fresh ? "&refresh=1" : "";
+  const response = await fetch(`${BASE}?companyId=${companyId}&year=${year}${suffix}`, { cache: "no-store" });
   const payload = (await response.json()) as Envelope<WorksheetPayload>;
   return unwrap(payload);
 }

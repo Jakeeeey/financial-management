@@ -31,7 +31,7 @@ export function Payments2307Module() {
         <div className="min-w-0">
           <h1 className="text-xl font-semibold sm:text-2xl">Payments &amp; 2307</h1>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            2307 certificates, remittances and quarter locks for one company and tax year.
+            What has been certified and remitted for the selected company and year.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -161,3 +161,4 @@ export function Payments2307Module() {
     </div>
   );
 }
+

@@ -2,6 +2,8 @@ import "server-only";
 
 import { roundMoney } from "./directus";
 import { loadFigures } from "./companyFigures";
+import { clearSalesCache } from "./stt.client";
+import { loadTaxRates } from "./taxRates.service";
 import { computeTax, computeVat } from "./taxEngine";
 import { defaultProfile, loadProfiles } from "./profile.service";
 import { loadCarryovers } from "./carryover.service";
@@ -55,6 +57,14 @@ function emptyRow(company: RegistryCompany, failure: string | null, status: Grou
     status,
     profileMissing,
     failure,
+    sales: 0,
+    salesVat: 0,
+    discounts: 0,
+    returns: 0,
+    purchases: 0,
+    expenses: 0,
+    productCost: 0,
+    source: "INVOICE_HEADERS",
   };
 }
 
@@ -62,6 +72,7 @@ async function buildRow(
   company: RegistryCompany,
   taxYear: number,
   profileState: { profile: ReturnType<typeof defaultProfile>; missing: boolean } | undefined,
+  springToken?: string | null,
 ): Promise<GroupCompanyRow> {
   const state = profileState ?? { profile: defaultProfile(company.companyId, taxYear), missing: true };
 
@@ -70,9 +81,12 @@ async function buildRow(
   }
 
   try {
-    const { figures } = await loadFigures(company, taxYear);
-    const tax = computeTax(figures, state.profile);
-    const vat = computeVat(figures, state.profile);
+    const { figures, salesSource } = await loadFigures(company, taxYear, [], { springToken });
+    const quarterly = (pick: (quarter: (typeof figures)[number]) => number) =>
+      roundMoney(figures.reduce((total, quarter) => total + pick(quarter), 0));
+    const rates = await loadTaxRates(company, taxYear);
+    const tax = computeTax(figures, state.profile, rates);
+    const vat = computeVat(figures, state.profile, rates);
     const withholding = roundMoney(figures.reduce((total, quarter) => total + quarter.cwt, 0));
     const hasActivity = figuresHaveActivity(figures);
     const netPosition = tax.annual.netPosition;
@@ -101,6 +115,14 @@ async function buildRow(
       status,
       profileMissing: state.missing,
       failure: null,
+      sales: quarterly((quarter) => quarter.sales),
+      salesVat: quarterly((quarter) => quarter.salesVat),
+      discounts: quarterly((quarter) => quarter.discounts),
+      returns: quarterly((quarter) => quarter.returns),
+      purchases: quarterly((quarter) => quarter.purchases),
+      expenses: quarterly((quarter) => quarter.expenses),
+      productCost: quarterly((quarter) => quarter.cogsProductCost),
+      source: salesSource,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -110,7 +132,37 @@ async function buildRow(
 
 const SEVERITY_RANK: Record<GroupAttentionItem["severity"], number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2 };
 
-export async function loadGroupOverview(taxYear: number): Promise<GroupOverviewData> {
+const GROUP_CACHE_TTL_MS = 10 * 60_000;
+
+/** See worksheet.service.ts: a session-less read is a different answer, so it gets its own entry. */
+function authKey(springToken: string | null | undefined): string {
+  return springToken ? springToken.slice(-8) : "anon";
+}
+const groupCache = new Map<string, { at: number; data: GroupOverviewData }>();
+
+export async function loadGroupOverview(
+  taxYear: number,
+  springToken?: string | null,
+  options: { fresh?: boolean } = {},
+): Promise<GroupOverviewData> {
+  const key = `${taxYear}:${authKey(springToken)}`;
+  const cached = groupCache.get(key);
+  if (!options.fresh && cached && Date.now() - cached.at < GROUP_CACHE_TTL_MS) return cached.data;
+  if (options.fresh) clearSalesCache();
+  const data = await buildGroupOverview(taxYear, springToken);
+  groupCache.set(key, { at: Date.now(), data });
+  return data;
+}
+
+/** A profile edit changes a company's status here, so the group rows must not wait out the TTL. */
+export function clearGroupCache(taxYear: number): void {
+  const prefix = `${taxYear}:`;
+  for (const key of [...groupCache.keys()]) {
+    if (key.startsWith(prefix)) groupCache.delete(key);
+  }
+}
+
+async function buildGroupOverview(taxYear: number, springToken?: string | null): Promise<GroupOverviewData> {
   const registry = await listRegistryCompaniesWithHealth();
   const companies: RegistryCompanySummary[] = registry.map((company) => ({
     companyId: company.companyId,
@@ -130,7 +182,7 @@ export async function loadGroupOverview(taxYear: number): Promise<GroupOverviewD
   ]);
 
   const rows = await Promise.all(
-    registry.map((company) => buildRow(company, taxYear, profileLoad.byCompany.get(company.companyId))),
+    registry.map((company) => buildRow(company, taxYear, profileLoad.byCompany.get(company.companyId), springToken)),
   );
 
   const totals = rows.reduce<GroupTotals>(
@@ -209,7 +261,7 @@ export async function loadGroupOverview(taxYear: number): Promise<GroupOverviewD
     attention.unshift({
       key: "profile-table",
       severity: "HIGH",
-      companyCode: "—",
+      companyCode: "−",
       title: "Tax profiles are unreadable",
       detail: profileLoad.notice,
     });
@@ -226,3 +278,10 @@ export async function loadGroupOverview(taxYear: number): Promise<GroupOverviewD
     companies,
   };
 }
+
+
+
+
+
+
+

@@ -12,7 +12,15 @@ export const PERIOD_LABELS: Record<PeriodKey, string> = {
   ANNUAL: "Annual",
 };
 
+export const VAT_RATE = 0.12;
 export const PERCENTAGE_TAX_RATE = 0.03;
+export const OSD_RATE = 0.4;
+export const MCIT_RATE = 0.02;
+export const CORPORATE_RATE = 0.25;
+export const SMALL_CORPORATION_RATE = 0.2;
+export const SMALL_CORPORATION_NTI_CEILING = 5_000_000;
+export const SMALL_CORPORATION_ASSET_CEILING = 100_000_000;
+export const MCIT_START_YEAR = 4;
 
 export const DEFAULT_PROFILE = {
   assetsExcludingLand: 0,

@@ -12,11 +12,43 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+const DESK_CACHE_TTL_MS = 60_000;
+const deskCache = new Map<string, { at: number; data: DeskPayload }>();
+
 /**
  * One payload for the whole page so the three tabs cannot disagree about which
  * company and year they are showing.
  */
-export async function loadDesk(companyId: number | null, year: number): Promise<DeskPayload> {
+export async function loadDesk(
+  companyId: number | null,
+  year: number,
+  options: { fresh?: boolean } = {},
+): Promise<DeskPayload> {
+  // A request without a company resolves to the registry's first row, so the payload is stored
+  // under the company it actually returned; invalidation by id then always finds it.
+  const key = companyId === null ? null : `${companyId}:${year}`;
+  const hit = key === null ? undefined : deskCache.get(key);
+  if (!options.fresh && hit && Date.now() - hit.at < DESK_CACHE_TTL_MS) return hit.data;
+
+  const data = await buildDesk(companyId, year);
+  // A payload carrying notices is a degraded read; keep it out so the next request retries.
+  if (data.notices.length === 0) deskCache.set(`${data.companyId}:${data.year}`, { at: Date.now(), data });
+  return data;
+}
+
+/** Payments, certificates and locks ride in one payload, so a write drops the whole company. */
+export function clearDeskCache(companyId?: number | null): void {
+  if (companyId === undefined || companyId === null) {
+    deskCache.clear();
+    return;
+  }
+  const prefix = `${companyId}:`;
+  for (const key of [...deskCache.keys()]) {
+    if (key.startsWith(prefix)) deskCache.delete(key);
+  }
+}
+
+async function buildDesk(companyId: number | null, year: number): Promise<DeskPayload> {
   const notices: string[] = [];
   let companies: CompanyOption[] = [];
   let registry: Awaited<ReturnType<typeof listRegistryCompanies>> = [];

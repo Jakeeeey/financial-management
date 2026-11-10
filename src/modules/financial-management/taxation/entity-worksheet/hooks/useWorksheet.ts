@@ -18,11 +18,11 @@ export function useWorksheet(initialYear: number) {
   const [profileRev, setProfileRev] = useState(0);
 
   const load = useCallback(
-    async (nextCompanyId: number, nextYear: number, options?: { quiet?: boolean }) => {
+    async (nextCompanyId: number, nextYear: number, options?: { quiet?: boolean; fresh?: boolean }) => {
       if (!options?.quiet) setIsLoading(true);
       setError(null);
       try {
-        const payload = await fetchWorksheet(nextCompanyId, nextYear);
+        const payload = await fetchWorksheet(nextCompanyId, nextYear, options?.fresh === true);
         setCompanies(payload.companies);
         setSnapshot(payload.snapshot);
         setProfileRev((current) => current + 1);
@@ -82,7 +82,8 @@ export function useWorksheet(initialYear: number) {
         setSnapshot((current) => (current ? { ...current, profile: saved } : current));
         setProfileRev((current) => current + 1);
         toast.success("Tax profile saved.");
-        await load(saved.companyId, saved.taxYear, { quiet: true });
+        // Fresh: the save already invalidated the server snapshot, and a second read must not race it.
+        await load(saved.companyId, saved.taxYear, { quiet: true, fresh: true });
         return true;
       } catch (caught) {
         const message = caught instanceof WorksheetApiError || caught instanceof Error ? caught.message : null;
@@ -120,6 +121,8 @@ export function useWorksheet(initialYear: number) {
     selectCompany,
     selectYear,
     saveProfile,
-    refetch: () => (companyId ? load(companyId, year) : Promise.resolve()),
+    // Refresh means "pull again", so it bypasses the server's short-lived snapshot cache.
+    refetch: () => (companyId ? load(companyId, year, { fresh: true }) : Promise.resolve()),
   };
 }
+

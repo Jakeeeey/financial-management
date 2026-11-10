@@ -89,7 +89,7 @@ export function MasterlistFilters({
             onValueChange={(value) => onChange({ ...filters, type: value === ALL ? undefined : value })}
           >
             <SelectTrigger className="w-full" aria-label="Account type filter">
-              <SelectValue placeholder="All types" />
+              <SelectValue className="truncate" placeholder="All types" />
             </SelectTrigger>
             <SelectContent className="max-h-60">
               <SelectItem value={ALL}>All types</SelectItem>
@@ -109,7 +109,7 @@ export function MasterlistFilters({
             onValueChange={(value) => onChange({ ...filters, currency: value === ALL ? undefined : value })}
           >
             <SelectTrigger className="w-full" aria-label="Currency filter">
-              <SelectValue placeholder="All currencies" />
+              <SelectValue className="truncate" placeholder="All currencies" />
             </SelectTrigger>
             <SelectContent className="max-h-60">
               <SelectItem value={ALL}>All currencies</SelectItem>
@@ -126,7 +126,7 @@ export function MasterlistFilters({
             onValueChange={(value) => onChange({ ...filters, ifrs: value === ALL ? undefined : value })}
           >
             <SelectTrigger className="w-full" aria-label="IFRS 9 category filter">
-              <SelectValue placeholder="All categories" />
+              <SelectValue className="truncate" placeholder="All categories" />
             </SelectTrigger>
             <SelectContent className="max-h-60">
               <SelectItem value={ALL}>All categories</SelectItem>
@@ -146,7 +146,7 @@ export function MasterlistFilters({
             onValueChange={(value) => onChange({ ...filters, status: value === ALL ? undefined : value })}
           >
             <SelectTrigger className="w-full" aria-label="Status filter">
-              <SelectValue placeholder="All statuses" />
+              <SelectValue className="truncate" placeholder="All statuses" />
             </SelectTrigger>
             <SelectContent className="max-h-60">
               {STATUS_OPTIONS.map((option) => (
@@ -165,7 +165,7 @@ export function MasterlistFilters({
             onValueChange={(value) => onChange({ ...filters, reconciliation: value === ALL ? undefined : value })}
           >
             <SelectTrigger className="w-full" aria-label="Reconciliation filter">
-              <SelectValue placeholder="Any" />
+              <SelectValue className="truncate" placeholder="Any" />
             </SelectTrigger>
             <SelectContent className="max-h-60">
               {RECONCILIATION_OPTIONS.map((option) => (

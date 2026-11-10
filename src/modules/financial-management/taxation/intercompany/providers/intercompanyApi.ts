@@ -15,9 +15,14 @@ interface Envelope {
   error?: string;
 }
 
-export async function fetchIntercompany(companyId: number | null, year: number): Promise<IntercompanyPayload> {
+export async function fetchIntercompany(
+  companyId: number | null,
+  year: number,
+  fresh = false,
+): Promise<IntercompanyPayload> {
   const params = new URLSearchParams({ year: String(year) });
   if (companyId !== null) params.set("companyId", String(companyId));
+  if (fresh) params.set("refresh", "1");
 
   const response = await fetch(`/api/fm/taxation/intercompany?${params.toString()}`, { cache: "no-store" });
   const text = await response.text().catch(() => "");
@@ -38,3 +43,4 @@ export async function fetchIntercompany(companyId: number | null, year: number):
   }
   return payload.data;
 }
+

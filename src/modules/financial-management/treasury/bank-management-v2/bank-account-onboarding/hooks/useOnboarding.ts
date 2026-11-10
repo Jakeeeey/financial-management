@@ -128,6 +128,7 @@ export function useOnboarding() {
   return {
     accounts: listing?.rows ?? ([] as BankAccountV2[]),
     total: listing?.total ?? 0,
+    registerTotal: listing?.registerTotal ?? 0,
     options: listing?.options ?? EMPTY_OPTIONS,
     notice: listing?.notice,
     filters,

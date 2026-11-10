@@ -1,6 +1,8 @@
+import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
+import { COOKIE_NAME } from "@/lib/auth-utils";
 import { DirectusError } from "@/modules/financial-management/taxation/group-overview/services/directus";
 import { loadGroupOverview } from "@/modules/financial-management/taxation/group-overview/services/groupOverview.service";
 
@@ -23,9 +25,12 @@ export async function GET(request: NextRequest) {
   }
 
   const taxYear = parsed.data.year ?? new Date().getFullYear();
+  const store = await cookies();
+  const springToken = store.get(COOKIE_NAME)?.value ?? null;
+  const fresh = request.nextUrl.searchParams.get("refresh") === "1";
 
   try {
-    const data = await loadGroupOverview(taxYear);
+    const data = await loadGroupOverview(taxYear, springToken, { fresh });
     return NextResponse.json({ success: true, data });
   } catch (error) {
     if (error instanceof DirectusError) {

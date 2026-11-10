@@ -94,7 +94,7 @@ export function NewDepositDialog({ open, onOpenChange, accounts, assets, isSavin
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[95vw] p-0 sm:max-w-[950px] rounded-2xl">
+      <DialogContent showCloseButton={false} className="w-[95vw] p-0 sm:max-w-[800px] rounded-2xl">
         <form onSubmit={handleSubmit} className="flex max-h-[88vh] flex-col overflow-hidden">
           <DialogHeader className="border-b px-6 py-4">
             <DialogTitle className="line-clamp-1">
@@ -121,9 +121,13 @@ export function NewDepositDialog({ open, onOpenChange, accounts, assets, isSavin
                     placeholder="Select account"
                     searchPlaceholder="Search bank accounts"
                     emptyLabel="No account matches that search."
+                    aria-invalid={touched && Boolean(errors.bankAccountId)}
+                    aria-describedby={touched && errors.bankAccountId ? "deposit-account-error" : undefined}
                   />
                   {touched && errors.bankAccountId && (
-                    <p className="text-xs text-destructive">{errors.bankAccountId}</p>
+                    <p id="deposit-account-error" className="text-xs text-destructive">
+                      {errors.bankAccountId}
+                    </p>
                   )}
                 </div>
 
@@ -138,9 +142,13 @@ export function NewDepositDialog({ open, onOpenChange, accounts, assets, isSavin
                       maxDate={today}
                       value={depositDate}
                       onChange={(value) => setDepositDate(value)}
+                      aria-invalid={touched && Boolean(errors.depositDate)}
+                      aria-describedby={touched && errors.depositDate ? "deposit-date-error" : undefined}
                     />
                     {touched && errors.depositDate && (
-                      <p className="text-xs text-destructive">{errors.depositDate}</p>
+                      <p id="deposit-date-error" className="text-xs text-destructive">
+                        {errors.depositDate}
+                      </p>
                     )}
                   </div>
 
@@ -154,8 +162,14 @@ export function NewDepositDialog({ open, onOpenChange, accounts, assets, isSavin
                       maxLength={40}
                       placeholder="As printed or validated by the bank"
                       onChange={(event) => setSlipNo(event.target.value)}
+                      aria-invalid={touched && Boolean(errors.slipNo)}
+                      aria-describedby={touched && errors.slipNo ? "deposit-slip-no-error" : undefined}
                     />
-                    {touched && errors.slipNo && <p className="text-xs text-destructive">{errors.slipNo}</p>}
+                    {touched && errors.slipNo && (
+                      <p id="deposit-slip-no-error" className="text-xs text-destructive">
+                        {errors.slipNo}
+                      </p>
+                    )}
                   </div>
                 </div>
 

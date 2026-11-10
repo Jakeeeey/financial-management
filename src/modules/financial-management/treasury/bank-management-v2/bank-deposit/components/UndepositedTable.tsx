@@ -27,6 +27,8 @@ type Props = {
   onSelectAllReady: (ids: number[]) => void;
   onDeselectAll: () => void;
   onOpenRow: (asset: UndepositedAsset) => void;
+  /** Money value of the current selection, so the slip amount is visible before the dialog opens. */
+  selectedAmount: number;
 };
 
 /**
@@ -47,6 +49,7 @@ export function UndepositedTable({
   onSelectAllReady,
   onDeselectAll,
   onOpenRow,
+  selectedAmount,
 }: Props) {
   // A refetch can leave the page past the last row; clamp instead of resetting so the
   // selection the user built up is not disturbed by an unrelated page change.
@@ -69,7 +72,7 @@ export function UndepositedTable({
     >
       <header className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold">Undeposited collections</h2>
+          <h2 className="text-sm font-semibold">Collections on hand</h2>
           <p className="text-xs text-muted-foreground">
             Tick the collections going on one deposit slip, then choose the bank.
           </p>
@@ -82,6 +85,12 @@ export function UndepositedTable({
       <UndepositedFiltersBar filters={filters} onChange={onFiltersChange} />
 
       <div className="flex flex-wrap items-center justify-end gap-2 border-b border-border/50 bg-muted/20 px-4 py-2">
+        {selected.size > 0 ? (
+          <p className="mr-auto text-xs text-muted-foreground">
+            <span className="tabular-nums">{formatNumber(selected.size)}</span> selected ·{" "}
+            <span className="tabular-nums">{formatCurrency(selectedAmount)}</span> going on the slip
+          </p>
+        ) : null}
         <Button
           type="button"
           variant="outline"
@@ -90,11 +99,11 @@ export function UndepositedTable({
           disabled={readyIds.length === 0 || readyIds.every((id) => selected.has(id))}
           onClick={() => onSelectAllReady(readyIds)}
         >
-          Select all ready ({readyIds.length})
+          Select all ready
         </Button>
         {selected.size > 0 ? (
           <Button type="button" variant="ghost" size="sm" className="h-8" onClick={onDeselectAll}>
-            Deselect all ({selected.size})
+            Deselect all
           </Button>
         ) : null}
       </div>
@@ -123,12 +132,10 @@ export function UndepositedTable({
                     />
                   </TableHead>
                   <TableHead className="w-[120px]">Collected</TableHead>
-                  <TableHead className="w-[110px]">Type</TableHead>
+                  <TableHead className="w-[130px]">Type</TableHead>
                   <TableHead className="max-w-[160px]">OR / check no.</TableHead>
                   <TableHead className="max-w-[180px]">Customer</TableHead>
-                  <TableHead className="max-w-[180px]">Source</TableHead>
                   <TableHead className="w-[140px] text-right">Amount</TableHead>
-                  <TableHead className="w-[160px]">Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -172,6 +179,13 @@ export function UndepositedTable({
                             {asset.bankName}
                           </p>
                         ) : null}
+                        {pdc ? (
+                          <p className="mt-0.5 text-[11px] text-amber-700 dark:text-amber-400">
+                            Post-dated, deposit from {asset.chequeDate ? toPhtDateString(asset.chequeDate) : "—"}
+                          </p>
+                        ) : asset.assetType === "CASH" && asset.ageDays >= 1 ? (
+                          <p className="mt-0.5 text-[11px] text-amber-700 dark:text-amber-400">Over a day on hand</p>
+                        ) : null}
                       </TableCell>
                       <TableCell className="max-w-[160px]">
                         <p className="truncate font-mono text-sm" title={asset.documentNumber}>
@@ -186,28 +200,7 @@ export function UndepositedTable({
                       <TableCell className="max-w-[180px] truncate text-sm" title={asset.customer ?? undefined}>
                         {asset.customer ?? "—"}
                       </TableCell>
-                      <TableCell className="max-w-[180px] truncate text-xs text-muted-foreground" title={asset.collectionReference ?? undefined}>
-                        {asset.collectionReference ?? "Collections"}
-                      </TableCell>
                       <TableCell className="text-right text-sm tabular-nums">{formatCurrency(asset.amount)}</TableCell>
-                      <TableCell>
-                        {pdc ? (
-                          <>
-                            <Badge variant="outline" className={cn("text-[11px] font-semibold", toneClass("info"))}>
-                              PDC
-                            </Badge>
-                            <p className="mt-0.5 whitespace-nowrap text-[11px] text-muted-foreground">
-                              Deposit from {asset.chequeDate ? toPhtDateString(asset.chequeDate) : "—"}
-                            </p>
-                          </>
-                        ) : asset.assetType === "CASH" && asset.ageDays >= 1 ? (
-                          <Badge variant="outline" className={cn("text-[11px] font-semibold", toneClass("warning"))}>
-                            Over 1 day
-                          </Badge>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">Ready</span>
-                        )}
-                      </TableCell>
                     </TableRow>
                   );
                 })}

@@ -95,3 +95,4 @@ export function daysSince(value: string | Date | number | null | undefined): num
   const now = Date.parse(`${phtDate()}T00:00:00Z`);
   return Math.round((now - then) / 86_400_000);
 }
+

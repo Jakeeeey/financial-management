@@ -1,11 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Plus } from "lucide-react";
-
+import { Plus , ArrowLeftRight} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { formatNumber } from "@/lib/utils";
 
 import { CancelMemoDialog } from "./components/CancelMemoDialog";
 import { InlineAlert } from "./components/InlineAlert";
@@ -35,6 +33,8 @@ export function TransactionsModule() {
     accounts,
     expenseAccounts,
     clearing,
+    mappingMissing,
+    knownKinds,
     notice,
     isLoading,
     isSaving,
@@ -45,6 +45,14 @@ export function TransactionsModule() {
     cancelMemo,
   } = useTransactions();
 
+  const isFiltered =
+    filters.kind !== "ALL" ||
+    filters.status !== "" ||
+    filters.q.trim() !== "" ||
+    filters.from !== "" ||
+    filters.to !== "" ||
+    filters.bankAccountId != null;
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [cancelTarget, setCancelTarget] = useState<TransactionRow | null>(null);
   const [openRow, setOpenRow] = useState<TransactionRow | null>(null);
@@ -53,9 +61,14 @@ export function TransactionsModule() {
     <div className="mx-auto max-w-[1600px] space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold tracking-tight">Cash &amp; Bank Transactions</h1>
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl bg-primary/10 p-3 text-primary">
+              <ArrowLeftRight className="size-5" />
+            </div>
+            <h1 className="text-xl font-semibold sm:text-2xl">Cash &amp; Bank Transactions</h1>
+          </div>
           <p className="text-sm text-muted-foreground">
-            Credit memos, debit memos, interest and fund transfers, each posted as a journal entry.
+            Money in and out of the group&apos;s bank accounts, each posted as a journal entry.
           </p>
         </div>
         <Button onClick={() => setDialogOpen(true)} className="min-h-11 shrink-0 md:min-h-0">
@@ -66,7 +79,7 @@ export function TransactionsModule() {
 
       {notice ? <InlineAlert tone="info">{notice}</InlineAlert> : null}
 
-      {error ? (
+      {error && rows.length > 0 ? (
         <InlineAlert>
           <span className="mr-2">{error}</span>
           <Button variant="link" className="h-auto p-0 text-destructive underline" onClick={refetch}>
@@ -78,10 +91,10 @@ export function TransactionsModule() {
       <Tabs defaultValue="transactions" className="space-y-4">
         <TabsList>
           <TabsTrigger value="transactions" className="min-h-11 md:min-h-0">
-            Bank transactions ({formatNumber(total)})
+            Bank transactions
           </TabsTrigger>
           <TabsTrigger value="clearing" className="min-h-11 md:min-h-0">
-            Transfers in clearing ({formatNumber(clearing.length)})
+            Transfers in clearing
           </TabsTrigger>
         </TabsList>
 
@@ -93,15 +106,19 @@ export function TransactionsModule() {
             page={page}
             pageCount={pageCount}
             total={total}
+            isFiltered={isFiltered}
             pageSize={pageSize}
             onPageChange={(next) => patchFilters({ page: next })}
             onCancelMemo={setCancelTarget}
             onSettle={(row) => void settle(row)}
             onOpenRow={setOpenRow}
+            isError={Boolean(error)}
+            onRetry={refetch}
             filters={
               <TransactionFiltersBar
                 filters={filters}
                 accounts={accounts}
+                kinds={knownKinds}
                 onChange={patchFilters}
                 onReset={resetFilters}
               />
@@ -112,6 +129,7 @@ export function TransactionsModule() {
         <TabsContent value="clearing">
           <TransfersClearingPanel
             clearing={clearing}
+            mappingMissing={mappingMissing}
             isLoading={isLoading}
             isSaving={isSaving}
             onSettle={(row) => void settle(row)}

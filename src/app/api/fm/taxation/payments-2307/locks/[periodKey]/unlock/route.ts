@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { periodKeySchema, unlockBodySchema } from "@/modules/financial-management/taxation/payments-2307/schemas";
 import { currentActor } from "@/modules/financial-management/taxation/payments-2307/services/actor";
+import { clearDeskCache } from "@/modules/financial-management/taxation/payments-2307/services/desk.service";
 import { unlockPeriod } from "@/modules/financial-management/taxation/payments-2307/services/locks.service";
 import { fail, handleRouteError, ok, readJson } from "@/modules/financial-management/taxation/payments-2307/services/responses";
 
@@ -33,6 +34,7 @@ export async function POST(request: Request, { params }: Params): Promise<NextRe
       },
       actor,
     );
+    clearDeskCache(parsed.data.companyId);
     return ok(data);
   } catch (error) {
     return handleRouteError("POST locks/[periodKey]/unlock", error);

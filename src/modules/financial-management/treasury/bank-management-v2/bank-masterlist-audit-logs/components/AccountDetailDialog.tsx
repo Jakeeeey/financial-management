@@ -37,7 +37,7 @@ function Detail({ label, children }: { label: string; children: ReactNode }) {
 export function AccountDetailDialog({ account, onOpenChange }: Props) {
   return (
     <Dialog open={account !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[95vw] rounded-2xl p-0 sm:max-w-[720px]">
+      <DialogContent showCloseButton={false} className="w-[95vw] rounded-2xl p-0 sm:max-w-[720px]">
         {account ? (
           <div className="flex max-h-[85vh] flex-col overflow-hidden">
             <DialogHeader className="border-b px-6 py-4">

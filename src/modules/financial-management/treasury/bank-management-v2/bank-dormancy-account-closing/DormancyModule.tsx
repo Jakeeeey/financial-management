@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, RefreshCw } from "lucide-react";
+import { AlertCircle, RefreshCw , MoonStar} from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -41,7 +41,12 @@ export function DormancyModule() {
     <div className="mx-auto w-full max-w-[1600px] space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold sm:text-2xl">Dormancy &amp; Account Closing</h1>
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl bg-primary/10 p-3 text-primary">
+              <MoonStar className="size-5" />
+            </div>
+            <h1 className="text-xl font-semibold sm:text-2xl">Dormancy &amp; Account Closing</h1>
+          </div>
           <p className="text-sm text-muted-foreground">
             Watch accounts that have gone quiet, reclassify dormant ones, and close accounts once they settle.
           </p>

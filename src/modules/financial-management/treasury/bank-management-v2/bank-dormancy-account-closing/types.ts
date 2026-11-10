@@ -74,6 +74,8 @@ export interface PreClosureCheck {
   label: string;
   passed: boolean;
   detail: string;
+  /** True when the ERP cannot test this condition, so the tick is not proof it holds. */
+  unverified?: boolean;
 }
 
 export interface PreClosureResult {

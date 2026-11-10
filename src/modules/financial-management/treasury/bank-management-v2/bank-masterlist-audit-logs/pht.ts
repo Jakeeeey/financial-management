@@ -61,6 +61,22 @@ export function phtToday(): string {
 }
 
 /**
+ * Shifts a bare `YYYY-MM-DDTHH:mm:ss` wall clock by whole hours.
+ *
+ * Needed for the legacy UTC import: the column is a MySQL `timestamp`, so Directus hands the
+ * value back without an offset and the hour shift cannot be inferred from the string itself.
+ * Returns "" when the value is not a bare wall clock.
+ */
+export function shiftWallClock(value: string | null | undefined, hours: number): string {
+  if (!value) return "";
+  const raw = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(raw)) return "";
+  const base = new Date(`${raw.length === 16 ? `${raw}:00` : raw}Z`);
+  if (Number.isNaN(base.getTime())) return "";
+  return new Date(base.getTime() + hours * 3_600_000).toISOString().slice(0, 19).replace("T", " ");
+}
+
+/**
  * Normalises any stored stamp to `YYYY-MM-DDTHH:mm:ss`.
  *
  * Accepts a Date, epoch ms, a `dateTime` string, or a legacy UTC `timestamp` ending

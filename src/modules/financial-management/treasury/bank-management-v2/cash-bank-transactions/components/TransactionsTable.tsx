@@ -40,7 +40,9 @@ interface TransactionsTableProps {
   isSaving: boolean;
   page: number;
   pageCount: number;
-  total: number;
+      total: number;
+      /** A filter is narrowing the register, so the chip must not claim the whole set. */
+      isFiltered?: boolean;
   pageSize: number;
   onPageChange: (page: number) => void;
   onCancelMemo: (row: TransactionRow) => void;
@@ -48,6 +50,9 @@ interface TransactionsTableProps {
   onOpenRow: (row: TransactionRow) => void;
   /** The filter row, rendered inside the register panel above the table. */
   filters: ReactNode;
+  /** The register failed to load, so an empty table must say so rather than blame the filters. */
+  isError?: boolean;
+  onRetry?: () => void;
 }
 
 /** Money leaving the account also carries the transfer fee, so the two sides can differ. */
@@ -112,13 +117,16 @@ export function TransactionsTable({
   isSaving,
   page,
   pageCount,
-  total,
+      total,
+      isFiltered = false,
   pageSize,
   onPageChange,
   onCancelMemo,
   onSettle,
   onOpenRow,
   filters,
+  isError,
+  onRetry,
 }: TransactionsTableProps) {
   const showLoading = isLoading && rows.length === 0;
 
@@ -130,16 +138,14 @@ export function TransactionsTable({
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 bg-muted/30 px-4 py-3">
         <div className="min-w-0">
           <h2 className="truncate text-sm font-semibold">Bank transactions</h2>
-          <p className="truncate text-xs text-muted-foreground">
-            Credit memos, debit memos, interest earned and fund transfers, newest first.
-          </p>
+          <p className="truncate text-xs text-muted-foreground">Newest first, each with its journal entry.</p>
         </div>
         <Badge variant="outline" className="shrink-0 tabular-nums text-[11px]">
-          {formatNumber(total)} transactions
+          {formatNumber(total)} {isFiltered ? "matching" : `transaction${total === 1 ? "" : "s"}`}
         </Badge>
       </header>
 
-      {filters}
+      {isError && rows.length === 0 ? null : filters}
 
       {showLoading ? (
         <div className="space-y-2 p-4">
@@ -148,25 +154,42 @@ export function TransactionsTable({
           ))}
         </div>
       ) : rows.length === 0 ? (
-        <Empty className="py-12">
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <ReceiptText className="h-5 w-5" aria-hidden="true" />
-            </EmptyMedia>
-            <EmptyTitle>No transactions match these filters.</EmptyTitle>
-            <EmptyDescription>
-              Clear the filters, or record a credit memo, debit memo, interest earned or fund transfer.
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
+        isError ? (
+          <Empty className="py-12">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <ReceiptText className="h-5 w-5" aria-hidden="true" />
+              </EmptyMedia>
+              <EmptyTitle>Could not load transactions.</EmptyTitle>
+              <EmptyDescription>The request failed, so nothing is listed.</EmptyDescription>
+            </EmptyHeader>
+            {onRetry ? (
+              <Button variant="outline" size="sm" onClick={onRetry}>
+                Try again
+              </Button>
+            ) : null}
+          </Empty>
+        ) : (
+          <Empty className="py-12">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <ReceiptText className="h-5 w-5" aria-hidden="true" />
+              </EmptyMedia>
+              <EmptyTitle>No transactions match these filters.</EmptyTitle>
+              <EmptyDescription>
+                Clear the filters, or record a credit memo, debit memo, interest earned or fund transfer.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        )
       ) : (
         <>
-          <div className="hidden overflow-x-auto xl:block">
+          <div className="hidden overflow-x-auto min-[1300px]:block">
             <Table>
               <TableHeader className="bg-muted/30">
                 <TableRow>
                   <TableHead className="w-[120px]">Date (PHT)</TableHead>
-                  <TableHead className="min-w-[190px]">Account</TableHead>
+                  <TableHead className="min-w-[280px]">Account</TableHead>
                   <TableHead className="w-[130px]">Reference</TableHead>
                   <TableHead className="min-w-[200px]">Payee / description</TableHead>
                   <TableHead className="w-[150px]">Type</TableHead>
@@ -194,12 +217,12 @@ export function TransactionsTable({
                   >
                     <TableCell className="tabular-nums">{row.date}</TableCell>
                     <TableCell>
-                      <span className="block max-w-[240px] truncate" title={row.accountLabel}>
+                      <span className="block max-w-[300px] truncate" title={row.accountLabel}>
                         {row.accountLabel}
                       </span>
                       {row.counterpartLabel ? (
                         <span
-                          className="block max-w-[240px] truncate text-xs text-muted-foreground"
+                          className="block max-w-[300px] truncate text-xs text-muted-foreground"
                           title={`to ${row.counterpartLabel}`}
                         >
                           to {row.counterpartLabel}
@@ -247,7 +270,7 @@ export function TransactionsTable({
             </Table>
           </div>
 
-          <ul className="divide-y divide-border xl:hidden">
+          <ul className="divide-y divide-border min-[1300px]:hidden">
             {rows.map((row) => (
               <li
                 key={row.key}

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { FileSpreadsheet, Loader2, RefreshCw } from "lucide-react";
+import { FileSpreadsheet, Loader2, RefreshCw , ClipboardList} from "lucide-react";
 import { toast } from "sonner";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -121,7 +121,12 @@ export function MasterlistModule() {
     <div className="mx-auto max-w-[1600px] space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold sm:text-2xl">Bank Masterlist &amp; Audit Logs (ARF)</h1>
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl bg-primary/10 p-3 text-primary">
+              <ClipboardList className="size-5" />
+            </div>
+            <h1 className="text-xl font-semibold sm:text-2xl">Bank Masterlist &amp; Audit Logs (ARF)</h1>
+          </div>
           <p className="text-sm text-muted-foreground">
             Every account with its linked GL and book balance, open audit findings, and the movement log.
           </p>

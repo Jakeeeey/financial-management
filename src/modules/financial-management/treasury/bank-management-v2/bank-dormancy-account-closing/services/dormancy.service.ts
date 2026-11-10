@@ -358,8 +358,9 @@ export async function preClosure(bankId: number): Promise<PreClosureResult> {
       key: "mandates",
       label: "No active auto-debit mandate",
       passed: true,
+      unverified: true,
       detail:
-        "This ERP keeps no auto-debit mandate register, so nothing can hold the account here. Confirm with the bank that no standing arrangement is live.",
+        "This ERP keeps no auto-debit mandate register, so this test cannot pass or fail here. Confirm with the bank that no standing arrangement is live before closing.",
     },
   ];
 

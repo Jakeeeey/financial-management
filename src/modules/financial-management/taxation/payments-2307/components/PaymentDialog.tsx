@@ -18,9 +18,8 @@ import {
 } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { BIR_FORMS, PERIOD_KEYS, PERIOD_LABELS } from "../constants";
+import { PAYMENT_FORMS, PAYMENT_PERIOD_KEYS, PAYMENT_PERIOD_LABELS } from "../constants";
 import { phtToday } from "../pht";
 import { Payments2307ApiError } from "../providers/payments2307Api";
 import {
@@ -32,8 +31,17 @@ import {
 } from "../schemas";
 import type { PaymentRow } from "../types";
 import { DateField } from "./DateField";
+import { OptionCombobox } from "./OptionCombobox";
 
 const FORM_ID = "payment-2307-payment-form";
+
+/** Seventeen periods and thirteen forms: past the point a plain select stays scannable. */
+const FORM_OPTIONS = PAYMENT_FORMS.map((code) => ({ value: code, label: code }));
+const PERIOD_OPTIONS = PAYMENT_PERIOD_KEYS.map((key) => ({
+  value: key,
+  label: PAYMENT_PERIOD_LABELS[key],
+  searchText: `${key} ${PAYMENT_PERIOD_LABELS[key]}`,
+}));
 
 function blankValues(): PaymentFormValues {
   return { periodKey: "Q1", formCode: "2550Q", paidOn: phtToday(), amount: "", referenceNo: "", remarks: "" };
@@ -41,7 +49,7 @@ function blankValues(): PaymentFormValues {
 
 function asFormCode(value: string): PaymentFormValues["formCode"] {
   // A row saved before the form list changed still has to open in the dialog.
-  return (BIR_FORMS as readonly string[]).includes(value) ? (value as PaymentFormValues["formCode"]) : "2551Q";
+  return (PAYMENT_FORMS as readonly string[]).includes(value) ? (value as PaymentFormValues["formCode"]) : "2551Q";
 }
 
 function valuesFrom(payment: PaymentRow): PaymentFormValues {
@@ -148,20 +156,17 @@ export function PaymentDialog({
                       <FormLabel>
                         Form <span className="text-destructive">*</span>
                       </FormLabel>
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <FormControl>
-                          <SelectTrigger aria-label="BIR form">
-                            <SelectValue placeholder="Pick a form" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent className="max-h-60">
-                          {BIR_FORMS.map((code) => (
-                            <SelectItem key={code} value={code}>
-                              {code}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <OptionCombobox
+                          options={FORM_OPTIONS}
+                          value={field.value}
+                          onChange={field.onChange}
+                          placeholder="Pick a form"
+                          searchPlaceholder="Search forms"
+                          emptyLabel="No form matches."
+                          aria-label="BIR form"
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -175,20 +180,17 @@ export function PaymentDialog({
                       <FormLabel>
                         Period <span className="text-destructive">*</span>
                       </FormLabel>
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <FormControl>
-                          <SelectTrigger aria-label="Return period">
-                            <SelectValue placeholder="Pick a period" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent className="max-h-60">
-                          {PERIOD_KEYS.map((period) => (
-                            <SelectItem key={period} value={period}>
-                              {PERIOD_LABELS[period]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <OptionCombobox
+                          options={PERIOD_OPTIONS}
+                          value={field.value}
+                          onChange={field.onChange}
+                          placeholder="Pick a period"
+                          searchPlaceholder="Search periods"
+                          emptyLabel="No period matches."
+                          aria-label="Return period"
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

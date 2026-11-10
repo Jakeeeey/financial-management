@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Plus, RefreshCw } from "lucide-react";
+import { Plus, RefreshCw , Banknote} from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -92,7 +92,12 @@ export function DepositModule() {
     <div className="mx-auto max-w-[1600px] space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold sm:text-2xl">Bank Deposit</h1>
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl bg-primary/10 p-3 text-primary">
+              <Banknote className="size-5" />
+            </div>
+            <h1 className="text-xl font-semibold sm:text-2xl">Bank Deposit</h1>
+          </div>
           <p className="text-sm text-muted-foreground">
             Deposit undeposited collections and customer checks, then track each slip until the bank clears it.
           </p>
@@ -102,6 +107,7 @@ export function DepositModule() {
             <RefreshCw className="h-4 w-4" />
           </Button>
           <Button
+            className="min-h-11 md:min-h-0"
             onClick={openCreate}
             disabled={selectedAssets.length === 0}
             title={selectedAssets.length === 0 ? "Select at least one undeposited collection or check below" : undefined}
@@ -153,6 +159,9 @@ export function DepositModule() {
             totalCount={assets.length}
             filters={filters}
             selected={selected}
+            selectedAmount={assets
+              .filter((asset) => selected.has(asset.collectionDetailId))
+              .reduce((sum, asset) => sum + asset.amount, 0)}
             isLoading={isLoading}
             page={assetsPage}
             onPageChange={setAssetsPage}

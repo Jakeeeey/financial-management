@@ -2,6 +2,27 @@
 
 export type PeriodKey = "Q1" | "Q2" | "Q3" | "Q4" | "ANNUAL";
 
+/** Monthly filings the tax calendar emits: 0619-E and 1601-C on the 10th, RPT instalments. */
+export type MonthKey =
+  | "M01"
+  | "M02"
+  | "M03"
+  | "M04"
+  | "M05"
+  | "M06"
+  | "M07"
+  | "M08"
+  | "M09"
+  | "M10"
+  | "M11"
+  | "M12";
+
+/**
+ * A payment can settle any filing the calendar lists, so its period set is wider than the
+ * certificate and lock one: those stay quarterly by law.
+ */
+export type PaymentPeriodKey = PeriodKey | MonthKey;
+
 export type WithholdingIncomeType = "RENT" | "FEE" | "SERVICES" | "CONSTRUCTION" | "GOODS" | "OTHER";
 
 export type CertificateDirection = "RECEIVED" | "ISSUED";
@@ -61,7 +82,7 @@ export interface PaymentRow {
   id: number;
   companyId: number;
   taxYear: number;
-  periodKey: PeriodKey;
+  periodKey: PaymentPeriodKey;
   formCode: string;
   paidOn: string;
   amount: number;
@@ -124,3 +145,4 @@ export interface PrefillRow {
   incomeAmount: number;
   taxWithheld: number;
 }
+

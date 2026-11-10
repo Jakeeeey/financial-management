@@ -30,7 +30,11 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const data = await loadIntercompanyLedger({ companyId: parsed.data.companyId, year: parsed.data.year });
+    const fresh = request.nextUrl.searchParams.get("refresh") === "1";
+    const data = await loadIntercompanyLedger(
+      { companyId: parsed.data.companyId, year: parsed.data.year },
+      { fresh },
+    );
     return NextResponse.json({ success: true, data });
   } catch (error) {
     if (error instanceof IntercompanyLookupError) {

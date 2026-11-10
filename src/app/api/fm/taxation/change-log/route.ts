@@ -37,18 +37,22 @@ export async function GET(request: Request) {
   }
 
   const input = parsed.data;
+  const fresh = url.searchParams.get("refresh") === "1";
 
   try {
     const [log, companies] = await Promise.all([
-      listChangeLog({
-        companyId: input.companyId ?? null,
-        year: input.year ?? null,
-        entity: input.entity || "ALL",
-        q: input.q || "",
-        from: input.from || "",
-        to: input.to || "",
-        page: input.page,
-      }),
+      listChangeLog(
+        {
+          companyId: input.companyId ?? null,
+          year: input.year ?? null,
+          entity: input.entity || "ALL",
+          q: input.q || "",
+          from: input.from || "",
+          to: input.to || "",
+          page: input.page,
+        },
+        { fresh },
+      ),
       listRegistryCompanies().catch(() => []),
     ]);
 

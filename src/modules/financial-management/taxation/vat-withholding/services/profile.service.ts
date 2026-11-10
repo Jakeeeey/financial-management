@@ -90,3 +90,4 @@ export async function loadProfile(
     return { profile: defaultProfile(companyId, taxYear), stored: false };
   }
 }
+

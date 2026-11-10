@@ -136,3 +136,49 @@ export interface Paginated<T> {
   pageSize: number;
   total: number;
 }
+
+
+/** One effective-dated row of `tax_rate_settings`, as the config screen edits it. */
+export interface RateSettingRow {
+  rateId: number | null;
+  effectiveFrom: string;
+  vat: number;
+  percentage: number;
+  corporate: number;
+  smallCorporate: number;
+  smallCorporateNtiCeiling: number;
+  smallCorporateAssetCeiling: number;
+  mcit: number;
+  mcitStartYear: number;
+  scit: number;
+  osd: number;
+  finalTaxInterest: number;
+  notes: string | null;
+}
+
+/** One row of `tax_withholding_rates`: income type crossed with seller tier. */
+export interface WithholdingRateRow {
+  rateId: number | null;
+  incomeType: WithholdingIncomeType;
+  rateTier: "LARGE" | "MEDIUM" | "SMALL" | null;
+  rate: number;
+  requiresTopWithholdingAgent: boolean;
+  effectiveFrom: string;
+}
+
+export type RateConfigKind = "SETTINGS" | "WITHHOLDING";
+
+export interface RateConfigCompany {
+  companyId: number;
+  code: string;
+  name: string;
+}
+
+export interface RateConfig {
+  companies: RateConfigCompany[];
+  company: RateConfigCompany | null;
+  settings: RateSettingRow[];
+  withholding: WithholdingRateRow[];
+  /** Set when the instance has no rate tables, or refused the read. */
+  notice: string | null;
+}

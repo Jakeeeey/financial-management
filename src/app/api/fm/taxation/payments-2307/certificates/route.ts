@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { certificateBodySchema } from "@/modules/financial-management/taxation/payments-2307/schemas";
 import { currentActor } from "@/modules/financial-management/taxation/payments-2307/services/actor";
 import { createCertificate } from "@/modules/financial-management/taxation/payments-2307/services/certificates.service";
+import { clearDeskCache } from "@/modules/financial-management/taxation/payments-2307/services/desk.service";
 import { toCertificateInput } from "@/modules/financial-management/taxation/payments-2307/services/inputMappers";
 import { fail, handleRouteError, ok, readJson } from "@/modules/financial-management/taxation/payments-2307/services/responses";
 
@@ -21,6 +22,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     const actor = await currentActor();
     const data = await createCertificate(toCertificateInput(parsed.data), actor);
+    clearDeskCache(parsed.data.companyId);
     return ok(data);
   } catch (error) {
     return handleRouteError("POST certificates", error);

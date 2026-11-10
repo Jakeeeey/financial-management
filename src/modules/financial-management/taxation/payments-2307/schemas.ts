@@ -1,8 +1,9 @@
 import { z } from "zod";
 
-import { BIR_FORMS, PERIOD_KEYS } from "./constants";
+import { PAYMENT_FORMS, PAYMENT_PERIOD_KEYS, PERIOD_KEYS } from "./constants";
 import type {
   CertificateDirection,
+  PaymentPeriodKey,
   PeriodKey,
   WithholdingIncomeType,
 } from "./types";
@@ -21,7 +22,13 @@ const INCOME_TYPE_ENUM = z.enum([
   "GOODS",
   "OTHER",
 ] as [WithholdingIncomeType, ...WithholdingIncomeType[]]);
-const FORM_ENUM = z.enum(BIR_FORMS as unknown as [(typeof BIR_FORMS)[number], ...(typeof BIR_FORMS)[number][]]);
+/** Payments settle any filing the calendar lists, so they get their own wider vocabularies. */
+export const paymentPeriodKeySchema = z.enum(
+  PAYMENT_PERIOD_KEYS as [PaymentPeriodKey, ...PaymentPeriodKey[]],
+);
+const PAYMENT_FORM_ENUM = z.enum(
+  PAYMENT_FORMS as unknown as [(typeof PAYMENT_FORMS)[number], ...(typeof PAYMENT_FORMS)[number][]],
+);
 
 export const MAX_AMOUNT = 999_999_999_999;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -56,8 +63,8 @@ export const certificateBodySchema = z.object({
 
 export const paymentBodySchema = z.object({
   ...scopeShape,
-  periodKey: periodKeySchema,
-  formCode: FORM_ENUM,
+  periodKey: paymentPeriodKeySchema,
+  formCode: PAYMENT_FORM_ENUM,
   paidOn: z.string().regex(DATE_PATTERN),
   amount: money,
   referenceNo: z.string().trim().max(80).nullable().optional(),
@@ -116,8 +123,8 @@ export const certificateFormSchema = z
 export type CertificateFormValues = z.infer<typeof certificateFormSchema>;
 
 export const paymentFormSchema = z.object({
-  periodKey: periodKeySchema,
-  formCode: FORM_ENUM,
+  periodKey: paymentPeriodKeySchema,
+  formCode: PAYMENT_FORM_ENUM,
   paidOn: z.string().trim().refine(isRealDate, "Pick the date the payment was made"),
   amount: amountText.refine((value) => Number(value) > 0, "Enter a positive amount"),
   referenceNo: z.string().trim().max(80),
@@ -156,3 +163,4 @@ export function fieldErrorsFromZod(error: z.ZodError): Record<string, string> {
   }
   return first;
 }
+

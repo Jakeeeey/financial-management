@@ -325,3 +325,4 @@ export function CertificatePanel({ register }: { register: CertificateRegister }
     </section>
   );
 }
+

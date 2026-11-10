@@ -49,7 +49,7 @@ export function UndepositedFiltersBar({ filters, onChange }: Props) {
           </Label>
           <Select value={filters.type} onValueChange={(value) => onChange({ ...filters, type: value as UndepositedFilters["type"] })}>
             <SelectTrigger id="undep-type" className="w-full">
-              <SelectValue placeholder="All types" />
+              <SelectValue className="truncate" placeholder="All types" />
             </SelectTrigger>
             <SelectContent className="max-h-60">
               {TYPE_OPTIONS.map((option) => (
@@ -70,7 +70,7 @@ export function UndepositedFiltersBar({ filters, onChange }: Props) {
             onValueChange={(value) => onChange({ ...filters, canDeposit: value as UndepositedFilters["canDeposit"] })}
           >
             <SelectTrigger id="undep-can-deposit" className="w-full">
-              <SelectValue placeholder="Any" />
+              <SelectValue className="truncate" placeholder="Any" />
             </SelectTrigger>
             <SelectContent className="max-h-60">
               {CAN_DEPOSIT_OPTIONS.map((option) => (

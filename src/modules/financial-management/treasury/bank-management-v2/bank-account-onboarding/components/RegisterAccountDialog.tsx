@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
-import { useForm, type Resolver } from "react-hook-form";
+import { useForm, useWatch, type Resolver } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -28,9 +28,9 @@ import type { FormOutcome, OnboardingOptions } from "../types";
 import { DateField } from "./DateField";
 import { OptionCombobox } from "./OptionCombobox";
 
-// ponytail: the repo carries no company-name constant, so the holder defaults to
-// the legal name here; swap it for the company setting once one exists.
-const DEFAULT_ACCOUNT_HOLDER = "Vertex";
+// ponytail: the repo carries no company-name constant, so the holder starts blank
+// rather than pre-filling a name the user never chose.
+const DEFAULT_ACCOUNT_HOLDER = "";
 
 function defaults(): RegisterAccountFormValues {
   return {
@@ -71,6 +71,9 @@ export function RegisterAccountDialog({
     if (open) form.reset(defaults());
   }, [open, form]);
 
+  const accountType = useWatch({ control: form.control, name: "accountType" });
+  const balanceCurrency = accountType === "FCA" ? "USD" : "PHP";
+
   const bankOptions = options.banks.map((bank) => ({ value: bank.name, label: bank.name }));
   const glOptions = options.cashAccounts.map((account) => ({
     value: String(account.coaId),
@@ -105,7 +108,7 @@ export function RegisterAccountDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[95vw] rounded-2xl p-0 sm:max-w-[700px]">
+      <DialogContent showCloseButton={false} className="w-[95vw] rounded-2xl p-0 sm:max-w-[700px]">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="flex max-h-[85vh] flex-col overflow-hidden">
             <DialogHeader className="border-b px-6 py-4">
@@ -200,7 +203,7 @@ export function RegisterAccountDialog({
                       <Select value={field.value} onValueChange={field.onChange}>
                         <FormControl>
                           <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Choose the type" />
+                            <SelectValue className="truncate" placeholder="Choose the type" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent className="max-h-80">
@@ -251,7 +254,8 @@ export function RegisterAccountDialog({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        Opening balance <span className="text-destructive">*</span>
+                        Opening balance ({balanceCurrency}){" "}
+                        <span className="text-destructive">*</span>
                       </FormLabel>
                       <FormControl>
                         <Input
@@ -274,7 +278,7 @@ export function RegisterAccountDialog({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        Effective onboarding date <span className="text-destructive">*</span>
+                        Onboarded on <span className="text-destructive">*</span>
                       </FormLabel>
                       <FormControl>
                         <DateField

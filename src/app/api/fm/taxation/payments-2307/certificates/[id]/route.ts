@@ -6,6 +6,7 @@ import {
   deleteCertificate,
   updateCertificate,
 } from "@/modules/financial-management/taxation/payments-2307/services/certificates.service";
+import { clearDeskCache } from "@/modules/financial-management/taxation/payments-2307/services/desk.service";
 import { toCertificateInput } from "@/modules/financial-management/taxation/payments-2307/services/inputMappers";
 import {
   fail,
@@ -35,6 +36,7 @@ export async function PATCH(request: Request, { params }: Params): Promise<NextR
 
     const actor = await currentActor();
     const data = await updateCertificate(id, toCertificateInput(parsed.data), actor);
+    clearDeskCache(parsed.data.companyId);
     return ok(data);
   } catch (error) {
     return handleRouteError("PATCH certificates/[id]", error);
@@ -48,6 +50,8 @@ export async function DELETE(_request: Request, { params }: Params): Promise<Nex
 
     const actor = await currentActor();
     const data = await deleteCertificate(id, actor);
+    // A delete carries no company, and the id alone does not name one without a second read.
+    clearDeskCache();
     return ok(data);
   } catch (error) {
     return handleRouteError("DELETE certificates/[id]", error);

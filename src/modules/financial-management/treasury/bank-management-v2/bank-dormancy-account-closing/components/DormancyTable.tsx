@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { TablePager } from "./TablePager";
-import { classLabel, classTone, statusTone, toneClass } from "../constants";
+import { DORMANT_MONTHS, ESCHEAT_MONTHS, INACTIVE_MONTHS, classLabel, classTone, statusTone, toneClass } from "../constants";
 import type { DormancyAccount } from "../types";
 
 const COLUMNS = 8;
@@ -125,7 +125,7 @@ export function DormancyTable(props: Props) {
                   <TableHead className="w-[130px] text-right">Book balance</TableHead>
                   <TableHead className="w-[170px]">Last customer activity</TableHead>
                   <TableHead className="w-[110px] text-right">Months inactive</TableHead>
-                  <TableHead className="w-[150px]">Classification</TableHead>
+                  <TableHead className="w-[150px]" title={`Stage from months without customer-initiated movement: ${INACTIVE_MONTHS} inactive, ${DORMANT_MONTHS} dormant-eligible, ${ESCHEAT_MONTHS} escheat-eligible.`}>Dormancy stage</TableHead>
                   <TableHead className="w-[100px]">Status</TableHead>
                   <TableHead className="w-[190px]">Action</TableHead>
                 </TableRow>
@@ -168,7 +168,7 @@ export function DormancyTable(props: Props) {
                         variant="outline"
                         className={`text-[11px] font-semibold ${toneClass(classTone(account.classification))}`}
                       >
-                        {classLabel(account.classification)}
+                        {account.classification === "ACTIVE" ? "Not dormant" : classLabel(account.classification)}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -211,7 +211,7 @@ export function DormancyTable(props: Props) {
                         variant="outline"
                         className={`shrink-0 text-[11px] font-semibold ${toneClass(classTone(account.classification))}`}
                       >
-                        {classLabel(account.classification)}
+                        {account.classification === "ACTIVE" ? "Not dormant" : classLabel(account.classification)}
                       </Badge>
                     </div>
                     <dl className="mt-2 grid grid-cols-2 gap-2 text-xs text-muted-foreground">

@@ -1,6 +1,6 @@
 "use client";
 
-import { Landmark, Pencil } from "lucide-react";
+import { Landmark, MoreVertical, Pencil } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -12,14 +12,23 @@ import { formatCurrency, formatNumber } from "@/lib/utils";
 import { toPhtDateString } from "../pht";
 import type { BankAccountV2 } from "../types";
 import { StatusBadge } from "./StatusBadge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { TablePager } from "./TablePager";
 
-const COLUMN_COUNT = 10;
+const COLUMN_COUNT = 9;
 
 type AccountsTableProps = {
   accounts: BankAccountV2[];
   isLoading: boolean;
   total: number;
+  /** Accounts in the register before filters, so a filtered count is never read as the total. */
+  registerTotal: number;
+  isFiltered: boolean;
   page: number;
   pageSize: number;
   onEdit: (account: BankAccountV2) => void;
@@ -46,6 +55,8 @@ export function AccountsTable({
   accounts,
   isLoading,
   total,
+  registerTotal,
+  isFiltered,
   page,
   pageSize,
   onEdit,
@@ -62,29 +73,35 @@ export function AccountsTable({
       <header className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold">Registered accounts</h2>
-          <p className="text-xs text-muted-foreground">Active accounts only appear in payment and collection lists.</p>
+          <p className="text-xs text-muted-foreground">
+            Active accounts appear in purchase order payment, sales order collection and disbursement lists. Dormant and
+            closed accounts do not.
+          </p>
         </div>
         <Badge variant="outline" className="tabular-nums text-[11px]">
-          {formatNumber(total)} accounts
+          {isFiltered
+            ? `${formatNumber(total)} of ${formatNumber(registerTotal)} accounts`
+            : `${formatNumber(registerTotal)} accounts`}
         </Badge>
       </header>
 
       {filters}
 
-      <div className="hidden overflow-x-auto xl:block">
+      <div className="hidden overflow-x-auto min-[1300px]:block">
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/30 hover:bg-muted/30">
-                <TableHead className="w-[90px]">ID</TableHead>
-                <TableHead className="max-w-[240px]">Bank &amp; branch</TableHead>
-                <TableHead className="max-w-[160px]">Account no.</TableHead>
-                <TableHead className="max-w-[200px]">Account holder</TableHead>
-                <TableHead className="max-w-[120px]">Type</TableHead>
-                <TableHead className="max-w-[200px]">Linked GL</TableHead>
-                <TableHead className="max-w-[150px] text-right">Book balance</TableHead>
-                <TableHead className="max-w-[120px]">Onboarded</TableHead>
-                <TableHead className="max-w-[110px]">Status</TableHead>
-                <TableHead className="w-[60px] text-right">Actions</TableHead>
+                <TableHead className="max-w-[220px]">Bank &amp; branch</TableHead>
+                <TableHead className="max-w-[150px]">Account no.</TableHead>
+                <TableHead className="max-w-[180px]">Account holder</TableHead>
+                <TableHead className="max-w-[110px]">Type</TableHead>
+                <TableHead className="max-w-[180px]">Linked GL</TableHead>
+                <TableHead className="max-w-[140px] text-right">Book balance</TableHead>
+                <TableHead className="max-w-[110px]">Onboarded on</TableHead>
+                <TableHead className="max-w-[100px]">Status</TableHead>
+                <TableHead className="w-[56px] text-right">
+                  <span className="sr-only">Actions</span>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -101,35 +118,40 @@ export function AccountsTable({
                   <TableCell colSpan={COLUMN_COUNT} className="h-24 text-center">
                     <div className="flex flex-col items-center gap-2 text-muted-foreground">
                       <Landmark aria-hidden="true" className="size-5" />
-                      <span className="text-sm">No bank accounts match these filters yet.</span>
+                      <span className="text-sm">No account matches these filters. Reset them to see the register.</span>
                     </div>
                   </TableCell>
                 </TableRow>
               ) : (
                 accounts.map((account) => (
                   <TableRow key={account.bankId}>
-                    <TableCell
-                      className="max-w-[90px] truncate font-mono text-xs text-muted-foreground"
-                      title={`BA-${account.bankId}`}
-                    >
-                      BA-{account.bankId}
+                    <TableCell className="max-w-[220px]">
+                      <div className="max-w-[200px] truncate font-medium" title={bankBranch(account)}>
+                        {account.bankName}
+                      </div>
+                      {account.branch ? (
+                        <div className="max-w-[200px] truncate text-xs text-muted-foreground" title={account.branch}>
+                          {account.branch}
+                        </div>
+                      ) : null}
                     </TableCell>
-                    <TableCell className="max-w-[240px] truncate font-medium" title={bankBranch(account)}>
-                      {bankBranch(account)}
-                    </TableCell>
                     <TableCell
-                      className="max-w-[160px] truncate tabular-nums"
+                      className="max-w-[150px] truncate tabular-nums"
                       title={account.accountNumber}
                     >
                       {account.accountNumber || "—"}
                     </TableCell>
-                    <TableCell className="max-w-[200px] truncate" title={account.accountName ?? undefined}>
-                      {account.accountName ?? "—"}
+                    <TableCell className="max-w-[180px] truncate" title={account.accountName ?? undefined}>
+                      {account.accountName ?? "Not recorded"}
                     </TableCell>
-                    <TableCell className="max-w-[120px] truncate" title={account.accountType ?? undefined}>
-                      {account.accountType ?? "—"}
+                    <TableCell className="max-w-[110px] truncate" title={account.accountType ?? undefined}>
+                      {account.accountType
+                        ? account.currency && account.currency !== "PHP"
+                          ? `${account.accountType} · ${account.currency}`
+                          : account.accountType
+                        : "Not recorded"}
                     </TableCell>
-                    <TableCell className="max-w-[200px]">
+                    <TableCell className="max-w-[180px]">
                       {account.glCode ? (
                         <>
                           <p className="truncate" title={account.glCode}>
@@ -145,24 +167,29 @@ export function AccountsTable({
                         <span className="text-muted-foreground">Not linked</span>
                       )}
                     </TableCell>
-                    <TableCell className="max-w-[150px] text-right tabular-nums whitespace-nowrap">
+                    <TableCell className="max-w-[140px] text-right tabular-nums whitespace-nowrap">
                       {formatCurrency(account.bookBalance, account.currency)}
                     </TableCell>
-                    <TableCell className="max-w-[120px] tabular-nums">{onboardedOn(account)}</TableCell>
-                    <TableCell className="max-w-[110px]">
+                    <TableCell className="max-w-[110px] tabular-nums">{onboardedOn(account)}</TableCell>
+                    <TableCell className="max-w-[100px]">
                       <StatusBadge status={account.status} />
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Edit ${account.bankName} ${account.accountNumber}`}
-                        title="Edit account"
-                        onClick={() => onEdit(account)}
-                      >
-                        <Pencil className="size-4" />
-                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Actions for ${account.bankName} ${account.accountNumber}`}
+                          >
+                            <MoreVertical className="size-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-44">
+                          <DropdownMenuItem onSelect={() => onEdit(account)}>Edit account</DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </TableCell>
                   </TableRow>
                 ))
@@ -171,7 +198,7 @@ export function AccountsTable({
           </Table>
       </div>
 
-      <ul className="divide-y divide-border xl:hidden">
+      <ul className="divide-y divide-border min-[1300px]:hidden">
         {isLoading ? (
           Array.from({ length: 4 }).map((_, index) => (
             <li key={index} className="p-4">
@@ -181,7 +208,7 @@ export function AccountsTable({
         ) : accounts.length === 0 ? (
           <li className="flex h-24 flex-col items-center justify-center gap-2 p-4 text-center text-muted-foreground">
             <Landmark aria-hidden="true" className="size-5" />
-            <span className="text-sm">No bank accounts match these filters yet.</span>
+            <span className="text-sm">No account matches these filters. Reset them to see the register.</span>
           </li>
         ) : (
           accounts.map((account) => (

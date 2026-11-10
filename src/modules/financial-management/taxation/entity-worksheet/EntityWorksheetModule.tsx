@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
+import { BasisComparison } from "./components/BasisComparison";
+import { DeductionBreakdown } from "./components/DeductionBreakdown";
 import { OptionCombobox } from "./components/OptionCombobox";
 import { ProfileCard } from "./components/ProfileCard";
 import { WorksheetTable } from "./components/WorksheetTable";
@@ -37,7 +39,7 @@ function statedFields(profile: EntityProfile): number {
   ].filter(Boolean).length;
 }
 
-/** Entity worksheet — one company, one tax year, 1702Q basis. */
+/** Entity worksheet − one company, one tax year, 1702Q basis. */
 export function EntityWorksheetModule() {
   const worksheet = useWorksheet(new Date().getFullYear());
   const { snapshot, isLoading, isSaving, error, companies, companyOptions } = worksheet;
@@ -58,7 +60,7 @@ export function EntityWorksheetModule() {
         <div className="min-w-0">
           <h1 className="text-xl font-semibold sm:text-2xl">Entity Worksheet</h1>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Quarterly 1702Q income tax built from one company&apos;s own ledgers — estimates for review, not filings.
+            Quarterly 1702Q income tax built from one company&apos;s own ledgers − estimates for review, not filings.
           </p>
         </div>
 
@@ -176,8 +178,10 @@ export function EntityWorksheetModule() {
               </Badge>
             </div>
 
-            <TabsContent value="worksheet">
+            <TabsContent value="worksheet" className="space-y-4">
               <WorksheetTable lines={snapshot.lines} total={snapshot.lines.length} />
+              <BasisComparison scenarios={snapshot.computation.scenarios} year={snapshot.profile.taxYear} />
+              <DeductionBreakdown breakdown={snapshot.expenseBreakdown} year={snapshot.profile.taxYear} />
             </TabsContent>
 
             <TabsContent value="profile">
@@ -212,3 +216,5 @@ export function EntityWorksheetModule() {
     </div>
   );
 }
+
+

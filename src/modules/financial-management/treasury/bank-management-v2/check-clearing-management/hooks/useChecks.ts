@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { toast } from "sonner";
 
 import type { BankCheck, CheckEvent, CheckStatus, CheckbookSeries } from "../types";
@@ -48,19 +48,26 @@ export function useChecks(initialFilters: RegisterFilters = {}) {
     setPage(1);
   }, []);
 
+  // Only the newest request may write state: a slow response for an older filter must not
+  // repaint the list under a newer chip.
+  const requestSeq = useRef(0);
+
   const refetch = useCallback(async () => {
+    const seq = ++requestSeq.current;
     setIsLoading(true);
     setError(null);
     try {
       const register = await fetchRegister(filters);
+      if (seq !== requestSeq.current) return;
       setChecks(register.checks);
       setCounts(register.counts ?? EMPTY_COUNTS);
       setAccounts(register.accounts ?? []);
       setNotice(register.notice ?? null);
     } catch (caught) {
+      if (seq !== requestSeq.current) return;
       setError(caught instanceof Error ? caught.message : "Could not load the check register.");
     } finally {
-      setIsLoading(false);
+      if (seq === requestSeq.current) setIsLoading(false);
     }
   }, [filters]);
 

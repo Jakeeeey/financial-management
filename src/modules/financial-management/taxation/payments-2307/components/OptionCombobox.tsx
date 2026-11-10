@@ -50,6 +50,9 @@ export function OptionCombobox({
   const [search, setSearch] = useState("");
   const selected = options.find((option) => option.value === value);
   const query = search.trim();
+  // cmdk clears its search on select, so the custom name is kept in its own state
+  // and only updated from the input handler (never during render).
+  const [customLabel, setCustomLabel] = useState("");
   const customOffered =
     allowCustom && query !== "" && !options.some((option) => option.label.toLowerCase() === query.toLowerCase());
 
@@ -64,7 +67,10 @@ export function OptionCombobox({
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) setSearch("");
+        if (!next) {
+          setSearch("");
+          setCustomLabel("");
+        }
       }}
     >
       <PopoverTrigger asChild>
@@ -77,17 +83,24 @@ export function OptionCombobox({
           className={cn("w-full justify-between font-normal", className)}
         >
           <span
-            className={cn("min-w-0 flex-1 truncate text-left", !selected && "text-muted-foreground")}
-            title={selected?.label}
+            className={cn("min-w-0 flex-1 truncate text-left", !selected && !(allowCustom && value) && "text-muted-foreground")}
+            title={selected?.label ?? (allowCustom && value ? value : undefined)}
           >
-            {selected?.label ?? placeholder}
+            {selected?.label ?? (allowCustom && value ? value : placeholder)}
           </span>
           <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-(--radix-popover-trigger-width) p-0" align="start">
         <Command>
-          <CommandInput placeholder={searchPlaceholder} value={search} onValueChange={setSearch} />
+                    <CommandInput
+            placeholder={searchPlaceholder}
+            value={search}
+            onValueChange={(next) => {
+              setSearch(next);
+              if (next.trim() !== "") setCustomLabel(next);
+            }}
+          />
           <CommandList
             className="max-h-64 overflow-y-auto overscroll-contain"
             onWheelCapture={(event) => event.stopPropagation()}
@@ -114,7 +127,7 @@ export function OptionCombobox({
                 </CommandItem>
               ))}
               {customOffered ? (
-                <CommandItem value={query} onSelect={() => choose(query)}>
+                <CommandItem value={customLabel.trim()} onSelect={() => choose(customLabel.trim())}>
                   <Plus className="mr-2 size-4 shrink-0" />
                   <span className="min-w-0 flex-1 truncate">Use “{query}”</span>
                 </CommandItem>
@@ -126,3 +139,5 @@ export function OptionCombobox({
     </Popover>
   );
 }
+
+

@@ -86,3 +86,4 @@ const TONE_CLASS: Record<Tone, string> = {
 export function toneClass(tone: Tone): string {
   return TONE_CLASS[tone];
 }
+

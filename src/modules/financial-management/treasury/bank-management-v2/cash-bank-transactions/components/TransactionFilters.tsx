@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 import { TRANSACTION_KIND_OPTIONS, TRANSACTION_STATUS_OPTIONS } from "../constants";
-import type { AccountOption, TransactionFilters } from "../types";
+import type { AccountOption, TransactionFilters, TransactionKind } from "../types";
 import { DateField } from "./DateField";
 import { OptionCombobox } from "./OptionCombobox";
 
@@ -18,6 +18,8 @@ const ALL = "ALL";
 interface TransactionFiltersBarProps {
   filters: TransactionFilters;
   accounts: AccountOption[];
+  /** Kinds the register actually holds; an option that matches nothing is not offered. */
+  kinds: TransactionKind[];
   onChange: (patch: Partial<TransactionFilters>) => void;
   onReset: () => void;
 }
@@ -26,7 +28,7 @@ interface TransactionFiltersBarProps {
  * Filter row of the Bank transactions register, per the reference: bank, account, type, status and
  * the two value dates on one line, with the free-text search and the reset below them.
  */
-export function TransactionFiltersBar({ filters, accounts, onChange, onReset }: TransactionFiltersBarProps) {
+export function TransactionFiltersBar({ filters, accounts, kinds, onChange, onReset }: TransactionFiltersBarProps) {
   const [query, setQuery] = useState(filters.q);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -127,11 +129,13 @@ export function TransactionFiltersBar({ filters, accounts, onChange, onReset }: 
           onValueChange={(value) => onChange({ kind: value as TransactionFilters["kind"] })}
         >
           <SelectTrigger id="transaction-kind" size="sm" className="w-full">
-            <SelectValue placeholder="All types" />
+            <SelectValue className="truncate" placeholder="All types" />
           </SelectTrigger>
           <SelectContent className="max-h-60">
             <SelectItem value={ALL}>All types</SelectItem>
-            {TRANSACTION_KIND_OPTIONS.map((option) => (
+            {TRANSACTION_KIND_OPTIONS.filter(
+              (option) => option.value === filters.kind || kinds.includes(option.value),
+            ).map((option) => (
               <SelectItem key={option.value} value={option.value}>
                 {option.label}
               </SelectItem>
@@ -149,7 +153,7 @@ export function TransactionFiltersBar({ filters, accounts, onChange, onReset }: 
           onValueChange={(value) => onChange({ status: value === ALL ? "" : value })}
         >
           <SelectTrigger id="transaction-status" size="sm" className="w-full">
-            <SelectValue placeholder="Any status" />
+            <SelectValue className="truncate" placeholder="Any status" />
           </SelectTrigger>
           <SelectContent className="max-h-60">
             <SelectItem value={ALL}>Any status</SelectItem>

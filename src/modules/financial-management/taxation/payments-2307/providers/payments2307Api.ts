@@ -39,9 +39,10 @@ function jsonBody(body: unknown): RequestInit {
   return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
 }
 
-export function fetchDesk(companyId: number | null, year: number): Promise<DeskPayload> {
+export function fetchDesk(companyId: number | null, year: number, fresh = false): Promise<DeskPayload> {
   const query = new URLSearchParams({ year: String(year) });
   if (companyId !== null) query.set("companyId", String(companyId));
+  if (fresh) query.set("refresh", "1");
   return request<DeskPayload>(`${BASE}?${query.toString()}`);
 }
 
@@ -85,3 +86,4 @@ export function lockPeriod(body: {
 export function unlockPeriod(periodKey: string, body: UnlockBody): Promise<{ id: number }> {
   return request<{ id: number }>(`${BASE}/locks/${periodKey}/unlock`, jsonBody(body));
 }
+

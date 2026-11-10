@@ -26,7 +26,8 @@ export async function GET(request: Request): Promise<NextResponse> {
     }
 
     const year = parsed.data.year ?? Number(phtToday().slice(0, 4));
-    const data = await loadDesk(parsed.data.companyId ?? null, year);
+    const fresh = params.get("refresh") === "1";
+    const data = await loadDesk(parsed.data.companyId ?? null, year, { fresh });
     return ok(data);
   } catch (error) {
     return handleRouteError("GET", error);

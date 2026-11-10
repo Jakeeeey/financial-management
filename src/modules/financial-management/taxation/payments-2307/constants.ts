@@ -1,4 +1,10 @@
-import type { CertificateDirection, PeriodKey, WithholdingIncomeType } from "./types";
+import type {
+  CertificateDirection,
+  MonthKey,
+  PaymentPeriodKey,
+  PeriodKey,
+  WithholdingIncomeType,
+} from "./types";
 
 export const TAX_YEARS = [2023, 2024, 2025, 2026, 2027] as const;
 
@@ -14,6 +20,46 @@ export const PERIOD_LABELS: Record<PeriodKey, string> = {
   Q4: "Q4",
   ANNUAL: "Annual",
 };
+
+export const MONTH_KEYS: MonthKey[] = [
+  "M01",
+  "M02",
+  "M03",
+  "M04",
+  "M05",
+  "M06",
+  "M07",
+  "M08",
+  "M09",
+  "M10",
+  "M11",
+  "M12",
+];
+
+export const PAYMENT_PERIOD_KEYS: PaymentPeriodKey[] = [...PERIOD_KEYS, ...MONTH_KEYS];
+
+export const PAYMENT_PERIOD_LABELS: Record<PaymentPeriodKey, string> = {
+  ...PERIOD_LABELS,
+  M01: "January",
+  M02: "February",
+  M03: "March",
+  M04: "April",
+  M05: "May",
+  M06: "June",
+  M07: "July",
+  M08: "August",
+  M09: "September",
+  M10: "October",
+  M11: "November",
+  M12: "December",
+};
+
+/** The period a lock has to cover in order to freeze this filing. */
+export function lockPeriodOf(period: PaymentPeriodKey): PeriodKey {
+  if (period === "ANNUAL" || period.startsWith("Q")) return period as PeriodKey;
+  const month = Number(period.slice(1));
+  return `Q${Math.floor((month - 1) / 3) + 1}` as PeriodKey;
+}
 
 /** A certificate matches when it lands within this many pesos of the ledger figure. */
 export const MATCH_TOLERANCE = 1;
@@ -64,6 +110,12 @@ export const BIR_FORMS = [
   "1604-C",
   "1604-E",
 ] as const;
+
+/**
+ * Everything the tax calendar can ask a company to settle. The certificate list above stays
+ * at nine forms because a 2307 is a certificate; these four are the filings that get paid.
+ */
+export const PAYMENT_FORMS = [...BIR_FORMS, "2307", "SEC", "RPT", "LGU"] as const;
 
 /** First and last day of a quarter, as `YYYY-MM-DD`. */
 export function quarterRange(year: number, index: number): { from: string; to: string } {
@@ -142,3 +194,4 @@ export function certificateStatusLabel(status: string): string {
 
 /** Page size for the client-side tables, matching the treasury module. */
 export const PAGE_SIZE = 10;
+

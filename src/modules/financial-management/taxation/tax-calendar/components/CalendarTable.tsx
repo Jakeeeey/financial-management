@@ -225,3 +225,4 @@ export function CalendarTable({
     </section>
   );
 }
+

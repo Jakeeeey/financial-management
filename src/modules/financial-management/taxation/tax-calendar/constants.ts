@@ -202,6 +202,20 @@ const FAMILY_CHIP: Record<FormFamily, string> = {
   other: "bg-slate-500/10 text-slate-700 ring-slate-500/25 dark:text-slate-300",
 };
 
+const FAMILY_DOT: Record<FormFamily, string> = {
+  income: "bg-indigo-500",
+  indirect: "bg-sky-500",
+  withholding: "bg-amber-500",
+  certificate: "bg-violet-500",
+  labour: "bg-teal-500",
+  other: "bg-slate-400",
+};
+
+/** A month grid is read at a glance; a dot carries the family without drawing a box around it. */
+export function formDotClass(formCode: string): string {
+  return FAMILY_DOT[formFamily(formCode)];
+}
+
 export function formChipClass(formCode: string): string {
   return cn("ring-1 ring-inset", FAMILY_CHIP[formFamily(formCode)]);
 }

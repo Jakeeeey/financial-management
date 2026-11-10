@@ -45,7 +45,7 @@ export function DormancyFilters({ filters, banks, onChange }: Props) {
           onValueChange={(value) => onChange({ ...filters, classification: value as DormancyFilter["classification"] })}
         >
           <SelectTrigger className="w-full truncate" aria-label="Classification">
-            <SelectValue placeholder="Classification" />
+            <SelectValue className="truncate" placeholder="Classification" />
           </SelectTrigger>
           <SelectContent className="max-h-60">
             <SelectItem value="ALL">All classifications</SelectItem>
@@ -61,7 +61,7 @@ export function DormancyFilters({ filters, banks, onChange }: Props) {
           onValueChange={(value) => onChange({ ...filters, status: value as DormancyFilter["status"] })}
         >
           <SelectTrigger className="w-full truncate" aria-label="Account status">
-            <SelectValue placeholder="Status" />
+            <SelectValue className="truncate" placeholder="Status" />
           </SelectTrigger>
           <SelectContent className="max-h-60">
             <SelectItem value="ALL">All statuses</SelectItem>

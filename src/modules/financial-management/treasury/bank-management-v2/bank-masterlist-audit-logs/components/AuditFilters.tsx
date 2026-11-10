@@ -52,7 +52,7 @@ export function AuditFilters({ filters, modules, users, onChange }: Props) {
     >
       <Select value={filters.module} onValueChange={(value) => onChange({ ...filters, module: value })}>
         <SelectTrigger className="w-full" aria-label="Module filter">
-          <SelectValue placeholder="All modules" />
+          <SelectValue className="truncate" placeholder="All modules" />
         </SelectTrigger>
         <SelectContent className="max-h-60">
           <SelectItem value={ALL}>All modules</SelectItem>
@@ -76,7 +76,7 @@ export function AuditFilters({ filters, modules, users, onChange }: Props) {
 
       <Select value={filters.pht} onValueChange={(value) => onChange({ ...filters, pht: value })}>
         <SelectTrigger className="w-full" aria-label="Timestamp filter">
-          <SelectValue placeholder="Any timestamp" />
+          <SelectValue className="truncate" placeholder="Any timestamp" />
         </SelectTrigger>
         <SelectContent className="max-h-60">
           {TIMESTAMP_OPTIONS.map((option) => (

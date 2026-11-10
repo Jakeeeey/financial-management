@@ -43,7 +43,7 @@ export function AssetDetailDialog({ asset, selected, onOpenChange, onToggle }: P
 
   return (
     <Dialog open={asset !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[95vw] rounded-2xl p-0 sm:max-w-[640px]">
+      <DialogContent showCloseButton={false} className="w-[95vw] rounded-2xl p-0 sm:max-w-[640px]">
         {asset ? (
           <div className="flex max-h-[85vh] flex-col overflow-hidden">
             <DialogHeader className="border-b px-6 py-4">

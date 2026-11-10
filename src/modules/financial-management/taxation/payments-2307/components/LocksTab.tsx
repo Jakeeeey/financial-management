@@ -201,3 +201,4 @@ export function LocksTab({ locks, isLoading, isSaving, onLock, onUnlock }: Locks
     </section>
   );
 }
+

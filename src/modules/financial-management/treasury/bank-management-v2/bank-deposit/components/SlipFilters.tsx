@@ -59,7 +59,7 @@ export function SlipFiltersBar({ slips, filters, onChange }: Props) {
           </Label>
           <Select value={filters.status} onValueChange={(status) => onChange({ ...filters, status })}>
             <SelectTrigger id="slip-status" className="w-full">
-              <SelectValue placeholder="Any status" />
+              <SelectValue className="truncate" placeholder="Any status" />
             </SelectTrigger>
             <SelectContent className="max-h-60">
               <SelectItem value="ALL">Any status</SelectItem>

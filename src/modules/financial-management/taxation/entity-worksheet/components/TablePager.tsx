@@ -57,3 +57,4 @@ export function TablePager({ page, pageCount, total, pageSize, onPageChange, isL
     </div>
   );
 }
+

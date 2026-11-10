@@ -18,7 +18,6 @@ type Props = {
 
 const SEVERITY_OPTIONS = [
   { value: ALL, label: "All severities" },
-  { value: "CRITICAL", label: "Critical" },
   { value: "HIGH", label: "High" },
   { value: "MEDIUM", label: "Medium" },
 ];
@@ -47,7 +46,7 @@ export function ArfFilters({ filters, subModules, onChange }: Props) {
         onValueChange={(value) => onChange({ ...filters, severity: value })}
       >
         <SelectTrigger className="w-full" aria-label="Severity filter">
-          <SelectValue placeholder="All severities" />
+          <SelectValue className="truncate" placeholder="All severities" />
         </SelectTrigger>
         <SelectContent className="max-h-60">
           {SEVERITY_OPTIONS.map((option) => (
@@ -63,7 +62,7 @@ export function ArfFilters({ filters, subModules, onChange }: Props) {
         onValueChange={(value) => onChange({ ...filters, subModule: value })}
       >
         <SelectTrigger className="w-full" aria-label="ARF sub-module filter">
-          <SelectValue placeholder="All sub-modules" />
+          <SelectValue className="truncate" placeholder="All sub-modules" />
         </SelectTrigger>
         <SelectContent className="max-h-60">
           <SelectItem value={ALL}>All sub-modules</SelectItem>

@@ -33,10 +33,11 @@ export function usePayments2307() {
   const [error, setError] = useState<string | null>(null);
   const scopeRef = useRef<{ companyId: number | null; year: number }>({ companyId: null, year: CURRENT_YEAR });
 
-  const load = useCallback(async (nextCompanyId: number | null, nextYear: number, options?: { quiet?: boolean }) => {
+  const load = useCallback(
+    async (nextCompanyId: number | null, nextYear: number, options?: { quiet?: boolean; fresh?: boolean }) => {
     if (!options?.quiet) setIsLoading(true);
     try {
-      const payload = await fetchDesk(nextCompanyId, nextYear);
+      const payload = await fetchDesk(nextCompanyId, nextYear, options?.fresh ?? false);
       setDesk(payload);
       setCompanyId(payload.companyId);
       setYear(payload.year);
@@ -164,7 +165,7 @@ export function usePayments2307() {
     error,
     selectCompany,
     selectYear,
-    refetch: () => load(scopeRef.current.companyId, scopeRef.current.year),
+    refetch: () => load(scopeRef.current.companyId, scopeRef.current.year, { fresh: true }),
     saveCertificate,
     amendCertificate,
     removeCertificate,
@@ -176,3 +177,5 @@ export function usePayments2307() {
     unlock,
   };
 }
+
+

@@ -17,10 +17,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency } from "@/lib/utils";
 
-import { phtToday } from "../../pht";
+import { phtDate, phtToday } from "../../pht";
 import { ApiError } from "../../providers/transactionsApi";
 import { debitFormSchema, toAmount, type DebitFormValues, type MemoBody } from "../../schemas";
 import type { AccountOption, ExpenseAccountOption } from "../../types";
+
 import { DateField } from "../DateField";
 import { ExpenseAccountPicker } from "../ExpenseAccountPicker";
 import { InlineAlert } from "../InlineAlert";
@@ -124,10 +125,10 @@ export function DebitMemoForm({
                     onChange={field.onChange}
                     inDialog
                     disabled={isSaving}
+                    maxDate={phtDate()}
                     placeholder="Pick the value date"
                   />
                 </FormControl>
-                <FormDescription>Today or earlier.</FormDescription>
                 <FormMessage />
               </FormItem>
             )}

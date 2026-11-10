@@ -79,7 +79,7 @@ export function NewTransactionDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="flex max-h-[85vh] w-[95vw] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:max-w-[600px]">
+      <DialogContent showCloseButton={false} className="flex max-h-[85vh] w-[95vw] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:max-w-[600px]">
         <DialogHeader className="border-b border-border/50 px-6 py-4">
           <DialogTitle>New transaction</DialogTitle>
           <DialogDescription>

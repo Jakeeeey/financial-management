@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { formatNumber } from "@/lib/utils";
 
 import { LIST_PAGE_SIZE } from "../constants";
-import { phtDisplayStamp } from "../pht";
+import { phtDisplayStamp, shiftWallClock } from "../pht";
 import type { AuditLogRow } from "../types";
 import { TablePager } from "./TablePager";
 
@@ -23,7 +23,7 @@ type Props = {
   emptyLabel?: string;
 };
 
-const COLUMNS = 6;
+const COLUMNS = 5;
 
 /** FSD 1.6 movement log: every recorded action, stamped in PHT, with UTC imports flagged. */
 export function AuditTable({ rows, page, pageCount, total, onPage, filters, emptyLabel }: Props) {
@@ -44,8 +44,7 @@ export function AuditTable({ rows, page, pageCount, total, onPage, filters, empt
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[200px]">Stored timestamp</TableHead>
-                <TableHead className="w-[170px]">PHT reading</TableHead>
+                <TableHead className="w-[220px]">Recorded (PHT)</TableHead>
                 <TableHead className="w-[160px]">Module</TableHead>
                 <TableHead className="w-[200px]">Action</TableHead>
                 <TableHead className="w-[160px]">Reference</TableHead>
@@ -65,23 +64,26 @@ export function AuditTable({ rows, page, pageCount, total, onPage, filters, empt
                 const stored = row.legacyUtcAt ?? row.occurredAt;
                 return (
                   <TableRow key={row.id}>
-                    <TableCell className="max-w-[200px]">
+                    <TableCell className="max-w-[220px]">
                       <span className="flex items-center gap-2">
-                        <span className="truncate font-mono text-xs" title={stored}>
-                          {stored}
+                        <span className="truncate font-mono text-xs tabular-nums" title={stored}>
+                          {phtDisplayStamp(row.occurredAt)}
                         </span>
                         {row.legacyUtcAt ? (
                           <Badge
                             variant="outline"
                             className="shrink-0 border-red-200 bg-red-50 text-[11px] font-semibold text-red-700"
+                            title="Imported with a UTC wall clock, so the stored hour is 8 hours behind PHT."
                           >
-                            UTC
+                            UTC import
                           </Badge>
                         ) : null}
                       </span>
-                    </TableCell>
-                    <TableCell className="max-w-[170px] truncate font-mono text-xs tabular-nums">
-                      {phtDisplayStamp(row.occurredAt)}
+                      {row.legacyUtcAt ? (
+                        <p className="truncate text-[11px] text-muted-foreground">
+                          PHT {shiftWallClock(row.legacyUtcAt, 8) || "—"}
+                        </p>
+                      ) : null}
                     </TableCell>
                     <TableCell className="max-w-[160px] truncate" title={row.module}>
                       {row.module}

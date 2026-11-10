@@ -36,6 +36,7 @@ type Props = {
 export function SlipDetailDialog({ slip, open, isSaving, onOpenChange, onCancel }: Props) {
   const [reason, setReason] = useState("");
   const [touched, setTouched] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   if (!slip) return null;
 
@@ -49,13 +50,23 @@ export function SlipDetailDialog({ slip, open, isSaving, onOpenChange, onCancel 
     if (ok) {
       setReason("");
       setTouched(false);
+      setConfirming(false);
       onOpenChange(false);
     }
   }
 
+  function handleOpenChange(next: boolean) {
+    if (!next) {
+      setConfirming(false);
+      setTouched(false);
+      setReason("");
+    }
+    onOpenChange(next);
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[95vw] sm:max-w-[550px] p-0 rounded-2xl">
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent showCloseButton={false} className="w-[95vw] sm:max-w-[550px] p-0 rounded-2xl">
         <div className="flex max-h-[85vh] flex-col overflow-hidden">
           <DialogHeader className="border-b px-6 py-4">
             <DialogTitle className="line-clamp-1">{slip.depositNo}</DialogTitle>
@@ -102,7 +113,7 @@ export function SlipDetailDialog({ slip, open, isSaving, onOpenChange, onCancel 
               </div>
             )}
 
-            {cancellable && (
+            {cancellable && confirming && (
               <div className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
                 <Label htmlFor="cancel-reason" className="text-sm">
                   Cancellation reason <span className="text-destructive">*</span>
@@ -129,10 +140,15 @@ export function SlipDetailDialog({ slip, open, isSaving, onOpenChange, onCancel 
                 Close
               </Button>
             </DialogClose>
-            {cancellable && (
+            {cancellable && !confirming && (
+              <Button type="button" variant="outline" disabled={isSaving} onClick={() => setConfirming(true)}>
+                Cancel slip
+              </Button>
+            )}
+            {cancellable && confirming && (
               <Button type="button" variant="destructive" disabled={isSaving} onClick={handleCancel}>
                 {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Cancel slip
+                Cancel this slip
               </Button>
             )}
           </DialogFooter>

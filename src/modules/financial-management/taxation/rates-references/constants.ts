@@ -161,3 +161,14 @@ export const TAX_TONES: Record<string, Tone> = {
   SCIT: "warning",
   INCOME_TAX_HOLIDAY: "neutral",
 };
+
+
+/** Seller tiers for the professional-fee row of the withholding matrix. */
+export const RATE_TIERS = ["LARGE", "MEDIUM", "SMALL"] as const;
+
+/** `0.12` reads as "12%", `0.025` as "2.5%". */
+export function percentText(rate: number): string {
+  const percent = rate * 100;
+  const trimmed = Number(percent.toFixed(2));
+  return `${trimmed}%`;
+}
