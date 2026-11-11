@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { Fragment, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { BankReconciliationContext } from "./reference-types";
@@ -10,7 +9,6 @@ import { PeriodHistoryChoice } from "./components/PeriodHistoryChoice";
 import { AuditTrailReport, ClosedPeriodsReport } from "./components/HistoryReports";
 import { postingStatus, POSTING_TOTAL_NOTE } from "./services/postingExport";
 import { transactionMoney } from "./utils/transactionDisplay";
-import { BANK_RECONCILIATION_ROOT } from "./workspaces";
 import { useReportsExports } from "./hooks/useReportsExports";
 import { CopyReportButton } from "./components/CopyReportButton";
 import type { ReportKey } from "./report-types";
@@ -28,7 +26,6 @@ export default function BankReconciliationReportsModule() {
   const exports = useReportsExports(period), exporting = Boolean(exports.busy);
   const copy = (key: ReportKey, name: string) => <CopyReportButton name={name} busy={exports.busy === key} disabled={!data || loading || exporting} onClick={() => void exports.run(key)} />;
   const money = (value: string | null | undefined) => value == null ? "Unavailable" : value.startsWith("-") ? `(${transactionMoney(value.slice(1), period?.currency || "PHP")})` : transactionMoney(value, period?.currency || "PHP");
-  const suffix = period ? `?periodId=${period.id}${period.lifecycle?.closureId ? `&closureId=${period.lifecycle.closureId}` : ""}` : "";
   const viewRevision = async (id: number, closureId: number) => {
     await reports.selectPeriod(id, closureId);
     window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#r-statement`);
@@ -37,7 +34,7 @@ export default function BankReconciliationReportsModule() {
   if (accessError) return <p role="alert" className="rounded-lg border border-destructive p-4 text-sm text-destructive">{accessError}</p>;
   if (!context) return <p className="text-sm text-muted-foreground">Loading Reports…</p>;
   return <section aria-label="Bank reconciliation Reports" className="space-y-6" aria-busy={loading}>
-    <div className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-semibold tracking-tight">Reports</h1><p className="mt-2 text-sm text-muted-foreground">Review the reconciliation statement, outstanding items, and adjusting entries.</p></div><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" disabled={!data || loading || exporting} onClick={reports.refresh}>Refresh data</Button>{period && context.workspaces.filter(w => w.key === "reconcile" || w.key === "posting").map(w => <Button key={w.key} type="button" variant="outline" asChild><Link href={`${BANK_RECONCILIATION_ROOT}/${w.key}${suffix}`}>Open {w.title}</Link></Button>)}</div></div>
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-semibold tracking-tight">Reports</h1><p className="mt-2 text-sm text-muted-foreground">Review the reconciliation statement, outstanding items, and adjusting entries.</p></div><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" disabled={!data || loading || exporting} onClick={reports.refresh}>Refresh data</Button></div></div>
     <div className="flex flex-wrap items-center justify-between gap-3"><PeriodHistoryChoice period={period} disabled={loading || exporting} onSelect={reports.selectPeriod} /><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" disabled={!data || loading || exporting} onClick={() => void exports.run("xlsx")}>{exports.busy === "xlsx" ? "Generating Excel…" : "Export to Excel"}</Button><Button type="button" variant="outline" disabled={!data || loading || exporting} onClick={() => void exports.run("pdf")}>{exports.busy === "pdf" ? "Generating PDF…" : "Download PDF"}</Button></div></div>
     {exports.error && <p role="alert" className="rounded-md border border-destructive/40 p-3 text-sm text-destructive">{exports.error}</p>}{exports.message && <p role="status" className="text-sm text-muted-foreground">{exports.message}</p>}
     <Dialog open={Boolean(exports.manual)} onOpenChange={open => { if (!open) exports.dismiss(); }}><DialogContent className="max-w-3xl"><DialogHeader><DialogTitle>Copy report text</DialogTitle><DialogDescription>Your browser blocked automatic copying. Select the text below and use Ctrl+C or your device’s copy command.</DialogDescription></DialogHeader><Textarea aria-label="Report text to copy" readOnly value={exports.manual} className="h-80 font-mono text-xs" onFocus={event => event.currentTarget.select()} /><Button type="button" variant="outline" onClick={() => exports.dismiss()}>Close</Button></DialogContent></Dialog>
