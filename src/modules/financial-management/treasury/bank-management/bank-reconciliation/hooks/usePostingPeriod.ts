@@ -9,7 +9,6 @@ import { bankReconciliationRequestId } from "../utils/request-id";
 import { getPeriodHistory } from "../providers/bankReconciliationLifecycleApi";
 
 type PendingRequest = { periodId: number; action: PostingAction; command: PostingCommand };
-const requestKey = (id: number) => `bank-reconciliation-posting:${id}`;
 
 function periodUrl(id: number | null, closureId?: number) {
   const url = new URL(window.location.href); if (id == null) url.searchParams.delete("periodId"); else url.searchParams.set("periodId", String(id));
@@ -25,7 +24,6 @@ export function usePostingPeriod(enabled: boolean) {
   const invalidate = useCallback(() => { const token = ++generation.current; request.current?.abort(); return token; }, []);
   const accept = useCallback((result: PostingData) => {
     current.current = result; setData(result); setBank(result.period.bank); input.current = result.postingDate.effective || ""; setDate(input.current); dirty.current = false; conflict.current = false; setError(""); periodUrl(result.period.id, result.period.lifecycle?.closureId);
-    if (!operation.current) { try { const saved = sessionStorage.getItem(requestKey(result.period.id)); setPendingRequest(saved ? JSON.parse(saved) : null); } catch { setPendingRequest(null); } }
   }, []);
   const load = useCallback(async (id: number, passive = false, closureId?: number) => {
     if (passive && (dirty.current || pending.current || conflict.current || operation.current)) return;
@@ -65,14 +63,14 @@ export function usePostingPeriod(enabled: boolean) {
     } catch (e) { if (!controller.signal.aborted && token === generation.current) { setError(e instanceof Error ? e.message : "Unable to load the bank's period."); setLoading(false); } }
   }, [invalidate, load]);
   const refresh = useCallback(() => { if (current.current) void load(current.current.period.id, false, current.current.period.lifecycle?.closureId); }, [load]);
-  const remember = useCallback((value: PendingRequest | null, id: number) => { setPendingRequest(value); if (value) sessionStorage.setItem(requestKey(id), JSON.stringify(value)); else sessionStorage.removeItem(requestKey(id)); }, []);
+  const remember = useCallback((value: PendingRequest | null) => { setPendingRequest(value); }, []);
   const complete = useCallback(async (request: PendingRequest, receipt: PostingReceipt) => {
     accept(receipt.data);
     if (request.action === "prepare-export" && ["PREPARED", "EXPORTED"].includes(receipt.state)) {
       await downloadFallbackJournal(request.periodId, request.command.requestId); accept(await getPostingPeriod(request.periodId));
-      remember(null, request.periodId); setMessage("Journal file generated. Verify the imported Posted ERP journal before it counts as posted.");
+      remember(null); setMessage("Journal file generated. Verify the imported Posted ERP journal before it counts as posted.");
     } else if (receipt.state !== "PENDING" && receipt.state !== "PREPARED") {
-      remember(null, request.periodId); if (receipt.state === "FAILED") setError(receipt.error || "The GL batch was rolled back."); else setMessage(request.action === "withdraw" ? "Journal attempt withdrawn. Its file must not be imported." : request.action === "reverse" ? "Reversal posted. The source is unlocked." : "Journal operation completed.");
+      remember(null); if (receipt.state === "FAILED") setError(receipt.error || "The GL batch was rolled back."); else setMessage(request.action === "withdraw" ? "Journal attempt withdrawn. Its file must not be imported." : request.action === "reverse" ? "Reversal posted. The source is unlocked." : "Journal operation completed.");
     } else setMessage("This request is pending. Check its status or retry the same request.");
   }, [accept, remember]);
   const run = useCallback(async (action: PostingAction, selection: Pick<PostingCommand, "sourceKeys" | "journalId" | "glJournalId" | "acknowledgeWithdrawal">) => {
@@ -81,14 +79,14 @@ export function usePostingPeriod(enabled: boolean) {
     const model = current.current; if (!model) return;
     const next: PendingRequest = { periodId: model.period.id, action, command: { requestId: bankReconciliationRequestId(), version: model.period.version, bankVersion: model.period.bank.version, ...selection } };
     operation.current = true; invalidate(); setLoading(false); setOperating(true); setError(""); setMessage("");
-    try { remember(next, next.periodId); await complete(next, await runPostingCommand(next.periodId, action, next.command)); }
-    catch (e) { if (e instanceof SetupError && e.status < 500) remember(null, next.periodId); setError(e instanceof Error ? e.message : "The operation outcome is not confirmed. Check the saved request before retrying."); }
+    try { remember(next); await complete(next, await runPostingCommand(next.periodId, action, next.command)); }
+    catch (e) { if (e instanceof SetupError && e.status < 500) remember(null); setError(e instanceof Error ? e.message : "The operation outcome is not confirmed. Check the saved request before retrying."); }
     finally { operation.current = false; setOperating(false); }
   }, [complete, invalidate, pendingRequest, remember, saveDate]);
   const recover = useCallback(async (retry: boolean) => {
     if (!pendingRequest || operation.current) return; operation.current = true; invalidate(); setLoading(false); setOperating(true); setError("");
     try { const receipt = retry ? await runPostingCommand(pendingRequest.periodId, pendingRequest.action, pendingRequest.command) : await getPostingReceipt(pendingRequest.periodId, pendingRequest.command.requestId); if (!retry && ["PENDING", "PREPARED"].includes(receipt.state)) { accept(receipt.data); setMessage("This request is pending. Retry the same request to resume it."); } else await complete(pendingRequest, receipt); }
-    catch (e) { if (e instanceof SetupError && e.status === 404) { remember(null, pendingRequest.periodId); setMessage("The request was not committed. Refresh data before starting another operation."); } else setError(e instanceof Error ? e.message : "Unable to confirm the request outcome."); }
+    catch (e) { if (e instanceof SetupError && e.status === 404) { remember(null); setMessage("The request was not committed. Refresh data before starting another operation."); } else setError(e instanceof Error ? e.message : "Unable to confirm the request outcome."); }
     finally { operation.current = false; setOperating(false); }
   }, [accept, complete, invalidate, pendingRequest, remember]);
   useEffect(() => {

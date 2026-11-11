@@ -25,6 +25,8 @@ export function searchBankReconciliationReferences<K extends BankReconciliationR
   if (query.page !== undefined) params.set("page", String(query.page));
   if (query.pageSize !== undefined) params.set("pageSize", String(query.pageSize));
   if (query.companyId !== undefined) params.set("companyId", String(query.companyId));
+  if (query.bankName !== undefined) params.set("bankName", query.bankName);
+  if (query.branch !== undefined) params.set("branch", query.branch);
   return read<BankReconciliationReferencePage<BankReconciliationReferences[K]>>(`/lookups/${encodeURIComponent(resource)}?${params}`, signal);
 }
 
