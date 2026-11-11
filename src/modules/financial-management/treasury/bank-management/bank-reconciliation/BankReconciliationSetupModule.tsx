@@ -21,6 +21,7 @@ import { PeriodLifecycle } from "./components/PeriodLifecycle";
 import { useReconcileDrafts } from "./hooks/useReconcileDrafts";
 import { ReconcileDraftDialogs } from "./components/ReconcileDraftDialogs";
 import { useReferenceChoices } from "./hooks/useReferenceChoices";
+import { transactionMoney } from "./utils/transactionDisplay";
 
 function BankBranchChoice({ selected, companyId, disabled, onSelect }: { selected: BankBranchReference | null; companyId?: number; disabled?: boolean; onSelect: (group: BankBranchReference) => void }) {
   const choices = useReferenceChoices("bank-accounts", { companyId });
@@ -41,7 +42,7 @@ function BankBranchChoice({ selected, companyId, disabled, onSelect }: { selecte
 
 function money(value: string | null | undefined, currency: string) {
   if (value == null) return "Unavailable";
-  return new Intl.NumberFormat("en-PH", { style: "currency", currency: /^[A-Z]{3}$/.test(currency) ? currency : "PHP" }).format(Number(value));
+  return transactionMoney(value, currency);
 }
 
 export default function BankReconciliationSetupModule() {
@@ -53,7 +54,8 @@ export default function BankReconciliationSetupModule() {
   const [newKind, setNewKind] = useState<NewReference | null>(null), [configOpen, setConfigOpen] = useState(false), [configCompany, setConfigCompany] = useState<CompanyReference | null>(null), [configAccount, setConfigAccount] = useState<AccountReference | null>(null);
   const [busy, setBusy] = useState(false), [configError, setConfigError] = useState("");
   const [lifecycleBusy, setLifecycleBusy] = useState(false);
-  const drafts = useReconcileDrafts(actorId, setup), editorLocked = drafts.busy || Boolean(setup.bank && !drafts.ready);
+  const [transactionsReady, setTransactionsReady] = useState(false);
+  const drafts = useReconcileDrafts(actorId, setup, transactionsReady), editorLocked = drafts.busy || Boolean(setup.bank && !drafts.ready);
   const period = setup.period, bank = setup.bank, draft = setup.draft, closed = period?.status === "CLOSED";
   const selectedBankId = bank?.id, selectedBankName = bank?.bankName, selectedBranch = bank?.branch;
   const nextMonth = period?.lifecycle?.nextAllowedMonth;
@@ -131,7 +133,7 @@ export default function BankReconciliationSetupModule() {
       {setup.error && <p role="alert" className="text-sm text-destructive">{setup.error}</p>}
       <p role="status" className="text-xs text-muted-foreground">{setup.loading ? "Loading saved setup…" : setup.status || "Select a bank account to begin. Setup changes save automatically."}</p>
     </fieldset>
-    <TransactionWorkbench period={period} run={setup.run} busy={busy || lifecycleBusy || setup.loading || editorLocked} setBusy={setBusy} drafts={drafts} />
+    <TransactionWorkbench period={period} run={setup.run} busy={busy || lifecycleBusy || setup.loading || editorLocked} setBusy={setBusy} drafts={drafts} onReadReady={setTransactionsReady} />
     <Dialog open={configOpen} onOpenChange={open => { if (!busy) setConfigOpen(open); }}><DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>Configure bank account</DialogTitle><DialogDescription>Associate this bank with its company and a dedicated Cash in Bank GL account.</DialogDescription></DialogHeader>
       <ReferenceChoice label="Bank company" resource="companies" selected={configCompany} onSelect={item => setConfigCompany(item as CompanyReference)} onAdd={() => setNewKind("companies")} disabled={busy} />
       <ReferenceChoice label="Cash in Bank GL account" resource="accounts" selected={configAccount} onSelect={item => setConfigAccount(item as AccountReference)} currentAssets onAdd={() => setNewKind("accounts")} disabled={busy} />
