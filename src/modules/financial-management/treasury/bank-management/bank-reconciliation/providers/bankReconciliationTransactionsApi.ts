@@ -3,10 +3,10 @@ import type { ReconciliationPeriod } from "../setup-types";
 import type { TransactionData, TransactionFilter, TransactionResult, TransactionSide } from "../transaction-types";
 
 const BASE = "/api/fm/treasury/bank-reconciliation";
-export function getTransactions(id: number, filter: TransactionFilter, search: string, bankPage: number, ledgerPage: number, closureId?: number) {
+export function getTransactions(id: number, filter: TransactionFilter, search: string, bankPage: number, ledgerPage: number, closureId?: number, signal?: AbortSignal) {
   const query = new URLSearchParams({ filter, search, bankPage: String(bankPage), ledgerPage: String(ledgerPage), pageSize: "25" });
   if (closureId) query.set("closureId", String(closureId));
-  return setupRequest<TransactionData>(`periods/${id}/transactions?${query}`);
+  return setupRequest<TransactionData>(`periods/${id}/transactions?${query}`, "GET", undefined, signal);
 }
 export const addTransaction = (period: ReconciliationPeriod, side: TransactionSide, draft: { date: string; reference: string; description: string; amount: string }) => setupRequest<TransactionResult>(`periods/${period.id}/lines/${side}`, "POST", { ...draft, version: period.version });
 export const deleteTransaction = (period: ReconciliationPeriod, side: TransactionSide, id: number) => setupRequest<TransactionResult>(`periods/${period.id}/lines/${side}/${id}`, "DELETE", { version: period.version });

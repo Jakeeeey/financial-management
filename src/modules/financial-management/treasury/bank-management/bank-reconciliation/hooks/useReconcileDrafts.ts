@@ -12,7 +12,7 @@ type Setup = ReturnType<typeof usePeriodSetup>;
 type Source = { identity: string; actorId: number; bankId: number; periodId: number | null; entries: EntryDrafts; lifetime: number };
 type Action = { source: Source | null; run: () => void | Promise<void>; side?: TransactionSide };
 
-export function useReconcileDrafts(actorId: number | null, setup: Setup) {
+export function useReconcileDrafts(actorId: number | null, setup: Setup, entriesReady: boolean) {
   const router = useRouter(), active = useRef<Source | null>(null), mounted = useRef(false), pending = useRef<Action | null>(null), working = useRef(false);
   const owner = useRef({ lifetime: 0 });
   const [view, setView] = useState({ entries: emptyEntries(), error: "", dialog: false, busy: false });
@@ -68,10 +68,11 @@ export function useReconcileDrafts(actorId: number | null, setup: Setup) {
   }, [getSnapshot, owns, publish, run]);
   const submitEntry = useCallback(async (side: TransactionSide) => {
     const source = active.current; if (!source || !owns(source) || working.current) return;
+    if (!entriesReady) throw new Error("Load the current transactions before adding a line.");
     working.current = true; setView(previous => ({ ...previous, busy: true, error: "" }));
     try { await performEntry(source, side); }
     finally { if (owns(source)) { working.current = false; setView(previous => ({ ...previous, busy: false })); } }
-  }, [owns, performEntry]);
+  }, [entriesReady, owns, performEntry]);
   const needsAttention = useCallback(() => Boolean(getSnapshot().needsAttention || active.current && Object.values(active.current.entries).some(entryDirty)), [getSnapshot]);
   const requestAction = useCallback((action: () => void | Promise<void>, side?: TransactionSide) => {
     const source = active.current;
@@ -93,6 +94,7 @@ export function useReconcileDrafts(actorId: number | null, setup: Setup) {
     try {
       const sides: TransactionSide[] = action.side ? [action.side] : ["BANK", "LEDGER"];
       if (choice === "save") {
+        if (!entriesReady && sides.some(side => entryDirty(source.entries[side]))) throw new Error("Load the current transactions before saving entry drafts. Cancel and retry loading, or discard the drafts to continue.");
         for (const side of sides) if (entryDirty(source.entries[side])) { const issue = entryValidation(source.entries[side]); if (issue) throw new Error(`${side === "BANK" ? "Bank" : "Ledger"} entry: ${issue}`); }
         await save(); if (!owns(source)) return;
         for (const side of sides) if (entryDirty(source.entries[side])) { await performEntry(source, side); if (!owns(source)) return; }
@@ -105,7 +107,7 @@ export function useReconcileDrafts(actorId: number | null, setup: Setup) {
       await action.run();
     } catch (e) { if (owns(source)) setView(previous => ({ ...previous, error: e instanceof Error ? e.message : "Unable to save. Your input is retained." })); }
     finally { if (owns(source)) { working.current = false; setView(previous => ({ ...previous, busy: false })); setAutosavePaused(Boolean(pending.current)); } }
-  }, [discard, getSnapshot, owns, performEntry, publish, save, setAutosavePaused]);
+  }, [discard, entriesReady, getSnapshot, owns, performEntry, publish, save, setAutosavePaused]);
 
   const reviewEntry = useCallback(async (side: TransactionSide) => {
     const source = active.current; if (!source || !owns(source) || working.current) return;
