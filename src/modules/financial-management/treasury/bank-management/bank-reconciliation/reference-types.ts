@@ -16,6 +16,7 @@ export type BankAccountReference = {
   isActive: boolean;
   companyId?: number | null;
 };
+export type BankBranchReference = Pick<BankAccountReference, "bankName" | "branch">;
 export type AccountReference = {
   id: number;
   code: string;
@@ -30,4 +31,4 @@ export type BankReconciliationReferences = {
 };
 export type BankReconciliationReferenceResource = keyof BankReconciliationReferences;
 export type BankReconciliationReferencePage<T> = { items: T[]; total: number; page: number; pageSize: number };
-export type BankReconciliationReferenceQuery = { search?: string; page?: number; pageSize?: number; companyId?: number };
+export type BankReconciliationReferenceQuery = { search?: string; page?: number; pageSize?: number; companyId?: number; bankName?: string; branch?: string };

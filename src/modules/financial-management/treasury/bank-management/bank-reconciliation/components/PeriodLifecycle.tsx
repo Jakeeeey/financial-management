@@ -11,12 +11,11 @@ import { bankReconciliationRequestId } from "../utils/request-id";
 
 type Pending = { action: LifecycleAction; command: LifecycleCommand };
 export function PeriodLifecycle({ period, workspace, eligibility, disabled, onBusy, onDone, before }: { period: ReconciliationPeriod; workspace: "reconcile" | "posting"; eligibility?: { canClose: boolean; blockers: string[] }; disabled: boolean; onBusy: (value: boolean) => void; onDone: (id: number) => Promise<void>; before?: () => Promise<ReconciliationPeriod | null> }) {
-  const key = `bank-reconciliation-lifecycle:${period.id}`;
-  const [pending, setPending] = useState<Pending | null>(() => { try { const saved = sessionStorage.getItem(key); return saved ? JSON.parse(saved) : null; } catch { return null; } });
+  const [pending, setPending] = useState<Pending | null>(null);
   const [dialog, setDialog] = useState<LifecycleAction | null>(null), [reason, setReason] = useState(""), [busy, setBusy] = useState(false), [error, setError] = useState(""), [message, setMessage] = useState("");
   useEffect(() => { onBusy(busy || Boolean(pending)); return () => onBusy(false); }, [busy, pending, onBusy]);
   const state = period.lifecycle, closed = period.status === "CLOSED";
-  function remember(value: Pending | null) { if (value) sessionStorage.setItem(key, JSON.stringify(value)); else sessionStorage.removeItem(key); setPending(value); }
+  function remember(value: Pending | null) { setPending(value); }
   async function complete(receipt: LifecycleReceipt) { remember(null); setDialog(null); setMessage(receipt.message + (receipt.blockers?.length ? ` ${receipt.blockers.join(" ")}` : "")); await onDone(receipt.periodId); }
   async function execute(retry = false) {
     if (busy) return; setBusy(true); setError("");
