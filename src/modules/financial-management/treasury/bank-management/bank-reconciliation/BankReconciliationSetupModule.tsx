@@ -28,6 +28,7 @@ export default function BankReconciliationSetupModule() {
   const { setError } = setup;
   const [authorized, setAuthorized] = useState(false), [accessError, setAccessError] = useState("");
   const [canPost, setCanPost] = useState(false);
+  const [canReport, setCanReport] = useState(false);
   const [company, setCompany] = useState<CompanyReference | null>(null), [banks, setBanks] = useState<BankAccountReference[]>([]), [group, setGroup] = useState("");
   const [newKind, setNewKind] = useState<NewReference | null>(null), [configOpen, setConfigOpen] = useState(false), [configCompany, setConfigCompany] = useState<CompanyReference | null>(null), [configAccount, setConfigAccount] = useState<AccountReference | null>(null);
   const [busy, setBusy] = useState(false), [configError, setConfigError] = useState("");
@@ -39,6 +40,7 @@ export default function BankReconciliationSetupModule() {
     getBankReconciliationContext().then(context => {
       if (!context.workspaces.some(item => item.key === "reconcile")) throw new Error("Reconcile module access is required.");
       setCanPost(context.workspaces.some(item => item.key === "posting"));
+      setCanReport(context.workspaces.some(item => item.key === "reports"));
       setAuthorized(true);
     }).catch(e => setAccessError(e.message));
   }, []);
@@ -62,6 +64,12 @@ export default function BankReconciliationSetupModule() {
     setBusy(true);
     try { const saved = await setup.save(); if (saved) router.push(`/fm/treasury/bank-reconciliation/posting?periodId=${saved.id}${saved.lifecycle?.closureId ? `&closureId=${saved.lifecycle.closureId}` : ""}`); }
     catch (e) { setup.setError(e instanceof Error ? e.message : "Save the setup before opening Posting."); }
+    finally { setBusy(false); }
+  }
+  async function openReports() {
+    setBusy(true);
+    try { const saved = await setup.save(); if (saved) router.push(`/fm/treasury/bank-reconciliation/reports?periodId=${saved.id}${saved.lifecycle?.closureId ? `&closureId=${saved.lifecycle.closureId}` : ""}`); }
+    catch (e) { setup.setError(e instanceof Error ? e.message : "Save the setup before opening Reports."); }
     finally { setBusy(false); }
   }
 
@@ -97,7 +105,7 @@ export default function BankReconciliationSetupModule() {
   }
   return <section className="space-y-6">
     <div className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-semibold tracking-tight">Reconcile</h1><p className="mt-2 text-sm text-muted-foreground">Compare bank statement lines with the Cash in Bank ledger. Add transactions, import templates, or refresh posted ledger lines.</p></div>
-      <div className="flex flex-wrap gap-2"><PeriodHistoryChoice period={period} disabled={busy || lifecycleBusy || setup.loading} onSelect={setup.selectPeriod} /><Button type="button" variant="outline" disabled={!draft || setup.loading || busy || lifecycleBusy || closed} onClick={() => { void setup.save().catch(() => {}); }}>Save setup</Button>{period && <Button type="button" variant="outline" disabled={busy || lifecycleBusy} onClick={() => { void setup.reload(); }}>Reload setup</Button>}{canPost && period && <Button type="button" variant="outline" disabled={busy || lifecycleBusy || setup.loading} onClick={() => { void openPosting(); }}>Open Posting</Button>}</div>
+      <div className="flex flex-wrap gap-2"><PeriodHistoryChoice period={period} disabled={busy || lifecycleBusy || setup.loading} onSelect={setup.selectPeriod} /><Button type="button" variant="outline" disabled={!draft || setup.loading || busy || lifecycleBusy || closed} onClick={() => { void setup.save().catch(() => {}); }}>Save setup</Button>{period && <Button type="button" variant="outline" disabled={busy || lifecycleBusy} onClick={() => { void setup.reload(); }}>Reload setup</Button>}{canPost && period && <Button type="button" variant="outline" disabled={busy || lifecycleBusy || setup.loading} onClick={() => { void openPosting(); }}>Open Posting</Button>}{canReport && period && <Button type="button" variant="outline" disabled={busy || lifecycleBusy || setup.loading} onClick={() => { void openReports(); }}>Open Reports</Button>}</div>
     </div>
     {period && <PeriodLifecycle key={period.id} period={period} workspace="reconcile" disabled={busy || setup.loading} onBusy={setLifecycleBusy} onDone={setup.selectPeriod} before={setup.save} />}
     <ReconcileExports key={bank?.id || 0} ready={Boolean(draft)} busy={busy || lifecycleBusy || setup.loading} setBusy={setBusy} run={setup.run} />
