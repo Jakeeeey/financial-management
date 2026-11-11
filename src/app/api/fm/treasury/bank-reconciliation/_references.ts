@@ -128,12 +128,21 @@ export async function listReferences(kind: string, params: URLSearchParams) {
   const search = (params.get("search") || "").trim();
   if (!Number.isSafeInteger(offset) || search.length > 200) throw new ReferenceError(400, "Invalid reference search or pagination.");
   const filter: Row = {};
+  const conditions: Row[] = [];
   if (name === "bank-accounts") Object.assign(filter, { is_active: { _eq: 1 }, account_status: { _eq: "ACTIVE" } });
   if (name === "accounts") filter.status = { _in: ["pending", "approved"] };
   if (name === "bank-accounts" && params.has("companyId")) {
     const companyId = positiveInteger(params.get("companyId")!, "company ID");
-    filter._and = [{ _or: [{ company_id: { _eq: companyId } }, { company_id: { _null: true } }] }];
+    conditions.push({ _or: [{ company_id: { _eq: companyId } }, { company_id: { _null: true } }] });
   }
+  if (params.has("bankName") || params.has("branch")) {
+    const bankName = (params.get("bankName") || "").trim(), branch = (params.get("branch") || "").trim();
+    if (name !== "bank-accounts" || !bankName || !params.has("branch")) throw new ReferenceError(400, "Select a complete bank and branch.");
+    filter.bank_name = { _eq: bankName };
+    if (branch) filter.branch = { _eq: branch };
+    else conditions.push({ _or: [{ branch: { _eq: "" } }, { branch: { _null: true } }] });
+  }
+  if (conditions.length) filter._and = conditions;
   if (search) filter._or = source.search.map(field => ({ [field]: { _icontains: search } }));
   const upstream = query(source.fields, filter, String(pageSize));
   upstream.set("offset", String(offset)); upstream.set("sort", source.sort); upstream.set("meta", "filter_count");

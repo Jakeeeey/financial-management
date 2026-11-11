@@ -5,8 +5,8 @@ const BASE = "/api/fm/treasury/bank-reconciliation";
 export class SetupError extends Error {
   constructor(public status: number, message: string, public fieldErrors: Record<string, string> = {}) { super(message); }
 }
-export async function setupRequest<T>(path: string, method = "GET", body?: unknown): Promise<T> {
-  const response = await fetch(`${BASE}/${path}`, { method, credentials: "same-origin", cache: "no-store", ...(body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }) });
+export async function setupRequest<T>(path: string, method = "GET", body?: unknown, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(`${BASE}/${path}`, { method, credentials: "same-origin", cache: "no-store", ...(signal ? { signal } : {}), ...(body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }) });
   const data = await response.json().catch(() => null);
   if (!response.ok) throw new SetupError(response.status, data?.message || "Bank Reconciliation request failed.", data?.fieldErrors || {});
   if (data === null) throw new SetupError(503, "The service returned an invalid response.");
