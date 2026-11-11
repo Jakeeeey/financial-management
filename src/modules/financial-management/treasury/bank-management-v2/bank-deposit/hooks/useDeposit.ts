@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import type { DepositSlip, SlipFilters, UndepositedAsset, UndepositedFilters } from "../types";
 import { phtToday, toPhtDateString } from "../pht";
 import { EMPTY_SLIP_FILTERS, EMPTY_UNDEPOSITED_FILTERS } from "../constants";
+import { usePageSize } from "../components/TablePager";
 import {
   cancelSlip as cancelSlipRequest,
   createSlip as createSlipRequest,
@@ -14,6 +15,18 @@ import {
   type CreateSlipResponse,
   type DepositAccountOption,
 } from "../providers/depositApi";
+
+const QUEUE_ROWS_KEY = "fm.bank-deposit.queue.rows";
+const SLIPS_ROWS_KEY = "fm.bank-deposit.slips.rows";
+
+/** A row can only be deposited once its collection is posted, dated and not voided. */
+export function isDepositable(asset: UndepositedAsset): boolean {
+  return asset.isPosted && !asset.isCancelled && Boolean(asset.collectionDate);
+}
+
+export type CreateSlipOutcome =
+  | { ok: true; response: CreateSlipResponse }
+  | { ok: false; message: string; fieldErrors: Record<string, string>; blockedDocuments: string[] };
 
 /** State for the Bank Deposit screen: undeposited assets, slips and the two mutations. */
 export function useDeposit() {
@@ -27,6 +40,8 @@ export function useDeposit() {
   // clamp a page that a shorter list leaves behind.
   const [assetsPage, setAssetsPage] = useState(1);
   const [slipsPage, setSlipsPage] = useState(1);
+  const [assetsPageSize, persistAssetsPageSize] = usePageSize(QUEUE_ROWS_KEY);
+  const [slipsPageSize, persistSlipsPageSize] = usePageSize(SLIPS_ROWS_KEY);
   const [filters, setFiltersState] = useState<UndepositedFilters>(EMPTY_UNDEPOSITED_FILTERS);
   const [slipFilters, setSlipFiltersState] = useState<SlipFilters>(EMPTY_SLIP_FILTERS);
 
@@ -54,10 +69,26 @@ export function useDeposit() {
     setAssetsPage(1);
   }, []);
 
-  const filteredAssets = useMemo(() => {
+  const setAssetsPageSize = useCallback(
+    (size: number) => {
+      persistAssetsPageSize(size);
+      setAssetsPage(1);
+    },
+    [persistAssetsPageSize],
+  );
+
+  const setSlipsPageSize = useCallback(
+    (size: number) => {
+      persistSlipsPageSize(size);
+      setSlipsPage(1);
+    },
+    [persistSlipsPageSize],
+  );
+
+  const { filteredAssets, withheldAssets } = useMemo(() => {
     const today = phtToday();
     const query = filters.q.trim().toLowerCase();
-    return assets.filter((asset) => {
+    const matchesFilters = (asset: UndepositedAsset) => {
       if (filters.type !== "ALL" && asset.assetType !== filters.type) return false;
       const pdc = Boolean(asset.chequeDate && asset.chequeDate > today);
       if (filters.canDeposit === "READY" && pdc) return false;
@@ -66,10 +97,21 @@ export function useDeposit() {
       if (filters.from && collected < filters.from) return false;
       if (filters.to && collected > filters.to) return false;
       if (!query) return true;
-      return [asset.documentNumber, asset.checkNo, asset.customer, asset.collectionReference, asset.bankName].some(
-        (value) => value && value.toLowerCase().includes(query),
-      );
-    });
+      return [
+        asset.documentNumber,
+        asset.checkNo,
+        asset.customer,
+        asset.customerCode,
+        asset.collectionReference,
+        asset.bankName,
+      ].some((value) => value && value.toLowerCase().includes(query));
+    };
+    const matching = assets.filter(matchesFilters);
+    if (filters.scope === "ALL") return { filteredAssets: matching, withheldAssets: [] as UndepositedAsset[] };
+    return {
+      filteredAssets: matching.filter(isDepositable),
+      withheldAssets: matching.filter((asset) => !isDepositable(asset)),
+    };
   }, [assets, filters]);
 
   const setSlipFilters = useCallback((next: SlipFilters) => {
@@ -125,7 +167,7 @@ export function useDeposit() {
   }, [assets, slips]);
 
   const createSlip = useCallback(
-    async (payload: CreateSlipPayload): Promise<CreateSlipResponse | null> => {
+    async (payload: CreateSlipPayload): Promise<CreateSlipOutcome> => {
       setIsSaving(true);
       try {
         const response = await createSlipRequest(payload);
@@ -138,16 +180,22 @@ export function useDeposit() {
           toast.success(`Deposit slip ${response.slip.depositNo} saved`);
         }
         if (response.notice) toast.info(response.notice);
-        return response;
+        return { ok: true, response };
       } catch (caught) {
         const message = caught instanceof Error ? caught.message : "Could not save the slip.";
+        const withFields = caught as Error & { fieldErrors?: Record<string, string> };
+        const selectedIds = new Set([...payload.cashIds, ...payload.checkIds]);
+        // Server messages now name the offending documents; match them back to rows to highlight.
+        const blockedDocuments = assets
+          .filter((asset) => selectedIds.has(asset.collectionDetailId) && message.includes(asset.documentNumber))
+          .map((asset) => asset.documentNumber);
         toast.error(message);
-        return null;
+        return { ok: false, message, fieldErrors: withFields.fieldErrors ?? {}, blockedDocuments };
       } finally {
         setIsSaving(false);
       }
     },
-    [refetch],
+    [assets, refetch],
   );
 
   const cancelSlip = useCallback(
@@ -171,11 +219,14 @@ export function useDeposit() {
   return {
     assets,
     filteredAssets,
+    withheldAssets,
     filters,
     setFilters,
+    setAssetsPageSize,
     filteredSlips,
     slipFilters,
     setSlipFilters,
+    setSlipsPageSize,
     slips,
     accounts,
     totals,
@@ -187,7 +238,9 @@ export function useDeposit() {
     cancelSlip,
     assetsPage,
     setAssetsPage,
+    assetsPageSize,
     slipsPage,
     setSlipsPage,
+    slipsPageSize,
   };
 }

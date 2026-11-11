@@ -8,19 +8,23 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { cn, formatCurrency, formatNumber } from "@/lib/utils";
 
 import { phtDate, toPhtDateString } from "../pht";
-import { PAGE_SIZE, toneClass } from "../constants";
-import { TablePager } from "./TablePager";
+import { toneClass } from "../constants";
+import { pageCountFor, pageSlice, TablePager } from "./TablePager";
 import { UndepositedFiltersBar } from "./UndepositedFilters";
 import type { UndepositedAsset, UndepositedFilters } from "../types";
 
 type Props = {
   assets: UndepositedAsset[];
   totalCount: number;
+  /** Rows the posted-only scope is hiding, so the page can say so instead of pretending they do not exist. */
+  withheldCount: number;
   filters: UndepositedFilters;
   selected: Set<number>;
   isLoading: boolean;
   page: number;
+  pageSize: number;
   onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
   onFiltersChange: (filters: UndepositedFilters) => void;
   onToggle: (id: number) => void;
   onToggleAll: (checked: boolean, ids: number[]) => void;
@@ -31,6 +35,13 @@ type Props = {
   selectedAmount: number;
 };
 
+function notDepositableReason(asset: UndepositedAsset): string | null {
+  if (asset.isCancelled) return "Voided";
+  if (!asset.isPosted) return "Not posted";
+  if (!asset.collectionDate) return "No collected date";
+  return null;
+}
+
 /**
  * Undeposited collections and checks, with row selection feeding the deposit dialog.
  * PDC checks are selectable only from their check date onward, per FSD 1.3.
@@ -38,11 +49,14 @@ type Props = {
 export function UndepositedTable({
   assets,
   totalCount,
+  withheldCount,
   filters,
   selected,
   isLoading,
   page,
+  pageSize,
   onPageChange,
+  onPageSizeChange,
   onFiltersChange,
   onToggle,
   onToggleAll,
@@ -51,17 +65,16 @@ export function UndepositedTable({
   onOpenRow,
   selectedAmount,
 }: Props) {
-  // A refetch can leave the page past the last row; clamp instead of resetting so the
-  // selection the user built up is not disturbed by an unrelated page change.
-  const pageCount = Math.max(1, Math.ceil(assets.length / PAGE_SIZE));
+  const pageCount = pageCountFor(assets.length, pageSize);
   const safePage = Math.min(page, pageCount);
-  const rows = assets.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const rows = pageSlice(assets, safePage, pageSize);
   const today = phtDate();
   const isPdc = (asset: UndepositedAsset) =>
     asset.assetType === "CHECK" && asset.chequeDate ? asset.chequeDate > today : false;
-  const selectableIds = rows.filter((asset) => !isPdc(asset)).map((asset) => asset.collectionDetailId);
+  const isDisabled = (asset: UndepositedAsset) => isPdc(asset) || notDepositableReason(asset) !== null;
+  const selectableIds = rows.filter((asset) => !isDisabled(asset)).map((asset) => asset.collectionDetailId);
   // "Ready" ignores paging: the button exists for the common case of depositing everything at once.
-  const readyIds = assets.filter((asset) => !isPdc(asset)).map((asset) => asset.collectionDetailId);
+  const readyIds = assets.filter((asset) => !isDisabled(asset)).map((asset) => asset.collectionDetailId);
   const allSelected =
     selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
 
@@ -78,11 +91,30 @@ export function UndepositedTable({
           </p>
         </div>
         <Badge variant="outline" className="tabular-nums text-[11px]">
-          {formatNumber(assets.length)} collections
+          {formatNumber(totalCount)} collections
         </Badge>
       </header>
 
       <UndepositedFiltersBar filters={filters} onChange={onFiltersChange} />
+
+      {filters.scope === "POSTED" && withheldCount > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 border-y border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs">
+          <p className="mr-auto text-amber-900 dark:text-amber-200">
+            <span className="tabular-nums font-semibold">{formatNumber(withheldCount)}</span>{" "}
+            {withheldCount === 1 ? "collection is" : "collections are"} withheld from this list: not posted, voided or
+            missing a collected date. They cannot go on a slip yet.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7"
+            onClick={() => onFiltersChange({ ...filters, scope: "ALL" })}
+          >
+            Show them
+          </Button>
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap items-center justify-end gap-2 border-b border-border/50 bg-muted/20 px-4 py-2">
         {selected.size > 0 ? (
@@ -131,23 +163,24 @@ export function UndepositedTable({
                       onCheckedChange={(checked) => onToggleAll(checked === true, selectableIds)}
                     />
                   </TableHead>
-                  <TableHead className="w-[120px]">Collected</TableHead>
-                  <TableHead className="w-[130px]">Type</TableHead>
-                  <TableHead className="max-w-[160px]">OR / check no.</TableHead>
-                  <TableHead className="max-w-[180px]">Customer</TableHead>
-                  <TableHead className="w-[140px] text-right">Amount</TableHead>
+                  <TableHead className="w-[110px] whitespace-nowrap">Collected</TableHead>
+                  <TableHead className="w-[150px]">Type</TableHead>
+                  <TableHead className="w-[170px]">OR / check no.</TableHead>
+                  <TableHead className="min-w-[180px]">Customer</TableHead>
+                  <TableHead className="w-[140px] whitespace-nowrap text-right">Amount</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {rows.map((asset) => {
                   const pdc = isPdc(asset);
+                  const blocked = notDepositableReason(asset);
                   return (
                     <TableRow
                       key={asset.collectionDetailId}
                       data-state={selected.has(asset.collectionDetailId) ? "selected" : undefined}
                       tabIndex={0}
                       aria-label={`Open ${asset.documentNumber}`}
-                      className="cursor-pointer"
+                      className={cn("cursor-pointer", blocked && "bg-muted/30")}
                       onClick={() => onOpenRow(asset)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ") {
@@ -159,7 +192,7 @@ export function UndepositedTable({
                       <TableCell onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
                         <Checkbox
                           aria-label={`Select ${asset.documentNumber}`}
-                          disabled={pdc}
+                          disabled={pdc || blocked !== null}
                           checked={selected.has(asset.collectionDetailId)}
                           onCheckedChange={() => onToggle(asset.collectionDetailId)}
                         />
@@ -183,11 +216,13 @@ export function UndepositedTable({
                           <p className="mt-0.5 text-[11px] text-amber-700 dark:text-amber-400">
                             Post-dated, deposit from {asset.chequeDate ? toPhtDateString(asset.chequeDate) : "—"}
                           </p>
+                        ) : blocked ? (
+                          <p className="mt-0.5 text-[11px] font-medium text-amber-800 dark:text-amber-300">{blocked}</p>
                         ) : asset.assetType === "CASH" && asset.ageDays >= 1 ? (
                           <p className="mt-0.5 text-[11px] text-amber-700 dark:text-amber-400">Over a day on hand</p>
                         ) : null}
                       </TableCell>
-                      <TableCell className="max-w-[160px]">
+                      <TableCell className="w-[170px]">
                         <p className="truncate font-mono text-sm" title={asset.documentNumber}>
                           {asset.documentNumber}
                         </p>
@@ -197,10 +232,26 @@ export function UndepositedTable({
                           </p>
                         ) : null}
                       </TableCell>
-                      <TableCell className="max-w-[180px] truncate text-sm" title={asset.customer ?? undefined}>
-                        {asset.customer ?? "—"}
+                      <TableCell className="min-w-[180px] text-sm">
+                        {asset.customer ? (
+                          <p className="truncate" title={asset.customer}>
+                            {asset.customer}
+                          </p>
+                        ) : (
+                          <p className="text-muted-foreground">—</p>
+                        )}
+                        {asset.customerCode && asset.customerCode !== asset.customer ? (
+                          <p className="truncate font-mono text-[11px] text-muted-foreground" title={asset.customerCode}>
+                            {asset.customerCode}
+                          </p>
+                        ) : null}
+                        {!asset.customer && !asset.customerCode ? (
+                          <p className="text-[11px] text-amber-800 dark:text-amber-300">No customer on record</p>
+                        ) : null}
                       </TableCell>
-                      <TableCell className="text-right text-sm tabular-nums">{formatCurrency(asset.amount)}</TableCell>
+                      <TableCell className="w-[140px] whitespace-nowrap text-right text-sm tabular-nums">
+                        {formatCurrency(asset.amount)}
+                      </TableCell>
                     </TableRow>
                   );
                 })}
@@ -211,10 +262,11 @@ export function UndepositedTable({
           <ul className="divide-y divide-border xl:hidden">
             {rows.map((asset) => {
               const pdc = isPdc(asset);
+              const blocked = notDepositableReason(asset);
               return (
                 <li
                   key={asset.collectionDetailId}
-                  className="flex cursor-pointer items-start gap-3 p-4"
+                  className={cn("flex cursor-pointer items-start gap-3 p-4", blocked && "bg-muted/30")}
                   onClick={() => onOpenRow(asset)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
@@ -231,27 +283,34 @@ export function UndepositedTable({
                   >
                     <Checkbox
                       aria-label={`Select ${asset.documentNumber}`}
-                      disabled={pdc}
+                      disabled={pdc || blocked !== null}
                       checked={selected.has(asset.collectionDetailId)}
                       onCheckedChange={() => onToggle(asset.collectionDetailId)}
                     />
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
-                      <p className="truncate text-sm font-medium" title={asset.documentNumber}>
+                      <p className="truncate font-mono text-sm font-medium" title={asset.documentNumber}>
                         {asset.documentNumber}
                       </p>
                       <span className="shrink-0 text-sm tabular-nums">{formatCurrency(asset.amount)}</span>
                     </div>
                     <p className="truncate text-xs text-muted-foreground" title={asset.customer ?? undefined}>
-                      {asset.assetType === "CASH" ? "Cash" : "Check"} · {asset.customer ?? "No customer"}
+                      {asset.assetType === "CASH" ? "Cash" : "Check"} · {asset.customer ?? "Unassigned customer"}
                     </p>
+                    {asset.customerCode && asset.customerCode !== asset.customer ? (
+                      <p className="truncate font-mono text-[11px] text-muted-foreground">{asset.customerCode}</p>
+                    ) : null}
                     <p className="mt-1 truncate text-xs text-muted-foreground">
                       Collected {asset.collectionDate ? toPhtDateString(asset.collectionDate) : "—"} ·{" "}
                       {asset.collectionReference ?? "Collections"}
                     </p>
                     <p className="mt-1 text-xs">
-                      {pdc ? (
+                      {blocked ? (
+                        <Badge variant="outline" className={cn("text-[11px] font-semibold", toneClass("warning"))}>
+                          {blocked}
+                        </Badge>
+                      ) : pdc ? (
                         <span className="text-muted-foreground">
                           PDC · deposit from {asset.chequeDate ? toPhtDateString(asset.chequeDate) : "—"}
                         </span>
@@ -272,8 +331,9 @@ export function UndepositedTable({
             page={safePage}
             pageCount={pageCount}
             total={assets.length}
-            pageSize={PAGE_SIZE}
+            pageSize={pageSize}
             onPageChange={onPageChange}
+            onPageSizeChange={onPageSizeChange}
             className="border-t border-border/50 px-4 py-3"
           />
         </>

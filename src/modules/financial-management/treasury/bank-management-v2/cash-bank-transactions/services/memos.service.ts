@@ -8,6 +8,7 @@ import { getAccount } from "./accounts.service";
 import { asNumber, asString, createItem, DirectusError, getItem, listItems, roundMoney, updateItem } from "./directus";
 import { NotFoundError, ValidationError } from "./errors";
 import { postJournalEntry, PostingBlockedError, reverseJournalEntry } from "./gl.service";
+import { findSourceEntry, isMissingItem } from "./repost.service";
 
 /**
  * Memo writes: credit memo (E02), debit memo (E03) and interest earned (E04).
@@ -147,6 +148,80 @@ export async function cancelMemo(
   });
 
   return { id: memoId, status: "REVERSED" };
+}
+
+/**
+ * Posts the entry a saved memo is missing, rebuilding the draft from the columns the memo
+ * stored. Idempotent: `bank_journal_entries` is unique on (source_ref, event_code), so an
+ * entry that already exists is reported instead of written twice.
+ */
+export async function repostMemoEntry(
+  memoId: number,
+  userId: number | null,
+): Promise<{ id: number; jeNo: string; eventCode: string; lines: number }> {
+  let memo: Record<string, unknown> | null;
+  try {
+    memo = await getItem<Record<string, unknown>>(MEMOS, memoId, [
+      "id",
+      "ref_no",
+      "bank_account_id",
+      "memo_type",
+      "amount",
+      "value_date",
+      "description",
+      "status",
+      "nature_key",
+      "expense_coa_id",
+      "interest_gross",
+      "interest_tax",
+    ]);
+  } catch (readError) {
+    if (!isMissingItem(readError)) throw readError;
+    memo = null;
+  }
+  if (!memo) throw new NotFoundError("That memo could not be found.");
+  if (asString(memo.status).toUpperCase() === "REVERSED") {
+    throw new ValidationError("A cancelled memo cannot be posted again.");
+  }
+
+  const account = await getAccount(asNumber(memo.bank_account_id));
+  if (!account) throw new ValidationError("The bank account on this memo no longer exists.");
+
+  const kind = asString(memo.memo_type).toUpperCase();
+  const refNo = asString(memo.ref_no);
+  const description = asString(memo.description);
+  const base = {
+    sourceRef: refNo,
+    postingDate: asString(memo.value_date),
+    description: description || FALLBACK_DESCRIPTION[kind as MemoBody["kind"]] || "Bank memo",
+  };
+  const amount = roundMoney(asNumber(memo.amount));
+
+  let draft;
+  if (kind === "DEBIT") {
+    draft = debitMemoEntry(account, amount, asNumber(memo.expense_coa_id), base);
+  } else if (kind === "INTEREST") {
+    draft = interestEntry(
+      account,
+      roundMoney(asNumber(memo.interest_gross)),
+      roundMoney(asNumber(memo.interest_tax)),
+      base,
+    );
+  } else {
+    const nature = CREDIT_NATURE_OPTIONS.find((option) => option.value === asString(memo.nature_key));
+    if (!nature) {
+      throw new ValidationError("This memo does not record the nature of the credit, so its entry cannot be rebuilt.");
+    }
+    draft = creditMemoEntry(account, amount, nature.mappingKey, base);
+  }
+
+  const existing = await findSourceEntry(draft.sourceRef, draft.eventCode);
+  if (existing) throw new ValidationError(`This memo already has journal entry ${existing}.`);
+
+  const entry = await postJournalEntry(draft, userId);
+  await updateItem(MEMOS, memoId, { journal_entry_id: entry.id });
+
+  return { id: memoId, jeNo: entry.jeNo, eventCode: entry.eventCode, lines: entry.lines.length };
 }
 
 /** `BCM-0001`, `BDM-0007` — the next number for one memo type. */

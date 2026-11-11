@@ -9,8 +9,13 @@ import {
   getItem,
   listItems,
 } from "./directus";
-import { ACCOUNT_TYPE_OPTIONS, ALL_OPTION, MISSING_COLUMNS_NOTICE, ONBOARDING_PAGE_SIZE } from "../constants";
-import { toPhtDateString } from "../pht";
+import {
+  ACCOUNT_TYPE_OPTIONS,
+  ALL_OPTION,
+  MISSING_COLUMNS_NOTICE,
+  ONBOARDING_PAGE_SIZE,
+  isCashAccountTitle,
+} from "../constants";import { toPhtDateString } from "../pht";
 import type {
   AccountTypeOption,
   BankAccountStatus,
@@ -18,16 +23,15 @@ import type {
   BankOption,
   Currency,
   GlAccountOption,
+  GlMappingRow,
   OnboardingFilterState,
   OnboardingListing,
   OnboardingOptions,
   OnboardingQuery,
 } from "../types";
+import { listGlMapping } from "./gl.service";
 
 export type RawRow = Record<string, unknown>;
-
-/** `chart_of_accounts.account_type` → `account_types` id 1 is CURRENT ASSETS. */
-const CURRENT_ASSETS_ACCOUNT_TYPE_ID = 1;
 
 const BASE_FIELDS = [
   "bank_id",
@@ -121,18 +125,17 @@ export async function readAccountById(id: number): Promise<RawRow | null> {
   }
 }
 
-/** CURRENT ASSETS GL accounts, the only ones the onboarding dialog may link. */
-export async function readCashAccounts(): Promise<{ accounts: GlAccountOption[]; notice?: string }> {
+/** Every GL account that can label a bank account, so an existing link still resolves. */
+export async function readChartOfAccounts(): Promise<{ accounts: GlAccountOption[]; notice?: string }> {
   try {
     const { rows } = await listItems<RawRow>("chart_of_accounts", {
-      fields: ["coa_id", "gl_code", "account_title", "account_type"],
+      fields: ["coa_id", "gl_code", "account_title"],
       sort: "gl_code",
       limit: 500,
     });
-    // ponytail: chart_of_accounts holds 126 rows, so CURRENT ASSETS is filtered
-    // here instead of with a relational filter the instance may reject.
+    // ponytail: chart_of_accounts holds 133 rows, so filtering happens here rather
+    // than with a relational filter the instance may reject.
     const accounts = rows
-      .filter((row) => asNumber(row.account_type) === CURRENT_ASSETS_ACCOUNT_TYPE_ID)
       .map((row) => ({
         coaId: asNumber(row.coa_id),
         glCode: asString(row.gl_code),
@@ -143,6 +146,62 @@ export async function readCashAccounts(): Promise<{ accounts: GlAccountOption[];
   } catch (error) {
     if (!(error instanceof DirectusError)) throw error;
     return { accounts: [], notice: "The chart of accounts could not be read, so no GL accounts are available." };
+  }
+}
+
+/**
+ * Cash and cash equivalents only. The COA carries no cash marker (isPayment is false
+ * on all 133 rows and there is no parent/group column), so the title is the only
+ * signal this data offers — 4008 Input Tax is a current asset, not cash.
+ */
+/** Accounts the clearing keys post to; they hold money in transit, not a bank's own cash. */
+async function readClearingCoaIds(): Promise<Set<number>> {
+  try {
+    const { rows } = await listItems<RawRow>("bank_gl_mapping", {
+      fields: ["coa_id"],
+      filter: { mapping_key: { _in: ["BANK_CLEARING", "TRANSFER_IN_TRANSIT"] } },
+      limit: 2,
+    });
+    const ids = new Set<number>();
+    for (const row of rows) {
+      const coaId = asNumberOrNull(row.coa_id);
+      if (coaId !== null) ids.add(coaId);
+    }
+    return ids;
+  } catch (error) {
+    // A mapping the instance cannot read must not hide every cash account.
+    if (error instanceof DirectusError) return new Set();
+    throw error;
+  }
+}
+
+export async function readCashAccounts(): Promise<{ accounts: GlAccountOption[]; notice?: string }> {
+  const [read, clearing] = await Promise.all([readChartOfAccounts(), readClearingCoaIds()]);
+  return {
+    accounts: read.accounts.filter(
+      (account) => isCashAccountTitle(account.accountTitle) && !clearing.has(account.coaId),
+    ),
+    notice: read.notice,
+  };
+}
+
+/** Bank ids whose E01 opening-balance entry posted; null when the journal table is unreadable. */
+async function readPostedOpeningBalances(): Promise<Set<number> | null> {
+  try {
+    const { rows } = await listItems<RawRow>("bank_journal_entries", {
+      fields: ["source_ref"],
+      filter: { event_code: { _eq: "E01" } },
+      limit: 500,
+    });
+    const posted = new Set<number>();
+    for (const row of rows) {
+      const bankId = Number(asString(row.source_ref).split("-")[0]);
+      if (Number.isInteger(bankId) && bankId > 0) posted.add(bankId);
+    }
+    return posted;
+  } catch (error) {
+    if (error instanceof DirectusError) return null;
+    throw error;
   }
 }
 
@@ -192,13 +251,18 @@ async function readLastReconciled(): Promise<Map<number, string>> {
 export interface MapContext {
   lastReconciled: Map<number, string>;
   glAccounts: Map<number, GlAccountOption>;
+  /** null when the journal table could not be read, so the retry action stays hidden. */
+  postedOpeningBalances: Set<number> | null;
 }
 
 function normaliseStatus(raw: string, rawActive: unknown): BankAccountStatus {
   const upper = raw.toUpperCase();
-  if (upper === "ACTIVE" || upper === "DORMANT" || upper === "CLOSED") return upper;
+  if (upper === "ACTIVE" || upper === "DORMANT" || upper === "INACTIVE" || upper === "ESCHEATED" || upper === "CLOSED") {
+    return upper;
+  }
   if (rawActive === undefined || rawActive === null) return "ACTIVE";
-  return asBoolean(rawActive) ? "ACTIVE" : "CLOSED";
+  // A frozen account is INACTIVE, the word the dormancy lane writes; CLOSED is its own state.
+  return asBoolean(rawActive) ? "ACTIVE" : "INACTIVE";
 }
 
 /** Maps a Directus row to the v2 account shape the UI consumes. */
@@ -215,6 +279,7 @@ export function mapAccount(row: RawRow, context: MapContext): BankAccountV2 {
     accountName: asString(row.account_name) || null,
     accountType: asString(row.account_type) || null,
     branch: asString(row.branch) || null,
+    remarks: asString(row.bank_description) || null,
     currency: (asString(row.currency).toUpperCase() === "USD" ? "USD" : "PHP") as Currency,
     ifrsCategory: asString(row.ifrs_category) || "Amortized Cost",
     glCoaId,
@@ -229,15 +294,18 @@ export function mapAccount(row: RawRow, context: MapContext): BankAccountV2 {
     effectiveDate: toPhtDateString(asString(row.effective_date)) || toPhtDateString(asString(row.created_at)) || null,
     lastReconciledAt: context.lastReconciled.get(bankId) ?? null,
     createdAt: asString(row.created_at) || null,
+    openingBalancePosted:
+      context.postedOpeningBalances === null ? null : context.postedOpeningBalances.has(bankId),
   };
 }
 
 /** Maps a freshly written row with the extra reads it needs to render. */
 export async function mapAccountWithLookups(row: RawRow): Promise<BankAccountV2> {
-  const [cash, lastReconciled] = await Promise.all([readCashAccounts(), readLastReconciled()]);
+  const [chart, lastReconciled] = await Promise.all([readChartOfAccounts(), readLastReconciled()]);
   return mapAccount(row, {
     lastReconciled,
-    glAccounts: new Map(cash.accounts.map((account) => [account.coaId, account])),
+    glAccounts: new Map(chart.accounts.map((account) => [account.coaId, account])),
+    postedOpeningBalances: null,
   });
 }
 
@@ -266,11 +334,14 @@ function clampPageSize(pageSize: number | undefined): number {
   return Math.min(Math.trunc(pageSize), 100);
 }
 
-async function readOptions(rows: RawRow[]): Promise<{ options: OnboardingOptions; notice?: string }> {
-  const [bankRegistry, typeRegistry, cash] = await Promise.all([
+async function readOptions(
+  rows: RawRow[],
+): Promise<{ options: OnboardingOptions; glAccounts: GlAccountOption[]; notice?: string }> {
+  const [bankRegistry, typeRegistry, chart, clearing] = await Promise.all([
     readRegistry("bank_names", "bank_name"),
     readRegistry("bank_account_types", "account_type"),
-    readCashAccounts(),
+    readChartOfAccounts(),
+    readClearingCoaIds(),
   ]);
 
   const banks = new Map<string, BankOption>();
@@ -296,9 +367,13 @@ async function readOptions(rows: RawRow[]): Promise<{ options: OnboardingOptions
     options: {
       banks: [...banks.values()].sort((a, b) => a.name.localeCompare(b.name, "en-PH")),
       accountTypes,
-      cashAccounts: cash.accounts,
+      cashAccounts: chart.accounts.filter(
+        (account) => isCashAccountTitle(account.accountTitle) && !clearing.has(account.coaId),
+      ),
+      chartAccounts: chart.accounts,
     },
-    notice: cash.notice,
+    glAccounts: chart.accounts,
+    notice: chart.notice,
   };
 }
 
@@ -309,14 +384,21 @@ export async function listAccounts(query: OnboardingQuery): Promise<OnboardingLi
     return { rows: [] as RawRow[], notice: UNREADABLE_NOTICE };
   });
 
-  const [{ options, notice: optionsNotice }, lastReconciled] = await Promise.all([
-    readOptions(accountRead.rows),
-    readLastReconciled(),
-  ]);
+  const [{ options, glAccounts, notice: optionsNotice }, lastReconciled, postedOpeningBalances, glMapping] =
+    await Promise.all([
+      readOptions(accountRead.rows),
+      readLastReconciled(),
+      readPostedOpeningBalances(),
+      listGlMapping().catch((error: unknown): GlMappingRow[] => {
+        if (!(error instanceof DirectusError)) throw error;
+        return [];
+      }),
+    ]);
 
   const context: MapContext = {
     lastReconciled,
-    glAccounts: new Map(options.cashAccounts.map((account) => [account.coaId, account])),
+    glAccounts: new Map(glAccounts.map((account) => [account.coaId, account])),
+    postedOpeningBalances,
   };
 
   const filtered = accountRead.rows
@@ -340,6 +422,7 @@ export async function listAccounts(query: OnboardingQuery): Promise<OnboardingLi
     total,
     registerTotal: accountRead.rows.length,
     options,
+    glMapping,
     notice: [accountRead.notice, optionsNotice].filter(Boolean).join(" ") || undefined,
   };
 }

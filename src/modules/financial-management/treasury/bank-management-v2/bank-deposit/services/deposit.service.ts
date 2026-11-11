@@ -5,6 +5,7 @@ import { daysSince, phtDisplayStamp, phtStamp, phtToday } from "../pht";
 import { postJournalEntry, PostingBlockedError, resolveJournalEntry } from "./gl.service";
 import {
   DirectusError,
+  asBoolean,
   asNumber,
   asString,
   createItem,
@@ -38,7 +39,7 @@ const DETAIL_FIELDS = [
   "customer_code",
   "is_cleared",
 ];
-const COLLECTION_FIELDS = ["id", "collection_date", "collection_receipt_no", "docNo"];
+const COLLECTION_FIELDS = ["id", "collection_date", "collection_receipt_no", "docNo", "isPosted", "isCancelled"];
 const SLIP_FIELDS = [
   "id",
   "deposit_no",
@@ -121,6 +122,48 @@ function isTruthyFlag(value: unknown): boolean {
   return false;
 }
 
+/**
+ * `collection_details` stores only a customer code. The name lives in `customer`
+ * (`customer_code` → `customer_name`), so the queue is readable without a second screen.
+ */
+async function loadCustomerNames(codes: string[]): Promise<Map<string, string>> {
+  const unique = [...new Set(codes.filter(Boolean))];
+  if (!unique.length) return new Map();
+  const { rows } = await listItems<{ customer_code: string; customer_name: string | null }>("customer", {
+    fields: ["customer_code", "customer_name"],
+    filter: { customer_code: { _in: unique } },
+    limit: 800,
+  });
+  return new Map(
+    rows.filter((row) => asString(row.customer_name)).map((row) => [String(row.customer_code), asString(row.customer_name)]),
+  );
+}
+
+/** Document numbers for rows that vanished from the queue, so a failure names them. */
+async function describeMissing(detailIds: number[]): Promise<string> {
+  if (!detailIds.length) return "the selected rows";
+  try {
+    const { rows: details } = await listItems<{ id: number; collection_id: number | null }>("collection_details", {
+      fields: ["id", "collection_id"],
+      filter: { id: { _in: detailIds } },
+      limit: 200,
+    });
+    const collections = [...new Set(details.map((row) => Number(row.collection_id)).filter(Boolean))];
+    const { rows } = collections.length
+      ? await listItems<{ id: number; collection_receipt_no: string | null; docNo: string | null }>("collection", {
+          fields: ["id", "collection_receipt_no", "docNo"],
+          filter: { id: { _in: collections } },
+          limit: 200,
+        })
+      : { rows: [] };
+    const byId = new Map(rows.map((row) => [Number(row.id), row.collection_receipt_no || row.docNo]));
+    const labels = details.map((row) => byId.get(Number(row.collection_id)) ?? `detail #${row.id}`);
+    return labels.length ? labels.join(", ") : "the selected rows";
+  } catch {
+    return detailIds.map((id) => `detail #${id}`).join(", ");
+  }
+}
+
 /** Cash and customer checks in the vault that are not on a live deposit slip yet. */
 export async function listUndepositedAssets(): Promise<UndepositedAsset[]> {
   const [{ rows: details }, { rows: links }] = await Promise.all([
@@ -140,24 +183,34 @@ export async function listUndepositedAssets(): Promise<UndepositedAsset[]> {
   if (!pending.length) return [];
 
   const collectionIds = [...new Set(pending.map((row) => Number(row.collection_id)).filter(Boolean))];
-  const { rows: collections } = await listItems<{ id: number; collection_date: string | null; collection_receipt_no: string | null; docNo: string | null }>(
-    "collection",
-    { fields: COLLECTION_FIELDS, filter: { id: { _in: collectionIds } }, limit: 800 },
-  );
+  const { rows: collections } = await listItems<{
+    id: number;
+    collection_date: string | null;
+    collection_receipt_no: string | null;
+    docNo: string | null;
+    isPosted: boolean | null;
+    isCancelled: boolean | null;
+  }>("collection", { fields: COLLECTION_FIELDS, filter: { id: { _in: collectionIds } }, limit: 800 });
   const byId = new Map(collections.map((row) => [Number(row.id), row]));
-  const bankNames = await loadBankNames();
+  const [bankNames, customerNames] = await Promise.all([
+    loadBankNames(),
+    loadCustomerNames(pending.map((row) => asString(row.customer_code))),
+  ]);
 
   return pending.map((row) => {
     const parent = row.collection_id == null ? undefined : byId.get(Number(row.collection_id));
     const collectionDate = parent?.collection_date ?? null;
     const isCash = Number(row.payment_method) === CASH;
+    const code = asString(row.customer_code) || null;
+    const name = code ? customerNames.get(code) : undefined;
     return {
       collectionDetailId: Number(row.id),
       collectionId: Number(row.collection_id ?? 0),
       documentNumber: parent?.collection_receipt_no || parent?.docNo || `#${row.collection_id ?? row.id}`,
       collectionReference: parent?.docNo ?? null,
       assetType: isCash ? "CASH" : "CHECK",
-      customer: row.customer_code,
+      customer: name ?? code,
+      customerCode: code,
       bankName: bankNames.get(asString(row.bank)) ?? asString(row.bank) ?? null,
       checkNo: row.check_no,
       chequeDate: row.chequeDate,
@@ -165,6 +218,8 @@ export async function listUndepositedAssets(): Promise<UndepositedAsset[]> {
       amount: roundMoney(asNumber(row.amount)),
       ageDays: daysSince(collectionDate),
       alreadyDeposited: false,
+      isPosted: parent?.isPosted === true,
+      isCancelled: parent?.isCancelled === true,
     };
   });
 }
@@ -239,12 +294,43 @@ async function nextDepositNo(): Promise<string> {
   return `DEP-${String(digits + 1).padStart(6, "0")}`;
 }
 
+/** Directus puts the useful sentence in the error body; surface it instead of "could not be saved". */
+function describeDirectusWrite(error: DirectusError, what: string): string {
+  try {
+    const body = JSON.parse(error.body) as { errors?: { message?: string; extensions?: { field?: string } }[] };
+    const first = body.errors?.[0];
+    if (first?.message) {
+      return `${what}: ${first.message}${first.extensions?.field ? ` (field ${first.extensions.field})` : ""}`;
+    }
+  } catch {
+    // Not JSON; fall through to the status.
+  }
+  return `${what} was rejected by the database (HTTP ${error.status}).`;
+}
+
 export async function createDepositSlip(input: CreateSlipInput): Promise<CreateSlipResult> {
   if (!input.cashIds.length && !input.checkIds.length) {
     throw new ValidationError("Select at least one cash collection or check to deposit.");
   }
   if (input.depositDate > phtToday()) {
     throw new ValidationError("Deposit date cannot be in the future.");
+  }
+
+  // Only a live account can take money: frozen (INACTIVE), escheated, closed or dormant accounts are out.
+  const { rows: targetRows } = await listItems<{ is_active: unknown; account_status: unknown }>("bank_accounts", {
+    fields: ["is_active", "account_status"],
+    filter: { bank_id: { _eq: input.bankAccountId } },
+    limit: 1,
+  });
+  const target = targetRows[0];
+  if (!target) {
+    throw new NotFoundError(`Bank account ${input.bankAccountId} does not exist.`);
+  }
+  const targetStatus = asString(target.account_status) || (asBoolean(target.is_active) ? "ACTIVE" : "INACTIVE");
+  if (!asBoolean(target.is_active) || targetStatus !== "ACTIVE") {
+    throw new ValidationError(
+      `Bank account ${input.bankAccountId} is ${targetStatus.toLowerCase()}; a deposit slip can only be prepared against an active account.`,
+    );
   }
 
   const assets = await listUndepositedAssets();
@@ -254,17 +340,43 @@ export async function createDepositSlip(input: CreateSlipInput): Promise<CreateS
   const checks = input.checkIds.map((id) => byId.get(id)).filter((asset): asset is UndepositedAsset => !!asset && asset.assetType === "CHECK");
 
   if (cash.length !== input.cashIds.length || checks.length !== input.checkIds.length) {
-    throw new ValidationError("Some selected collections were already deposited or cleared. Refresh and try again.");
+    const known = new Set(assets.map((asset) => asset.collectionDetailId));
+    const missing = [...input.cashIds, ...input.checkIds].filter((id) => !known.has(id));
+    throw new ValidationError(
+      `These collections are no longer waiting to be deposited: ${await describeMissing(missing)}. Refresh and try again.`,
+    );
   }
-  if (checks.some((check) => check.chequeDate && check.chequeDate > input.depositDate)) {
-    throw new ValidationError("A post-dated check cannot be deposited before its check date.");
+
+  const blocked = [...cash, ...checks].filter((asset) => asset.isCancelled || !asset.isPosted || !asset.collectionDate);
+  if (blocked.length) {
+    const names = blocked
+      .map(
+        (asset) =>
+          `${asset.documentNumber}${asset.isCancelled ? " (voided)" : ""}${!asset.isPosted ? " (not posted)" : ""}${
+            !asset.collectionDate ? " (no collected date)" : ""
+          }`,
+      )
+      .join(", ");
+    throw new ValidationError(`Post or date these collections before depositing them: ${names}.`);
+  }
+
+  const pdc = checks.filter((check) => check.chequeDate && check.chequeDate > input.depositDate);
+  if (pdc.length) {
+    const names = pdc
+      .map((check) => `${check.documentNumber}${check.checkNo ? ` (check ${check.checkNo})` : ""}`)
+      .join(", ");
+    throw new ValidationError(`Deposit date is before the check date of ${names}.`);
   }
   const oldest = [...cash, ...checks]
     .map((asset) => asset.collectionDate?.slice(0, 10))
     .filter((value): value is string => !!value)
     .sort()[0];
   if (oldest && input.depositDate < oldest) {
-    throw new ValidationError("Deposit date cannot be earlier than the oldest selected collection date.");
+    const earliest = [...cash, ...checks]
+      .filter((asset) => asset.collectionDate?.slice(0, 10) === oldest)
+      .map((asset) => asset.documentNumber)
+      .join(", ");
+    throw new ValidationError(`Deposit date cannot be earlier than ${oldest}, the collection date of ${earliest}.`);
   }
 
   const { rows: existing } = await listItems<{ id: number; deposit_reference_no: string | null; status: string }>("bank_deposit", {
@@ -276,30 +388,49 @@ export async function createDepositSlip(input: CreateSlipInput): Promise<CreateS
   const clash = existing.some(
     (row) => row.status !== "CANCELLED" && normalizeReference(row.deposit_reference_no ?? "") === wanted,
   );
-  if (clash) throw new ValidationError("That slip or validation number is already used on this account.", "slipNo");
+  if (clash) {
+    throw new ValidationError(`Slip / validation no. "${input.slipNo}" is already used on this account.`, "slipNo");
+  }
 
   const cashTotal = roundMoney(cash.reduce((sum, asset) => sum + asset.amount, 0));
   const checkTotal = roundMoney(checks.reduce((sum, asset) => sum + asset.amount, 0));
   const depositNo = await nextDepositNo();
 
-  const created = await createItem<{ id: number }>("bank_deposit", {
-    deposit_no: depositNo,
-    deposit_date: input.depositDate,
-    target_bank_id: input.bankAccountId,
-    total_cash: cashTotal,
-    total_checks: checkTotal,
-    status: "PREPARED",
-    date_prepared: phtStamp(),
-    deposit_reference_no: input.slipNo,
-    remarks: input.remarks,
-  });
-
-  for (const asset of [...cash, ...checks]) {
-    await createItem("bank_deposit_details", {
-      bank_deposit_id: created.id,
-      collection_detail_id: asset.collectionDetailId,
-      deposit_status: "IN_TRANSIT",
+  let created: { id: number };
+  try {
+    created = await createItem<{ id: number }>("bank_deposit", {
+      deposit_no: depositNo,
+      deposit_date: input.depositDate,
+      target_bank_id: input.bankAccountId,
+      total_cash: cashTotal,
+      total_checks: checkTotal,
+      status: "PREPARED",
+      date_prepared: phtStamp(),
+      deposit_reference_no: input.slipNo,
+      remarks: input.remarks,
     });
+  } catch (error) {
+    if (error instanceof DirectusError) {
+      throw new ValidationError(describeDirectusWrite(error, `Deposit slip ${input.slipNo}`));
+    }
+    throw error;
+  }
+
+  try {
+    for (const asset of [...cash, ...checks]) {
+      await createItem("bank_deposit_details", {
+        bank_deposit_id: created.id,
+        collection_detail_id: asset.collectionDetailId,
+        deposit_status: "IN_TRANSIT",
+      });
+    }
+  } catch (error) {
+    if (error instanceof DirectusError) {
+      throw new ValidationError(
+        `${describeDirectusWrite(error, `Deposit slip ${depositNo} was saved but a collection could not be attached`)}. Remove the slip before retrying.`,
+      );
+    }
+    throw error;
   }
 
   let notice: string | null = null;

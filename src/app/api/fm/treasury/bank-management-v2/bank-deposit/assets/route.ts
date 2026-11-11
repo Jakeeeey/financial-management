@@ -12,7 +12,7 @@ export async function GET() {
       listDepositSlips(),
       listItems<{ bank_id: number; bank_name: string | null; account_number: string | null }>("bank_accounts", {
         fields: ["bank_id", "bank_name", "account_number"],
-        filter: { is_active: { _eq: 1 } },
+        filter: { is_active: { _eq: true }, account_status: { _eq: "ACTIVE" } },
         limit: 500,
       }),
     ]);

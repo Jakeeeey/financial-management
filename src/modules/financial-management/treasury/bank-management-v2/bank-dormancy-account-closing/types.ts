@@ -5,7 +5,11 @@
  * Dates are PHT wall-clock strings, money is a number.
  */
 
-export type BankAccountStatus = "ACTIVE" | "DORMANT" | "CLOSED";
+/**
+ * Canonical status vocabulary for the bank-management family. An account can only be
+ * transacted on when `is_active === true` and `status === "ACTIVE"`.
+ */
+export type BankAccountStatus = "ACTIVE" | "DORMANT" | "INACTIVE" | "ESCHEATED" | "CLOSED";
 export type Currency = "PHP" | "USD";
 
 export interface BankAccountV2 {
@@ -60,6 +64,20 @@ export interface DormancyAccount {
   closedAt: string | null;
   closureReason: string | null;
   retainUntil: string | null;
+}
+
+/**
+ * P244 — what must be recorded when a dormant balance is remitted to the National Treasury.
+ * `bank_accounts` has no columns for these three values, so they travel with the E17 journal
+ * description instead (see the service).
+ */
+export interface EscheatRemittance {
+  /** Voucher or remittance reference from the Treasury. */
+  reference: string;
+  /** Remittance date, `YYYY-MM-DD` PHT. */
+  remittedOn: string;
+  /** Agency that received the money. */
+  agency: string;
 }
 
 export interface DormancyFilter {

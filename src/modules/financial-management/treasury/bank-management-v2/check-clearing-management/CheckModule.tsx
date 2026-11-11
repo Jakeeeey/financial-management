@@ -61,6 +61,14 @@ export function CheckModule() {
     setActiveAction(action);
   }
 
+  function openCheckById(checkId: number) {
+    void loadDetail(checkId).then((detail) => {
+      if (!detail) return;
+      setActiveCheck(detail.check);
+      setActiveAction("VIEW");
+    });
+  }
+
   const accountOptions = [
     { value: "ALL", label: "All accounts" },
     ...accounts.map((account) => ({ value: String(account.bankId), label: account.label })),
@@ -236,6 +244,7 @@ export function CheckModule() {
         onSubmit={act}
         loadDetail={loadDetail}
         onSelectAction={setActiveAction}
+        onOpenCheck={openCheckById}
       />
     </div>
   );

@@ -20,7 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
-import { ACCOUNT_TYPE_OPTIONS } from "../constants";
+import { ACCOUNT_TYPE_OPTIONS, GL_PICKER_EMPTY, GL_PICKER_PLACEHOLDER, GL_PICKER_UNAVAILABLE } from "../constants";
 import { phtToday } from "../pht";
 import { registerAccountFormSchema, type RegisterAccountFormValues } from "../schemas";
 import type { RegisterAccountPayload } from "../providers/onboardingApi";
@@ -233,15 +233,13 @@ export function RegisterAccountDialog({
                           options={glOptions}
                           value={field.value}
                           onChange={field.onChange}
-                          placeholder="Choose a current-asset GL"
+                          placeholder={GL_PICKER_PLACEHOLDER}
                           searchPlaceholder="Search GL code or title"
-                          emptyLabel="No current-asset GL account matches that search."
+                          emptyLabel={GL_PICKER_EMPTY}
                         />
                       </FormControl>
                       {glOptions.length === 0 ? (
-                        <FormDescription>
-                          No current-asset GL accounts were returned, so the chart of accounts could not be read.
-                        </FormDescription>
+                        <FormDescription>{GL_PICKER_UNAVAILABLE}</FormDescription>
                       ) : null}
                       <FormMessage />
                     </FormItem>

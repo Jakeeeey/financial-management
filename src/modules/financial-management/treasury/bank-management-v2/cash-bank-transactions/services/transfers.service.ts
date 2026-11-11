@@ -7,6 +7,7 @@ import { getAccount } from "./accounts.service";
 import { asNumber, asString, createItem, DirectusError, getItem, listItems, roundMoney, updateItem } from "./directus";
 import { NotFoundError, ValidationError } from "./errors";
 import { postJournalEntry } from "./gl.service";
+import { findSourceEntry, isMissingItem } from "./repost.service";
 
 /**
  * Fund transfers: E05 when the value date is today, E06 when it is later.
@@ -53,7 +54,9 @@ export async function createTransfer(
   const remarks = (body.remarks ?? "").trim();
 
   const draft = transferEntry("OUT", from, to, amount, valueDateIsLater, {
-    sourceRef: transferNo,
+    // bank_journal_entries is unique on (source_ref, event_code), and both legs post the
+    // same E06 for a later value date: each leg needs its own source ref or leg 2 is refused.
+    sourceRef: `${transferNo}-L1`,
     postingDate: body.valueDate,
     description: remarks || `Fund transfer ${transferNo}`,
   });
@@ -99,7 +102,7 @@ export async function createTransfer(
       {
         ...draft,
         eventCode: `${draft.eventCode}R`,
-        sourceRef: transferNo,
+        sourceRef: `${transferNo}-L1`,
         description: `Reversal of ${entry.jeNo} — ${draft.description}`,
         lines: draft.lines.map((line) => ({
           mappingKey: line.mappingKey,
@@ -150,7 +153,7 @@ export async function settleTransfer(
   const amount = roundMoney(asNumber(row.amount));
   const entry = await postJournalEntry(
     transferEntry("IN", from, to, amount, true, {
-      sourceRef: transferNo,
+      sourceRef: `${transferNo}-L2`,
       postingDate: phtDate(),
       description: note?.trim() || `Fund transfer ${transferNo} settled`,
     }),
@@ -166,6 +169,117 @@ export async function settleTransfer(
   });
 
   return { id: transferId, status: "COMPLETED", jeNo: entry.jeNo };
+}
+
+/**
+ * Posts the entry a saved transfer is missing. Leg 1 when the row is still in clearing or was
+ * never settled; leg 2 when it settled and that entry is gone. Same idempotency rule as memos:
+ * the unique index on (source_ref, event_code) decides, not a stored id.
+ */
+export async function repostTransferEntry(
+  transferId: number,
+  userId: number | null,
+): Promise<{ id: number; jeNo: string; eventCode: string; lines: number }> {
+  let row: TransferRow | null;
+  try {
+    row = await getItem<TransferRow>(TRANSFERS, transferId, [...TRANSFER_FIELDS, "settled_at", "journal_entry_id"]);
+  } catch (readError) {
+    if (!isMissingItem(readError)) throw readError;
+    row = null;
+  }
+  if (!row) throw new NotFoundError("That transfer could not be found.");
+
+  const status = asString(row.status).toUpperCase();
+  if (status === "CANCELLED") throw new ValidationError("A cancelled transfer cannot be posted again.");
+
+  const [from, to] = await Promise.all([
+    getAccount(asNumber(row.source_bank_id)),
+    getAccount(asNumber(row.destination_bank_id)),
+  ]);
+  if (!from || !to) throw new ValidationError("One of the accounts on this transfer no longer exists.");
+
+  const transferNo = asString(row.transfer_no);
+  const amount = roundMoney(asNumber(row.amount));
+  const fee = roundMoney(asNumber(row.transfer_fee));
+  const remarks = asString(row.remarks);
+  const valueDate = asString(row.value_date) || asString(row.transfer_date);
+  const settled = status === "COMPLETED" && Boolean(asString(row.settled_at));
+
+  const draft = settled
+    ? transferEntry("IN", from, to, amount, true, {
+        sourceRef: `${transferNo}-L2`,
+        postingDate: phtDate(),
+        description: remarks || `Fund transfer ${transferNo} settled`,
+      })
+    : transferEntry("OUT", from, to, amount, valueDate > asString(row.transfer_date), {
+        sourceRef: `${transferNo}-L1`,
+        postingDate: valueDate,
+        description: remarks || `Fund transfer ${transferNo}`,
+      });
+
+  if (!settled && fee > 0) {
+    draft.lines = [
+      draft.lines[0],
+      { mappingKey: accountGlKey(from), debit: 0, credit: roundMoney(amount + fee), memo: "Transfer sent" },
+      { mappingKey: "BANK_CHARGES_EXPENSE", debit: fee, credit: 0, memo: "Transfer fee" },
+    ];
+  }
+
+  const existing = await findSourceEntry(draft.sourceRef, draft.eventCode);
+  if (existing) throw new ValidationError(`This transfer already has journal entry ${existing}.`);
+
+  const entry = await postJournalEntry(draft, userId);
+  await updateItem(TRANSFERS, transferId, { journal_entry_id: entry.id });
+
+  return { id: transferId, jeNo: entry.jeNo, eventCode: entry.eventCode, lines: entry.lines.length };
+}
+
+/** Transfers parked in clearing whose value date has arrived. */
+function dueFilter() {
+  return { _and: [{ status: { _eq: "PENDING" } }, { value_date: { _lte: phtDate() } }] };
+}
+
+export async function countDueTransfers(): Promise<number> {
+  try {
+    const { total } = await listItems<TransferRow>(TRANSFERS, { fields: ["transfer_id"], filter: dueFilter(), limit: 1 });
+    return total;
+  } catch (error) {
+    if (!(error instanceof DirectusError)) throw error;
+    return 0;
+  }
+}
+
+export type SettleDueResult = {
+  settled: number;
+  jeNos: string[];
+  failed: Array<{ id: number; transferNo: string; error: string }>;
+};
+
+/** The settle-many path: every due transfer, leg 2 each, one failure never stops the rest. */
+export async function settleDueTransfers(userId: number | null): Promise<SettleDueResult> {
+  const { rows } = await listItems<TransferRow>(TRANSFERS, {
+    fields: ["transfer_id", "transfer_no"],
+    filter: dueFilter(),
+    sort: "value_date",
+    limit: 100,
+  });
+
+  const result: SettleDueResult = { settled: 0, jeNos: [], failed: [] };
+  for (const row of rows) {
+    const id = asNumber(row.transfer_id);
+    try {
+      const settled = await settleTransfer(id, null, userId);
+      result.settled += 1;
+      result.jeNos.push(settled.jeNo);
+    } catch (error) {
+      result.failed.push({
+        id,
+        transferNo: asString(row.transfer_no),
+        error: error instanceof Error ? error.message : "The transfer could not be settled.",
+      });
+    }
+  }
+  return result;
 }
 
 /** `BT-YYYYMMDD-HHmmss`, the shape the legacy column and screens expect. */

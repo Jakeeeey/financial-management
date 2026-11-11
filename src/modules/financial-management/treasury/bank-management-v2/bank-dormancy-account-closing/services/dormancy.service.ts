@@ -28,6 +28,7 @@ import type {
   SettlementInput,
   SettlementPlan,
   ActionOutcome,
+  EscheatRemittance,
 } from "../types";
 
 /**
@@ -88,10 +89,14 @@ type Lifecycle = {
 
 type Activity = { date: string; source: string };
 
+const ACCOUNT_STATUS_VALUES = ["ACTIVE", "DORMANT", "INACTIVE", "ESCHEATED", "CLOSED"] as const;
+
 function statusOf(row: AccountRow): BankAccountStatus {
   const raw = asString(row.account_status).toUpperCase();
-  if (raw === "ACTIVE" || raw === "DORMANT" || raw === "CLOSED") return raw;
-  return asBoolean(row.is_active) ? "ACTIVE" : "CLOSED";
+  if ((ACCOUNT_STATUS_VALUES as readonly string[]).includes(raw)) return raw as BankAccountStatus;
+  // No usable status string: a row is transactable only when it is both active and ACTIVE,
+  // so an unknown row falls back to the frozen side rather than silently reading as ACTIVE.
+  return asBoolean(row.is_active) ? "ACTIVE" : "INACTIVE";
 }
 
 function daysIn(month: number): number {
@@ -398,7 +403,7 @@ export async function reclassifyDormant(bankId: number, userId: number | null): 
   await updateItem(ACCOUNTS, bankId, {
     account_status: "DORMANT",
     dormant_since: phtStamp(),
-    is_active: 0,
+    is_active: false,
   });
 
   return {
@@ -409,8 +414,39 @@ export async function reclassifyDormant(bankId: number, userId: number | null): 
   };
 }
 
+/**
+ * P244 — the Treasury reference, the remittance date and the receiving agency are part of the
+ * escheatment record. `bank_accounts` has no columns for them, so they are validated here and
+ * carried on the E17 journal description, which is the audit trail the GL already keeps.
+ */
+function validateRemittance(input: EscheatRemittance | null | undefined): EscheatRemittance {
+  const reference = input?.reference?.trim() ?? "";
+  const remittedOn = input?.remittedOn?.trim() ?? "";
+  const agency = input?.agency?.trim() ?? "";
+  if (!reference) {
+    throw new ValidationError("Enter the voucher or remittance reference from the Treasury.", "reference");
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(remittedOn)) {
+    throw new ValidationError("Enter the date the dormant balance was remitted.", "remittedOn");
+  }
+  if (remittedOn > phtToday()) {
+    throw new ValidationError("The remittance date cannot be in the future.", "remittedOn");
+  }
+  if (!agency) {
+    throw new ValidationError("Enter the agency that received the escheated balance.", "agency");
+  }
+  return { reference, remittedOn, agency };
+}
+
 /** E17 — escheat a deposit that has been dormant for 10 years (Act No. 3936). */
-export async function escheat(bankId: number, userId: number | null): Promise<ActionOutcome> {
+export async function escheat(
+  bankId: number,
+  userId: number | null,
+  remittance: EscheatRemittance | null | undefined,
+): Promise<ActionOutcome> {
+  // Request validation first: the P244 record is what makes an escheatment auditable, so a
+  // missing reference or agency is reported before the account gates are examined.
+  const remitted = validateRemittance(remittance);
   const account = await findAccount(bankId);
   if (account.status !== "DORMANT") {
     throw new ValidationError("Only a dormant account can be escheated.");
@@ -427,23 +463,56 @@ export async function escheat(bankId: number, userId: number | null): Promise<Ac
   const entry = escheatEntry(account.bookBalance, {
     sourceRef: `BA-${account.bankId}`,
     postingDate: phtToday(),
-    description: `Escheatment under Act No. 3936 — ${accountLabel(account)}`,
+    description: `Escheatment under Act No. 3936 — ${accountLabel(account)} · ref ${remitted.reference} · remitted ${remitted.remittedOn} · ${remitted.agency}`,
   });
 
   const posted = await postJournalEntry(entry, userId);
   const retainUntil = `${Number(phtToday().slice(0, 4)) + RETENTION_YEARS}${phtToday().slice(4)}`;
+  // Escheatment is its own terminal state: the money belongs to the National Treasury, so the
+  // account is frozen but not reported as an ordinary customer closure.
   await updateItem(ACCOUNTS, bankId, {
-    account_status: "CLOSED",
+    account_status: "ESCHEATED",
     escheated_at: phtStamp(),
-    closed_at: phtStamp(),
     closure_reason: "Dormant — escheated under Act No. 3936",
     retain_until: retainUntil.slice(0, 10),
-    is_active: 0,
+    is_active: false,
   });
 
   return {
-    message: `Dormant balance escheated to the National Treasury as ${posted.jeNo}.`,
+    message: `Dormant balance escheated to the National Treasury as ${posted.jeNo}. The account is frozen and reports as Escheated.`,
     journalNo: posted.jeNo,
+    postingBlocked: false,
+    missingMappingKeys: [],
+  };
+}
+
+/**
+ * Freeze an account without closing it. The closure checklist is reused, so a balance, an
+ * open check or an unsettled transfer blocks it exactly as it would block a closure.
+ * No journal entry and no actor column: deactivation moves no money.
+ */
+export async function deactivateAccount(bankId: number): Promise<ActionOutcome> {
+  const account = await findAccount(bankId);
+  if (account.status !== "ACTIVE" && account.status !== "DORMANT") {
+    throw new ValidationError(`Only an active or dormant account can be deactivated; this one is ${account.status.toLowerCase()}.`);
+  }
+
+  const gate = await preClosure(bankId);
+  const blockers = gate.checks.filter(
+    (check) => (check.key === "balance" || check.key === "checks" || check.key === "transfers") && !check.passed,
+  );
+  if (blockers.length > 0) {
+    throw new ValidationError(`The account cannot be deactivated yet. ${blockers.map((check) => check.detail).join(" ")}`);
+  }
+
+  await updateItem(ACCOUNTS, bankId, {
+    account_status: "INACTIVE",
+    is_active: false,
+  });
+
+  return {
+    message: `${accountLabel(account)} deactivated. It is frozen until an administrator reactivates it.`,
+    journalNo: null,
     postingBlocked: false,
     missingMappingKeys: [],
   };
@@ -546,7 +615,7 @@ export async function lockClosed(
     closed_at: phtStamp(),
     closure_reason: trimmed,
     retain_until: retainUntil,
-    is_active: 0,
+    is_active: false,
   });
 
   return {

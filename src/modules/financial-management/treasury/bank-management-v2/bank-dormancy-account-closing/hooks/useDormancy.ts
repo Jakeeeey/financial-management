@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import {
   DormancyApiError,
+  deactivateAccount,
   escheatAccount,
   fetchDormancy,
   fetchPreClosure,
@@ -12,8 +13,11 @@ import {
   reclassifyAccount,
   settleClosure,
 } from "../providers/dormancyApi";
-import type { DormancyAccount, DormancyFilter, PreClosureResult } from "../types";
+import type { DormancyAccount, DormancyFilter, EscheatRemittance, PreClosureResult } from "../types";
 import { EMPTY_FILTERS, PAGE_SIZE } from "../constants";
+import { pageCountFor, pageSlice, usePageSize } from "../components/TablePager";
+
+const ROWS_KEY = "fm.bank-dormancy.rows";
 
 function matches(account: DormancyAccount, filter: DormancyFilter): boolean {
   if (filter.bankName && account.bankName !== filter.bankName) return false;
@@ -37,6 +41,7 @@ export function useDormancy() {
   const [error, setError] = useState<string | null>(null);
   const [filters, setFiltersState] = useState<DormancyFilter>({ ...EMPTY_FILTERS });
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSizeState] = usePageSize(ROWS_KEY, PAGE_SIZE);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -66,9 +71,17 @@ export function useDormancy() {
     [accounts, filters],
   );
 
-  const pageCount = Math.max(1, Math.ceil(filteredAccounts.length / PAGE_SIZE));
+  const setPageSize = useCallback(
+    (next: number) => {
+      setPageSizeState(next);
+      setPage(1);
+    },
+    [setPageSizeState],
+  );
+
+  const pageCount = pageCountFor(filteredAccounts.length, pageSize);
   const safePage = Math.min(page, pageCount);
-  const visibleAccounts = filteredAccounts.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const visibleAccounts = pageSlice(filteredAccounts, safePage, pageSize);
 
   const counts = useMemo(() => {
     const tally = { ACTIVE: 0, INACTIVE: 0, DORMANT_ELIGIBLE: 0, DORMANT: 0, ESCHEAT_ELIGIBLE: 0 };
@@ -106,7 +119,13 @@ export function useDormancy() {
   );
 
   const escheat = useCallback(
-    (bankId: number) => run(async () => (await escheatAccount(bankId)).message, "Balance escheated."),
+    (bankId: number, remittance: EscheatRemittance) =>
+      run(async () => (await escheatAccount(bankId, remittance)).message, "Balance escheated."),
+    [run],
+  );
+
+  const deactivate = useCallback(
+    (bankId: number) => run(async () => (await deactivateAccount(bankId)).message, "Account deactivated."),
     [run],
   );
 
@@ -144,10 +163,13 @@ export function useDormancy() {
     setFilters,
     page: safePage,
     pageCount,
+    pageSize,
     setPage,
+    setPageSize,
     refetch: load,
     reclassify,
     escheat,
+    deactivate,
     settle,
     lock,
     loadPreClosure,

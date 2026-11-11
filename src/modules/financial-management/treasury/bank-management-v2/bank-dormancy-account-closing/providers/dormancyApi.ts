@@ -5,6 +5,7 @@ import type {
   DormancySnapshot,
   PreClosureResult,
   ActionOutcome,
+  EscheatRemittance,
 } from "../types";
 
 const BASE = "/api/fm/treasury/bank-management-v2/dormancy-account-closing";
@@ -59,8 +60,15 @@ export function reclassifyAccount(bankId: number): Promise<ActionOutcome> {
   return request<ActionOutcome>(`/${bankId}/reclassify`, { method: "POST", body: "{}" });
 }
 
-export function escheatAccount(bankId: number): Promise<ActionOutcome> {
-  return request<ActionOutcome>(`/${bankId}/escheat`, { method: "POST", body: "{}" });
+export function escheatAccount(bankId: number, remittance: EscheatRemittance): Promise<ActionOutcome> {
+  return request<ActionOutcome>(`/${bankId}/escheat`, {
+    method: "POST",
+    body: JSON.stringify(remittance),
+  });
+}
+
+export function deactivateAccount(bankId: number): Promise<ActionOutcome> {
+  return request<ActionOutcome>(`/${bankId}/deactivate`, { method: "POST", body: "{}" });
 }
 
 export function settleClosure(

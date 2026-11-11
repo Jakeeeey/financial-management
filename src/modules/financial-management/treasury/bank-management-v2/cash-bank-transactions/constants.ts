@@ -79,6 +79,14 @@ export const MAPPING_KEY_LABELS: Record<string, string> = {
   OPENING_EQUITY: "the opening balance equity account",
 };
 
+/** "the bank charges expense account and the interest income account" — for a disabled title. */
+export function mappingTitle(keys: string[]): string {
+  const names = keys.map((key) => MAPPING_KEY_LABELS[key] ?? "a ledger account");
+  if (!names.length) return "Ask accounting to map the ledger accounts this entry needs.";
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  return `Ask accounting to map ${list} before this entry can post.`;
+}
+
 /** Badge tone classes, per QA.md: outline variant plus tint. */
 const TONE_CLASS: Record<string, string> = {
   success: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300",

@@ -104,7 +104,10 @@ export interface UndepositedAsset {
   documentNumber: string;
   collectionReference: string | null;
   assetType: "CASH" | "CHECK";
+  /** Customer name from the customer master; falls back to the raw code when no row matches. */
   customer: string | null;
+  /** `collection_details.customer_code`, shown under the name. */
+  customerCode: string | null;
   bankName: string | null;
   checkNo: string | null;
   chequeDate: string | null;
@@ -112,12 +115,20 @@ export interface UndepositedAsset {
   amount: number;
   ageDays: number;
   alreadyDeposited: boolean;
+  /** Parent `collection.isPosted`; false or null means the collection is still unposted. */
+  isPosted: boolean;
+  /** Parent `collection.isCancelled`; a voided collection can never be deposited. */
+  isCancelled: boolean;
 }
 
 export type CheckDirection = "ISSUED" | "RECEIVED";
 
+/** Which parent collections the queue offers: posted and dated only, or everything on hand. */
+export type UndepositedScope = "POSTED" | "ALL";
+
 /** Filters on the undeposited tab, mirroring the prototype's `dp` filter bar. */
 export interface UndepositedFilters {
+  scope: UndepositedScope;
   type: "ALL" | "CASH" | "CHECK";
   canDeposit: "ALL" | "READY" | "PDC";
   from: string;

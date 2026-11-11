@@ -31,6 +31,10 @@ export interface TransactionRow {
   status: string;
   jeNo: string | null;
   description: string | null;
+  /** Saved, live and without a journal entry: the row's entry can still be posted. */
+  canPost: boolean;
+  /** Mapping keys that row's entry needs and this instance has not mapped yet. */
+  missingEntryKeys: string[];
 }
 
 export interface AccountOption {
@@ -74,6 +78,8 @@ export interface TransactionFilters {
   to: string;
   q: string;
   page: number;
+  /** Rows per page; the server falls back to `PAGE_SIZE` when it is missing. */
+  pageSize?: number;
 }
 
 // ---------------------------------------------------------------------------

@@ -21,7 +21,7 @@ import { cn, formatCurrency, formatNumber } from "@/lib/utils";
 import { toPhtDateString } from "../pht";
 import { PAGE_SIZE } from "../constants";
 import { StatusBadge } from "./StatusBadge";
-import { TablePager } from "./TablePager";
+import { TablePager, usePageSize } from "./TablePager";
 import type { BankCheck } from "../types";
 
 export type CheckAction = "RELEASE" | "DEPOSIT" | "CLEAR" | "RETURN" | "CANCEL" | "REPLACE" | "VIEW";
@@ -99,9 +99,10 @@ export function ChecksTable({
 
   // A mutation can shorten the register under the current page; clamp rather than reset
   // so an unrelated action does not also move the user off their page.
-  const pageCount = Math.max(1, Math.ceil(checks.length / PAGE_SIZE));
+  const [pageSize, setPageSize] = usePageSize("fm.check-clearing.rows", PAGE_SIZE);
+  const pageCount = Math.max(1, Math.ceil(checks.length / pageSize));
   const safePage = Math.min(page, pageCount);
-  const rows = checks.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const rows = checks.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   const inClearingRows = checks.filter((row) => row.status === "IN_CLEARING" && canClear(row));
   const pageClearable = rows.filter(canClear);
@@ -262,11 +263,13 @@ export function ChecksTable({
                     <span className="block truncate" title={check.payee ?? check.payor ?? undefined}>
                       {check.payee ?? check.payor ?? "—"}
                     </span>
-                    {check.replacesId ? (
-                      <span className="block truncate text-xs text-muted-foreground">Replaces {check.replacesId}</span>
+                    {check.replacesNo ? (
+                      <span className="block truncate text-xs text-muted-foreground">Replaces {check.replacesNo}</span>
                     ) : null}
-                    {check.replacedById ? (
-                      <span className="block truncate text-xs text-muted-foreground">Replaced by {check.replacedById}</span>
+                    {check.replacedByNo ? (
+                      <span className="block truncate text-xs text-muted-foreground">
+                        Replaced by {check.replacedByNo}
+                      </span>
                     ) : null}
                   </TableCell>
                   <TableCell className="text-right text-sm tabular-nums">{formatCurrency(check.amount)}</TableCell>
@@ -393,8 +396,12 @@ export function ChecksTable({
         page={safePage}
         pageCount={pageCount}
         total={checks.length}
-        pageSize={PAGE_SIZE}
+        pageSize={pageSize}
         onPageChange={onPageChange}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          onPageChange(1);
+        }}
         className="border-t border-border/50 px-4 py-3"
       />
     </section>

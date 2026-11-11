@@ -8,15 +8,22 @@ import {
 export const dynamic = "force-dynamic";
 
 /** E17 — escheat a deposit dormant for ten years (Act No. 3936). */
-export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const bankId = Number(id);
   if (!Number.isInteger(bankId) || bankId <= 0) {
     return NextResponse.json({ success: false, error: "Invalid account id." }, { status: 400 });
   }
 
+  const raw = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const text = (value: unknown) => (typeof value === "string" ? value : "");
+
   try {
-    const data = await escheat(bankId, null);
+    const data = await escheat(bankId, null, {
+      reference: text(raw.reference),
+      remittedOn: text(raw.remittedOn),
+      agency: text(raw.agency),
+    });
     return NextResponse.json({ success: true, data });
   } catch (error) {
     const failure = describeDormancyError(error, "[bank-management-v2] escheat failed");

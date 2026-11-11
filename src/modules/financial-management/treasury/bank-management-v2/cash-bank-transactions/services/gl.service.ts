@@ -257,3 +257,62 @@ export async function reverseJournalEntry(jeNo: string, userId: number | null = 
 
   return reversal;
 }
+
+/**
+ * One posted entry with its lines, for the read-only ledger view. Returns null instead
+ * of throwing when the number does not exist, so the caller can say so plainly.
+ */
+export async function fetchJournalEntry(jeNo: string): Promise<PostedJournalEntry | null> {
+  const { rows: headers } = await listItems<Record<string, unknown>>(ENTRIES, {
+    fields: [
+      "id",
+      "je_no",
+      "event_code",
+      "source_module",
+      "source_ref",
+      "posting_date",
+      "description",
+      "status",
+      "reverses_je_no",
+      "total_debit",
+      "total_credit",
+      "created_at",
+    ],
+    filter: { je_no: { _eq: jeNo } },
+    limit: 1,
+  });
+  const header = headers[0];
+  if (!header) return null;
+
+  const { rows: lines } = await listItems<Record<string, unknown>>(LINES, {
+    fields: ["line_no", "coa_id", "gl_code", "account_title", "debit", "credit", "memo"],
+    filter: { journal_entry_id: { _eq: Number(header.id) } },
+    sort: "line_no",
+    limit: 200,
+  });
+
+  return {
+    id: Number(header.id),
+    jeNo: String(header.je_no),
+    eventCode: String(header.event_code),
+    sourceModule: String(header.source_module),
+    sourceRef: header.source_ref == null ? "" : String(header.source_ref),
+    postingDate: String(header.posting_date),
+    description: header.description == null ? "" : String(header.description),
+    status: String(header.status) === "REVERSED" ? "REVERSED" : "POSTED",
+    reversesJeNo: header.reverses_je_no == null ? null : String(header.reverses_je_no),
+    createdAt: String(header.created_at ?? ""),
+    totalDebit: roundMoney(Number(header.total_debit) || 0),
+    totalCredit: roundMoney(Number(header.total_credit) || 0),
+    missingMappingKeys: [],
+    lines: lines.map((line) => ({
+      lineNo: Number(line.line_no) || 0,
+      coaId: line.coa_id == null ? null : Number(line.coa_id),
+      glCode: line.gl_code == null ? null : String(line.gl_code),
+      accountTitle: line.account_title == null ? null : String(line.account_title),
+      debit: roundMoney(Number(line.debit) || 0),
+      credit: roundMoney(Number(line.credit) || 0),
+      memo: line.memo == null ? null : String(line.memo),
+    })),
+  };
+}

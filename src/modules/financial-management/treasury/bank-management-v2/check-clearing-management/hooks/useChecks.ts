@@ -89,7 +89,9 @@ export function useChecks(initialFilters: RegisterFilters = {}) {
       setIsSaving(true);
       try {
         const result = await action();
-        await refetch();
+        // The register reload costs more than the write itself, so it runs behind the
+        // dialog: the button stops spinning when the action lands, not when the list repaints.
+        void refetch();
         toast.success(successMessage);
         return result;
       } catch (caught) {

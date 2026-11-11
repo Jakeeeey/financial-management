@@ -6,7 +6,7 @@
  * dates are PHT wall-clock strings (`YYYY-MM-DD` or `YYYY-MM-DDTHH:mm:ss`).
  */
 
-export type BankAccountStatus = "ACTIVE" | "DORMANT" | "CLOSED";
+export type BankAccountStatus = "ACTIVE" | "DORMANT" | "INACTIVE" | "ESCHEATED" | "CLOSED";
 export type Currency = "PHP" | "USD";
 
 export interface BankAccountV2 {
@@ -16,6 +16,8 @@ export interface BankAccountV2 {
   accountName: string | null;
   accountType: string | null;
   branch: string | null;
+  /** Free text stored in the legacy `bank_description` column. */
+  remarks: string | null;
   currency: Currency;
   ifrsCategory: string;
   glCoaId: number | null;
@@ -25,6 +27,8 @@ export interface BankAccountV2 {
   isActive: boolean;
   openingBalance: number;
   bookBalance: number;
+  /** null when the journal table could not be read, so no retry is offered. */
+  openingBalancePosted: boolean | null;
   effectiveDate: string | null;
   lastReconciledAt: string | null;
   createdAt: string | null;
@@ -295,6 +299,8 @@ export interface OnboardingOptions {
   banks: BankOption[];
   accountTypes: AccountTypeOption[];
   cashAccounts: GlAccountOption[];
+  /** Every chart row, for the posting-setup picker: clearing keys are not cash-titled. */
+  chartAccounts: GlAccountOption[];
 }
 
 export interface OnboardingFilterState {
@@ -314,6 +320,8 @@ export interface OnboardingListing extends Paginated<BankAccountV2> {
   /** Accounts in the register before filters, so a filtered count is never read as the total. */
   registerTotal: number;
   options: OnboardingOptions;
+  /** Every `bank_gl_mapping` key, so the readiness strip shows what still blocks posting. */
+  glMapping: GlMappingRow[];
   notice?: string;
 }
 

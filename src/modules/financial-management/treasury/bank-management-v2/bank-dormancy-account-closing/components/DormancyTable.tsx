@@ -3,13 +3,16 @@
 import { Fragment } from "react";
 import type { ReactNode } from "react";
 
+import { MoreVertical } from "lucide-react";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency, formatNumber } from "@/lib/utils";
+import { phtDisplayStamp, toPhtDateString } from "../pht";
 import { TablePager } from "./TablePager";
-import { DORMANT_MONTHS, ESCHEAT_MONTHS, INACTIVE_MONTHS, classLabel, classTone, statusTone, toneClass } from "../constants";
+import { DORMANT_MONTHS, ESCHEAT_MONTHS, INACTIVE_MONTHS, classLabel, classTone, statusLabel, statusTone, toneClass } from "../constants";
 import type { DormancyAccount } from "../types";
 
 const COLUMNS = 8;
@@ -23,25 +26,11 @@ type Props = {
   isLoading: boolean;
   isSaving: boolean;
   onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
   onOpen: (account: DormancyAccount) => void;
-  onReclassify: (account: DormancyAccount) => void;
-  onEscheat: (account: DormancyAccount) => void;
   /** Filter band rendered inside the scan card, like every other V2 table. */
   filters: ReactNode;
 };
-
-type Action = { label: string; run: (account: DormancyAccount) => void; danger?: boolean; primary?: boolean };
-
-function actionsFor(account: DormancyAccount, props: Props): Action[] {
-  if (account.status === "CLOSED") return [];
-  if (account.status === "DORMANT" && account.classification === "ESCHEAT_ELIGIBLE") {
-    return [{ label: "Escheat (Act 3936)", run: props.onEscheat, danger: true }];
-  }
-  if (account.status === "ACTIVE" && account.classification === "DORMANT_ELIGIBLE") {
-    return [{ label: "Reclassify to 201800", run: props.onReclassify, primary: true }];
-  }
-  return [];
-}
 
 function ActivityCell({ account }: { account: DormancyAccount }) {
   return (
@@ -57,27 +46,17 @@ function ActivityCell({ account }: { account: DormancyAccount }) {
 }
 
 function RowActions({ account, props }: { account: DormancyAccount; props: Props }) {
-  const actions = actionsFor(account, props);
-  if (actions.length === 0) {
-    return (
-      <span className="text-xs text-muted-foreground">
-        {account.status === "CLOSED" ? `Closed ${account.closedAt ?? ""}`.trim() : "No action"}
-      </span>
-    );
-  }
   return (
-    <div className="flex flex-wrap gap-2" onClick={(event) => event.stopPropagation()}>
-      {actions.map((action) => (
-        <Button
-          key={action.label}
-          size="sm"
-          variant={action.primary ? "default" : action.danger ? "destructive" : "outline"}
-          disabled={props.isSaving}
-          onClick={() => action.run(account)}
-        >
-          {action.label}
-        </Button>
-      ))}
+    <div onClick={(event) => event.stopPropagation()}>
+      <Button
+        size="sm"
+        variant="ghost"
+        aria-label={`Actions for ${account.accountNumber}`}
+        title="Account actions"
+        onClick={() => props.onOpen(account)}
+      >
+        <MoreVertical className="h-4 w-4" aria-hidden />
+      </Button>
     </div>
   );
 }
@@ -94,7 +73,8 @@ export function DormancyTable(props: Props) {
         <div className="min-w-0">
           <h2 className="text-sm font-semibold">Inactivity &amp; dormancy scan</h2>
           <p className="text-xs text-muted-foreground">
-            Bank-initiated memos do not count as customer activity.
+            Bank-initiated memos do not count as customer activity. Escheat (Act 3936) shows on a
+            dormant account once it reaches 120 months.
           </p>
         </div>
         <Badge variant="outline" className="tabular-nums text-[11px]">
@@ -124,10 +104,10 @@ export function DormancyTable(props: Props) {
                   <TableHead className="w-[220px]">Bank &amp; branch</TableHead>
                   <TableHead className="w-[130px] text-right">Book balance</TableHead>
                   <TableHead className="w-[170px]">Last customer activity</TableHead>
-                  <TableHead className="w-[110px] text-right">Months inactive</TableHead>
+                  <TableHead className="w-[110px] text-center">Months inactive</TableHead>
                   <TableHead className="w-[150px]" title={`Stage from months without customer-initiated movement: ${INACTIVE_MONTHS} inactive, ${DORMANT_MONTHS} dormant-eligible, ${ESCHEAT_MONTHS} escheat-eligible.`}>Dormancy stage</TableHead>
-                  <TableHead className="w-[100px]">Status</TableHead>
-                  <TableHead className="w-[190px]">Action</TableHead>
+                  <TableHead className="w-[170px]">Status</TableHead>
+                  <TableHead className="w-[110px]">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -162,7 +142,7 @@ export function DormancyTable(props: Props) {
                     <TableCell>
                       <ActivityCell account={account} />
                     </TableCell>
-                    <TableCell className="tabular-nums text-right">{formatNumber(account.monthsInactive)}</TableCell>
+                    <TableCell className="tabular-nums text-center">{formatNumber(account.monthsInactive)}</TableCell>
                     <TableCell>
                       <Badge
                         variant="outline"
@@ -176,8 +156,21 @@ export function DormancyTable(props: Props) {
                         variant="outline"
                         className={`text-[11px] font-semibold ${toneClass(statusTone(account.status))}`}
                       >
-                        {account.status === "ACTIVE" ? "Active" : account.status === "DORMANT" ? "Dormant" : "Closed"}
+                        {statusLabel(account.status)}
                       </Badge>
+                      {account.escheatedAt && (
+                        <div className="mt-1 space-y-0.5 text-[11px] leading-tight text-muted-foreground">
+                          <p
+                            className="whitespace-nowrap tabular-nums"
+                            title={`Escheated ${phtDisplayStamp(account.escheatedAt)}`}
+                          >
+                            {toPhtDateString(account.escheatedAt)}
+                          </p>
+                          <p className="whitespace-nowrap tabular-nums" title="Ten-year retention under Act No. 3936">
+                            keep until {account.retainUntil ?? "—"}
+                          </p>
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell>
                       <RowActions account={account} props={props} />
@@ -213,6 +206,12 @@ export function DormancyTable(props: Props) {
                       >
                         {account.classification === "ACTIVE" ? "Not dormant" : classLabel(account.classification)}
                       </Badge>
+                      <Badge
+                        variant="outline"
+                        className={`shrink-0 text-[11px] font-semibold ${toneClass(statusTone(account.status))}`}
+                      >
+                        {statusLabel(account.status)}
+                      </Badge>
                     </div>
                     <dl className="mt-2 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                       <div>
@@ -223,6 +222,14 @@ export function DormancyTable(props: Props) {
                         <dt>Months inactive</dt>
                         <dd className="tabular-nums text-foreground">{formatNumber(account.monthsInactive)}</dd>
                       </div>
+                      {account.escheatedAt && (
+                        <div className="col-span-2">
+                          <dt>Escheat</dt>
+                          <dd className="tabular-nums text-foreground">
+                            {toPhtDateString(account.escheatedAt)} · retain until {account.retainUntil ?? "—"}
+                          </dd>
+                        </div>
+                      )}
                     </dl>
                   </button>
                   <RowActions account={account} props={props} />
@@ -239,6 +246,7 @@ export function DormancyTable(props: Props) {
         total={total}
         pageSize={pageSize}
         onPageChange={onPageChange}
+        onPageSizeChange={props.onPageSizeChange}
         isLoading={isLoading}
         className="border-t border-border/50 px-4 py-3"
       />

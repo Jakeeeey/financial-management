@@ -6,7 +6,8 @@
  * PHT wall-clock strings (`YYYY-MM-DD` or `YYYY-MM-DDTHH:mm:ss`).
  */
 
-export type BankAccountStatus = "ACTIVE" | "DORMANT" | "CLOSED";
+/** Canonical account status vocabulary for the whole bank-management family. Transactable = is_active && ACTIVE. */
+export type BankAccountStatus = "ACTIVE" | "DORMANT" | "INACTIVE" | "ESCHEATED" | "CLOSED";
 export type Currency = "PHP" | "USD";
 
 export interface BankAccountV2 {
@@ -32,7 +33,6 @@ export interface BankAccountV2 {
 
 export type ArfSeverity = "CRITICAL" | "HIGH" | "MEDIUM";
 
-/** Where a finding's record lives, so the row can offer "Normalize to PHT" without trusting the client. */
 export interface ArfFinding {
   key: string;
   severity: ArfSeverity;
@@ -41,8 +41,14 @@ export interface ArfFinding {
   detail: string;
   reference: string | null;
   occurredAt: string | null;
-  /** Page that owns the record, for the "Open <module>" action. */
-  goTo?: "check-clearing-management" | "bank-deposit";
+  /** Bank account label when the underlying record names one. */
+  account: string | null;
+  /** Money at stake in PHP; null when the finding is not about an amount. */
+  amount: number | null;
+  /** The threshold and condition that produced this row, in the auditor's words. */
+  rule: string;
+  /** Table row the finding was computed from, e.g. `collection_details #840`. */
+  source: string;
 }
 
 export interface AuditLogRow {

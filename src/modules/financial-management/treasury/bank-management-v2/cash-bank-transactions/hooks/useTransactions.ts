@@ -10,6 +10,7 @@ import {
   createFundTransfer,
   createMemoTransaction,
   fetchTransactions,
+  postTransactionEntry,
   settleFundTransfer,
 } from "../providers/transactionsApi";
 import type { MemoBody, TransferBody } from "../schemas";
@@ -104,6 +105,63 @@ export function useTransactions() {
     [runAction],
   );
 
+  /**
+   * Settles every transfer whose value date has arrived, one at a time so one bad row cannot
+   * stop the rest, and names the ones that failed instead of reporting a blanket success.
+   */
+  const settleMany = useCallback(
+    async (due: TransactionRow[]) => {
+      if (!due.length) return;
+      setIsSaving(true);
+      const failed: string[] = [];
+      try {
+        for (const row of due) {
+          try {
+            await settleFundTransfer(row.id);
+          } catch {
+            failed.push(row.refNo);
+          }
+        }
+      } finally {
+        setIsSaving(false);
+        await load(filters);
+      }
+      const settled = due.length - failed.length;
+      if (settled > 0) {
+        toast.success(settled === 1 ? "1 transfer settled." : `${settled} transfers settled.`);
+      }
+      if (failed.length > 0) {
+        toast.error(
+          `${failed.length} of ${due.length} could not settle: ${failed.join(", ")}`,
+        );
+      }
+    },
+    [filters, load],
+  );
+
+  /**
+   * Posts the entry a saved row is missing. The success toast carries the new journal number,
+   * and the caller gets the result so an open dialog can show the link without waiting for the
+   * list to reload.
+   */
+  const postEntry = useCallback(
+    async (row: TransactionRow): Promise<{ jeNo: string } | null> => {
+      setIsSaving(true);
+      try {
+        const result = await postTransactionEntry(row.kind, row.id);
+        toast.success(`Entry posted · ${result.jeNo}`);
+        await load(filters);
+        return result;
+      } catch (postError) {
+        toast.error(messageOf(postError));
+        return null;
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [filters, load],
+  );
+
   const cancelMemo = useCallback(
     async (memoId: number, reason: string) => {
       try {
@@ -144,6 +202,8 @@ export function useTransactions() {
     createMemo,
     createTransfer,
     settle,
+    settleMany,
+    postEntry,
     cancelMemo,
   };
 }

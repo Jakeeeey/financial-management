@@ -5,7 +5,8 @@
  * lane never hard-codes a colour or renames a status locally.
  */
 
-export const BANK_STATUSES = ["ACTIVE", "DORMANT", "CLOSED"] as const;
+/** Same vocabulary the dormancy, deposit and masterlist lanes write, so no status is lost on edit. */
+export const BANK_STATUSES = ["ACTIVE", "DORMANT", "INACTIVE", "ESCHEATED", "CLOSED"] as const;
 
 export const ACCOUNT_TYPE_OPTIONS = [
   "Savings",
@@ -78,6 +79,8 @@ export function toneClass(tone: Tone): string {
 const STATUS_TONE: Record<string, Tone> = {
   ACTIVE: "success",
   DORMANT: "warning",
+  INACTIVE: "danger",
+  ESCHEATED: "warning",
   CLOSED: "neutral",
   PREPARED: "info",
   PENDING: "warning",
@@ -93,6 +96,9 @@ const STATUS_TONE: Record<string, Tone> = {
   IN_CLEARING: "info",
   POSTED: "success",
   REVERSED: "neutral",
+  MAPPED: "success",
+  NOT_MAPPED: "danger",
+  NEEDS_DECISION: "warning",
   CRITICAL: "danger",
   HIGH: "danger",
   MEDIUM: "warning",
@@ -157,3 +163,90 @@ export const EMPTY_FILTERS = {
 
 export const MISSING_COLUMNS_NOTICE =
   "The new account fields are not in the database yet, so the register shows the base columns until the DDL is applied.";
+
+/**
+ * `chart_of_accounts` has no cash flag (isPayment is false on every row and there is
+ * no parent/group column), so the title is the only cash signal the data carries.
+ */
+export const CASH_TITLE_PATTERN = /cash/i;
+
+/**
+ * A bank account's own cash is not money in transit: 4012 `Cash in Transit - Bank Clearing`
+ * is where clearing keys post, so it is a transit account even though its title says cash.
+ */
+export const MONEY_IN_TRANSIT_TITLE_PATTERN = /in transit/i;
+
+export function isCashAccountTitle(title: string): boolean {
+  return CASH_TITLE_PATTERN.test(title) && !MONEY_IN_TRANSIT_TITLE_PATTERN.test(title);
+}
+
+export const GL_PICKER_PLACEHOLDER = "Choose a cash or cash-equivalent GL";
+export const GL_PICKER_EMPTY = "No cash or cash-equivalent GL account matches that search.";
+export const GL_PICKER_UNAVAILABLE =
+  "No cash or cash-equivalent GL accounts were returned, so the chart of accounts could not be read.";
+export const GL_PICKER_NON_CASH_WARNING =
+  "This GL is not titled as cash or a cash equivalent. Accounting should confirm the mapping.";
+/** P53: an existing non-cash link is a defect, not a preference, so the save is refused until it is fixed. */
+export const GL_PICKER_NON_CASH_BLOCKED =
+  "This account is linked to a non-cash GL. Choose a cash or cash-equivalent GL to save.";
+export const GL_LINK_NOT_CASH = "Not a cash account";
+
+/** Both keys must resolve before a parked transfer can settle, so the save flow checks them together. */
+export const CLEARING_MAPPING_KEYS = ["BANK_CLEARING", "TRANSFER_IN_TRANSIT"] as const;
+
+/** Keys with no defensible account in this chart of accounts yet, so "Not mapped" would mislead. */
+export const MAPPING_KEYS_NEEDING_DECISION = new Set([
+  "DEPOSIT_LIABILITY_ACTIVE",
+  "DORMANT_LIABILITY",
+  "ESCHEAT_PAYABLE",
+  "CLOSURE_PAYOUT",
+  "DEPOSIT_INTEREST_EXPENSE",
+  "NTP_CONTROL",
+]);
+
+/** `bank_gl_mapping` keys in words; the raw key stays visible as a mono subtitle. */
+export const MAPPING_LABELS: Record<string, string> = {
+  CASH_IN_BANK: "Cash in bank",
+  CASH_ON_HAND: "Cash on hand",
+  BANK_CLEARING: "Bank clearing",
+  TRANSFER_IN_TRANSIT: "Transfers in transit",
+  OPENING_EQUITY: "Opening balance equity",
+  AR_CONTROL: "Accounts receivable control",
+  AP_CONTROL: "Accounts payable control",
+  DEPOSIT_LIABILITY_ACTIVE: "Deposit liability (active)",
+  DORMANT_LIABILITY: "Dormant deposit liability",
+  ESCHEAT_PAYABLE: "Escheat payable",
+  CLOSURE_PAYOUT: "Account closure payout",
+  FINAL_TAX_PAYABLE: "Final tax payable",
+  NTP_CONTROL: "Negotiable instrument control",
+  OTHER_INCOME: "Other income",
+  INTEREST_INCOME: "Interest income",
+  BANK_CHARGES_EXPENSE: "Bank charges expense",
+  DEPOSIT_INTEREST_EXPENSE: "Deposit interest expense",
+  FINAL_TAX_EXPENSE: "Final tax expense",
+};
+
+/** Cash first (what onboarding needs), then the balance sheet, then income and expense. */
+export const MAPPING_GROUPS: Array<{ heading: string; keys: string[] }> = [
+  { heading: "Cash", keys: ["CASH_IN_BANK", "CASH_ON_HAND"] },
+  {
+    heading: "Balance sheet",
+    keys: [
+      "BANK_CLEARING",
+      "TRANSFER_IN_TRANSIT",
+      "OPENING_EQUITY",
+      "AR_CONTROL",
+      "AP_CONTROL",
+      "DEPOSIT_LIABILITY_ACTIVE",
+      "DORMANT_LIABILITY",
+      "ESCHEAT_PAYABLE",
+      "CLOSURE_PAYOUT",
+      "FINAL_TAX_PAYABLE",
+      "NTP_CONTROL",
+    ],
+  },
+  {
+    heading: "Income and expense",
+    keys: ["OTHER_INCOME", "INTEREST_INCOME", "BANK_CHARGES_EXPENSE", "DEPOSIT_INTEREST_EXPENSE", "FINAL_TAX_EXPENSE"],
+  },
+];

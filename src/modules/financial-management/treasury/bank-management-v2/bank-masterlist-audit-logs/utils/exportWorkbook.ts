@@ -60,7 +60,7 @@ export function downloadFindings(findings: ArfFinding[]) {
   writeSheet(
     fileName("ARF findings"),
     "ARF findings",
-    ["Severity", "ARF sub-module", "Finding", "Detail", "Reference", "Occurred (PHT)", "Action"],
+    ["Severity", "ARF sub-module", "Finding", "Detail", "Reference", "Occurred (PHT)", "Account", "Amount", "Rule", "Source"],
     findings.map((finding) => [
       finding.severity,
       finding.subModule,
@@ -68,9 +68,12 @@ export function downloadFindings(findings: ArfFinding[]) {
       finding.detail,
       finding.reference ?? "",
       finding.occurredAt ? toPhtDateString(finding.occurredAt) : "",
-      finding.goTo ? "Open module" : "No action",
+      finding.account ?? "",
+      finding.amount ?? "",
+      finding.rule,
+      finding.source,
     ]),
-    [12, 22, 34, 60, 22, 18, 22],
+    [12, 22, 34, 60, 22, 18, 28, 14, 60, 26],
   );
 }
 
