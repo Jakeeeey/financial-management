@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +18,7 @@ import { PeriodLifecycle } from "./components/PeriodLifecycle";
 import { postingStatus } from "./services/postingExport";
 
 export default function BankReconciliationPostingModule() {
+  const router = useRouter();
   const [context, setContext] = useState<BankReconciliationContext | null>(null), [accessError, setAccessError] = useState("");
   const [lifecycleBusy, setLifecycleBusy] = useState(false);
   useEffect(() => { const controller = new AbortController(); getBankReconciliationContext(controller.signal).then(value => { if (!value.workspaces.some(w => w.key === "posting")) throw new Error("Posting module access is required."); setContext(value); }).catch(e => { if (!controller.signal.aborted) setAccessError(e.message); }); return () => controller.abort(); }, []);
@@ -28,8 +30,12 @@ export default function BankReconciliationPostingModule() {
   const cards = [["ledgerBefore", "Ledger before adjustments"], ["postedCashEffect", "Posted, net to cash"], ["ledgerAfter", "Ledger after posting"], ["adjustedBookBalance", "Adjusted book balance"], ["stillToPost", "Still to post"]] as const;
   const ready = data?.entries.filter(entry => entry.canPost) || [];
   const actionsDisabled = loading || posting.operating || posting.exporting !== null || lifecycleBusy || Boolean(posting.pendingRequest);
+  async function openReports() {
+    const saved = await posting.prepareLifecycle();
+    if (saved) router.push(`${BANK_RECONCILIATION_ROOT}/reports?periodId=${saved.id}${saved.lifecycle?.closureId ? `&closureId=${saved.lifecycle.closureId}` : ""}`);
+  }
   return <section aria-label="Bank reconciliation Posting" className="space-y-6" aria-busy={busy}>
-    <div className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-semibold tracking-tight">Posting</h1><p className="mt-2 text-sm text-muted-foreground">Review the adjusting entries. Accounts are chosen in Reconcile and are read-only here.</p></div><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" disabled={!data || busy} onClick={posting.refresh}>Refresh data</Button>{canReconcile && <Button type="button" variant="outline" asChild><Link href={reconcile}>Open Reconcile</Link></Button>}</div></div>
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-semibold tracking-tight">Posting</h1><p className="mt-2 text-sm text-muted-foreground">Review the adjusting entries. Accounts are chosen in Reconcile and are read-only here.</p></div><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" disabled={!data || busy} onClick={posting.refresh}>Refresh data</Button>{canReconcile && <Button type="button" variant="outline" asChild><Link href={reconcile}>Open Reconcile</Link></Button>}{period && context.workspaces.some(w => w.key === "reports") && <Button type="button" variant="outline" disabled={actionsDisabled} onClick={() => { void openReports().catch(() => {}); }}>Open Reports</Button>}</div></div>
     <div className="flex flex-wrap items-center justify-between gap-2"><PeriodHistoryChoice period={period} disabled={busy || Boolean(posting.pendingRequest)} onSelect={posting.selectPeriod} /><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" disabled={!data || actionsDisabled} onClick={() => { void posting.exportFile("xlsx"); }}>{posting.exporting === "xlsx" ? "Generating Excel…" : "Export to Excel"}</Button><Button type="button" variant="outline" disabled={!data || actionsDisabled} onClick={() => { void posting.exportFile("pdf"); }}>{posting.exporting === "pdf" ? "Generating PDF…" : "Download PDF"}</Button></div></div>
     {period && <PeriodLifecycle key={period.id} period={period} workspace="posting" eligibility={data?.closureEligibility} disabled={postingBusy || Boolean(posting.pendingRequest)} onBusy={setLifecycleBusy} onDone={posting.selectPeriod} before={posting.prepareLifecycle} />}
     <section aria-label="Posting period" className="grid gap-4 rounded-lg border bg-card p-4 sm:grid-cols-2 xl:grid-cols-4">
