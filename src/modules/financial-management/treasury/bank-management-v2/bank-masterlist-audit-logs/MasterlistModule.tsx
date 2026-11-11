@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { FileSpreadsheet, Loader2, RefreshCw , ClipboardList} from "lucide-react";
 import { toast } from "sonner";
 
@@ -32,7 +31,6 @@ const DOWNLOAD_LABEL: Record<Tab, string> = {
 
 /** Bank Masterlist & Audit Logs (FSD 1.6): accounts, ARF findings and the PHT movement log. */
 export function MasterlistModule() {
-  const router = useRouter();
   const [tab, setTab] = useState<Tab>("accounts");
   const [isExporting, setIsExporting] = useState(false);
   const [openAccount, setOpenAccount] = useState<BankAccountV2 | null>(null);
@@ -43,11 +41,14 @@ export function MasterlistModule() {
     audit,
     auditTotal,
     page,
+    pageSize,
     pageCount,
     accountsPage,
+    accountsPageSize,
     accountsPageCount,
     accountsTotal,
     findingsPage,
+    findingsPageSize,
     findingsPageCount,
     findingsTotal,
     bankId,
@@ -65,7 +66,10 @@ export function MasterlistModule() {
     setPage,
     setBankId,
     setAccountsPage,
+    setAccountsPageSize,
     setFindingsPage,
+    setFindingsPageSize,
+    setAuditPageSize,
     setArfFilters,
     setLogFilters,
     allAuditRows,
@@ -180,7 +184,9 @@ export function MasterlistModule() {
             page={accountsPage}
             pageCount={accountsPageCount}
             total={accountsTotal}
+            pageSize={accountsPageSize}
             onPageChange={setAccountsPage}
+            onPageSizeChange={setAccountsPageSize}
             onOpenAccount={setOpenAccount}
             filters={
               <MasterlistFilters
@@ -206,8 +212,9 @@ export function MasterlistModule() {
             page={findingsPage}
             pageCount={findingsPageCount}
             total={findingsTotal}
+            pageSize={findingsPageSize}
             onPageChange={setFindingsPage}
-            onOpenModule={(path) => router.push(path)}
+            onPageSizeChange={setFindingsPageSize}
             filters={
               <ArfFilters
                 filters={arfFilters}
@@ -224,7 +231,9 @@ export function MasterlistModule() {
             page={page}
             pageCount={pageCount}
             total={auditTotal}
+            pageSize={pageSize}
             onPage={setPage}
+            onPageSizeChange={setAuditPageSize}
             emptyLabel={
               logFilters.q || logFilters.module !== "ALL" || logFilters.pht !== "ALL" || logFilters.from || logFilters.to
                 ? "No log entry matches these filters."

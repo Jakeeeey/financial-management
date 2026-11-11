@@ -1,10 +1,11 @@
 import "server-only";
 
-import { PAGE_SIZE } from "../constants";
+import { CREDIT_NATURE_OPTIONS, PAGE_SIZE } from "../constants";
 import type { TransactionFilters, TransactionKind, TransactionRow, TransactionsPayload } from "../types";
 import { listAccounts, listExpenseAccounts, toAccountOption } from "./accounts.service";
 import { asNumber, asString, DirectusError, listItems } from "./directus";
 import { transferMappingState } from "./gl.service";
+import { unmappedKeys } from "./repost.service";
 
 /**
  * The combined Cash & Bank Transactions list.
@@ -25,6 +26,9 @@ const MEMO_FIELDS = [
   "description",
   "status",
   "journal_entry_id",
+  "nature_key",
+  "expense_coa_id",
+  "interest_tax",
 ];
 
 const TRANSFER_FIELDS = [
@@ -63,7 +67,7 @@ const CLEARING_LIMIT = 100;
 type RawRow = Record<string, unknown>;
 
 /** A row plus the journal-entry id that has not been resolved to a JE number yet. */
-type MappedRow = { row: TransactionRow; journalEntryId: number | null };
+type MappedRow = { row: TransactionRow; journalEntryId: number | null; requiredKeys: string[] };
 
 type ReadResult = { rows: MappedRow[]; total: number };
 
@@ -91,13 +95,15 @@ export async function listTransactions(filters: TransactionFilters): Promise<Tra
   });
 
   const page = Math.max(1, filters.page);
-  const slice = merged.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const pageSize = filters.pageSize && filters.pageSize > 0 ? filters.pageSize : PAGE_SIZE;
+  const slice = merged.slice((page - 1) * pageSize, page * pageSize);
   await resolveJeNumbers([...slice, ...clearing]);
+  await markPostable(slice);
 
   return {
     rows: slice.map((entry) => entry.row),
     page,
-    pageSize: PAGE_SIZE,
+    pageSize,
     total: memoResult.total + transferResult.total,
     accounts: accountResult.accounts.map(toAccountOption),
     expenseAccounts,
@@ -254,6 +260,7 @@ function mapMemo(raw: RawRow, labels: Map<number, string>): MappedRow {
 
   return {
     journalEntryId: asNumber(raw.journal_entry_id) || null,
+    requiredKeys: memoEntryKeys(raw, kind),
     row: {
       key: `memo-${asNumber(raw.id)}`,
       id: asNumber(raw.id),
@@ -269,8 +276,24 @@ function mapMemo(raw: RawRow, labels: Map<number, string>): MappedRow {
       status: asString(raw.status).toUpperCase() || "POSTED",
       jeNo: null,
       description: asString(raw.description) || null,
+      canPost: false,
+      missingEntryKeys: [],
     },
   };
+}
+
+/**
+ * The mapping keys a memo's entry resolves, mirroring the builders in `events.ts`. Only the
+ * memo-type keys are listed here: an account's own linked GL always resolves, and the shared
+ * cash key is left to the post route, which answers with the exact key it is missing.
+ */
+function memoEntryKeys(raw: RawRow, kind: TransactionKind): string[] {
+  if (kind === "DEBIT") return ["BANK_CHARGES_EXPENSE"];
+  if (kind === "INTEREST") {
+    return asNumber(raw.interest_tax) > 0 ? ["INTEREST_INCOME", "FINAL_TAX_EXPENSE"] : ["INTEREST_INCOME"];
+  }
+  const nature = CREDIT_NATURE_OPTIONS.find((option) => option.value === asString(raw.nature_key));
+  return nature ? [nature.mappingKey] : CREDIT_NATURE_OPTIONS.map((option) => option.mappingKey);
 }
 
 function mapTransfer(raw: RawRow, labels: Map<number, string>): MappedRow {
@@ -280,6 +303,7 @@ function mapTransfer(raw: RawRow, labels: Map<number, string>): MappedRow {
 
   return {
     journalEntryId: asNumber(raw.journal_entry_id) || null,
+    requiredKeys: transferEntryKeys(raw),
     row: {
       key: `transfer-${asNumber(raw.transfer_id)}`,
       id: asNumber(raw.transfer_id),
@@ -295,8 +319,33 @@ function mapTransfer(raw: RawRow, labels: Map<number, string>): MappedRow {
       status: asString(raw.status).toUpperCase() || "PREPARED",
       jeNo: null,
       description: asString(raw.remarks) || null,
+      canPost: false,
+      missingEntryKeys: [],
     },
   };
+}
+
+/** Leg 1 of a later-dated transfer and leg 2 both park money in transfer-in-transit. */
+function transferEntryKeys(raw: RawRow): string[] {
+  const pending = asString(raw.status).toUpperCase() === "PENDING";
+  const settled = Boolean(asString(raw.settled_at));
+  const sameDay = asString(raw.value_date) === asString(raw.transfer_date);
+  return pending || settled || !sameDay ? ["TRANSFER_IN_TRANSIT"] : [];
+}
+
+/** A row with no resolvable entry is postable; its missing keys come from one mapping read. */
+async function markPostable(rows: MappedRow[]): Promise<void> {
+  const candidates = rows.filter(
+    (entry) =>
+      entry.row.jeNo === null && entry.row.status !== "REVERSED" && entry.row.status !== "CANCELLED",
+  );
+  if (!candidates.length) return;
+
+  const unmapped = await unmappedKeys();
+  for (const entry of candidates) {
+    entry.row.canPost = true;
+    entry.row.missingEntryKeys = entry.requiredKeys.filter((key) => unmapped.has(key));
+  }
 }
 
 /** Replaces the stored journal-entry ids with the entry numbers the list shows. */

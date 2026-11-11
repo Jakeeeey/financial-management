@@ -26,6 +26,10 @@ import { OptionCombobox } from "./OptionCombobox";
 import type { DepositAccountOption } from "../providers/depositApi";
 import type { UndepositedAsset } from "../types";
 
+export type SlipSubmitResult =
+  | { ok: true }
+  | { ok: false; message: string; fieldErrors: Record<string, string>; blockedDocuments: string[] };
+
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -39,7 +43,7 @@ type Props = {
     remarks: string | null;
     cashIds: number[];
     checkIds: number[];
-  }) => Promise<unknown>;
+  }) => Promise<SlipSubmitResult>;
 };
 
 /**
@@ -53,6 +57,7 @@ export function NewDepositDialog({ open, onOpenChange, accounts, assets, isSavin
   const [slipNo, setSlipNo] = useState("");
   const [remarks, setRemarks] = useState("");
   const [touched, setTouched] = useState(false);
+  const [serverError, setServerError] = useState<Extract<SlipSubmitResult, { ok: false }> | null>(null);
 
   const totals = useMemo(() => {
     const cash = assets.filter((asset) => asset.assetType === "CASH").reduce((sum, asset) => sum + asset.amount, 0);
@@ -64,16 +69,34 @@ export function NewDepositDialog({ open, onOpenChange, accounts, assets, isSavin
 
   const accountOptions = accounts.map((account) => ({ value: String(account.bankId), label: account.label }));
 
+  // What this dialog can already see is wrong, so the row is marked before the round trip.
+  const rowIssues = useMemo(() => {
+    const issues = new Map<number, string>();
+    for (const asset of assets) {
+      if (asset.isCancelled) issues.set(asset.collectionDetailId, "Voided collection");
+      else if (!asset.isPosted) issues.set(asset.collectionDetailId, "Collection is not posted");
+      else if (!asset.collectionDate) issues.set(asset.collectionDetailId, "No collected date");
+      else if (asset.assetType === "CHECK" && asset.chequeDate && asset.chequeDate > depositDate)
+        issues.set(asset.collectionDetailId, `Post-dated to ${asset.chequeDate}`);
+    }
+    return issues;
+  }, [assets, depositDate]);
+
+  const blockedDocs = new Set(serverError?.blockedDocuments ?? []);
+
   const errors = {
     bankAccountId: bankAccountId ? "" : "Choose the account being deposited into.",
     depositDate: depositDate ? (depositDate > today ? "The deposit date cannot be in the future." : "") : "Pick the deposit date.",
     slipNo: slipNo.trim() ? "" : "Enter the slip or validation number.",
   };
-  const hasErrors = Object.values(errors).some(Boolean);
+  // A server field error only shows once the local check passes, so "required" wins over "duplicate".
+  const fieldErrors = { ...errors, slipNo: errors.slipNo || (serverError?.fieldErrors.slipNo ?? "") };
+  const hasErrors = Object.values(fieldErrors).some(Boolean) || rowIssues.size > 0;
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setTouched(true);
+    setServerError(null);
     if (hasErrors || assets.length === 0) return;
 
     const result = await onSubmit({
@@ -84,12 +107,15 @@ export function NewDepositDialog({ open, onOpenChange, accounts, assets, isSavin
       cashIds: assets.filter((asset) => asset.assetType === "CASH").map((asset) => asset.collectionDetailId),
       checkIds: assets.filter((asset) => asset.assetType === "CHECK").map((asset) => asset.collectionDetailId),
     });
-    if (result) {
-      setSlipNo("");
-      setRemarks("");
-      setTouched(false);
-      onOpenChange(false);
+    if (!result.ok) {
+      setServerError(result);
+      return;
     }
+    setSlipNo("");
+    setRemarks("");
+    setTouched(false);
+    setServerError(null);
+    onOpenChange(false);
   }
 
   return (
@@ -106,6 +132,13 @@ export function NewDepositDialog({ open, onOpenChange, accounts, assets, isSavin
             </DialogDescription>
           </DialogHeader>
 
+          {serverError ? (
+            <div role="alert" className="mx-6 mt-4 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              <p className="font-semibold">The slip was not saved.</p>
+              <p className="mt-0.5">{serverError.message}</p>
+            </div>
+          ) : null}
+
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-4">
             <div className="grid gap-5 lg:grid-cols-2">
               <div className="space-y-4">
@@ -121,12 +154,12 @@ export function NewDepositDialog({ open, onOpenChange, accounts, assets, isSavin
                     placeholder="Select account"
                     searchPlaceholder="Search bank accounts"
                     emptyLabel="No account matches that search."
-                    aria-invalid={touched && Boolean(errors.bankAccountId)}
-                    aria-describedby={touched && errors.bankAccountId ? "deposit-account-error" : undefined}
+                    aria-invalid={touched && Boolean(fieldErrors.bankAccountId)}
+                    aria-describedby={touched && fieldErrors.bankAccountId ? "deposit-account-error" : undefined}
                   />
-                  {touched && errors.bankAccountId && (
+                  {touched && fieldErrors.bankAccountId && (
                     <p id="deposit-account-error" className="text-xs text-destructive">
-                      {errors.bankAccountId}
+                      {fieldErrors.bankAccountId}
                     </p>
                   )}
                 </div>
@@ -142,12 +175,12 @@ export function NewDepositDialog({ open, onOpenChange, accounts, assets, isSavin
                       maxDate={today}
                       value={depositDate}
                       onChange={(value) => setDepositDate(value)}
-                      aria-invalid={touched && Boolean(errors.depositDate)}
-                      aria-describedby={touched && errors.depositDate ? "deposit-date-error" : undefined}
+                      aria-invalid={touched && Boolean(fieldErrors.depositDate)}
+                      aria-describedby={touched && fieldErrors.depositDate ? "deposit-date-error" : undefined}
                     />
-                    {touched && errors.depositDate && (
+                    {touched && fieldErrors.depositDate && (
                       <p id="deposit-date-error" className="text-xs text-destructive">
-                        {errors.depositDate}
+                        {fieldErrors.depositDate}
                       </p>
                     )}
                   </div>
@@ -162,12 +195,12 @@ export function NewDepositDialog({ open, onOpenChange, accounts, assets, isSavin
                       maxLength={40}
                       placeholder="As printed or validated by the bank"
                       onChange={(event) => setSlipNo(event.target.value)}
-                      aria-invalid={touched && Boolean(errors.slipNo)}
-                      aria-describedby={touched && errors.slipNo ? "deposit-slip-no-error" : undefined}
+                      aria-invalid={touched && Boolean(fieldErrors.slipNo)}
+                      aria-describedby={touched && fieldErrors.slipNo ? "deposit-slip-no-error" : undefined}
                     />
-                    {touched && errors.slipNo && (
+                    {touched && fieldErrors.slipNo && (
                       <p id="deposit-slip-no-error" className="text-xs text-destructive">
-                        {errors.slipNo}
+                        {fieldErrors.slipNo}
                       </p>
                     )}
                   </div>
@@ -215,26 +248,38 @@ export function NewDepositDialog({ open, onOpenChange, accounts, assets, isSavin
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {assets.map((asset) => (
-                      <TableRow key={asset.collectionDetailId}>
-                        <TableCell className="text-sm">{asset.assetType === "CASH" ? "Cash" : "Check"}</TableCell>
-                        <TableCell className="max-w-[140px]">
-                          <p className="truncate font-mono text-sm" title={asset.documentNumber}>
-                            {asset.documentNumber}
-                          </p>
-                          {asset.checkNo ? (
-                            <p className="truncate text-[11px] text-muted-foreground">Check {asset.checkNo}</p>
-                          ) : null}
-                        </TableCell>
-                        <TableCell className="max-w-[160px] truncate text-sm" title={asset.customer ?? undefined}>
-                          {asset.customer ?? "—"}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap font-mono text-sm">
-                          {asset.collectionDate ? toPhtDateString(asset.collectionDate) : "—"}
-                        </TableCell>
-                        <TableCell className="text-right text-sm tabular-nums">{formatCurrency(asset.amount)}</TableCell>
-                      </TableRow>
-                    ))}
+                    {assets.map((asset) => {
+                      const issue = rowIssues.get(asset.collectionDetailId);
+                      const flagged = Boolean(issue) || blockedDocs.has(asset.documentNumber);
+                      return (
+                        <TableRow key={asset.collectionDetailId} className={flagged ? "bg-destructive/10" : undefined}>
+                          <TableCell className="text-sm">{asset.assetType === "CASH" ? "Cash" : "Check"}</TableCell>
+                          <TableCell className="max-w-[140px]">
+                            <p className="truncate font-mono text-sm" title={asset.documentNumber}>
+                              {asset.documentNumber}
+                            </p>
+                            {asset.checkNo ? (
+                              <p className="truncate text-[11px] text-muted-foreground">Check {asset.checkNo}</p>
+                            ) : null}
+                            {issue ? <p className="text-[11px] font-medium text-destructive">{issue}</p> : null}
+                          </TableCell>
+                          <TableCell className="max-w-[160px] text-sm">
+                            <p className="truncate" title={asset.customer ?? undefined}>
+                              {asset.customer ?? "—"}
+                            </p>
+                            {asset.customerCode && asset.customerCode !== asset.customer ? (
+                              <p className="truncate font-mono text-[11px] text-muted-foreground">{asset.customerCode}</p>
+                            ) : null}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap font-mono text-sm">
+                            {asset.collectionDate ? toPhtDateString(asset.collectionDate) : "—"}
+                          </TableCell>
+                          <TableCell className="w-[120px] whitespace-nowrap text-right text-sm tabular-nums">
+                            {formatCurrency(asset.amount)}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                   <TableFooter>
                     <TableRow>
@@ -252,12 +297,17 @@ export function NewDepositDialog({ open, onOpenChange, accounts, assets, isSavin
           </div>
 
           <DialogFooter className="border-t bg-muted/20 px-6 py-4">
+            {rowIssues.size > 0 ? (
+              <p className="mr-auto self-center text-xs text-destructive">
+                Fix the {rowIssues.size} highlighted {rowIssues.size === 1 ? "row" : "rows"} first.
+              </p>
+            ) : null}
             <DialogClose asChild>
               <Button type="button" variant="outline" disabled={isSaving}>
                 Cancel
               </Button>
             </DialogClose>
-            <Button type="submit" disabled={isSaving || assets.length === 0}>
+            <Button type="submit" disabled={isSaving || assets.length === 0 || rowIssues.size > 0}>
               {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Save slip
             </Button>

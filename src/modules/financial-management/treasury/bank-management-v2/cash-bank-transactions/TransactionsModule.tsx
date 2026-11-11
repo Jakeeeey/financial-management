@@ -42,6 +42,8 @@ export function TransactionsModule() {
     createMemo,
     createTransfer,
     settle,
+    settleMany,
+    postEntry,
     cancelMemo,
   } = useTransactions();
 
@@ -56,6 +58,18 @@ export function TransactionsModule() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [cancelTarget, setCancelTarget] = useState<TransactionRow | null>(null);
   const [openRow, setOpenRow] = useState<TransactionRow | null>(null);
+
+  /**
+   * Posts the row's missing entry and swaps the open row for a posted copy, so the dialog shows
+   * the journal link without waiting for the list to reload.
+   */
+  async function postRow(row: TransactionRow) {
+    const result = await postEntry(row);
+    if (!result) return;
+    setOpenRow((current) =>
+      current && current.key === row.key ? { ...current, jeNo: result.jeNo, canPost: false, missingEntryKeys: [] } : current,
+    );
+  }
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-6">
@@ -109,9 +123,12 @@ export function TransactionsModule() {
             isFiltered={isFiltered}
             pageSize={pageSize}
             onPageChange={(next) => patchFilters({ page: next })}
+            onPageSizeChange={(size) => patchFilters({ pageSize: size })}
             onCancelMemo={setCancelTarget}
             onSettle={(row) => void settle(row)}
+            onPost={(row) => void postRow(row)}
             onOpenRow={setOpenRow}
+            mappingMissing={mappingMissing}
             isError={Boolean(error)}
             onRetry={refetch}
             filters={
@@ -133,6 +150,7 @@ export function TransactionsModule() {
             isLoading={isLoading}
             isSaving={isSaving}
             onSettle={(row) => void settle(row)}
+            onSettleDue={(due) => void settleMany(due)}
             onOpenRow={setOpenRow}
           />
         </TabsContent>
@@ -140,6 +158,7 @@ export function TransactionsModule() {
 
       <TransactionDetailDialog
         row={openRow}
+        mappingMissing={mappingMissing}
         isSaving={isSaving}
         onOpenChange={(open) => {
           if (!open) setOpenRow(null);
@@ -152,6 +171,7 @@ export function TransactionsModule() {
           setOpenRow(null);
           setCancelTarget(row);
         }}
+        onPost={(row) => void postRow(row)}
       />
 
       <NewTransactionDialog

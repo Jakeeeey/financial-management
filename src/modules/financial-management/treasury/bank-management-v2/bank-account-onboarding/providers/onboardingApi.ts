@@ -1,4 +1,10 @@
-import type { OnboardingFilterState, OnboardingListing, RegisterAccountResult, UpdateAccountResult } from "../types";
+import type {
+  GlMappingRow,
+  OnboardingFilterState,
+  OnboardingListing,
+  RegisterAccountResult,
+  UpdateAccountResult,
+} from "../types";
 
 export type OnboardingApiError = Error & {
   fieldErrors?: Record<string, string[]>;
@@ -66,17 +72,56 @@ export type UpdateAccountPayload = {
   branch: string;
   accountType: string;
   glCoaId: number;
-  status: string;
+  /** Undoes a deactivation. Every other lifecycle move belongs to Dormancy & Account Closing. */
+  reactivate: boolean;
   effectiveDate: string;
+  remarks?: string;
 };
 
-/** Edits an onboarded account; status drives `is_active` on the server. */
+/** Edits an onboarded account's master data, or reactivates it. */
 export async function updateAccount(id: number, payload: UpdateAccountPayload): Promise<UpdateAccountResult> {
   return unwrap<UpdateAccountResult>(
     await fetch(`${BASE}/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+    }),
+  );
+}
+
+export type PostOpeningBalanceResult = { posted: boolean; notice?: string };
+
+/** Retries E01 for an account whose opening balance never posted. */
+export async function postOpeningBalance(id: number): Promise<PostOpeningBalanceResult> {
+  return unwrap<PostOpeningBalanceResult>(
+    await fetch(`${BASE}/${id}/post-opening-balance`, { method: "POST" }),
+  );
+}
+
+export type SaveMappingResult = { mapping: GlMappingRow[]; dueTransfers: number };
+
+/** Saves one posting-setup row; the answer says whether due transfers can now settle. */
+export async function saveMapping(mappingKey: string, coaId: number | null): Promise<SaveMappingResult> {
+  return unwrap<SaveMappingResult>(
+    await fetch(`${BASE}/gl-mapping`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ updates: [{ mappingKey, coaId }] }),
+    }),
+  );
+}
+
+export type SettleDueResult = {
+  settled: number;
+  jeNos: string[];
+  failed: Array<{ id: number; transferNo: string; error: string }>;
+};
+
+/** The same settle-many path the clearing panel uses, reached from the mapping prompt. */
+export async function settleDueTransfers(): Promise<SettleDueResult> {
+  return unwrap<SettleDueResult>(
+    await fetch("/api/fm/treasury/bank-management-v2/cash-bank-transactions/transfers/settle-due", {
+      method: "POST",
     }),
   );
 }

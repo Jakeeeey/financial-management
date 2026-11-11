@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { formatCurrency, formatNumber } from "@/lib/utils";
 
 import { toPhtDateString } from "../pht";
+import { GL_LINK_NOT_CASH, isCashAccountTitle } from "../constants";
 import type { BankAccountV2 } from "../types";
 import { StatusBadge } from "./StatusBadge";
 import {
@@ -32,7 +33,10 @@ type AccountsTableProps = {
   page: number;
   pageSize: number;
   onEdit: (account: BankAccountV2) => void;
+  onPostOpeningBalance: (account: BankAccountV2) => void;
+  isSaving: boolean;
   onPageChange: (page: number) => void;
+  onPageSizeChange?: (pageSize: number) => void;
   /** Filter band rendered inside the register card, like every other V2 table. */
   filters: ReactNode;
 };
@@ -46,8 +50,18 @@ function glLabel(account: BankAccountV2): string {
   return account.glTitle ? `${account.glCode} · ${account.glTitle}` : account.glCode;
 }
 
+/** A row can still carry a pre-existing non-cash link; saving it again is refused until remapped. */
+function hasNonCashLink(account: BankAccountV2): boolean {
+  return Boolean(account.glTitle) && !isCashAccountTitle(account.glTitle ?? "");
+}
+
 function onboardedOn(account: BankAccountV2): string {
   return toPhtDateString(account.effectiveDate ?? account.createdAt) || "—";
+}
+
+/** A funded account whose E01 entry never posted still needs its opening balance. */
+function canRetryPosting(account: BankAccountV2): boolean {
+  return account.openingBalance > 0 && account.openingBalancePosted === false;
 }
 
 /** Register table with the card fallback below xl, per QA.md responsive rules. */
@@ -60,7 +74,10 @@ export function AccountsTable({
   page,
   pageSize,
   onEdit,
+  onPostOpeningBalance,
+  isSaving,
   onPageChange,
+  onPageSizeChange,
   filters,
 }: AccountsTableProps) {
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
@@ -162,6 +179,11 @@ export function AccountsTable({
                               {account.glTitle}
                             </p>
                           ) : null}
+                          {hasNonCashLink(account) ? (
+                            <p className="truncate text-xs text-destructive" title={GL_LINK_NOT_CASH}>
+                              {GL_LINK_NOT_CASH}
+                            </p>
+                          ) : null}
                         </>
                       ) : (
                         <span className="text-muted-foreground">Not linked</span>
@@ -186,8 +208,17 @@ export function AccountsTable({
                             <MoreVertical className="size-4" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-44">
+                        <DropdownMenuContent align="end" className="w-52">
                           <DropdownMenuItem onSelect={() => onEdit(account)}>Edit account</DropdownMenuItem>
+                          {canRetryPosting(account) ? (
+                            <DropdownMenuItem
+                              disabled={isSaving}
+                              title="Posts the opening balance entry that failed while the GL mapping was incomplete."
+                              onSelect={() => onPostOpeningBalance(account)}
+                            >
+                              Post opening balance
+                            </DropdownMenuItem>
+                          ) : null}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
@@ -241,6 +272,11 @@ export function AccountsTable({
                   <dd className="truncate" title={glLabel(account)}>
                     {glLabel(account)}
                   </dd>
+                  {hasNonCashLink(account) ? (
+                    <p className="truncate text-xs text-destructive" title={GL_LINK_NOT_CASH}>
+                      {GL_LINK_NOT_CASH}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="min-w-0">
                   <dt className="text-xs text-muted-foreground">Book balance</dt>
@@ -257,7 +293,20 @@ export function AccountsTable({
                   </dd>
                 </div>
               </dl>
-              <div className="flex justify-end">
+              <div className="flex flex-wrap justify-end gap-2">
+                {canRetryPosting(account) ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isSaving}
+                    title="Posts the opening balance entry that failed while the GL mapping was incomplete."
+                    aria-label={`Post opening balance for ${account.bankName} ${account.accountNumber}`}
+                    onClick={() => onPostOpeningBalance(account)}
+                  >
+                    Post opening balance
+                  </Button>
+                ) : null}
                 <Button
                   type="button"
                   variant="outline"
@@ -280,6 +329,7 @@ export function AccountsTable({
         total={total}
         pageSize={pageSize}
         onPageChange={onPageChange}
+        onPageSizeChange={onPageSizeChange}
         className="border-t border-border/50 px-4 py-3"
       />
     </section>

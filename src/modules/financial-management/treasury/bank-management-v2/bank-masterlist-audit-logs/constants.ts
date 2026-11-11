@@ -32,6 +32,8 @@ export function toneClass(tone: Tone): string {
 const STATUS_TONE: Record<string, Tone> = {
   ACTIVE: "success",
   DORMANT: "warning",
+  INACTIVE: "danger",
+  ESCHEATED: "neutral",
   CLOSED: "neutral",
   RECONCILED: "success",
   DRAFT: "neutral",

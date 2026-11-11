@@ -28,6 +28,11 @@ const CAN_DEPOSIT_OPTIONS = [
   { value: "PDC", label: "Post-dated, not yet" },
 ];
 
+const SCOPE_OPTIONS = [
+  { value: "POSTED", label: "Posted & dated" },
+  { value: "ALL", label: "Everything incl. withheld" },
+];
+
 /** Filter bar from the prototype's 1.3 tab; enums are fixed, only search is free text. */
 export function UndepositedFiltersBar({ filters, onChange }: Props) {
   const [query, setQuery] = useState(filters.q);
@@ -42,7 +47,24 @@ export function UndepositedFiltersBar({ filters, onChange }: Props) {
 
   return (
     <div className="border-b border-border/50 px-4 py-3" aria-label="Undeposited collection filters">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1.6fr)_auto]">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1.6fr)_auto]">
+        <div className="space-y-1.5">
+          <Label htmlFor="undep-scope" className="text-[11px] uppercase tracking-wide text-muted-foreground">
+            Show
+          </Label>
+          <Select value={filters.scope} onValueChange={(value) => onChange({ ...filters, scope: value as UndepositedFilters["scope"] })}>
+            <SelectTrigger id="undep-scope" className="w-full">
+              <SelectValue className="truncate" placeholder="Posted & dated" />
+            </SelectTrigger>
+            <SelectContent className="max-h-60">
+              {SCOPE_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="space-y-1.5">
           <Label htmlFor="undep-type" className="text-[11px] uppercase tracking-wide text-muted-foreground">
             Type
@@ -138,3 +160,4 @@ export function UndepositedFiltersBar({ filters, onChange }: Props) {
     </div>
   );
 }
+

@@ -13,7 +13,6 @@ import { CloseAccountPanel } from "./components/CloseAccountPanel";
 import { AccountActionDialog, type AccountAction } from "./components/AccountActionDialog";
 import { AccountDetailDialog } from "./components/AccountDetailDialog";
 import { bankOptions } from "./providers/dormancyApi";
-import { PAGE_SIZE } from "./constants";
 import type { DormancyAccount, PreClosureResult } from "./types";
 
 /**
@@ -99,19 +98,20 @@ export function DormancyModule() {
             total={dormancy.filteredCount}
             page={dormancy.page}
             pageCount={dormancy.pageCount}
-            pageSize={PAGE_SIZE}
+            pageSize={dormancy.pageSize}
             isLoading={dormancy.isLoading}
             isSaving={dormancy.isSaving}
             onPageChange={dormancy.setPage}
+            onPageSizeChange={dormancy.setPageSize}
             onOpen={setDetail}
-            onReclassify={(account) => setPending({ account, action: "RECLASSIFY" })}
-            onEscheat={(account) => setPending({ account, action: "ESCHEAT" })}
           />
         </TabsContent>
 
         <TabsContent value="closure">
           <CloseAccountPanel
-            accounts={dormancy.accounts.filter((account) => account.status !== "CLOSED")}
+            accounts={dormancy.accounts.filter(
+              (account) => account.status !== "CLOSED" && account.status !== "ESCHEATED",
+            )}
             preClosure={preClosure}
             isLoadingCheck={isChecking}
             isSaving={dormancy.isSaving}
@@ -130,15 +130,36 @@ export function DormancyModule() {
         </TabsContent>
       </Tabs>
 
-      <AccountDetailDialog account={detail} onOpenChange={(open) => !open && setDetail(null)} />
+      <AccountDetailDialog
+        account={detail}
+        onOpenChange={(open) => !open && setDetail(null)}
+        isSaving={dormancy.isSaving}
+        onReclassify={(account) => {
+          setDetail(null);
+          setPending({ account, action: "RECLASSIFY" });
+        }}
+        onEscheat={(account) => {
+          setDetail(null);
+          setPending({ account, action: "ESCHEAT" });
+        }}
+        onDeactivate={(account) => {
+          setDetail(null);
+          setPending({ account, action: "DEACTIVATE" });
+        }}
+      />
 
       <AccountActionDialog
         account={pending?.account ?? null}
         action={pending?.action ?? null}
         isSaving={dormancy.isSaving}
         onOpenChange={(open) => !open && setPending(null)}
-        onConfirm={async (account, action) => {
-          const ok = action === "RECLASSIFY" ? await dormancy.reclassify(account.bankId) : await dormancy.escheat(account.bankId);
+        onConfirm={async (account, action, remittance) => {
+          const ok =
+            action === "RECLASSIFY"
+              ? await dormancy.reclassify(account.bankId)
+              : action === "ESCHEAT" && remittance
+                ? await dormancy.escheat(account.bankId, remittance)
+                : await dormancy.deactivate(account.bankId);
           if (ok) setPending(null);
         }}
       />

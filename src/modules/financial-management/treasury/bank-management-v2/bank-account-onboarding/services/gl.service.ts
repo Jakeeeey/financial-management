@@ -7,7 +7,7 @@ import type {
   ResolvedJournalEntry,
   ResolvedJournalLine,
 } from "../types";
-import { createItem, directusFetch, listItems, queryString, roundMoney } from "./directus";
+import { createItem, directusFetch, listItems, roundMoney } from "./directus";
 
 /**
  * Resolves E01–E15 posting rules and records them.
@@ -62,20 +62,30 @@ export async function saveGlMapping(
   updates: Array<{ mappingKey: string; coaId: number | null }>,
   userId: number | null,
 ): Promise<GlMappingRow[]> {
+  if (updates.length === 0) return listGlMapping();
   const nowPht = phtNow();
-  for (const update of updates) {
-    const response = await directusFetch<{ data?: unknown[] }>(
-      `/items/${MAPPING}${queryString({ filter: JSON.stringify({ mapping_key: { _eq: update.mappingKey } }) })}`,
-      { method: "PATCH", body: JSON.stringify({ coa_id: update.coaId, updated_by_user_id: userId, updated_at: nowPht }) },
-    );
-    if (!response.data?.length) {
-      await createItem(MAPPING, {
+  // `bank_gl_mapping` has no id column: mapping_key is the primary key, so one bulk PATCH
+  // addresses every row (a filtered PATCH with a bare object is rejected as an invalid payload).
+  const response = await directusFetch<{ data?: Array<{ mapping_key?: string }> }>(`/items/${MAPPING}`, {
+    method: "PATCH",
+    body: JSON.stringify(
+      updates.map((update) => ({
         mapping_key: update.mappingKey,
         coa_id: update.coaId,
         updated_by_user_id: userId,
         updated_at: nowPht,
-      });
-    }
+      })),
+    ),
+  });
+  const written = new Set((response.data ?? []).map((row) => row.mapping_key));
+  for (const update of updates) {
+    if (written.has(update.mappingKey)) continue;
+    await createItem(MAPPING, {
+      mapping_key: update.mappingKey,
+      coa_id: update.coaId,
+      updated_by_user_id: userId,
+      updated_at: nowPht,
+    });
   }
   return listGlMapping();
 }

@@ -20,7 +20,7 @@ import {
 } from "./accounts.service";
 import { PostingBlockedError, postJournalEntry } from "./gl.service";
 import { openingBalanceEntry } from "../events";
-import { phtStamp } from "../pht";
+import { phtStamp, phtToday } from "../pht";
 import type { BankAccountV2, RegisterAccountResult, UpdateAccountResult } from "../types";
 import type { RegisterAccountBody, UpdateAccountBody } from "../schemas";
 
@@ -110,6 +110,8 @@ async function assertUniqueAccountNumber(bankName: string, normalized: string): 
 }
 
 async function assertLinkedGl(glCoaId: number, bankId?: number): Promise<void> {
+  // No grandfather clause: a row already pointing at a non-cash GL (Land Bank → 4008) must be
+  // remapped before it can be saved again, which is what P53 asks for.
   const assigned = await listItems<RawRow>("bank_accounts", {
     fields: ["bank_id"], filter: { gl_coa_id: { _eq: glCoaId }, ...(bankId ? { bank_id: { _neq: bankId } } : {}) }, limit: 1,
   });
@@ -121,8 +123,8 @@ async function assertLinkedGl(glCoaId: number, bankId?: number): Promise<void> {
   // validates the key against the mapping.
   if (accounts.length === 0) return;
   if (accounts.some((account) => account.coaId === glCoaId)) return;
-  throw new OnboardingValidationError("Choose a current-asset GL account.", {
-    glCoaId: ["Choose a current-asset GL account."],
+  throw new OnboardingValidationError("Choose a cash or cash-equivalent GL account.", {
+    glCoaId: ["Choose a cash or cash-equivalent GL account."],
   });
 }
 
@@ -134,7 +136,7 @@ async function ensureBankName(bankName: string): Promise<void> {
       limit: 1,
     });
     if (total > 0) return;
-    await createItem("bank_names", { bank_name: bankName, is_active: 1 });
+    await createItem("bank_names", { bank_name: bankName, is_active: true });
   } catch (error) {
     // The registry row only feeds later pickers; never lose the account over it.
     if (!(error instanceof DirectusError)) throw error;
@@ -238,7 +240,7 @@ export async function createAccount(
     account_type: body.accountType,
     opening_balance: roundMoney(body.openingBalance),
     bank_description: body.remarks?.trim() ?? "",
-    is_active: 1,
+    is_active: true,
     created_at: phtStamp(),
     currency: body.accountType === "FCA" ? "USD" : "PHP",
     ifrs_category: "Amortized Cost",
@@ -264,12 +266,23 @@ export async function createAccount(
   };
 }
 
-/** Edits the fields the FSD allows after onboarding; status drives `is_active`. */
+/**
+ * Edits the master data the FSD allows after onboarding. Lifecycle status is left alone: dormant,
+ * escheated and closed are written by Dormancy & Account Closing, which posts E16–E18 and checks the
+ * balance first. The only status move this form may make is undoing a deactivation.
+ */
 export async function updateAccount(id: number, body: UpdateAccountBody): Promise<UpdateAccountResult> {
   const existing = await readAccountById(id);
   if (!existing) throw new OnboardingNotFoundError("That account no longer exists.");
 
   await assertLinkedGl(body.glCoaId, id);
+
+  const current = await mapAccountWithLookups(existing);
+  if (body.reactivate && current.status !== "INACTIVE") {
+    throw new OnboardingValidationError("Only a deactivated account can be reactivated here.", {
+      reactivate: ["This account is not deactivated."],
+    });
+  }
 
   const payload: Record<string, unknown> = {
     account_name: body.accountName.trim(),
@@ -277,13 +290,24 @@ export async function updateAccount(id: number, body: UpdateAccountBody): Promis
     account_type: body.accountType,
     currency: body.accountType === "FCA" ? "USD" : "PHP",
     gl_coa_id: body.glCoaId,
-    account_status: body.status,
     effective_date: body.effectiveDate,
-    is_active: body.status === "CLOSED" ? 0 : 1,
+    ...(body.reactivate ? { account_status: "ACTIVE", is_active: true } : {}),
+    ...(body.remarks !== undefined ? { bank_description: body.remarks.trim() } : {}),
   };
 
   const written = await writeAccount("update", payload, id);
   return { account: await mapAccountWithLookups(written.row), notice: written.notice };
+}
+
+/** Retries E01 for an account registered while the GL mapping was still incomplete. */
+export async function postOpeningBalanceForAccount(id: number): Promise<{ posted: boolean; notice?: string }> {
+  const row = await readAccountById(id);
+  if (!row) throw new OnboardingNotFoundError("That account no longer exists.");
+  const account = await mapAccountWithLookups(row);
+  if (account.openingBalance <= 0) {
+    return { posted: false, notice: "This account has no opening balance to post." };
+  }
+  return postOpeningBalance(account, account.openingBalance, account.effectiveDate ?? phtToday());
 }
 
 /**

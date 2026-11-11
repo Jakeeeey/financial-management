@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { formatCurrency } from "@/lib/utils";
-import { classLabel, classTone, statusTone, toneClass } from "../constants";
+import { ESCHEAT_MONTHS, classLabel, classTone, statusLabel, statusTone, toneClass } from "../constants";
 import { phtDisplayStamp } from "../pht";
 import type { DormancyAccount } from "../types";
 
@@ -33,10 +33,36 @@ function stamp(value: string | null): string {
 type Props = {
   account: DormancyAccount | null;
   onOpenChange: (open: boolean) => void;
+  isSaving: boolean;
+  onReclassify: (account: DormancyAccount) => void;
+  onEscheat: (account: DormancyAccount) => void;
+  onDeactivate: (account: DormancyAccount) => void;
 };
 
-/** Read-only detail behind a scan row: the lifecycle dates the table cannot show. */
-export function AccountDetailDialog({ account, onOpenChange }: Props) {
+/**
+ * Mirrors the gates in `escheat()`: dormant, escheat-eligible and still holding a balance. The
+ * button stays visible and greyed with this reason so the reader can see what the step waits for.
+ */
+function escheatBlockedReason(account: DormancyAccount): string | null {
+  if (account.status === "INACTIVE") {
+    return "A deactivated account is frozen. Reactivate it in the register first.";
+  }
+  if (account.status !== "DORMANT") {
+    return `Only a dormant account can be escheated; this one is ${statusLabel(account.status).toLowerCase()}.`;
+  }
+  if (account.classification !== "ESCHEAT_ELIGIBLE") {
+    return `Needs ${ESCHEAT_MONTHS} months dormant; this account is at ${account.monthsInactive}.`;
+  }
+  if (account.bookBalance <= 0) {
+    return "There is no dormant balance to escheat.";
+  }
+  return null;
+}
+
+/** Read-only detail behind a scan row, with the lifecycle actions the row no longer carries. */
+export function AccountDetailDialog({ account, onOpenChange, isSaving, onReclassify, onEscheat, onDeactivate }: Props) {
+  const frozen = account ? account.status === "CLOSED" || account.status === "ESCHEATED" : false;
+  const escheatBlocked = account ? escheatBlockedReason(account) : null;
   return (
     <Dialog open={Boolean(account)} onOpenChange={onOpenChange}>
       <DialogContent showCloseButton={false} className="w-[95vw] rounded-2xl p-0 sm:max-w-[720px]">
@@ -55,7 +81,7 @@ export function AccountDetailDialog({ account, onOpenChange }: Props) {
               <dl className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
                 <Detail label="Status">
                   <Badge variant="outline" className={`text-[11px] font-semibold ${toneClass(statusTone(account.status))}`}>
-                    {account.status}
+                    {statusLabel(account.status)}
                   </Badge>
                 </Detail>
                 <Detail label="Classification">
@@ -93,9 +119,22 @@ export function AccountDetailDialog({ account, onOpenChange }: Props) {
                 <Detail label="Closed at">{stamp(account.closedAt)}</Detail>
                 <Detail label="Retained until">{account.retainUntil ?? "—"}</Detail>
                 <Detail label="Closure reason">
-          <span className="break-words">{account.closureReason ?? "—"}</span>
-        </Detail>
+                  <span className="break-words">{account.closureReason ?? "—"}</span>
+                </Detail>
               </dl>
+
+              {account.status === "ESCHEATED" && (
+                <p className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-xs">
+                  Frozen: the balance was escheated to the National Treasury under Act No. 3936. The account cannot
+                  transact and is not an ordinary customer closure.
+                </p>
+              )}
+              {account.status === "INACTIVE" && (
+                <p className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-xs">
+                  Frozen: the account was deactivated. It cannot receive deposits, checks or transfers until an
+                  administrator reactivates it.
+                </p>
+              )}
 
               <p className="text-xs text-muted-foreground">
                 Customer activity counts deposits, transfers, released and issued checks. Bank-initiated memos and
@@ -103,10 +142,45 @@ export function AccountDetailDialog({ account, onOpenChange }: Props) {
               </p>
             </div>
 
-            <DialogFooter className="border-t bg-muted/20 px-6 py-4">
-              <DialogClose asChild>
-                <Button variant="outline">Close</Button>
-              </DialogClose>
+            <DialogFooter className="flex-col items-stretch gap-2 border-t bg-muted/20 px-6 py-4 sm:flex-col sm:justify-end">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {!frozen && (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    disabled={isSaving || Boolean(escheatBlocked)}
+                    title={escheatBlocked ?? undefined}
+                    aria-describedby={escheatBlocked ? "escheat-blocked" : undefined}
+                    onClick={() => onEscheat(account)}
+                  >
+                    Escheat (Act 3936)
+                  </Button>
+                )}
+                {!frozen && (account.status === "ACTIVE" || account.status === "DORMANT") && (
+                  <Button size="sm" variant="outline" disabled={isSaving} onClick={() => onDeactivate(account)}>
+                    Deactivate account
+                  </Button>
+                )}
+                {!frozen && account.status === "ACTIVE" && account.classification === "DORMANT_ELIGIBLE" && (
+                  <Button size="sm" variant="outline" disabled={isSaving} onClick={() => onReclassify(account)}>
+                    Reclassify to 201800
+                  </Button>
+                )}
+                <DialogClose asChild>
+                  <Button variant="outline">Close</Button>
+                </DialogClose>
+              </div>
+              {frozen ? (
+                <p className="text-right text-xs text-muted-foreground">
+                  This account is frozen, so no lifecycle action is available.
+                </p>
+              ) : (
+                escheatBlocked && (
+                  <p id="escheat-blocked" className="text-right text-xs text-muted-foreground">
+                    Escheat unavailable: {escheatBlocked}
+                  </p>
+                )
+              )}
             </DialogFooter>
           </div>
         )}

@@ -31,7 +31,7 @@ import { formatCurrency, formatNumber } from "@/lib/utils";
 import { phtToday } from "../pht";
 import { StatusBadge } from "./StatusBadge";
 import { TablePager } from "./TablePager";
-import { TRANSACTION_KIND_LABELS } from "../constants";
+import { TRANSACTION_KIND_LABELS, mappingTitle } from "../constants";
 import type { TransactionRow } from "../types";
 
 interface TransactionsTableProps {
@@ -45,8 +45,13 @@ interface TransactionsTableProps {
       isFiltered?: boolean;
   pageSize: number;
   onPageChange: (page: number) => void;
+  onPageSizeChange?: (pageSize: number) => void;
+  /** Keys a settlement posting still needs; empty when it can post. */
+  mappingMissing: string[];
   onCancelMemo: (row: TransactionRow) => void;
   onSettle: (row: TransactionRow) => void;
+  /** Posts the entry a saved row is missing. */
+  onPost: (row: TransactionRow) => void;
   onOpenRow: (row: TransactionRow) => void;
   /** The filter row, rendered inside the register panel above the table. */
   filters: ReactNode;
@@ -67,19 +72,25 @@ function deduction(row: TransactionRow): number | null {
 function RowActions({
   row,
   isSaving,
+  mappingMissing,
   onCancelMemo,
   onSettle,
+  onPost,
 }: {
   row: TransactionRow;
   isSaving: boolean;
+  mappingMissing: string[];
   onCancelMemo: (row: TransactionRow) => void;
   onSettle: (row: TransactionRow) => void;
+  onPost: (row: TransactionRow) => void;
 }) {
   const isPendingTransfer = row.kind === "TRANSFER" && row.status === "PENDING";
   const canCancelMemo = row.kind !== "TRANSFER" && row.status === "POSTED";
   const canSettle = isPendingTransfer && row.valueDate <= phtToday();
+  const blocked = mappingMissing.length > 0;
+  const postBlocked = row.missingEntryKeys.length > 0;
 
-  if (!isPendingTransfer && !canCancelMemo) {
+  if (!isPendingTransfer && !canCancelMemo && !row.canPost) {
     return <span className="text-sm text-muted-foreground">—</span>;
   }
 
@@ -97,12 +108,31 @@ function RowActions({
           <MoreVertical className="h-4 w-4" aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-[160px]">
+      <DropdownMenuContent align="end" className="w-[180px]">
+        {row.canPost ? (
+          <DropdownMenuItem
+            disabled={postBlocked}
+            title={postBlocked ? mappingTitle(row.missingEntryKeys) : "Posts the journal entry this transaction is missing."}
+            onSelect={() => onPost(row)}
+          >
+            Post entry
+          </DropdownMenuItem>
+        ) : null}
         {isPendingTransfer ? (
           canSettle ? (
-            <DropdownMenuItem onSelect={() => onSettle(row)}>Settle transfer</DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={blocked}
+              title={
+                blocked ? "Ask accounting to set up the clearing account for money in transit." : undefined
+              }
+              onSelect={() => onSettle(row)}
+            >
+              Settle transfer
+            </DropdownMenuItem>
           ) : (
-            <DropdownMenuItem disabled>Settles on {row.valueDate}</DropdownMenuItem>
+            <DropdownMenuItem disabled title="Value date not reached">
+              Settles on {row.valueDate}
+            </DropdownMenuItem>
           )
         ) : null}
         {canCancelMemo ? <DropdownMenuItem onSelect={() => onCancelMemo(row)}>Cancel memo</DropdownMenuItem> : null}
@@ -121,8 +151,11 @@ export function TransactionsTable({
       isFiltered = false,
   pageSize,
   onPageChange,
+  onPageSizeChange,
+  mappingMissing,
   onCancelMemo,
   onSettle,
+  onPost,
   onOpenRow,
   filters,
   isError,
@@ -262,7 +295,14 @@ export function TransactionsTable({
                       onClick={(event) => event.stopPropagation()}
                       onKeyDown={(event) => event.stopPropagation()}
                     >
-                      <RowActions row={row} isSaving={isSaving} onCancelMemo={onCancelMemo} onSettle={onSettle} />
+                      <RowActions
+                        row={row}
+                        isSaving={isSaving}
+                        mappingMissing={mappingMissing}
+                        onCancelMemo={onCancelMemo}
+                        onSettle={onSettle}
+                        onPost={onPost}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -330,7 +370,14 @@ export function TransactionsTable({
                   onClick={(event) => event.stopPropagation()}
                   onKeyDown={(event) => event.stopPropagation()}
                 >
-                  <RowActions row={row} isSaving={isSaving} onCancelMemo={onCancelMemo} onSettle={onSettle} />
+                  <RowActions
+                    row={row}
+                    isSaving={isSaving}
+                    mappingMissing={mappingMissing}
+                    onCancelMemo={onCancelMemo}
+                    onSettle={onSettle}
+                    onPost={onPost}
+                  />
                 </div>
               </li>
             ))}
@@ -344,6 +391,7 @@ export function TransactionsTable({
         total={total}
         pageSize={pageSize}
         onPageChange={onPageChange}
+        onPageSizeChange={onPageSizeChange}
         isLoading={isLoading}
         className="border-t border-border/50 px-4 py-3"
       />

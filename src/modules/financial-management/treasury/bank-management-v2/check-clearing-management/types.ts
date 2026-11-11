@@ -144,6 +144,9 @@ export interface BankCheck {
   returnedAt: string | null;
   replacedById: number | null;
   replacesId: number | null;
+  /** Check numbers for the two links above; null when the related check cannot be read. */
+  replacedByNo: string | null;
+  replacesNo: string | null;
   sourceType: "MANUAL" | "COLLECTIONS" | "DISBURSEMENT" | "REPLACEMENT";
   sourceRef: string | null;
   remarks: string | null;
@@ -161,7 +164,6 @@ export interface CheckEvent {
   eventCode: string | null;
   journalNo: string | null;
   note: string | null;
-  actorName: string | null;
   occurredAt: string;
 }
 

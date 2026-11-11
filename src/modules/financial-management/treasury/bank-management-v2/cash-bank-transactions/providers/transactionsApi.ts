@@ -1,7 +1,7 @@
 "use client";
 
 import type { MemoBody, TransferBody } from "../schemas";
-import type { TransactionFilters, TransactionsPayload } from "../types";
+import type { PostedJournalEntry, TransactionFilters, TransactionKind, TransactionsPayload } from "../types";
 
 const BASE = "/api/fm/treasury/bank-management-v2/cash-bank-transactions";
 
@@ -79,6 +79,7 @@ function toQuery(filters: TransactionFilters): string {
   if (filters.to) params.set("to", filters.to);
   if (filters.q) params.set("q", filters.q);
   params.set("page", String(filters.page));
+  if (filters.pageSize) params.set("pageSize", String(filters.pageSize));
   return params.toString();
 }
 
@@ -105,4 +106,17 @@ export function settleFundTransfer(id: number, note?: string): Promise<{ id: num
 /** Cancels a posted memo with a mirror journal entry. */
 export function cancelBankMemo(id: number, reason: string): Promise<{ id: number; status: string }> {
   return request(`/memos/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) });
+}
+
+/** Posts the entry a saved transaction is missing; 409 when it already has one. */
+export function postTransactionEntry(
+  kind: TransactionKind,
+  id: number,
+): Promise<{ id: number; jeNo: string; eventCode: string; lines: number }> {
+  return request(`/${kind.toLowerCase()}/${id}/post`, { method: "POST" });
+}
+
+/** One posted entry with its lines, for the read-only ledger dialog. */
+export function fetchJournalEntry(jeNo: string): Promise<PostedJournalEntry> {
+  return request(`/journal/${encodeURIComponent(jeNo)}`);
 }

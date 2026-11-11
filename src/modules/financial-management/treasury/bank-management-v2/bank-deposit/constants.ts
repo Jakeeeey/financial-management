@@ -10,7 +10,12 @@ import type { SlipFilters, UndepositedFilters } from "./types";
 /** Rows per page in the module's list tables; the pager hides itself below two pages. */
 export const PAGE_SIZE = 10;
 
+/**
+ * The queue defaults to posted, dated collections: an unposted or undated row cannot be
+ * proved to belong on a slip. The withheld count and the scope picker keep them reachable.
+ */
 export const EMPTY_UNDEPOSITED_FILTERS: UndepositedFilters = {
+  scope: "POSTED",
   type: "ALL",
   canDeposit: "ALL",
   from: "",
@@ -26,7 +31,8 @@ export const EMPTY_SLIP_FILTERS: SlipFilters = {
   q: "",
 };
 
-export const BANK_STATUSES = ["ACTIVE", "DORMANT", "CLOSED"] as const;
+/** Canonical account status vocabulary for the whole bank-management family. */
+export const BANK_STATUSES = ["ACTIVE", "DORMANT", "INACTIVE", "ESCHEATED", "CLOSED"] as const;
 
 export const ACCOUNT_TYPE_OPTIONS = [
   "Savings",
@@ -112,6 +118,8 @@ export function accentClass(tone: Tone): string {
 const STATUS_TONE: Record<string, Tone> = {
   ACTIVE: "success",
   DORMANT: "warning",
+  INACTIVE: "danger",
+  ESCHEATED: "neutral",
   CLOSED: "neutral",
   PREPARED: "info",
   PENDING: "warning",

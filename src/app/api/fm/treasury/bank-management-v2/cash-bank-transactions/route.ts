@@ -32,6 +32,7 @@ export async function GET(request: Request) {
       to: parseDate(searchParams.get("to")),
       q: (searchParams.get("q") ?? "").trim(),
       page: toId(searchParams.get("page")) ?? 1,
+      pageSize: toId(searchParams.get("pageSize")) ?? undefined,
     });
     return ok(data);
   } catch (error) {

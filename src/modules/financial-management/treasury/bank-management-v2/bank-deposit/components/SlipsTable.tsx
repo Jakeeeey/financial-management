@@ -9,10 +9,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { formatCurrency, formatNumber } from "@/lib/utils";
 
 import { toPhtDateString } from "../pht";
-import { PAGE_SIZE } from "../constants";
 import { StatusBadge } from "./StatusBadge";
 import { SlipFiltersBar } from "./SlipFilters";
-import { TablePager } from "./TablePager";
+import { pageCountFor, pageSlice, TablePager } from "./TablePager";
 import type { DepositSlip, SlipFilters } from "../types";
 
 type Props = {
@@ -22,7 +21,9 @@ type Props = {
   filters: SlipFilters;
   isLoading: boolean;
   page: number;
+  pageSize: number;
   onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
   onFiltersChange: (filters: SlipFilters) => void;
   onView: (slip: DepositSlip) => void;
 };
@@ -35,13 +36,15 @@ export function SlipsTable({
   filters,
   isLoading,
   page,
+  pageSize,
   onPageChange,
+  onPageSizeChange,
   onFiltersChange,
   onView,
 }: Props) {
-  const pageCount = Math.max(1, Math.ceil(slips.length / PAGE_SIZE));
+  const pageCount = pageCountFor(slips.length, pageSize);
   const safePage = Math.min(page, pageCount);
-  const rows = slips.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const rows = pageSlice(slips, safePage, pageSize);
 
   return (
     <section
@@ -184,8 +187,9 @@ export function SlipsTable({
             page={safePage}
             pageCount={pageCount}
             total={slips.length}
-            pageSize={PAGE_SIZE}
+            pageSize={pageSize}
             onPageChange={onPageChange}
+            onPageSizeChange={onPageSizeChange}
             className="border-t border-border/50 px-4 py-3"
           />
         </>

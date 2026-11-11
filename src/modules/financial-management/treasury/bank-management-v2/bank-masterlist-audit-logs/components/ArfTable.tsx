@@ -1,7 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { ArrowUpRight } from "lucide-react";
+import { useState } from "react";
+import { Eye } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,28 +10,25 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatNumber } from "@/lib/utils";
 
-import { LIST_PAGE_SIZE, statusTone, toneClass } from "../constants";
+import { statusTone, toneClass } from "../constants";
 import { toPhtDateString } from "../pht";
 import type { ArfFinding } from "../types";
-import { TablePager } from "./TablePager";
+import { ArfFindingDialog } from "./ArfFindingDialog";
+import { TablePager, pageSlice } from "./TablePager";
 
 type Props = {
   findings: ArfFinding[];
   page: number;
   pageCount: number;
   total: number;
+  pageSize: number;
   onPageChange: (page: number) => void;
+  onPageSizeChange: (size: number) => void;
   /** Filter band rendered inside the card, above the table. */
   filters?: ReactNode;
-  onOpenModule?: (path: string) => void;
 };
 
 const COLUMNS = 5;
-
-const MODULE_LABEL: Record<string, string> = {
-  "bank-deposit": "Open Bank Deposit",
-  "check-clearing-management": "Open Check & Clearing",
-};
 
 /** The prototype folds the finding's reference and date under its detail, so no column is spent on them. */
 function findingMeta(finding: ArfFinding): string {
@@ -45,12 +43,13 @@ export function ArfTable({
   page,
   pageCount,
   total,
+  pageSize,
   onPageChange,
+  onPageSizeChange,
   filters,
-  onOpenModule,
 }: Props) {
-  const start = (page - 1) * LIST_PAGE_SIZE;
-  const rows = findings.slice(start, start + LIST_PAGE_SIZE);
+  const rows = pageSlice(findings, page, pageSize);
+  const [selected, setSelected] = useState<ArfFinding | null>(null);
 
   return (
     <Card className="overflow-hidden border-border/50 border-t-[3px] border-t-rose-500/70 shadow-none">
@@ -58,7 +57,9 @@ export function ArfTable({
         <header className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
           <div className="min-w-0">
             <h2 className="text-sm font-semibold">ARF findings</h2>
-            <p className="text-xs text-muted-foreground">Worst first. Every finding names the module that resolves it.</p>
+            <p className="text-xs text-muted-foreground">
+              Worst first. Every finding names the module that resolves it.
+            </p>
           </div>
           <Badge
             variant="outline"
@@ -92,7 +93,19 @@ export function ArfTable({
               {rows.map((finding) => {
                 const meta = findingMeta(finding);
                 return (
-                  <TableRow key={finding.key}>
+                  <TableRow
+                    key={finding.key}
+                    tabIndex={0}
+                    aria-label={`View details for ${finding.title}`}
+                    className="cursor-pointer"
+                    onClick={() => setSelected(finding)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setSelected(finding);
+                      }
+                    }}
+                  >
                     <TableCell>
                       <Badge variant="outline" className={toneClass(statusTone(finding.severity))}>
                         {finding.severity}
@@ -115,19 +128,18 @@ export function ArfTable({
                       ) : null}
                     </TableCell>
                     <TableCell className="text-right">
-                      {finding.goTo ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => onOpenModule?.(`/fm/treasury/bank-management-v2/${finding.goTo}`)}
-                        >
-                          {MODULE_LABEL[finding.goTo] ?? "Open module"}
-                          <ArrowUpRight className="ml-1.5 h-3.5 w-3.5" />
-                        </Button>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">No action</span>
-                      )}
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setSelected(finding);
+                        }}
+                      >
+                        <Eye className="mr-1.5 h-3.5 w-3.5" />
+                        View details
+                      </Button>
                     </TableCell>
                   </TableRow>
                 );
@@ -152,21 +164,18 @@ export function ArfTable({
                 </div>
                 <p className="break-words text-xs text-muted-foreground">{finding.subModule}</p>
                 <p className="break-words text-sm">{finding.detail}</p>
+                {finding.account ? <p className="break-words text-xs text-muted-foreground">{finding.account}</p> : null}
                 {meta ? <p className="break-words text-xs text-muted-foreground">{meta}</p> : null}
-                {finding.goTo ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="-ml-2"
-                    onClick={() => onOpenModule?.(`/fm/treasury/bank-management-v2/${finding.goTo}`)}
-                  >
-                    {MODULE_LABEL[finding.goTo] ?? "Open module"}
-                    <ArrowUpRight className="ml-1.5 h-3.5 w-3.5" />
-                  </Button>
-                ) : (
-                  <span className="block text-xs text-muted-foreground">No action</span>
-                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="-ml-2"
+                  onClick={() => setSelected(finding)}
+                >
+                  <Eye className="mr-1.5 h-3.5 w-3.5" />
+                  View details
+                </Button>
               </li>
             );
           })}
@@ -176,10 +185,13 @@ export function ArfTable({
           page={page}
           pageCount={pageCount}
           total={total}
-          pageSize={LIST_PAGE_SIZE}
+          pageSize={pageSize}
           onPageChange={onPageChange}
+          onPageSizeChange={onPageSizeChange}
           className="border-t px-4 py-3"
         />
+
+        <ArfFindingDialog finding={selected} onOpenChange={(open) => !open && setSelected(null)} />
       </CardContent>
     </Card>
   );

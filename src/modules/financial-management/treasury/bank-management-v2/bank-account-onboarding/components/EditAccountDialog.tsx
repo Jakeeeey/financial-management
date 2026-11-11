@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
-import { useForm, type Resolver } from "react-hook-form";
+import { useForm, useWatch, type Resolver } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -15,11 +15,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 
-import { ACCOUNT_TYPE_OPTIONS, BANK_STATUSES, statusLabel } from "../constants";
+import {
+  ACCOUNT_TYPE_OPTIONS,
+  GL_PICKER_EMPTY,
+  GL_PICKER_NON_CASH_BLOCKED,
+  GL_PICKER_PLACEHOLDER,
+  isCashAccountTitle,
+  statusLabel,
+} from "../constants";
 import { phtToday } from "../pht";
 import { updateAccountFormSchema, type UpdateAccountFormValues } from "../schemas";
 import type { UpdateAccountPayload } from "../providers/onboardingApi";
@@ -33,8 +42,9 @@ function defaults(account: BankAccountV2 | null): UpdateAccountFormValues {
     branch: account?.branch ?? "",
     accountType: account?.accountType ?? "Savings",
     glCoaId: account?.glCoaId === null || account?.glCoaId === undefined ? "" : String(account.glCoaId),
-    status: account?.status ?? "ACTIVE",
+    reactivate: false,
     effectiveDate: account?.effectiveDate ?? phtToday(),
+    remarks: account?.remarks ?? "",
   };
 }
 
@@ -65,21 +75,36 @@ export function EditAccountDialog({
     if (open) form.reset(defaults(account));
   }, [open, account, form]);
 
-  const glOptions = options.cashAccounts.map((glAccount) => ({
+  // The picker is cash-only now, but an older link (Land Bank → 4008) must still show
+  // its real GL instead of a blank field.
+  const linkedGl =
+    account?.glCoaId && account.glCode && account.glTitle && !options.cashAccounts.some((gl) => gl.coaId === account.glCoaId)
+      ? { coaId: account.glCoaId, glCode: account.glCode, accountTitle: account.glTitle }
+      : null;
+  const pickerAccounts = linkedGl ? [...options.cashAccounts, linkedGl] : options.cashAccounts;
+
+  const glOptions = pickerAccounts.map((glAccount) => ({
     value: String(glAccount.coaId),
     label: `${glAccount.glCode} · ${glAccount.accountTitle}`,
     searchText: `${glAccount.glCode} ${glAccount.accountTitle}`,
   }));
 
+  const glValue = useWatch({ control: form.control, name: "glCoaId" });
+  const selectedGl = pickerAccounts.find((glAccount) => String(glAccount.coaId) === glValue);
+  const nonCashSelected = selectedGl ? !isCashAccountTitle(selectedGl.accountTitle) : false;
+
   async function handleSubmit(values: UpdateAccountFormValues) {
     if (!account) return;
+    // P53: a row still pointing at a non-cash GL must be remapped, not saved as-is.
+    if (nonCashSelected) return;
     const outcome = await onSubmit(account.bankId, {
       accountName: values.accountName.trim(),
       branch: values.branch.trim(),
       accountType: values.accountType,
       glCoaId: Number(values.glCoaId),
-      status: values.status,
+      reactivate: values.reactivate,
       effectiveDate: values.effectiveDate,
+      remarks: values.remarks.trim() || undefined,
     });
 
     if (outcome.ok) {
@@ -110,6 +135,30 @@ export function EditAccountDialog({
 
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
               <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-bank-name">Bank name</Label>
+                  <Input
+                    id="edit-bank-name"
+                    value={account?.bankName ?? ""}
+                    readOnly
+                    className="bg-muted"
+                    title={account?.bankName ?? undefined}
+                  />
+                  <p className="text-xs text-muted-foreground">Fixed after onboarding.</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit-account-number">Account no. / IBAN</Label>
+                  <Input
+                    id="edit-account-number"
+                    value={account?.accountNumber ?? ""}
+                    readOnly
+                    className="bg-muted tabular-nums"
+                    title={account?.accountNumber ?? undefined}
+                  />
+                  <p className="text-xs text-muted-foreground">Fixed after onboarding.</p>
+                </div>
+
                 <FormField
                   control={form.control}
                   name="accountName"
@@ -171,26 +220,24 @@ export function EditAccountDialog({
 
                 <FormField
                   control={form.control}
-                  name="status"
+                  name="reactivate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>
-                        Status <span className="text-destructive">*</span>
-                      </FormLabel>
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <FormControl>
-                          <SelectTrigger className="w-full">
-                            <SelectValue className="truncate" placeholder="Choose the status" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent className="max-h-80">
-                          {BANK_STATUSES.map((status) => (
-                            <SelectItem key={status} value={status}>
-                              {statusLabel(status)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormLabel>Status</FormLabel>
+                      <div className="flex items-center gap-2 rounded-lg border border-border/60 px-3 py-2">
+                        <span className="text-sm font-medium">{statusLabel(account?.status ?? "ACTIVE")}</span>
+                        {account?.status === "INACTIVE" && (
+                          <label className="ml-auto flex items-center gap-2 text-sm">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 accent-primary"
+                              checked={field.value}
+                              onChange={(event) => field.onChange(event.target.checked)}
+                            />
+                            Reactivate
+                          </label>
+                        )}
+                      </div>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -209,11 +256,14 @@ export function EditAccountDialog({
                           options={glOptions}
                           value={field.value}
                           onChange={field.onChange}
-                          placeholder="Choose a current-asset GL"
+                          placeholder={GL_PICKER_PLACEHOLDER}
                           searchPlaceholder="Search GL code or title"
-                          emptyLabel="No current-asset GL account matches that search."
+                          emptyLabel={GL_PICKER_EMPTY}
                         />
                       </FormControl>
+                      {nonCashSelected ? (
+                        <FormDescription className="text-destructive">{GL_PICKER_NON_CASH_BLOCKED}</FormDescription>
+                      ) : null}
                       <FormMessage />
                     </FormItem>
                   )}
@@ -240,6 +290,20 @@ export function EditAccountDialog({
                   )}
                 />
               </div>
+
+              <FormField
+                control={form.control}
+                name="remarks"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Remarks</FormLabel>
+                    <FormControl>
+                      <Textarea {...field} rows={3} className="min-h-[100px] resize-none" placeholder="Optional note" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
 
             <DialogFooter className="justify-end border-t bg-muted/20 px-6 py-4">
@@ -248,7 +312,11 @@ export function EditAccountDialog({
                   Cancel
                 </Button>
               </DialogClose>
-              <Button type="submit" disabled={isSaving}>
+              <Button
+                type="submit"
+                disabled={isSaving || nonCashSelected}
+                title={nonCashSelected ? GL_PICKER_NON_CASH_BLOCKED : undefined}
+              >
                 {isSaving ? (
                   <>
                     <Loader2 className="mr-2 size-4 animate-spin" />

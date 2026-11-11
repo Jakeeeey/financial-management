@@ -12,6 +12,7 @@ import type { BankAccountV2 } from "./types";
 import { AccountsTable } from "./components/AccountsTable";
 import { EditAccountDialog } from "./components/EditAccountDialog";
 import { OnboardingFilters } from "./components/OnboardingFilters";
+import { PostingSetupDialog } from "./components/PostingSetupDialog";
 import { RegisterAccountDialog } from "./components/RegisterAccountDialog";
 
 /** Register of every bank account, with the FSD 1.1 create and edit flows. */
@@ -21,6 +22,7 @@ export function OnboardingModule() {
     total,
     registerTotal,
     options,
+    glMapping,
     notice,
     filters,
     page,
@@ -33,8 +35,12 @@ export function OnboardingModule() {
     updateFilter,
     resetFilters,
     setPage,
+    setPageSize,
     registerAccount,
     saveAccount,
+    retryOpeningBalance,
+    saveMapping,
+    settleDue,
   } = useOnboarding();
 
   const [registerOpen, setRegisterOpen] = useState(false);
@@ -55,6 +61,13 @@ export function OnboardingModule() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <PostingSetupDialog
+            mapping={glMapping}
+            chartAccounts={options.chartAccounts}
+            onSaveMapping={saveMapping}
+            onSettleDue={settleDue}
+            isSaving={isSaving}
+          />
           <Button
             type="button"
             variant="outline"
@@ -111,7 +124,10 @@ export function OnboardingModule() {
         page={page}
         pageSize={pageSize}
         onEdit={setEditing}
+        onPostOpeningBalance={(account) => void retryOpeningBalance(account.bankId)}
+        isSaving={isSaving}
         onPageChange={setPage}
+        onPageSizeChange={setPageSize}
       />
 
       <RegisterAccountDialog

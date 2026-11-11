@@ -8,9 +8,9 @@ import { DirectusError, asNumber, asString, listItems, roundMoney } from "./dire
 /**
  * Master List & Audit Logs reads.
  *
- * `bank_accounts` still lacks `currency`, `ifrs_category`, `gl_coa_id` and
- * `account_status` (the owner has not run that DDL), so those columns are projected
- * from the fallbacks below instead of being read. `bank_audit_log` and `bank_checks`
+ * `bank_accounts` still lacks `currency`, `ifrs_category` and `gl_coa_id`, so those
+ * columns are projected from the fallbacks below instead of being read. `account_status`
+ * is read for real; `is_active` only fills the gap for rows that predate the column. `bank_audit_log` and `bank_checks`
  * do not exist yet: both reads swallow `DirectusError` and degrade to an empty list
  * plus a notice, because a missing collection must never become a 500.
  */
@@ -24,6 +24,7 @@ const ACCOUNT_FIELDS = [
   "branch",
   "opening_balance",
   "is_active",
+  "account_status",
   "created_at",
 ];
 
@@ -44,6 +45,7 @@ type AccountRow = {
   branch: string | null;
   opening_balance: number | string | null;
   is_active: unknown;
+  account_status: string | null;
   created_at: string | null;
 };
 
@@ -68,6 +70,14 @@ function asFlag(value: unknown): boolean {
 
 function money(value: number): string {
   return MONEY.format(value);
+}
+
+const STATUS_VALUES: BankAccountStatus[] = ["ACTIVE", "DORMANT", "INACTIVE", "ESCHEATED", "CLOSED"];
+
+function normaliseStatus(raw: string | null, isActive: boolean): BankAccountStatus {
+  const value = (raw ?? "").trim().toUpperCase() as BankAccountStatus;
+  if (STATUS_VALUES.includes(value)) return value;
+  return isActive ? "ACTIVE" : "INACTIVE";
 }
 
 export type AccountsFilter = {
@@ -169,8 +179,9 @@ function toAccount(
     glCoaId: null,
     glCode: null,
     glTitle: null,
-    // No account_status column yet, so the flag is the only status signal.
-    status: isActive ? "ACTIVE" : "CLOSED",
+    // Same vocabulary and same rule as dormancy: the status column is authoritative,
+    // the flag only fills the gap for rows written before it existed.
+    status: normaliseStatus(row.account_status, isActive),
     isActive,
     openingBalance,
     bookBalance: roundMoney(openingBalance + (depositTotals.get(bankId) ?? 0) - (disbursementTotals?.get(bankId) ?? 0)),
@@ -224,11 +235,11 @@ function sortFindings(findings: ArfFinding[]): ArfFinding[] {
   });
 }
 
-async function undepositedCashFindings(): Promise<ArfFinding[]> {
+async function undepositedCashFindings(labels: Map<number, string>): Promise<ArfFinding[]> {
   const [{ rows: details }, { rows: links }] = await Promise.all([
-    listItems<{ id: number; collection_id: number | null; payment_method: number | null; amount: number | string | null; is_cleared: unknown }>(
+    listItems<{ id: number; collection_id: number | null; payment_method: number | null; amount: number | string | null; is_cleared: unknown; bank: number | null }>(
       "collection_details",
-      { fields: ["id", "collection_id", "payment_method", "amount", "is_cleared"], limit: -1 },
+      { fields: ["id", "collection_id", "payment_method", "amount", "is_cleared", "bank"], limit: -1 },
     ),
     listItems<{ collection_detail_id: number | null }>("bank_deposit_details", {
       fields: ["collection_detail_id"],
@@ -265,20 +276,23 @@ async function undepositedCashFindings(): Promise<ArfFinding[]> {
       detail: `Cash of PHP ${money(asNumber(row.amount))} from ${document || `collection ${asNumber(row.collection_id)}`} has sat in the vault for ${ageDays} day${ageDays === 1 ? "" : "s"}.`,
       reference: document || null,
       occurredAt: toPhtDateString(parent.collection_date) || null,
-      goTo: "bank-deposit",
+      account: labels.get(asNumber(row.bank)) ?? null,
+      amount: asNumber(row.amount),
+      rule: `Cash collection unbanked ${UNDEPOSITED_CASH_DAYS} day after collection: payment_method = CASH, not cleared, and no bank_deposit_details link.`,
+      source: `collection_details #${asNumber(row.id)}`,
     });
   }
   return findings;
 }
 
-async function unclearedDepositFindings(): Promise<ArfFinding[]> {
+async function unclearedDepositFindings(labels: Map<number, string>): Promise<ArfFinding[]> {
   const [{ rows: details }, { rows: deposits }] = await Promise.all([
     listItems<{ id: number; bank_deposit_id: number | null; deposit_status: string | null }>("bank_deposit_details", {
       fields: ["id", "bank_deposit_id", "deposit_status"],
       limit: -1,
     }),
-    listItems<{ id: number; deposit_no: string | null; deposit_date: string | null }>("bank_deposit", {
-      fields: ["id", "deposit_no", "deposit_date"],
+    listItems<{ id: number; deposit_no: string | null; deposit_date: string | null; target_bank_id: number | null; total_cash: number | string | null; total_checks: number | string | null }>("bank_deposit", {
+      fields: ["id", "deposit_no", "deposit_date", "target_bank_id", "total_cash", "total_checks"],
       limit: -1,
     }),
   ]);
@@ -301,7 +315,10 @@ async function unclearedDepositFindings(): Promise<ArfFinding[]> {
       detail: `A check on ${document || "a deposit slip"} dated ${asString(parent.deposit_date) || "unknown"} is still in transit after ${ageDays} days.`,
       reference: document || null,
       occurredAt: toPhtDateString(parent.deposit_date) || null,
-      goTo: "bank-deposit",
+      account: labels.get(asNumber(parent.target_bank_id)) ?? null,
+      amount: asNumber(parent.total_cash) + asNumber(parent.total_checks),
+      rule: `Deposit slip still IN_TRANSIT ${UNCLEARED_DEPOSIT_DAYS} days after its deposit date (bank_deposit_details.deposit_status = IN_TRANSIT).`,
+      source: `bank_deposit_details #${asNumber(row.id)}`,
     });
   }
   return findings;
@@ -314,16 +331,18 @@ type CheckRow = {
   status: string | null;
   replaced_by_id: number | null;
   created_at: string | null;
+  amount: number | string | null;
+  bank_account_id: number | null;
 };
 
 const OPEN_CHECK_STATUSES = new Set(["PENDING", "RECEIVED", "IN_CLEARING"]);
 const RETURNED_CHECK_STATUSES = new Set(["RETURNED", "CANCELLED"]);
 
-async function checkFindings(): Promise<{ findings: ArfFinding[]; notice?: string }> {
+async function checkFindings(labels: Map<number, string>): Promise<{ findings: ArfFinding[]; notice?: string }> {
   let rows: CheckRow[];
   try {
     ({ rows } = await listItems<CheckRow>("bank_checks", {
-      fields: ["id", "check_no", "check_date", "status", "replaced_by_id", "created_at"],
+      fields: ["id", "check_no", "check_date", "status", "replaced_by_id", "created_at", "amount", "bank_account_id"],
       limit: -1,
     }));
   } catch (error) {
@@ -351,7 +370,10 @@ async function checkFindings(): Promise<{ findings: ArfFinding[]; notice?: strin
         detail: `Check ${checkNo || asNumber(row.id)} is ${status.toLowerCase()} and no replacement check is linked.`,
         reference,
         occurredAt: toPhtDateString(row.check_date) || null,
-        goTo: "check-clearing-management",
+        account: labels.get(asNumber(row.bank_account_id)) ?? null,
+        amount: asNumber(row.amount),
+        rule: `Check is ${status} and no replacement check is linked (replaced_by_id is empty).`,
+        source: `bank_checks #${asNumber(row.id)}`,
       });
     }
 
@@ -366,7 +388,10 @@ async function checkFindings(): Promise<{ findings: ArfFinding[]; notice?: strin
           detail: `Check ${checkNo || asNumber(row.id)} has been ${status.toLowerCase().replace(/_/g, " ")} for ${ageDays} days; a check is stale after ${STALE_CHECK_DAYS} days.`,
           reference,
           occurredAt: toPhtDateString(row.check_date) || null,
-          goTo: "check-clearing-management",
+          account: labels.get(asNumber(row.bank_account_id)) ?? null,
+          amount: asNumber(row.amount),
+          rule: `Check still ${status} after ${STALE_CHECK_DAYS} days; a check is stale after ${STALE_CHECK_DAYS} days.`,
+          source: `bank_checks #${asNumber(row.id)}`,
         });
       }
     }
@@ -374,12 +399,33 @@ async function checkFindings(): Promise<{ findings: ArfFinding[]; notice?: strin
   return { findings };
 }
 
+/** `bank_name · account_number` per account, so a finding can name the account it sits on. */
+async function loadAccountLabels(): Promise<Map<number, string>> {
+  try {
+    const { rows } = await listItems<{ bank_id: number | null; bank_name: string | null; account_number: string | null }>(
+      "bank_accounts",
+      { fields: ["bank_id", "bank_name", "account_number"], limit: -1 },
+    );
+    return new Map(
+      rows.map((row) => [
+        asNumber(row.bank_id),
+        [asString(row.bank_name), asString(row.account_number)].filter(Boolean).join(" · "),
+      ]),
+    );
+  } catch (error) {
+    // A missing label must not hide the finding; the dialog simply shows no account.
+    if (error instanceof DirectusError) return new Map();
+    throw error;
+  }
+}
+
 /** Recomputes every ARF finding per call; nothing is persisted. */
 export async function listFindings(): Promise<ArfResult> {
+  const labels = await loadAccountLabels();
   const [cash, uncleared, checks] = await Promise.all([
-    undepositedCashFindings(),
-    unclearedDepositFindings(),
-    checkFindings(),
+    undepositedCashFindings(labels),
+    unclearedDepositFindings(labels),
+    checkFindings(labels),
   ]);
 
   const findings = sortFindings([...cash, ...uncleared, ...checks.findings]);

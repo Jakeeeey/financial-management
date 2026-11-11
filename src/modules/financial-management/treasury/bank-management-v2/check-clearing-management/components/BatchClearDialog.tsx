@@ -38,23 +38,40 @@ export function BatchClearDialog({ checks, open, isSaving, onOpenChange, onSubmi
   const [sameDate, setSameDate] = useState(today);
   const [dates, setDates] = useState<Record<number, string>>({});
   const [touched, setTouched] = useState(false);
+  const [confirmedEarly, setConfirmedEarly] = useState(false);
 
   function handleOpenChange(next: boolean) {
     if (!next) {
       setSameDate(today);
       setDates({});
       setTouched(false);
+      setConfirmedEarly(false);
     }
     onOpenChange(next);
   }
 
   const dateFor = (check: BankCheck) => dates[check.id] ?? sameDate;
-  const problems = checks.filter((check) => {
+  // A date that is unreadable or in the future is never valid; one earlier than the check
+  // date is allowed after a confirmation, since a post-dated check can clear on presentation.
+  const invalid = checks.filter((check) => {
     const value = dateFor(check);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return true;
-    if (value > today) return true;
-    return check.checkDate.length >= 10 && value < check.checkDate.slice(0, 10);
+    return value > today;
   });
+  const early = checks.filter((check) => {
+    const value = dateFor(check);
+    return (
+      /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+      value <= today &&
+      check.checkDate.length >= 10 &&
+      value < check.checkDate.slice(0, 10)
+    );
+  });
+
+  function checkNames(items: BankCheck[]): string {
+    const names = items.map((check) => `check ${check.checkNo}`);
+    return names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  }
   const total = checks.reduce((sum, check) => sum + check.amount, 0);
   const sharedDate = checks.length > 0 ? dateFor(checks[0]) : "";
   const allSameDate = checks.length > 1 && checks.every((check) => dateFor(check) === sharedDate);
@@ -64,7 +81,11 @@ export function BatchClearDialog({ checks, open, isSaving, onOpenChange, onSubmi
 
   async function handleSubmit() {
     setTouched(true);
-    if (problems.length > 0) return;
+    if (invalid.length > 0) return;
+    if (early.length > 0 && !confirmedEarly) {
+      setConfirmedEarly(true);
+      return;
+    }
     const saved = await onSubmit(checks.map((check) => ({ checkId: check.id, clearedDate: dateFor(check) })));
     if (saved) onOpenChange(false);
   }
@@ -100,7 +121,10 @@ export function BatchClearDialog({ checks, open, isSaving, onOpenChange, onSubmi
                     maxDate={today}
                     disabled={allSameDate}
                     title={batchDisabledTitle}
-                    onChange={(value) => setSameDate(value)}
+                    onChange={(value) => {
+                      setSameDate(value);
+                      setConfirmedEarly(false);
+                    }}
                   />
                 </div>
                 <Button
@@ -132,7 +156,7 @@ export function BatchClearDialog({ checks, open, isSaving, onOpenChange, onSubmi
                 <TableBody>
                   {checks.map((check) => {
                     const value = dateFor(check);
-                    const invalid = problems.includes(check);
+                    const isInvalid = invalid.includes(check);
                     return (
                       <TableRow key={check.id}>
                         <TableCell className="text-sm">
@@ -154,12 +178,14 @@ export function BatchClearDialog({ checks, open, isSaving, onOpenChange, onSubmi
                           <DateField
                             inDialog
                             aria-label={`Clearing date for check ${check.checkNo}`}
-                            aria-invalid={invalid && touched ? true : undefined}
+                            aria-invalid={isInvalid && touched ? true : undefined}
                             value={value}
-                            minDate={check.checkDate.slice(0, 10)}
                             maxDate={today}
-                            onChange={(next) => setDates((current) => ({ ...current, [check.id]: next }))}
-                            className={invalid && touched ? "border-destructive" : undefined}
+                            onChange={(next) => {
+                              setDates((current) => ({ ...current, [check.id]: next }));
+                              setConfirmedEarly(false);
+                            }}
+                            className={isInvalid && touched ? "border-destructive" : undefined}
                           />
                         </TableCell>
                       </TableRow>
@@ -178,9 +204,22 @@ export function BatchClearDialog({ checks, open, isSaving, onOpenChange, onSubmi
               </Table>
             </div>
 
-            {touched && problems.length > 0 ? (
+            {touched && invalid.length > 0 ? (
               <p className="text-sm text-destructive">
-                {problems.length} date(s) need fixing: not in the future, and not before the check date. Nothing was saved.
+                Nothing was saved. Fix the clearing date for {checkNames(invalid)}: a clearing date must be a real date
+                and cannot be in the future.
+              </p>
+            ) : null}
+
+            {early.length > 0 ? (
+              <p
+                className={
+                  confirmedEarly
+                    ? "text-sm font-medium text-amber-700 dark:text-amber-300"
+                    : "text-sm text-muted-foreground"
+                }
+              >
+                Clearing date is earlier than the check date for {checkNames(early)}. Proceed?
               </p>
             ) : null}
           </div>
@@ -193,7 +232,9 @@ export function BatchClearDialog({ checks, open, isSaving, onOpenChange, onSubmi
             </DialogClose>
             <Button type="button" disabled={isSaving} onClick={handleSubmit}>
               {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Clear {checks.length} {checks.length === 1 ? "check" : "checks"}
+              {early.length > 0 && confirmedEarly
+                ? "Proceed"
+                : `Clear ${checks.length} ${checks.length === 1 ? "check" : "checks"}`}
             </Button>
           </DialogFooter>
         </div>

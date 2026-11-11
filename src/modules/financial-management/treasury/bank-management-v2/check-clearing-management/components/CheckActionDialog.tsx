@@ -29,7 +29,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn, formatCurrency } from "@/lib/utils";
 
 import { CHECK_RETURN_REASONS, statusLabel } from "../constants";
-import { phtDate, phtDisplayStamp, toPhtDateString } from "../pht";
+import { phtDate, toPhtDateString } from "../pht";
 import { DateField } from "./DateField";
 import { StatusBadge } from "./StatusBadge";
 import { allowedActions, type CheckAction } from "./ChecksTable";
@@ -45,6 +45,8 @@ type Props = {
   onSubmit: (check: BankCheck, payload: CheckActionPayload) => Promise<unknown>;
   loadDetail: (checkId: number) => Promise<{ check: BankCheck; events: CheckEvent[] } | null>;
   onSelectAction: (action: CheckAction) => void;
+  /** Opens another check's own detail, used by the replacement history link. */
+  onOpenCheck: (checkId: number) => void;
 };
 
 const PROMPT: Record<Exclude<CheckAction, "VIEW">, { title: string; body: string }> = {
@@ -75,6 +77,41 @@ function Detail({ label, children }: { label: string; children: React.ReactNode 
   );
 }
 
+/** One check's event trail; shared by the open check and the original it replaces. */
+function EventList({ rows }: { rows: CheckEvent[] }) {
+  return (
+    <ul className="max-h-[280px] space-y-3 overflow-y-auto">
+      {rows.map((entry) => (
+        <li key={entry.id} className="flex gap-3 text-sm">
+          <span className="w-[136px] shrink-0 font-mono text-xs text-muted-foreground">
+            {toPhtDateString(entry.occurredAt)}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-medium" title={entry.action}>
+                {entry.action.replace(/_/g, " ").toLowerCase()}
+              </span>
+              {entry.toStatus ? <StatusBadge status={entry.toStatus} /> : null}
+              {entry.eventCode ? (
+                <span className="text-xs text-muted-foreground">{entry.eventCode}</span>
+              ) : null}
+              {entry.journalNo ? (
+                <span className="font-mono text-xs text-muted-foreground">{entry.journalNo}</span>
+              ) : null}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {entry.fromStatus && entry.toStatus
+                ? `${entry.fromStatus} → ${entry.toStatus}`
+                : entry.toStatus ?? ""}
+            </p>
+            {entry.note ? <p className="mt-1 break-words text-xs">{entry.note}</p> : null}
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** One dialog for every check action, plus a read-only detail view with its event trail. */
 export function CheckActionDialog({
   check,
@@ -85,13 +122,19 @@ export function CheckActionDialog({
   onSubmit,
   loadDetail,
   onSelectAction,
+  onOpenCheck,
 }: Props) {
   const [returnReason, setReturnReason] = useState<string>("");
   const [note, setNote] = useState("");
   const [replacementDate, setReplacementDate] = useState(phtDate());
   const [replacementAmount, setReplacementAmount] = useState("");
   const [replacementNo, setReplacementNo] = useState("");
-  const [events, setEvents] = useState<CheckEvent[] | null>(null);
+  const [events, setEvents] = useState<{ checkId: number; rows: CheckEvent[] } | null>(null);
+  const [original, setOriginal] = useState<{
+    checkId: number;
+    detail: { check: BankCheck; events: CheckEvent[] } | null;
+  } | null>(null);
+  const [replacement, setReplacement] = useState<{ checkId: number; check: BankCheck } | null>(null);
   const [touched, setTouched] = useState(false);
 
   function handleOpenChange(next: boolean) {
@@ -101,6 +144,8 @@ export function CheckActionDialog({
       setReplacementNo("");
       setTouched(false);
       setEvents(null);
+      setOriginal(null);
+      setReplacement(null);
     } else if (action !== "VIEW") {
       setEvents(null);
     }
@@ -110,9 +155,25 @@ export function CheckActionDialog({
   useEffect(() => {
     if (!open || action !== "VIEW" || !check) return;
     let cancelled = false;
-    void loadDetail(check.id).then((detail) => {
-      if (!cancelled) setEvents(detail?.events ?? []);
+    const checkId = check.id;
+    void loadDetail(checkId).then((detail) => {
+      if (!cancelled) setEvents({ checkId, rows: detail?.events ?? [] });
     });
+    // The replacement's own row carries only the id; the original holds the return reason,
+    // date and event trail, so the whole detail is read separately.
+    if (check.replacesId) {
+      const originalId = check.replacesId;
+      void loadDetail(originalId).then((detail) => {
+        if (!cancelled) setOriginal({ checkId: originalId, detail: detail ?? null });
+      });
+    }
+    // A replaced check names its successor by id only, so the number has to be fetched too.
+    if (check.replacedById) {
+      const replacementId = check.replacedById;
+      void loadDetail(replacementId).then((detail) => {
+        if (!cancelled && detail) setReplacement({ checkId: replacementId, check: detail.check });
+      });
+    }
     return () => {
       cancelled = true;
     };
@@ -121,12 +182,18 @@ export function CheckActionDialog({
   if (!check) return null;
 
   const isView = action === "VIEW";
+  // Tagged with the check id so a link to another check never shows the previous trail.
+  const eventRows = events && events.checkId === check.id ? events.rows : null;
+  const originalDetail = original?.checkId === check.replacesId ? original : null;
+  const originalCheck = originalDetail?.detail?.check ?? null;
+  const originalEvents = originalDetail?.detail?.events ?? null;
+  const replacementCheck = replacement?.checkId === check.replacedById ? replacement.check : null;
   const prompt = action && action !== "VIEW" ? PROMPT[action] : null;
   const amountValue = replacementAmount || String(check.amount);
   const reasonError = action === "RETURN" && !returnReason ? "Pick the reason the bank gave." : "";
   const amountError = action === "REPLACE" && !(Number(amountValue) > 0) ? "Enter an amount greater than zero." : "";
   const hasErrors = Boolean(reasonError || amountError);
-  const journalEvents = events?.filter((entry) => entry.journalNo) ?? [];
+  const journalEvents = eventRows?.filter((entry) => entry.journalNo) ?? [];
   const availableActions = allowedActions(check).filter((entry) => entry.action !== "VIEW");
   const primaryAction = availableActions.find((entry) => PRIMARY_ACTIONS.includes(entry.action)) ?? availableActions[0];
   const menuActions = availableActions.filter((entry) => entry.action !== primaryAction?.action);
@@ -166,26 +233,36 @@ export function CheckActionDialog({
 
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
             <dl className="grid grid-cols-1 gap-x-8 gap-y-4 text-sm sm:grid-cols-2">
-              {!isView ? (
+              <Detail label="Check no.">
+                {check.checkNo}
+                {check.draweeBank ? <span className="text-muted-foreground"> · {check.draweeBank}</span> : null}
+              </Detail>
+              <Detail label="Status">
+                <StatusBadge status={check.status} />
+              </Detail>
+              <Detail label="Direction">
+                {check.direction === "ISSUED" ? "Issued by us" : "Received from customer"}
+              </Detail>
+              <Detail label="Amount">
+                <span className="tabular-nums">{formatCurrency(check.amount)}</span>
+              </Detail>
+              <Detail label={check.direction === "ISSUED" ? "Payee" : "Customer"}>
+                {check.payee ?? check.payor ?? "—"}
+              </Detail>
+              <Detail label="Check date">{toPhtDateString(check.checkDate)}</Detail>
+              <Detail label={check.direction === "RECEIVED" ? "Destination account" : "Bank account"}>
+                {check.bankAccountLabel}
+              </Detail>
+              {isView ? (
                 <>
-                  <Detail label="Check no.">
-                    {check.checkNo}
-                    {check.draweeBank ? <span className="text-muted-foreground"> · {check.draweeBank}</span> : null}
+                  <Detail label="Drawee bank">{check.draweeBank ?? "—"}</Detail>
+                  <Detail label="Value date">
+                    {check.clearedAt ? (
+                      <span className="tabular-nums">{toPhtDateString(check.clearedAt)}</span>
+                    ) : (
+                      <span className="text-muted-foreground">Not cleared yet</span>
+                    )}
                   </Detail>
-                  <Detail label="Status">
-                    <StatusBadge status={check.status} />
-                  </Detail>
-                  <Detail label="Direction">
-                    {check.direction === "ISSUED" ? "Issued by us" : "Received from customer"}
-                  </Detail>
-                  <Detail label="Amount">
-                    <span className="tabular-nums">{formatCurrency(check.amount)}</span>
-                  </Detail>
-                  <Detail label={check.direction === "ISSUED" ? "Payee" : "Customer"}>
-                    {check.payee ?? check.payor ?? "—"}
-                  </Detail>
-                  <Detail label="Check date">{toPhtDateString(check.checkDate)}</Detail>
-                  <Detail label="Bank account">{check.bankAccountLabel}</Detail>
                 </>
               ) : null}
               <Detail label="Source">
@@ -193,8 +270,8 @@ export function CheckActionDialog({
                 {check.sourceRef ? <span className="text-muted-foreground"> · {check.sourceRef}</span> : null}
               </Detail>
               {check.returnReason ? <Detail label="Reason">{check.returnReason}</Detail> : null}
-              {check.replacedById ? <Detail label="Replaced by">Check #{check.replacedById}</Detail> : null}
-              {check.replacesId ? <Detail label="Replaces">Check #{check.replacesId}</Detail> : null}
+              {check.replacedById ? <Detail label="Replaced by">{replacementCheck?.checkNo ?? `Check #${check.replacedById}`}</Detail> : null}
+              {check.replacesId ? <Detail label="Replaces">{originalCheck?.checkNo ?? `Check #${check.replacesId}`}</Detail> : null}
               {check.remarks ? <Detail label="Remarks">{check.remarks}</Detail> : null}
             </dl>
 
@@ -271,47 +348,73 @@ export function CheckActionDialog({
               </div>
             )}
 
+            {isView && (check.replacesId !== null || check.replacedById !== null) ? (
+              <div className="border-t pt-4">
+                <p className="mb-2 text-sm font-semibold">Replacement &amp; return history</p>
+                <dl className="grid grid-cols-1 gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
+                  <Detail label="Original check">
+                    {check.replacesId !== null ? originalCheck?.checkNo ?? `Check #${check.replacesId}` : "—"}
+                  </Detail>
+                  <Detail label="Return reason">
+                    {originalCheck?.returnReason ?? check.returnReason ?? "—"}
+                  </Detail>
+                  <Detail label="Return date">
+                    {originalCheck?.returnedAt || check.returnedAt ? (
+                      <span className="tabular-nums">
+                        {toPhtDateString(originalCheck?.returnedAt ?? check.returnedAt ?? "")}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </Detail>
+                  {check.replacedById !== null ? (
+                    <Detail label="Replacement check">{replacementCheck?.checkNo ?? `Check #${check.replacedById}`}</Detail>
+                  ) : null}
+                </dl>
+                {check.replacesId !== null ? (
+                  <Button
+                    type="button"
+                    variant="link"
+                    className="mt-1 h-auto p-0"
+                    onClick={() => onOpenCheck(check.replacesId as number)}
+                  >
+                    Open original check {originalCheck?.checkNo ?? `#${check.replacesId}`}
+                  </Button>
+                ) : null}
+                {check.replacesId !== null ? (
+                  <div className="mt-3 border-t pt-3">
+                    <p className="mb-2 text-sm font-semibold">Original check audit trail</p>
+                    {originalDetail === null ? (
+                      <div className="space-y-2">
+                        <Skeleton className="h-10 w-full" />
+                        <p className="text-xs text-muted-foreground">Loading the original check&apos;s history…</p>
+                      </div>
+                    ) : originalEvents === null ? (
+                      <p className="text-xs text-muted-foreground">
+                        The original check&apos;s history could not be read.
+                      </p>
+                    ) : originalEvents.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">The original check has no recorded events.</p>
+                    ) : (
+                      <EventList rows={originalEvents} />
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
             {isView && (
               <>
-                {events === null ? (
+                {eventRows === null ? (
                   <div className="border-t pt-4">
                     <Skeleton className="h-16 w-full" />
                   </div>
                 ) : null}
 
-                {events !== null && events.length > 0 ? (
+                {eventRows !== null && eventRows.length > 0 ? (
                   <div className="border-t pt-4">
                     <p className="mb-2 text-sm font-semibold">Audit trail</p>
-                    <ul className="max-h-[280px] space-y-3 overflow-y-auto">
-                      {events.map((entry) => (
-                        <li key={entry.id} className="flex gap-3 text-sm">
-                          <span className="w-[136px] shrink-0 font-mono text-xs text-muted-foreground">
-                            {phtDisplayStamp(entry.occurredAt)}
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-medium" title={entry.action}>
-                                {entry.action.replace(/_/g, " ").toLowerCase()}
-                              </span>
-                              {entry.toStatus ? <StatusBadge status={entry.toStatus} /> : null}
-                              {entry.eventCode ? (
-                                <span className="text-xs text-muted-foreground">{entry.eventCode}</span>
-                              ) : null}
-                              {entry.journalNo ? (
-                                <span className="font-mono text-xs text-muted-foreground">{entry.journalNo}</span>
-                              ) : null}
-                            </div>
-                            <p className="text-xs text-muted-foreground">
-                              {entry.fromStatus && entry.toStatus
-                                ? `${entry.fromStatus} → ${entry.toStatus}`
-                                : entry.toStatus ?? ""}
-                              {entry.actorName ? ` · ${entry.actorName}` : ""}
-                            </p>
-                            {entry.note ? <p className="mt-1 break-words text-xs">{entry.note}</p> : null}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
+                    <EventList rows={eventRows} />
                   </div>
                 ) : null}
 

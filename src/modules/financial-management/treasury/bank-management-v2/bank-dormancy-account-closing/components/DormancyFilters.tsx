@@ -44,11 +44,11 @@ export function DormancyFilters({ filters, banks, onChange }: Props) {
           value={filters.classification}
           onValueChange={(value) => onChange({ ...filters, classification: value as DormancyFilter["classification"] })}
         >
-          <SelectTrigger className="w-full truncate" aria-label="Classification">
-            <SelectValue className="truncate" placeholder="Classification" />
+          <SelectTrigger className="w-full truncate" aria-label="Dormancy stage">
+            <SelectValue className="truncate" placeholder="Dormancy stage" />
           </SelectTrigger>
           <SelectContent className="max-h-60">
-            <SelectItem value="ALL">All classifications</SelectItem>
+            <SelectItem value="ALL">All stages</SelectItem>
             {DORMANCY_CLASSES.map((option) => (
               <SelectItem key={option.value} value={option.value}>
                 {option.label}

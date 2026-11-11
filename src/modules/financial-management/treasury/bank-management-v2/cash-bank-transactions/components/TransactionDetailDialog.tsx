@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,17 +15,22 @@ import {
 } from "@/components/ui/dialog";
 import { formatCurrency } from "@/lib/utils";
 
-import { TRANSACTION_KIND_LABELS } from "../constants";
+import { TRANSACTION_KIND_LABELS, mappingTitle } from "../constants";
 import { phtToday, toPhtDateString } from "../pht";
 import type { TransactionRow } from "../types";
+import { JournalEntryDialog } from "./JournalEntryDialog";
 import { StatusBadge } from "./StatusBadge";
 
 type Props = {
   row: TransactionRow | null;
+  /** Keys the settlement posting still needs; empty when leg 2 can post. */
+  mappingMissing: string[];
   isSaving: boolean;
   onOpenChange: (open: boolean) => void;
   onSettle: (row: TransactionRow) => void;
   onCancelMemo: (row: TransactionRow) => void;
+  /** Posts the entry this row is missing; the module refreshes the open row from the result. */
+  onPost: (row: TransactionRow) => void;
 };
 
 function Detail({ label, children }: { label: string; children: ReactNode }) {
@@ -37,9 +42,34 @@ function Detail({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+/** The journal number is the only route from a bank row to the ledger, so it opens the entry. */
+function JournalLink({ jeNo, onOpen }: { jeNo: string; onOpen: (jeNo: string) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(jeNo)}
+      aria-label={`Open journal entry ${jeNo}`}
+      className="rounded font-mono text-xs underline decoration-dotted underline-offset-2 hover:text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+    >
+      {jeNo}
+    </button>
+  );
+}
+
 /** Shared by the register and the transfers-in-clearing tab: both render TransactionRow. */
-export function TransactionDetailDialog({ row, isSaving, onOpenChange, onSettle, onCancelMemo }: Props) {
+export function TransactionDetailDialog({
+  row,
+  mappingMissing,
+  isSaving,
+  onOpenChange,
+  onSettle,
+  onCancelMemo,
+  onPost,
+}: Props) {
+  const [journalNo, setJournalNo] = useState<string | null>(null);
   const isTransfer = row?.kind === "TRANSFER";
+  const blocked = mappingMissing.length > 0;
+  const postBlocked = Boolean(row && row.missingEntryKeys.length > 0);
   const canSettle = Boolean(
     row && isTransfer && row.status === "PENDING" && row.valueDate <= phtToday(),
   );
@@ -84,18 +114,44 @@ export function TransactionDetailDialog({ row, isSaving, onOpenChange, onSettle,
                     {formatCurrency(net)}
                   </span>
                 </Detail>
-                <Detail label="Journal entry">
-                  {row.jeNo ? <span className="font-mono text-xs">{row.jeNo}</span> : <span className="text-muted-foreground">Not posted</span>}
-                </Detail>
+                {isTransfer ? (
+                  <>
+                    <Detail label="Leg 1 (sending account)">
+                      {row.status === "PENDING" ? (
+                        row.jeNo ? (
+                          <span className="flex flex-wrap items-baseline gap-1">
+                            Posted ·
+                            <JournalLink jeNo={row.jeNo} onOpen={setJournalNo} />
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">Not posted</span>
+                        )
+                      ) : (
+                        <span>Posted</span>
+                      )}
+                    </Detail>
+                    <Detail label="Leg 2 (settlement)">
+                      {row.status === "PENDING" ? (
+                        <span className="text-muted-foreground">
+                          Pending until <span className="tabular-nums">{toPhtDateString(row.valueDate)}</span>
+                        </span>
+                      ) : row.jeNo ? (
+                        <span className="flex flex-wrap items-baseline gap-1">
+                          Posted ·
+                          <JournalLink jeNo={row.jeNo} onOpen={setJournalNo} />
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">Not posted</span>
+                      )}
+                    </Detail>
+                  </>
+                ) : (
+                  <Detail label="Journal entry">
+                    {row.jeNo ? <JournalLink jeNo={row.jeNo} onOpen={setJournalNo} /> : <span className="text-muted-foreground">Not posted</span>}
+                  </Detail>
+                )}
                 <Detail label="Description">{row.description ?? "—"}</Detail>
               </dl>
-
-              {isTransfer && row.status === "PENDING" ? (
-                <p className="mt-4 border-t border-border/50 pt-3 text-xs text-muted-foreground">
-                  The sending side is posted and the value sits in GL 232100 until the value date. Settling leg 2
-                  credits the receiving account and clears the in-transit balance.
-                </p>
-              ) : null}
             </div>
 
             <DialogFooter className="border-t bg-muted/20 px-6 py-4">
@@ -104,13 +160,33 @@ export function TransactionDetailDialog({ row, isSaving, onOpenChange, onSettle,
                   Cancel memo
                 </Button>
               ) : null}
+              {row.canPost ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={isSaving || postBlocked}
+                  title={postBlocked ? mappingTitle(row.missingEntryKeys) : "Posts the journal entry this transaction is missing."}
+                  onClick={() => onPost(row)}
+                >
+                  Post entry
+                </Button>
+              ) : null}
               <DialogClose asChild>
                 <Button type="button" variant="outline">
                   Close
                 </Button>
               </DialogClose>
               {canSettle ? (
-                <Button type="button" disabled={isSaving} onClick={() => onSettle(row)}>
+                <Button
+                  type="button"
+                  disabled={isSaving || blocked}
+                  title={
+                    blocked
+                      ? "Ask accounting to set up the clearing account for money in transit."
+                      : undefined
+                  }
+                  onClick={() => onSettle(row)}
+                >
                   Settle leg 2
                 </Button>
               ) : null}
@@ -118,6 +194,13 @@ export function TransactionDetailDialog({ row, isSaving, onOpenChange, onSettle,
           </div>
         ) : null}
       </DialogContent>
+
+      <JournalEntryDialog
+        jeNo={journalNo}
+        onOpenChange={(open) => {
+          if (!open) setJournalNo(null);
+        }}
+      />
     </Dialog>
   );
 }

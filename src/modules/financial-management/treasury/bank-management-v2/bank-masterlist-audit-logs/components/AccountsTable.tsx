@@ -7,10 +7,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 
-import { LIST_PAGE_SIZE, statusLabel, statusTone, toneClass } from "../constants";
+import { statusLabel, statusTone, toneClass } from "../constants";
 import { toPhtDateString } from "../pht";
 import type { BankAccountV2 } from "../types";
-import { TablePager } from "./TablePager";
+import { TablePager, pageSlice } from "./TablePager";
 
 type Props = {
   accounts: BankAccountV2[];
@@ -18,7 +18,9 @@ type Props = {
   page: number;
   pageCount: number;
   total: number;
+  pageSize: number;
   onPageChange: (page: number) => void;
+  onPageSizeChange: (size: number) => void;
   onOpenAccount: (account: BankAccountV2) => void;
   /** Filter band rendered inside the card, above the table. */
   filters?: ReactNode;
@@ -42,12 +44,13 @@ export function AccountsTable({
   page,
   pageCount,
   total,
+  pageSize,
   onPageChange,
+  onPageSizeChange,
   onOpenAccount,
   filters,
 }: Props) {
-  const start = (page - 1) * LIST_PAGE_SIZE;
-  const rows = accounts.slice(start, start + LIST_PAGE_SIZE);
+  const rows = pageSlice(accounts, page, pageSize);
 
   return (
     <section
@@ -197,8 +200,9 @@ export function AccountsTable({
           page={page}
           pageCount={pageCount}
           total={total}
-          pageSize={LIST_PAGE_SIZE}
+          pageSize={pageSize}
           onPageChange={onPageChange}
+          onPageSizeChange={onPageSizeChange}
           className="border-t border-border/50 px-4 py-3"
         />
       )}

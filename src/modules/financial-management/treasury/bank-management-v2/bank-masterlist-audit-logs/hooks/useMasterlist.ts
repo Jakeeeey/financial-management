@@ -5,8 +5,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchAccounts, fetchAudit, fetchFindings, type AccountsFilter } from "../providers/masterlistApi";
 import type { ArfFinding, AuditLogRow, BankAccountV2 } from "../types";
 import { ALL, LIST_PAGE_SIZE } from "../constants";
+import { pageCountFor, usePageSize } from "../components/TablePager";
 
 const PAGE_SIZE = LIST_PAGE_SIZE;
+const ACCOUNTS_ROWS_KEY = "fm.bank-masterlist.accounts.rows";
+const FINDINGS_ROWS_KEY = "fm.bank-masterlist.findings.rows";
+const AUDIT_ROWS_KEY = "fm.bank-masterlist.audit.rows";
 
 export type ArfFilters = { severity: string; subModule: string; q: string };
 export type LogFilters = { module: string; user: string; pht: string; from: string; to: string; q: string };
@@ -29,6 +33,9 @@ export function useMasterlist() {
   const [logFilters, setLogFiltersState] = useState<LogFilters>(EMPTY_LOG_FILTERS);
   const [accountsPage, setAccountsPage] = useState(1);
   const [findingsPage, setFindingsPage] = useState(1);
+  const [accountsPageSize, setAccountsPageSizeState] = usePageSize(ACCOUNTS_ROWS_KEY, PAGE_SIZE);
+  const [findingsPageSize, setFindingsPageSizeState] = usePageSize(FINDINGS_ROWS_KEY, PAGE_SIZE);
+  const [auditPageSize, setAuditPageSizeState] = usePageSize(AUDIT_ROWS_KEY, PAGE_SIZE);
   const [notice, setNotice] = useState<string | undefined>();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -66,7 +73,7 @@ export function useMasterlist() {
     }
   }, []);
 
-  const loadAudit = useCallback(async (nextPage: number, next: LogFilters) => {
+  const loadAudit = useCallback(async (nextPage: number, next: LogFilters, size: number) => {
     try {
       const result = await fetchAudit({
         module: next.module,
@@ -76,7 +83,7 @@ export function useMasterlist() {
         from: next.from || undefined,
         to: next.to || undefined,
         page: nextPage,
-        pageSize: PAGE_SIZE,
+        pageSize: size,
       });
       setAudit(result.rows);
       setAuditTotal(result.total);
@@ -99,8 +106,8 @@ export function useMasterlist() {
   }, [loadFindings]);
 
   useEffect(() => {
-    void loadAudit(page, logFilters);
-  }, [page, logFilters, loadAudit]);
+    void loadAudit(page, logFilters, auditPageSize);
+  }, [page, logFilters, auditPageSize, loadAudit]);
 
   // Narrowing can empty the current page, so the pager rewinds with the filter that did it.
   const setFilters = useCallback((next: AccountsFilter) => {
@@ -122,6 +129,21 @@ export function useMasterlist() {
     setArfFiltersState(next);
     setFindingsPage(1);
   }, []);
+
+  const setAccountsPageSize = useCallback((size: number) => {
+    setAccountsPageSizeState(size);
+    setAccountsPage(1);
+  }, [setAccountsPageSizeState]);
+
+  const setFindingsPageSize = useCallback((size: number) => {
+    setFindingsPageSizeState(size);
+    setFindingsPage(1);
+  }, [setFindingsPageSizeState]);
+
+  const setAuditPageSize = useCallback((size: number) => {
+    setAuditPageSizeState(size);
+    setPage(1);
+  }, [setAuditPageSizeState]);
 
   /**
    * Every log row matching the current filters, for the workbook download — the table itself
@@ -163,8 +185,8 @@ export function useMasterlist() {
     });
   }, [findings, arfFilters]);
 
-  const accountsPageCount = Math.max(1, Math.ceil(visibleAccounts.length / LIST_PAGE_SIZE));
-  const findingsPageCount = Math.max(1, Math.ceil(filteredFindings.length / LIST_PAGE_SIZE));
+  const accountsPageCount = pageCountFor(visibleAccounts.length, accountsPageSize);
+  const findingsPageCount = pageCountFor(filteredFindings.length, findingsPageSize);
 
   const counts = {
     critical: findings.filter((finding) => finding.severity === "CRITICAL").length,
@@ -195,12 +217,13 @@ export function useMasterlist() {
     audit,
     auditTotal,
     page,
-    pageSize: PAGE_SIZE,
-    pageCount: Math.max(1, Math.ceil(auditTotal / PAGE_SIZE)),
-    // Clamped: a refetch can shrink the list under a page number the user already picked.
+    pageSize: auditPageSize,
+    pageCount: pageCountFor(auditTotal, auditPageSize),
+    accountsPageSize,
     accountsPage: Math.min(accountsPage, accountsPageCount),
     accountsPageCount,
     accountsTotal: visibleAccounts.length,
+    findingsPageSize,
     findingsPage: Math.min(findingsPage, findingsPageCount),
     findingsPageCount,
     findingsTotal: filteredFindings.length,
@@ -220,7 +243,10 @@ export function useMasterlist() {
     setPage,
     setBankId,
     setAccountsPage,
+    setAccountsPageSize,
     setFindingsPage,
+    setFindingsPageSize,
+    setAuditPageSize,
     setArfFilters,
     setLogFilters,
     allAuditRows,
@@ -228,7 +254,7 @@ export function useMasterlist() {
       void loadAccounts(filters);
       void loadAllAccounts();
       void loadFindings();
-      void loadAudit(page, logFilters);
+      void loadAudit(page, logFilters, auditPageSize);
     },
   };
 }

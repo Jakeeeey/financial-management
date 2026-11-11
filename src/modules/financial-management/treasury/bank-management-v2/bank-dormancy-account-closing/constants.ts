@@ -5,7 +5,7 @@
  * other Bank Management V2 modules.
  */
 
-/** Rows per page in the dormancy scan; the pager hides itself below two pages. */
+/** Default rows per page in the dormancy scan; the reader can change it and we remember. */
 export const PAGE_SIZE = 10;
 
 /** FSD Table 9 — months without customer-initiated movement. */
@@ -21,17 +21,28 @@ export const FINAL_WHT_RATE = 0.2;
 
 export const REALIZE_DATE_MAX = 10;
 
+/**
+ * Dormancy stage, from months without customer activity. Shares no wording with
+ * `ACCOUNT_STATUSES` on purpose: "Active" here means not dormant yet, which is true of a
+ * deactivated account too.
+ */
 export const DORMANCY_CLASSES = [
-  { value: "ACTIVE", label: "Active" },
-  { value: "INACTIVE", label: "Inactive" },
+  { value: "ACTIVE", label: "Not dormant" },
+  { value: "INACTIVE", label: `Quiet ${INACTIVE_MONTHS} to ${DORMANT_MONTHS - 1} months` },
   { value: "DORMANT_ELIGIBLE", label: "Dormant-eligible" },
   { value: "DORMANT", label: "Dormant" },
   { value: "ESCHEAT_ELIGIBLE", label: "Escheat-eligible" },
 ] as const;
 
+/**
+ * Canonical account status vocabulary for the whole bank-management family. An account is
+ * transactable only when `is_active === true` and `account_status === 'ACTIVE'`.
+ */
 export const ACCOUNT_STATUSES = [
   { value: "ACTIVE", label: "Active" },
   { value: "DORMANT", label: "Dormant" },
+  { value: "INACTIVE", label: "Inactive (deactivated)" },
+  { value: "ESCHEATED", label: "Escheated" },
   { value: "CLOSED", label: "Closed" },
 ] as const;
 
@@ -81,8 +92,8 @@ export function classTone(value: string): Tone {
 }
 
 const CLASS_LABEL: Record<string, string> = {
-  ACTIVE: "Active",
-  INACTIVE: "Inactive",
+  ACTIVE: "Not dormant",
+  INACTIVE: "Quiet",
   DORMANT_ELIGIBLE: "Dormant-eligible",
   DORMANT: "Dormant",
   ESCHEAT_ELIGIBLE: "Escheat-eligible",
@@ -95,6 +106,8 @@ export function classLabel(value: string): string {
 const STATUS_TONE: Record<string, Tone> = {
   ACTIVE: "success",
   DORMANT: "warning",
+  INACTIVE: "danger",
+  ESCHEATED: "neutral",
   CLOSED: "neutral",
 };
 

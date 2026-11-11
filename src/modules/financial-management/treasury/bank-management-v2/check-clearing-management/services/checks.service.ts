@@ -77,7 +77,6 @@ const EVENT_FIELDS = [
   "event_code",
   "journal_entry_id",
   "note",
-  "actor_name",
   "occurred_at",
 ];
 
@@ -133,7 +132,6 @@ type EventRow = {
   event_code: string | null;
   journal_entry_id: number | null;
   note: string | null;
-  actor_name: string | null;
   occurred_at: string | null;
 };
 
@@ -304,7 +302,7 @@ async function accountLabels(ids?: number[]): Promise<Map<number, string>> {
 async function listActiveAccounts(): Promise<{ bankId: number; label: string; bankName: string }[]> {
   const { rows } = await listItems<AccountRow>(ACCOUNTS, {
     fields: ACCOUNT_FIELDS,
-    filter: { is_active: { _eq: 1 } },
+    filter: { is_active: { _eq: true }, account_status: { _eq: "ACTIVE" } },
     sort: "bank_name",
     limit: 500,
   });
@@ -329,7 +327,7 @@ function sourceType(value: unknown): BankCheck["sourceType"] {
   return type === "COLLECTIONS" || type === "DISBURSEMENT" || type === "REPLACEMENT" ? type : "MANUAL";
 }
 
-function toCheck(row: CheckRow, labels: Map<number, string>): BankCheck {
+function toCheck(row: CheckRow, labels: Map<number, string>, checkNos: Map<number, string> = new Map()): BankCheck {
   const status = checkStatus(row.status);
   const ageDays = daysSince(row.check_date);
   return {
@@ -353,6 +351,8 @@ function toCheck(row: CheckRow, labels: Map<number, string>): BankCheck {
     returnedAt: row.returned_at ? toPhtDateString(row.returned_at) : null,
     replacedById: row.replaced_by_id == null ? null : Number(row.replaced_by_id),
     replacesId: row.replaces_id == null ? null : Number(row.replaces_id),
+    replacedByNo: row.replaced_by_id == null ? null : (checkNos.get(Number(row.replaced_by_id)) ?? null),
+    replacesNo: row.replaces_id == null ? null : (checkNos.get(Number(row.replaces_id)) ?? null),
     sourceType: sourceType(row.source_type),
     sourceRef: row.source_ref,
     remarks: row.remarks,
@@ -465,12 +465,42 @@ export async function listCheckRegister(input: CheckRegisterFilter = {}): Promis
     notice = NOTICE_REGISTER;
   }
 
+  const checkNos = await relatedCheckNumbers(rows);
+
   return {
-    checks: rows.map((row) => toCheck(row, labels)),
+    checks: rows.map((row) => toCheck(row, labels, checkNos)),
     counts,
     accounts,
     ...(notice ? { notice } : {}),
   };
+}
+
+/**
+ * Check numbers for the replacement links on the current page.
+ * The register shows "Replaced by <check no>", and a bare id is unreadable there.
+ */
+async function relatedCheckNumbers(rows: CheckRow[]): Promise<Map<number, string>> {
+  const ids = [
+    ...new Set(
+      rows
+        .flatMap((row) => [Number(row.replaces_id ?? 0), Number(row.replaced_by_id ?? 0)])
+        .filter((id) => id > 0),
+    ),
+  ];
+  if (!ids.length) return new Map();
+
+  try {
+    const { rows: related } = await listItems<{ id: number; check_no: string }>(CHECKS, {
+      fields: ["id", "check_no"],
+      filter: { id: { _in: ids } },
+      limit: ids.length,
+    });
+    return new Map(related.map((row) => [Number(row.id), asString(row.check_no)]));
+  } catch (error) {
+    // The numbers are labels; the row dialog still resolves the related check by id.
+    if (error instanceof DirectusError) return new Map();
+    throw error;
+  }
 }
 
 async function listEvents(checkId: number): Promise<CheckEvent[]> {
@@ -514,7 +544,6 @@ async function listEvents(checkId: number): Promise<CheckEvent[]> {
     eventCode: row.event_code,
     journalNo: row.journal_entry_id == null ? null : jeNos.get(Number(row.journal_entry_id)) ?? null,
     note: row.note,
-    actorName: row.actor_name,
     occurredAt: toPhtDateString(row.occurred_at),
   }));
 }
@@ -620,7 +649,7 @@ function formatSeriesNo(value: number, width: number): string {
 async function allocateCheckNo(accountId: number): Promise<string> {
   const { rows: series } = await listItems<CheckbookRow>(CHECKBOOKS, {
     fields: CHECKBOOK_FIELDS,
-    filter: { bank_account_id: { _eq: accountId }, is_active: { _eq: 1 } },
+    filter: { bank_account_id: { _eq: accountId }, is_active: { _eq: true } },
     sort: "series_start",
     limit: 50,
   });
@@ -1067,7 +1096,7 @@ export async function createCheckbookSeries(input: CreateCheckbookInput): Promis
     series_start: seriesStart,
     series_end: seriesEnd,
     next_no: seriesStart,
-    is_active: 1,
+    is_active: true,
     created_at: phtStamp(),
   });
 

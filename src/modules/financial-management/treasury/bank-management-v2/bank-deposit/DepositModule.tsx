@@ -22,11 +22,14 @@ export function DepositModule() {
   const {
     assets,
     filteredAssets,
+    withheldAssets,
     filters,
     setFilters,
+    setAssetsPageSize,
     filteredSlips,
     slipFilters,
     setSlipFilters,
+    setSlipsPageSize,
     slips,
     accounts,
     totals,
@@ -38,8 +41,10 @@ export function DepositModule() {
     cancelSlip,
     assetsPage,
     setAssetsPage,
+    assetsPageSize,
     slipsPage,
     setSlipsPage,
+    slipsPageSize,
   } = useDeposit();
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [tab, setTab] = useState("undeposited");
@@ -156,7 +161,8 @@ export function DepositModule() {
         <TabsContent value="undeposited">
           <UndepositedTable
             assets={filteredAssets}
-            totalCount={assets.length}
+            totalCount={filteredAssets.length}
+            withheldCount={withheldAssets.length}
             filters={filters}
             selected={selected}
             selectedAmount={assets
@@ -164,7 +170,9 @@ export function DepositModule() {
               .reduce((sum, asset) => sum + asset.amount, 0)}
             isLoading={isLoading}
             page={assetsPage}
+            pageSize={assetsPageSize}
             onPageChange={setAssetsPage}
+            onPageSizeChange={setAssetsPageSize}
             onFiltersChange={setFilters}
             onToggle={toggle}
             onToggleAll={toggleAll}
@@ -182,7 +190,9 @@ export function DepositModule() {
             filters={slipFilters}
             isLoading={isLoading}
             page={slipsPage}
+            pageSize={slipsPageSize}
             onPageChange={setSlipsPage}
+            onPageSizeChange={setSlipsPageSize}
             onFiltersChange={setSlipFilters}
             onView={(slip) => setActiveSlip(slip)}
           />

@@ -7,7 +7,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatNumber } from "@/lib/utils";
 
-import { LIST_PAGE_SIZE } from "../constants";
 import { phtDisplayStamp, shiftWallClock } from "../pht";
 import type { AuditLogRow } from "../types";
 import { TablePager } from "./TablePager";
@@ -17,7 +16,9 @@ type Props = {
   page: number;
   pageCount: number;
   total: number;
+  pageSize: number;
   onPage: (page: number) => void;
+  onPageSizeChange: (size: number) => void;
   /** Filter band rendered inside the card, above the table. */
   filters?: ReactNode;
   emptyLabel?: string;
@@ -26,7 +27,7 @@ type Props = {
 const COLUMNS = 5;
 
 /** FSD 1.6 movement log: every recorded action, stamped in PHT, with UTC imports flagged. */
-export function AuditTable({ rows, page, pageCount, total, onPage, filters, emptyLabel }: Props) {
+export function AuditTable({ rows, page, pageCount, total, pageSize, onPage, onPageSizeChange, filters, emptyLabel }: Props) {
   return (
     <Card className="overflow-hidden border-border/50 border-t-[3px] border-t-rose-500/70 shadow-none">
       <CardContent className="p-0">
@@ -115,8 +116,9 @@ export function AuditTable({ rows, page, pageCount, total, onPage, filters, empt
           page={page}
           pageCount={pageCount}
           total={total}
-          pageSize={LIST_PAGE_SIZE}
+          pageSize={pageSize}
           onPageChange={onPage}
+          onPageSizeChange={onPageSizeChange}
           className="border-t px-4 py-3"
         />
       </CardContent>
