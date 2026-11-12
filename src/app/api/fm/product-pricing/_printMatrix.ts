@@ -128,16 +128,30 @@ export function emptyPivot(priceTypes: ServerPriceType[]): Record<string, number
     return out;
 }
 
+function isNewerServerPriceRow(candidate: ServerPriceRow, current: ServerPriceRow): boolean {
+    const candidateUpdated = candidate.updated_at ?? "";
+    const currentUpdated = current.updated_at ?? "";
+    if (candidateUpdated !== currentUpdated) return candidateUpdated > currentUpdated;
+    return Number(candidate.id) > Number(current.id);
+}
+
 export function pivotPricesForAssembly(
     priceTypes: ServerPriceType[],
     rows: ServerPriceRow[],
 ): Map<number, Record<string, number | null>> {
     const validIds = new Set(priceTypes.map((pt) => pt.price_type_id));
-    const out = new Map<number, Record<string, number | null>>();
+    const latest = new Map<string, ServerPriceRow>();
 
     for (const row of rows) {
         if (!validIds.has(row.price_type_id)) continue;
 
+        const key = `${row.product_id}:${row.price_type_id}`;
+        const current = latest.get(key);
+        if (!current || isNewerServerPriceRow(row, current)) latest.set(key, row);
+    }
+
+    const out = new Map<number, Record<string, number | null>>();
+    for (const row of latest.values()) {
         const tierKey = priceTierKey(row.price_type_id);
         if (!out.has(row.product_id)) {
             out.set(row.product_id, emptyPivot(priceTypes));

@@ -160,8 +160,9 @@ async function findExistingPriceRecord(productId: number, priceTypeId: number): 
     created_by?: unknown;
 } | null> {
     const params = new URLSearchParams();
-    params.set("fields", "id,price,created_by");
+    params.set("fields", "id,price,created_by,updated_at");
     params.set("limit", "1");
+    params.set("sort", "-updated_at,-id");
     params.set("filter[product_id][_eq]", String(productId));
     params.set("filter[price_type_id][_eq]", String(priceTypeId));
 
@@ -321,6 +322,26 @@ export async function applyProposedPrice(args: {
             await applyExistingPriceRecord(concurrentPrice);
         }
     }
+
+    // Legacy rows can leave more than one product_per_price_type record for the
+    // same product and price type. Normalize every matching row so clients that
+    // read the collection cannot resolve an older duplicate.
+    await patchFiltered<{ id?: number | string | null; price?: number | string | null }>(
+        PRICES,
+        {
+            _and: [
+                { product_id: { _eq: productId } },
+                { price_type_id: { _eq: priceTypeId } },
+                { status: { _in: ["published", "approved"] } },
+            ],
+        },
+        {
+            price: validProposedPrice,
+            updated_at: nowManila(),
+            updated_by: updatedBy,
+        },
+        "id,price",
+    );
 
     const priceTypeName =
         priceTypeCatalog.find((row) => row.price_type_id === priceTypeId)?.price_type_name ?? "";

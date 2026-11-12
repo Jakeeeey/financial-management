@@ -401,9 +401,11 @@ function batchLineKey(productId: number, priceTypeId: number) {
 }
 
 type LivePriceRow = {
+    id?: number | string | null;
     product_id?: number | string | null;
     price_type_id?: number | string | null;
     price?: number | string | null;
+    updated_at?: string | null;
 };
 
 export type PriceSnapshotConflict = {
@@ -467,21 +469,29 @@ export async function fetchLivePriceSnapshots(
     for (const productChunk of chunkArray(productIds, IN_CHUNK_SIZE)) {
         const rows = await fetchAllPagesLocal<LivePriceRow>(PRICES, () => {
             const params = new URLSearchParams();
-            params.set("fields", "product_id,price_type_id,price");
+            params.set("fields", "id,product_id,price_type_id,price,updated_at");
             params.set("filter[product_id][_in]", productChunk.join(","));
             params.set("filter[price_type_id][_in]", priceTypeIds.join(","));
             return params;
         });
 
+        const latest = new Map<string, { price: number | null; updatedAt: string; id: number }>();
         for (const row of rows) {
             const productId = pickId(row.product_id) ?? 0;
             const priceTypeId = pickId(row.price_type_id) ?? 0;
             if (!productId || !priceTypeId) continue;
-            snapshots.set(
-                batchLineKey(productId, priceTypeId),
-                parseSnapshotPrice(row.price).value,
-            );
+
+            const key = batchLineKey(productId, priceTypeId);
+            const updatedAt = String(row.updated_at ?? "");
+            const rawId = Number(row.id);
+            const id = Number.isFinite(rawId) ? rawId : 0;
+            const current = latest.get(key);
+            if (!current || updatedAt > current.updatedAt || (updatedAt === current.updatedAt && id > current.id)) {
+                latest.set(key, { price: parseSnapshotPrice(row.price).value, updatedAt, id });
+            }
         }
+
+        for (const [key, entry] of latest) snapshots.set(key, entry.price);
     }
 
     return snapshots;

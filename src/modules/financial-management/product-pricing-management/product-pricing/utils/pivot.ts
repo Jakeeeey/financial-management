@@ -127,16 +127,30 @@ export function emptyPivot(priceTypes: PriceType[]): Record<string, number | nul
     return out;
 }
 
+function isNewerPriceRow(candidate: PriceRow, current: PriceRow): boolean {
+    const candidateUpdated = candidate.updated_at ?? "";
+    const currentUpdated = current.updated_at ?? "";
+    if (candidateUpdated !== currentUpdated) return candidateUpdated > currentUpdated;
+    return Number(candidate.id) > Number(current.id);
+}
+
 export function pivotPrices(
     priceTypes: PriceType[],
     rows: PriceRow[],
 ): Map<number, Record<string, number | null>> {
     const validIds = new Set(priceTypes.map((pt) => pt.price_type_id));
-    const out = new Map<number, Record<string, number | null>>();
+    const latest = new Map<string, PriceRow>();
 
     for (const r of rows) {
         if (!validIds.has(r.price_type_id)) continue;
 
+        const key = `${r.product_id}:${r.price_type_id}`;
+        const current = latest.get(key);
+        if (!current || isNewerPriceRow(r, current)) latest.set(key, r);
+    }
+
+    const out = new Map<number, Record<string, number | null>>();
+    for (const r of latest.values()) {
         const tierKey = priceTierKey(r.price_type_id);
         if (!out.has(r.product_id)) {
             out.set(r.product_id, emptyPivot(priceTypes));
