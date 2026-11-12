@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { cookies } from "next/headers";
 import { COOKIE_NAME, decodeJwtPayload } from "@/lib/auth-utils";
-import { BankReconciliationAppHeader } from "@/modules/financial-management/treasury/bank-management/bank-reconciliation/components/BankReconciliationAppHeader";
+import { BankReconciliationAppHeader } from "@/modules/financial-management/treasury/bank-reconciliation/components/BankReconciliationAppHeader";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

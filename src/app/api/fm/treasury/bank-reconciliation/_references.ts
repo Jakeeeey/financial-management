@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { proxySpring } from "@/app/api/fm/financial-statements/adjusting-journal-entries/_spring";
-import { BANK_RECONCILIATION_ROOT, BANK_RECONCILIATION_WORKSPACES } from "@/modules/financial-management/treasury/bank-management/bank-reconciliation/workspaces";
-import type { BankReconciliationContext, BankReconciliationReferenceResource, BankReconciliationReferences } from "@/modules/financial-management/treasury/bank-management/bank-reconciliation/reference-types";
+import { BANK_RECONCILIATION_ROOT, BANK_RECONCILIATION_WORKSPACES } from "@/modules/financial-management/treasury/bank-reconciliation/workspaces";
+import type { BankReconciliationContext, BankReconciliationReferenceResource, BankReconciliationReferences } from "@/modules/financial-management/treasury/bank-reconciliation/reference-types";
 
 type Row = Record<string, unknown>;
 type Collection = { data: Row[]; meta?: { filter_count?: number | string } };

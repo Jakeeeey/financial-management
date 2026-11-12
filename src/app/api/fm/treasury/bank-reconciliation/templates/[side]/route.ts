@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { proxySpring } from "@/app/api/fm/financial-statements/adjusting-journal-entries/_spring";
-import { buildTransactionTemplate } from "@/modules/financial-management/treasury/bank-management/bank-reconciliation/services/transactionExcel";
-import { IMPORT_LAYOUTS, type TransactionSide } from "@/modules/financial-management/treasury/bank-management/bank-reconciliation/transaction-types";
+import { buildTransactionTemplate } from "@/modules/financial-management/treasury/bank-reconciliation/services/transactionExcel";
+import { IMPORT_LAYOUTS, type TransactionSide } from "@/modules/financial-management/treasury/bank-reconciliation/transaction-types";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
