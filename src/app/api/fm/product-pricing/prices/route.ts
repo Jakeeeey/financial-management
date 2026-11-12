@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { fetchDirectusPricesByProductIds } from "../_fetchProductPrices";
+import { fetchDirectusPricesByProductIds, latestDirectusPriceRows } from "../_fetchProductPrices";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
 
         const allRows = await fetchDirectusPricesByProductIds(numericIds);
 
-        return NextResponse.json({ data: allRows });
+        return NextResponse.json({ data: latestDirectusPriceRows(allRows) });
     } catch (error: unknown) {
         return NextResponse.json(
             {

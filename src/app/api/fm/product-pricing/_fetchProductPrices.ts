@@ -42,3 +42,33 @@ export async function fetchDirectusPricesByProductIds(
 
     return chunkResults.flat();
 }
+
+/** Directus can keep multiple rows per product/price type. Return the newest only. */
+export function latestDirectusPriceRows(rows: DirectusProductPriceRow[]): DirectusProductPriceRow[] {
+    const latest = new Map<string, DirectusProductPriceRow>();
+
+    for (const row of rows) {
+        const productId = Number(row.product_id);
+        const priceTypeId = Number(row.price_type_id);
+        if (!Number.isFinite(productId) || productId <= 0) continue;
+        if (!Number.isFinite(priceTypeId) || priceTypeId <= 0) continue;
+
+        const key = `${productId}:${priceTypeId}`;
+        const current = latest.get(key);
+        const updatedAt = String(row.updated_at ?? "");
+        const currentUpdatedAt = String(current?.updated_at ?? "");
+        const id = Number(row.id);
+        const currentId = Number(current?.id);
+
+        if (
+            !current ||
+            updatedAt > currentUpdatedAt ||
+            (updatedAt === currentUpdatedAt &&
+                (Number.isFinite(id) ? id : 0) > (Number.isFinite(currentId) ? currentId : 0))
+        ) {
+            latest.set(key, row);
+        }
+    }
+
+    return Array.from(latest.values());
+}
