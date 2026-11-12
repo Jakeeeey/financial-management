@@ -7,27 +7,28 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import type { Choice, Page } from "../onboarding-types";
 import { useOnboardingRead } from "../hooks/useOnboarding";
 
-export function OnboardingChoice({ label, resource, role = "EXPENSE", selected, disabled, onSelect, id, error }: {
-    label: string; resource: string; role?: string; selected: Choice | null; disabled?: boolean; onSelect: (choice: Choice | null) => void; id?: string; error?: string;
+export function OnboardingChoice({ label, resource, role = "EXPENSE", selected, disabled, onSelect, id, error, eligibleOnly = false, placeholder }: {
+    label: string; resource: string; role?: string; selected: Choice | null; disabled?: boolean; onSelect: (choice: Choice | null) => void; id?: string; error?: string; eligibleOnly?: boolean; placeholder?: string;
 }) {
   const generatedId = useId(); const buttonId = id || `${generatedId}-button`, errorId = error ? `${buttonId}-error` : undefined; const [open, setOpen] = useState(false);
   return <div className="min-w-0 space-y-2"><label id={`${generatedId}-label`} className="text-sm font-medium">{label}</label>
     <Popover modal open={open} onOpenChange={setOpen}><PopoverTrigger asChild>
       <Button id={buttonId} type="button" variant="outline" role="combobox" aria-labelledby={`${generatedId}-label`} aria-expanded={open} aria-invalid={Boolean(error)} aria-describedby={errorId} disabled={disabled} className="w-full min-w-0 justify-between font-normal">
-        <span className="truncate">{selected ? `${selected.code} · ${selected.name}` : `Select ${label.toLowerCase()}`}</span><ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
+        <span className="truncate">{selected ? `${selected.code} · ${selected.name}` : placeholder || `Select ${label.toLowerCase()}`}</span><ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
       </Button></PopoverTrigger>
       <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] max-w-[calc(100vw-2rem)] p-0">
-        {open && <Choices label={label} resource={resource} role={role} selected={selected} onSelect={value => { onSelect(value); setOpen(false); }} />}
+        {open && <Choices label={label} resource={resource} role={role} selected={selected} eligibleOnly={eligibleOnly} onSelect={value => { onSelect(value); setOpen(false); }} />}
       </PopoverContent>
     </Popover>{error && <p id={errorId} className="text-xs font-medium text-destructive">{error}</p>}{selected?.reason && <p className="text-xs text-amber-800 dark:text-amber-300">{selected.reason}</p>}</div>;
 }
-function Choices({ label, resource, role, selected, onSelect }: { label: string; resource: string; role: string; selected: Choice | null; onSelect: (choice: Choice | null) => void }) {
+function Choices({ label, resource, role, selected, eligibleOnly, onSelect }: { label: string; resource: string; role: string; selected: Choice | null; eligibleOnly: boolean; onSelect: (choice: Choice | null) => void }) {
   const [search, setSearch] = useState(""); const [page, setPage] = useState(1);
   const params = new URLSearchParams({ search, page: String(page), pageSize: "25", role });
   const { data, loading, error, refresh } = useOnboardingRead<Page<Choice>>(`lookups/${resource}?${params}`, 250);
+  const items = data?.items.filter(choice => !eligibleOnly || choice.eligible);
   return <Command shouldFilter={false} className="h-auto max-h-[var(--radix-popover-content-available-height)] [&_[data-slot=command-input-wrapper]]:shrink-0"><CommandInput aria-label={`Search ${label}`} placeholder="Search by code or name..." value={search} onValueChange={value => { setSearch(value); setPage(1); }} />
-    <CommandList aria-busy={loading} className="min-h-0 max-h-64 overflow-y-auto overscroll-contain"><CommandEmpty>{loading ? "Loading choices..." : error?.message || "No matching choices."}</CommandEmpty><CommandGroup>
-      {!loading && !error && data?.items.map(choice => <CommandItem key={choice.id} value={String(choice.id)} disabled={!choice.eligible} onSelect={() => onSelect(choice)}>
+    <CommandList aria-busy={loading} className="min-h-0 max-h-64 overflow-y-auto overscroll-contain"><CommandEmpty>{loading ? "Loading choices..." : error?.message || (eligibleOnly ? "No eligible choices match this search." : "No matching choices.")}</CommandEmpty><CommandGroup>
+      {!loading && !error && items?.map(choice => <CommandItem key={choice.id} value={String(choice.id)} disabled={!choice.eligible} onSelect={() => onSelect(choice)}>
         <Check className={`mr-2 size-4 shrink-0 ${selected?.id === choice.id ? "opacity-100" : "opacity-0"}`} /><span className="min-w-0 whitespace-normal break-words">{choice.code} · {choice.name}<small className="block text-muted-foreground">{choice.reason || [resource === "accounts" ? choice.status : "", choice.classification].filter(Boolean).join(" · ")}</small></span>
       </CommandItem>)}
     </CommandGroup></CommandList>

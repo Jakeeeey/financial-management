@@ -4,7 +4,7 @@ import { readPettyCash } from "../../_spring";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ resource: string[] }> };
-const lists = new Set(["settings", "company", "alerts", "master-links", "funds", "payees", "tax-rules", "readiness"]);
+const lists = new Set(["settings", "company", "alerts", "master-links", "funds", "payees", "payee-account-options", "tax-rules", "readiness"]);
 const lookup = new Set(["accounts", "suppliers", "personnel", "departments", "branches", "companies"]);
 async function forward(request: NextRequest, context: Context) {
   const { resource } = await context.params;
