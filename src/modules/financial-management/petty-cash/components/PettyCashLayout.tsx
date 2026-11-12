@@ -11,6 +11,7 @@ import { NavUser } from "@/components/shared/app-sidebar/nav-user";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { PETTY_CASH_ROOT, PETTY_CASH_WORKSPACES, isPettyCashWorkspace, type PettyCashContext, type PettyCashWorkspaceKey } from "../types";
 import { loadPettyCashContext, PettyCashApiError } from "../providers/foundation.api";
+import { loginUrl } from "../utils/sessionExpiry";
 import PettyCashOnboardingModule from "../PettyCashOnboardingModule";
 import PettyCashDisbursementModule from "../PettyCashDisbursementModule";
 import PettyCashFundsModule from "../PettyCashFundsModule";
@@ -40,7 +41,7 @@ function PettyCashPageAccess({ children, headerUser }: { children: ReactNode; he
     loadPettyCashContext(controller.signal).then(data => { if (!controller.signal.aborted) setContext(data); })
       .catch(cause => {
         if (controller.signal.aborted) return;
-        if (cause instanceof PettyCashApiError && cause.status === 401) { router.replace("/login"); return; }
+        if (cause instanceof PettyCashApiError && cause.status === 401) { router.replace(loginUrl()); return; }
         setError(cause instanceof PettyCashApiError ? cause : new PettyCashApiError("Petty Cash is temporarily unavailable. Please retry.", 503));
       }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
