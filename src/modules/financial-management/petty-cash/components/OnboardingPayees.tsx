@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { Choice, MasterLinks, Page, Profile } from "../onboarding-types";
 import { useOnboardingCommand, useOnboardingRead } from "../hooks/useOnboarding";
@@ -9,6 +10,7 @@ import { OnboardingChoice } from "./OnboardingChoice";
 import { ErrorBox, Field, NativeSelect, OnboardingFeedback, Paging } from "./OnboardingCommon";
 import { TableSkeleton } from "./PettyCashSkeletons";
 import { onboardingFieldError, onboardingFieldErrors } from "../utils/onboardingFeedback";
+import { payeeFilterParams } from "../utils/payeeFilters";
 
 const payeeFieldIds: Record<string, string> = {
   supplierName: "payee-name", name: "payee-name", supplierId: "payee-name", tin: "payee-tin",
@@ -18,12 +20,27 @@ const payeeFieldIds: Record<string, string> = {
 
 export function OnboardingPayees({ links }: { links: MasterLinks | null }) {
   const [page, setPage] = useState(1), [editor, setEditor] = useState<Profile | "new" | null>(null);
-  const { data, loading, error, refresh } = useOnboardingRead<Page<Profile>>(`payees?page=${page}&pageSize=25`, 250);
+  const [search, setSearch] = useState(""), [debouncedSearch, setDebouncedSearch] = useState("");
+  const [payeeKind, setPayeeKind] = useState("ALL"), [vatRegistered, setVatRegistered] = useState("ALL"), [defaultExpense, setDefaultExpense] = useState("ALL");
+  useEffect(() => { const timer = window.setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 250); return () => window.clearTimeout(timer); }, [search]);
+  const filtersActive = Boolean(search.trim() || payeeKind !== "ALL" || vatRegistered !== "ALL" || defaultExpense !== "ALL");
+  const query = payeeFilterParams({ page, search: debouncedSearch, payeeKind, vatRegistered, defaultExpense }).toString();
+  const { data, loading, error, refresh } = useOnboardingRead<Page<Profile>>(`payees?${query}`);
+  const accountOptions = useOnboardingRead<Choice[]>("payee-account-options");
+  function clearFilters() { setSearch(""); setDebouncedSearch(""); setPayeeKind("ALL"); setVatRegistered("ALL"); setDefaultExpense("ALL"); setPage(1); }
+  function changeFilter(setter: (value: string) => void, value: string) { setter(value); setPage(1); }
   return <div className="space-y-4 rounded-xl border bg-card p-5"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">Payees</h2><Button onClick={() => setEditor("new")}>Add payee</Button></div>
+    <div role="search" aria-label="Payee filters" className="flex flex-wrap items-end gap-3 rounded-lg border bg-muted/20 p-3">
+      <div className="min-w-56 flex-1 space-y-2"><label htmlFor="payee-search" className="text-sm font-medium">Search</label><Input id="payee-search" type="search" aria-label="Search payees" placeholder="Payee name or TIN" value={search} onChange={event => setSearch(event.target.value)} /></div>
+      <div className="w-full sm:w-48"><NativeSelect label="Type" id="payee-type" value={payeeKind} onChange={value => changeFilter(setPayeeKind, value)}><option value="ALL">All types</option><option value="CORPORATION">Corporation</option><option value="INDIVIDUAL">Individual</option></NativeSelect></div>
+      <div className="w-full sm:w-48"><NativeSelect label="Tax status" id="payee-tax" value={vatRegistered} onChange={value => changeFilter(setVatRegistered, value)}><option value="ALL">All</option><option value="true">VAT-registered</option><option value="false">Non-VAT</option></NativeSelect></div>
+      <div className="w-full sm:w-64"><NativeSelect label="Default account" id="payee-account" value={defaultExpense} onChange={value => changeFilter(setDefaultExpense, value)}><option value="ALL">All accounts</option><option value="NONE">Not selected</option>{accountOptions.data?.map(account => <option key={account.id} value={String(account.id)}>{account.code} · {account.name}</option>)}</NativeSelect></div>
+      {filtersActive && <Button type="button" variant="ghost" onClick={clearFilters}>Clear filters</Button>}
+    </div>
     <ErrorBox error={error} retry={refresh} title="Could not load payees" />{loading && <TableSkeleton label="Loading payees" rows={5} columns={6} />}
     {data && <><div className="overflow-x-auto rounded-lg border"><table className="w-full text-left text-sm"><thead className="bg-muted/40"><tr>{["Payee", "TIN", "Type", "Tax status", "Default account", ""].map(label => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>
       {data.items.map(profile => <tr className="border-t" key={profile.id}><td className="p-3 font-medium">{profile.supplier?.name || `Supplier ${profile.supplierId}`}</td><td className="p-3">{String(profile.supplier?.details.tin || "Not supplied")}</td><td className="p-3">{profile.payeeKind === "INDIVIDUAL" ? "Individual" : "Corporation"}</td><td className="p-3">{profile.vatRegistered ? "VAT registered" : "Non-VAT"}</td><td className="p-3">{profile.defaultExpenseAccount ? `${profile.defaultExpenseAccount.code} · ${profile.defaultExpenseAccount.name}` : "Not selected"}</td><td className="p-3"><Button size="sm" variant="outline" onClick={() => setEditor(profile)}>Edit</Button></td></tr>)}
-      {!data.items.length && <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">No Petty Cash payees configured.</td></tr>}
+      {!data.items.length && <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">{filtersActive ? "No payees match these filters." : "No Petty Cash payees configured."}</td></tr>}
     </tbody></table></div>{data.total > data.pageSize && <Paging page={page} total={data.total} pageSize={data.pageSize} onChange={setPage} />}</>}
     <Dialog open={editor !== null} onOpenChange={open => { if (!open) setEditor(null); }}><DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{editor === "new" ? "Add payee" : "Edit payee"}</DialogTitle><DialogDescription>Payee details used for vouchers and BIR Form 2307.</DialogDescription></DialogHeader>
       {editor && <ProfileForm key={editor === "new" ? "new" : `${editor.id}-${editor.version}`} profile={editor === "new" ? null : editor} canRegister={Boolean(links?.payees.allowed)} onIdentityUpdated={refresh} onSaved={message => { setEditor(null); if (message) toast.success(message); refresh(); }} />}
