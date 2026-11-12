@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { proxySpring, refreshedAccessToken } from "@/app/api/fm/financial-statements/adjusting-journal-entries/_spring";
-import { parseTransactionWorkbook, WorkbookError } from "@/modules/financial-management/treasury/bank-management/bank-reconciliation/services/transactionExcel";
+import { parseTransactionWorkbook, WorkbookError } from "@/modules/financial-management/treasury/bank-reconciliation/services/transactionExcel";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const ROOT = "/api/v1/treasury/bank-reconciliation";

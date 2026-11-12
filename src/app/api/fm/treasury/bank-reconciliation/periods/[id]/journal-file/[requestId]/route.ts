@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { proxySpring, refreshedAccessToken } from "@/app/api/fm/financial-statements/adjusting-journal-entries/_spring";
-import { buildFallbackJournalExcel, fallbackFilename, FallbackJournalExportError } from "@/modules/financial-management/treasury/bank-management/bank-reconciliation/services/fallbackJournalExcel";
-import type { FallbackExportData } from "@/modules/financial-management/treasury/bank-management/bank-reconciliation/posting-types";
+import { buildFallbackJournalExcel, fallbackFilename, FallbackJournalExportError } from "@/modules/financial-management/treasury/bank-reconciliation/services/fallbackJournalExcel";
+import type { FallbackExportData } from "@/modules/financial-management/treasury/bank-reconciliation/posting-types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

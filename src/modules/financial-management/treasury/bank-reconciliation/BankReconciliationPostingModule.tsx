@@ -7,6 +7,7 @@ import type { BankAccountReference, BankReconciliationContext } from "./referenc
 import { getBankReconciliationContext } from "./providers/bankReconciliationReferencesApi";
 import { usePostingPeriod } from "./hooks/usePostingPeriod";
 import { PostingJournalActions } from "./components/PostingJournalActions";
+import { BatchPostingContext } from "./components/BatchPostingContext";
 import type { PostingEntry } from "./posting-types";
 import { ReferenceChoice } from "./components/ReferenceChoice";
 import { transactionMoney } from "./utils/transactionDisplay";
@@ -35,6 +36,7 @@ export default function BankReconciliationPostingModule() {
   if (!context) return <PostingSkeleton label="Loading Posting" />;
   const cards = [["ledgerBefore", "Ledger before adjustments"], ["postedCashEffect", "Confirmed net cash effect"], ["ledgerAfter", "Ledger after posting"], ["adjustedBookBalance", "Adjusted book balance"], ["stillToPost", "Still to post"]] as const;
   const ready = data?.entries.filter(entry => entry.canPost) || [];
+  const batchContext = Boolean(journal && journal.period.status !== "CLOSED" && journal.entries.length);
   const actionsDisabled = !data || loading || saving || posting.operating || posting.exporting !== null || lifecycleBusy || Boolean(posting.pendingRequest);
   const dateActionsDisabled = actionsDisabled || posting.dateBlocked;
   return <section aria-label="Bank reconciliation Posting" className="space-y-6" aria-busy={busy} onPointerDownCapture={e => {
@@ -60,7 +62,8 @@ export default function BankReconciliationPostingModule() {
         {data && !saving && posting.dateError ? <p id="posting-date-feedback" role="alert" className="text-xs text-destructive">{posting.dateError}</p> : <p id="posting-date-feedback" aria-live="polite" className="text-xs text-muted-foreground">{saving ? "Saving posting date…" : "Defaults to period end. Changes save when you leave the field."}</p>}
         {posting.canRetryDate && <Button type="button" size="sm" variant="outline" disabled={actionsDisabled} onClick={() => { void posting.saveDate(); }}>Retry saving date</Button>}
       </div><div className="space-y-2 text-sm"><p className="font-medium">Posted by (signed in)</p><p>{context.actor.name}</p></div></div>
-      <div className="flex flex-wrap gap-2"><Button type="button" data-posting-date-action disabled={dateActionsDisabled || !ready.length} onClick={() => { void posting.run("post", { sourceKeys: ready.map(entry => entry.key) }); }}>{!data ? loading ? "Loading entries…" : "Posting unavailable" : period?.status === "CLOSED" ? "Period closed" : ready.length ? `Post all ready in period (${ready.length})` : "Nothing ready to post"}</Button><Button type="button" data-posting-date-action variant="outline" disabled={dateActionsDisabled || !ready.length} onClick={() => { void posting.run("prepare-export", { sourceKeys: ready.map(entry => entry.key) }); }}>Export all ready in period for GL import</Button></div>
+      {batchContext && journal && <BatchPostingContext period={journal.period} entity={journal.entity} postingDate={posting.date || journal.period.periodEnd || ""} dateBlocked={posting.dateBlocked} entries={journal.entries} />}
+      <div className="flex flex-wrap gap-2"><Button type="button" data-posting-date-action aria-describedby={batchContext ? "batch-posting-scope" : undefined} disabled={dateActionsDisabled || !ready.length} onClick={() => { void posting.run("post", { sourceKeys: ready.map(entry => entry.key) }); }}>{!data ? loading ? "Loading entries…" : "Posting unavailable" : period?.status === "CLOSED" ? "Period closed" : ready.length ? `Post all ready in period (${ready.length})` : "Nothing ready to post"}</Button><Button type="button" data-posting-date-action variant="outline" aria-describedby={batchContext ? "batch-posting-scope" : undefined} disabled={dateActionsDisabled || !ready.length} onClick={() => { void posting.run("prepare-export", { sourceKeys: ready.map(entry => entry.key) }); }}>Export all ready in period for GL import</Button></div>
       <p className="text-xs text-muted-foreground">Bulk actions include all eligible Ready entries in this period, including entries hidden by filters. Summary balances, journal totals, and Excel/PDF exports cover the whole period.</p>
       <div role="group" aria-label="Journal filters" className="flex flex-wrap items-end gap-3">
         <div className="min-w-48 flex-1 space-y-2"><label htmlFor="journal-search" className="text-sm font-medium">Search journal</label><Input id="journal-search" type="search" placeholder="JE, GL journal, import reference, source, or explanation" value={filters.search} disabled={!data} onChange={e => setFilters({ ...filters, search: e.target.value })} /></div>
