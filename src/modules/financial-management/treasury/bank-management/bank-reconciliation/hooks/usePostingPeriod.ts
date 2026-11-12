@@ -8,6 +8,7 @@ import { SetupError } from "../providers/bankReconciliationSetupApi";
 import { bankReconciliationRequestId } from "../utils/request-id";
 import { getPeriodHistory } from "../providers/bankReconciliationLifecycleApi";
 import { postingDateError } from "../utils/postingDate";
+import { toast } from "sonner";
 
 type PendingRequest = { periodId: number; action: PostingAction; command: PostingCommand };
 type ReadTarget = { kind: "period"; id: number; closureId?: number } | { kind: "bank"; bank: BankAccountReference };
@@ -106,9 +107,21 @@ export function usePostingPeriod(enabled: boolean) {
     if (request.action === "prepare-export" && ["PREPARED", "EXPORTED"].includes(receipt.state)) {
       await downloadFallbackJournal(request.periodId, request.command.requestId); accept(await getPostingPeriod(request.periodId));
       remember(null); setMessage("Journal file generated. Verify the imported Posted ERP journal before it counts as posted.");
+      toast.success("GL import workbook generated", { id: "bank-rec-posting", description: "Verify the imported Posted ERP journal before it counts as posted." });
     } else if (receipt.state !== "PENDING" && receipt.state !== "PREPARED") {
-      remember(null); if (receipt.state === "FAILED") setError(receipt.error || "The GL batch was rolled back."); else setMessage(request.action === "withdraw" ? "Journal attempt withdrawn. Its file must not be imported." : request.action === "reverse" ? "Reversal posted. The source is unlocked." : "Journal operation completed.");
-    } else setMessage("This request is pending. Check its status or retry the same request.");
+      remember(null);
+      if (receipt.state === "FAILED") {
+        const message = receipt.error || "The GL batch was rolled back.";
+        setError(message); toast.error("Posting failed", { id: "bank-rec-posting-error", description: message, duration: 6000 });
+      } else {
+        setMessage(request.action === "withdraw" ? "Journal attempt withdrawn. Its file must not be imported." : request.action === "reverse" ? "Reversal posted. The source is unlocked." : "Journal operation completed.");
+        const title = request.action === "withdraw" ? "Journal attempt withdrawn" : request.action === "reverse" ? "Reversal posted" : request.action === "verify-import" ? "Imported journal verified" : "Journal posted";
+        toast.success(title, { id: "bank-rec-posting", description: request.action === "reverse" ? "The original remains in history and the source is unlocked." : request.action === "withdraw" ? "The file must not be imported." : "The GL journal is confirmed." });
+      }
+    } else {
+      setMessage("This request is pending. Check its status or retry the same request.");
+      toast.info("Posting pending", { id: "bank-rec-posting", description: "Check the request or retry the same request before starting another operation." });
+    }
   }, [accept, remember]);
   const run = useCallback(async (action: PostingAction, selection: Pick<PostingCommand, "sourceKeys" | "journalId" | "glJournalId" | "acknowledgeWithdrawal">) => {
     if (operation.current || pending.current || pendingRequest || read.current.status !== "ready") return;
@@ -122,13 +135,13 @@ export function usePostingPeriod(enabled: boolean) {
       const next: PendingRequest = { periodId: model.period.id, action, command: { requestId: bankReconciliationRequestId(), version: model.period.version, bankVersion: model.period.bank.version, ...selection } };
       invalidate(); remember(next); await complete(next, await runPostingCommand(next.periodId, action, next.command));
     }
-    catch (e) { if (e instanceof SetupError && e.status < 500) remember(null); setError(e instanceof Error ? e.message : "The operation outcome is not confirmed. Check the saved request before retrying."); }
+    catch (e) { const message = e instanceof Error ? e.message : "The operation outcome is not confirmed. Check the saved request before retrying."; if (e instanceof SetupError && e.status < 500) remember(null); setError(message); toast.error("Posting failed", { id: "bank-rec-posting-error", description: message, duration: 6000 }); }
     finally { operation.current = false; setOperating(false); }
   }, [complete, invalidate, pendingRequest, remember, saveDate]);
   const recover = useCallback(async (retry: boolean) => {
     if (!pendingRequest || operation.current || read.current.status === "loading") return; operation.current = true; invalidate(); setOperating(true); setError("");
     try { const receipt = retry ? await runPostingCommand(pendingRequest.periodId, pendingRequest.action, pendingRequest.command) : await getPostingReceipt(pendingRequest.periodId, pendingRequest.command.requestId); if (!retry && ["PENDING", "PREPARED"].includes(receipt.state)) { accept(receipt.data); setMessage("This request is pending. Retry the same request to resume it."); } else await complete(pendingRequest, receipt); }
-    catch (e) { if (e instanceof SetupError && e.status === 404) { remember(null); setMessage("The request was not committed. Refresh data before starting another operation."); } else setError(e instanceof Error ? e.message : "Unable to confirm the request outcome."); }
+    catch (e) { if (e instanceof SetupError && e.status === 404) { remember(null); setMessage("The request was not committed. Refresh data before starting another operation."); toast.info("Request not committed", { id: "bank-rec-posting", description: "Refresh data before starting another operation." }); } else { const message = e instanceof Error ? e.message : "Unable to confirm the request outcome."; setError(message); toast.error("Unable to confirm posting request", { id: "bank-rec-posting-error", description: message, duration: 6000 }); } }
     finally { operation.current = false; setOperating(false); }
   }, [accept, complete, invalidate, pendingRequest, remember]);
   useEffect(() => {
@@ -147,8 +160,8 @@ export function usePostingPeriod(enabled: boolean) {
     if (operation.current || pending.current || pendingRequest || read.current.status !== "ready") return;
     if (current.current?.period.status !== "CLOSED" && (input.current.failure || postingDateError(input.current.value, current.current?.postingDate || { min: null, max: null }, input.current.badInput))) return;
     operation.current = true; setExporting(format); setError(""); setMessage("");
-    try { if (!await saveDate() || read.current.status !== "ready") return; const model = current.current; if (!model) return; invalidate(); await downloadPostingExport(model.period, format); setMessage(`${format === "xlsx" ? "Excel" : "PDF"} Posting export generated.`); }
-    catch (e) { setError(e instanceof Error ? e.message : "Unable to export Posting."); }
+    try { if (!await saveDate() || read.current.status !== "ready") return; const model = current.current; if (!model) return; invalidate(); await downloadPostingExport(model.period, format); const message = `${format === "xlsx" ? "Excel" : "PDF"} Posting export generated.`; setMessage(message); toast.success(`Posting ${format === "xlsx" ? "Excel" : "PDF"} generated`, { id: "bank-rec-posting", description: message }); }
+    catch (e) { const message = e instanceof Error ? e.message : "Unable to export Posting."; setError(message); toast.error("Posting export failed", { id: "bank-rec-posting-error", description: message, duration: 6000 }); }
     finally { operation.current = false; setExporting(null); }
   }, [invalidate, pendingRequest, saveDate]);
   const retainedData = readState.target?.kind === "period" && data?.period.id === readState.target.id && data?.period.lifecycle?.closureId === readState.target.closureId ? data : null;

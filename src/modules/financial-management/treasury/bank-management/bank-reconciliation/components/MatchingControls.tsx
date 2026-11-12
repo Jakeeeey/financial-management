@@ -9,6 +9,7 @@ import { setBankOffset, setBankTreatment, setMatchOffset, unmatchTransactions } 
 import { centsAmount, transactionCents, transactionMoney } from "../utils/transactionDisplay";
 import { ReferenceChoice } from "./ReferenceChoice";
 import { CreateReferenceDialog } from "./CreateReferenceDialog";
+import { ProofSkeleton } from "./BankReconciliationSkeletons";
 
 export type Selection = { BANK: TransactionLine[]; LEDGER: TransactionLine[] };
 export type TransactionCommand = (operation: (period: ReconciliationPeriod) => Promise<TransactionResult>) => Promise<TransactionResult>;
@@ -23,6 +24,7 @@ export function OffsetAccountChoice({ label, selected, period, disabled, onChang
   </>;
 }
 export function ReconciliationProof({ summary, currency, readState }: { summary?: ReconciliationSummary; currency: string; readState?: "loading" | "error" }) {
+  if (readState === "loading" && !summary) return <ProofSkeleton label="Loading reconciliation proof" />;
   const values: [string, string | null | undefined][] = [["Adjusted bank balance", summary?.adjustedBankBalance], ["Adjusted book balance", summary?.adjustedBookBalance], ["Difference", summary?.difference]];
   return <section aria-label="Reconciliation proof" className="grid gap-4 rounded-lg border bg-card p-4 sm:grid-cols-2 xl:grid-cols-4">
     {values.map(([label, value]) => <div key={label}><p className="text-xs text-muted-foreground">{label}</p><p aria-label={label} className="mt-1 break-words text-lg font-semibold tabular-nums">{readState === "loading" ? "Loading…" : value == null ? "Unavailable" : transactionMoney(value, currency)}</p></div>)}
