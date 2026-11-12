@@ -2,7 +2,9 @@
 
 import { Button } from "@/components/ui/button";
 import { useHistoryReport } from "../hooks/useHistoryReport";
-import { getAuditHistory, getClosedPeriods } from "../providers/bankReconciliationReportsApi";
+import { getClosedPeriods } from "../providers/bankReconciliationReportsApi";
+import { useAuditHistory } from "../hooks/useAuditHistory";
+import { AuditHistoryFilters } from "./AuditHistoryFilters";
 import { exportTime } from "../services/reconcileExport";
 import { transactionMoney } from "../utils/transactionDisplay";
 import type { HistoryPage } from "../report-types";
@@ -24,10 +26,13 @@ function recordedValue(value: string | null, type: "money" | "text") {
 }
 
 export function AuditTrailReport({ periodId, copyButton }: { periodId: number; copyButton?: ReactNode }) {
-  const report = useHistoryReport(periodId, getAuditHistory), { data, loading, error } = report;
+  const report = useAuditHistory(periodId), { data, loading, error } = report;
   return <section id="r-audit" aria-labelledby="audit-title" aria-busy={loading} className="scroll-mt-4 space-y-4 rounded-lg border bg-card p-4">
-    <div className="flex flex-wrap items-center justify-between gap-3"><h2 id="audit-title" className="text-lg font-semibold">Audit trail</h2><div className="flex flex-wrap gap-2">{copyButton}<Button type="button" variant="outline" disabled={loading} onClick={report.refresh}>Refresh audit trail</Button></div></div>
+    <div className="flex flex-wrap items-center justify-between gap-3"><h2 id="audit-title" className="text-lg font-semibold">Audit trail</h2><div className="flex flex-wrap gap-2">{copyButton}<Button type="button" variant="outline" disabled={loading || Boolean(report.validation)} onClick={report.refresh}>Refresh audit trail</Button></div></div>
     <p className="text-sm text-muted-foreground">Full activity for the selected period, newest first, including bank setup and later reopening or next-period activity. Financial results for a closed revision remain preserved. Refresh to include newer events.</p>
+    <p className="text-xs text-muted-foreground">Screen filters affect this table only. Copy, Excel, and PDF include the full report history and may include events newer than your last audit refresh.</p>
+    <AuditHistoryFilters report={report} />
+    {data && <p role="status" className="text-sm text-muted-foreground">{data.total} of {data.scopeTotal ?? data.total} events match{report.active ? " these filters" : " · All activity"}.</p>}
     {error && <ErrorNotice error={error} retry={report.retry} />}{loading && <HistorySkeleton label="Loading audit trail" columns={4} rows={4} />}
     {data && <><div className="overflow-x-auto"><table className="w-full min-w-[720px] text-sm"><thead><tr className="border-b text-left">{["When", "Action", "By", "Detail"].map(label => <th key={label} className="p-2">{label}</th>)}</tr></thead><tbody>{data.items.length ? data.items.map(event => <tr key={event.id} className="border-b align-top">
       <td className="whitespace-nowrap p-2">{exportTime(event.occurredAt)}</td><td className="min-w-36 p-2">{event.actionLabel}{event.scope === "Bank setup" && <p className="mt-1 text-xs text-muted-foreground">Bank setup</p>}</td><td className="min-w-32 max-w-48 break-words p-2">{event.actor.name}</td><td className="min-w-64 max-w-2xl break-words p-2"><p>{event.summary}</p>
@@ -35,7 +40,7 @@ export function AuditTrailReport({ periodId, copyButton }: { periodId: number; c
           {event.changes.length > 0 && <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left"><th className="p-2">Field</th><th className="p-2">Before</th><th className="p-2">After</th></tr></thead><tbody>{event.changes.map((change, index) => <tr key={index} className="border-b align-top"><th className="p-2 text-left font-medium">{change.label}</th><td className="p-2 tabular-nums">{recordedValue(change.before, change.type)}</td><td className="p-2 tabular-nums">{recordedValue(change.after, change.type)}</td></tr>)}</tbody></table></div>}
           {event.facts.length > 0 && <dl className="space-y-2">{event.facts.map((fact, index) => <div key={index}><dt className="text-xs text-muted-foreground">{fact.label}</dt><dd className="break-words">{fact.value}</dd></div>)}</dl>}
         </div></details>}{event.notice && <p className="mt-2 text-xs text-muted-foreground">{event.notice}</p>}
-      </td></tr>) : <tr><td colSpan={4} className="p-4 text-muted-foreground">No activity recorded for this period.</td></tr>}</tbody></table></div><Pagination data={data} loading={loading} onPage={report.loadPage} /></>}
+      </td></tr>) : <tr><td colSpan={4} className="p-4 text-muted-foreground">{report.active ? "No audit events match these filters. Clear audit filters to see all activity." : "No activity recorded for this period."}</td></tr>}</tbody></table></div><Pagination data={data} loading={loading} onPage={report.loadPage} /></>}
   </section>;
 }
 

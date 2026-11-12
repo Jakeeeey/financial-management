@@ -32,6 +32,9 @@ export type ClosedPeriod = {
   available: boolean; notice: string | null;
 };
 export type HistoryPage<T> = { items: T[]; total: number; page: number; pageSize: number; throughEventId?: number; throughClosureId?: number };
+export type AuditFilters = { search: string; action: string; actorId: string; fromDate: string; toDate: string };
+export type AuditFilterOptions = { actions: { code: string; label: string }[]; actors: { id: number; name: string }[] };
+export type AuditHistoryPage = HistoryPage<AuditEvent> & { scopeTotal: number; filterOptions: AuditFilterOptions };
 export type ReportKey = "statement" | "aging" | "journal" | "audit" | "closedPeriods";
 export type ReportsExportData = FinancialReports & {
   audit: AuditEvent[]; closedPeriods: ClosedPeriod[]; throughEventId: number; throughClosureId: number;
