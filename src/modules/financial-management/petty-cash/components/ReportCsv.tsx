@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { OnboardingError } from "../providers/onboarding.api";
+import { redirectToLogin } from "../utils/sessionExpiry";
 import { MasterError } from "./MasterCommon";
 import { CsvSkeleton } from "./PettyCashSkeletons";
 
@@ -13,6 +14,7 @@ export function ReportCsv({ dataset, query, title, onClose }: { dataset: string;
   useEffect(() => {
     const controller = new AbortController();
     fetch(`/api/fm/petty-cash/reports/export/${dataset}?${query}`, { cache: "no-store", signal: controller.signal }).then(async response => {
+      if (response.status === 401) redirectToLogin();
       if (!response.ok) { const body = await response.json().catch(() => null); throw new OnboardingError(body?.message || "Unable to export this report.", response.status, body?.fieldErrors || {}, body?.requestId); }
       return response.text();
     }).then(text => { if (!controller.signal.aborted) setResult({ text }); }).catch(error => { if (!controller.signal.aborted) setResult({ error: error instanceof Error ? error : new Error("Unable to export this report.") }); });

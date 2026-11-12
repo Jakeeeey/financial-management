@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { onboardingApi, onboardingRequestId, OnboardingError } from "../providers/onboarding.api";
+import { isUnauthorized } from "../utils/sessionExpiry";
 
 export function useOnboardingRead<T>(path: string, delay = 0) {
   const [revision, setRevision] = useState(0);
@@ -10,7 +11,7 @@ export function useOnboardingRead<T>(path: string, delay = 0) {
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       onboardingApi<T>(path, { signal: controller.signal }).then(data => { if (!controller.signal.aborted) setResult({ key, data, error: null }); })
-        .catch(cause => { if (!controller.signal.aborted) setResult({ key, data: null, error: cause instanceof Error ? cause : new Error("Unable to load Onboarding.") }); });
+        .catch(cause => { if (!controller.signal.aborted && !isUnauthorized(cause)) setResult({ key, data: null, error: cause instanceof Error ? cause : new Error("Unable to load Onboarding.") }); });
     }, delay);
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [path, key, delay]);
@@ -28,7 +29,7 @@ export function useOnboardingCommand() {
       if (identity.current?.fingerprint !== fingerprint) identity.current = { fingerprint, key: onboardingRequestId() };
       const data = await onboardingApi<T>(path, { method, body: JSON.stringify({ ...payload, requestId: identity.current.key }) });
       identity.current = null; return data;
-    } catch (cause) { failure.current = cause instanceof Error ? cause : new OnboardingError("Unable to save Onboarding.", 503); setError(failure.current); return null; }
+    } catch (cause) { if (isUnauthorized(cause)) return null; failure.current = cause instanceof Error ? cause : new OnboardingError("Unable to save Onboarding.", 503); setError(failure.current); return null; }
     finally { active.current = false; setBusy(false); }
   }
   const clearError = useCallback(() => { failure.current = null; setError(null); }, []);
