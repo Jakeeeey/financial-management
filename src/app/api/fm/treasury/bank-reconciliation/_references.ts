@@ -11,6 +11,7 @@ class ReferenceError extends Error {
 }
 
 function text(value: unknown) { return value == null ? "" : String(value).trim(); }
+function rawText(value: unknown) { return value == null ? "" : String(value); }
 function enabled(value: unknown) { return value === true || value === 1 || value === "1"; }
 function record(value: unknown): Row {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Row : {};
@@ -107,7 +108,7 @@ function project(kind: BankReconciliationReferenceResource, row: Row): BankRecon
   if (kind === "bank-accounts") {
     const account = text(row.account_number);
     return {
-      id: Number(row.bank_id), bankName: text(row.bank_name), branch: text(row.branch),
+      id: Number(row.bank_id), bankName: rawText(row.bank_name), branch: rawText(row.branch),
       maskedAccountNumber: account ? `•••• ${account.slice(-4)}` : null,
       currency: text(row.currency), status: text(row.account_status).toUpperCase(),
       isActive: enabled(row.is_active) && text(row.account_status).toUpperCase() === "ACTIVE",
@@ -136,11 +137,14 @@ export async function listReferences(kind: string, params: URLSearchParams) {
     conditions.push({ _or: [{ company_id: { _eq: companyId } }, { company_id: { _null: true } }] });
   }
   if (params.has("bankName") || params.has("branch")) {
-    const bankName = (params.get("bankName") || "").trim(), branch = (params.get("branch") || "").trim();
-    if (name !== "bank-accounts" || !bankName || !params.has("branch")) throw new ReferenceError(400, "Select a complete bank and branch.");
-    filter.bank_name = { _eq: bankName };
-    if (branch) filter.branch = { _eq: branch };
-    else conditions.push({ _or: [{ branch: { _eq: "" } }, { branch: { _null: true } }] });
+    const bankName = params.get("bankName") || "", branch = params.get("branch") || "";
+    if (name !== "bank-accounts" || !bankName.trim() || !params.has("branch")) throw new ReferenceError(400, "Select a complete bank and branch.");
+    const bankValues = [...new Set([bankName, bankName.trim()].filter(Boolean))];
+    conditions.push({ _or: bankValues.map(value => ({ bank_name: { _eq: value } })) });
+    if (branch) {
+      const branchValues = [...new Set([branch, branch.trim()].filter(Boolean))];
+      conditions.push({ _or: branchValues.map(value => ({ branch: { _eq: value } })) });
+    } else conditions.push({ _or: [{ branch: { _eq: "" } }, { branch: { _null: true } }] });
   }
   if (conditions.length) filter._and = conditions;
   if (search) filter._or = source.search.map(field => ({ [field]: { _icontains: search } }));

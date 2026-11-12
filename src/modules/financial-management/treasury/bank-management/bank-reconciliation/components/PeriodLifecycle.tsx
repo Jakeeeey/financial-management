@@ -8,6 +8,8 @@ import { getLifecycleReceipt, runLifecycleCommand, type LifecycleAction, type Li
 import { SetupError } from "../providers/bankReconciliationSetupApi";
 import type { ReconciliationPeriod } from "../setup-types";
 import { bankReconciliationRequestId } from "../utils/request-id";
+import { toast } from "sonner";
+import { exportTime } from "../services/reconcileExport";
 
 type Pending = { action: LifecycleAction; command: LifecycleCommand };
 export function PeriodLifecycle({ period, workspace, eligibility, disabled, readUnavailable = false, onBusy, onDone, before }: { period: ReconciliationPeriod; workspace: "reconcile" | "posting"; eligibility?: { canClose: boolean; blockers: string[] }; disabled: boolean; readUnavailable?: boolean; onBusy: (value: boolean) => void; onDone: (id: number) => Promise<void>; before?: () => Promise<ReconciliationPeriod | null> }) {
@@ -16,7 +18,16 @@ export function PeriodLifecycle({ period, workspace, eligibility, disabled, read
   useEffect(() => { onBusy(busy || Boolean(pending)); return () => onBusy(false); }, [busy, pending, onBusy]);
   const state = period.lifecycle, closed = period.status === "CLOSED";
   function remember(value: Pending | null) { setPending(value); }
-  async function complete(receipt: LifecycleReceipt) { remember(null); setDialog(null); setMessage(receipt.message + (receipt.blockers?.length ? ` ${receipt.blockers.join(" ")}` : "")); await onDone(receipt.periodId); }
+  async function complete(receipt: LifecycleReceipt) {
+    const action = pending?.action ?? dialog;
+    remember(null); setDialog(null); setMessage(receipt.message + (receipt.blockers?.length ? ` ${receipt.blockers.join(" ")}` : ""));
+    if (receipt.state === "REVIEW_REQUIRED" || receipt.blockers?.length) {
+      toast.warning(action === "close" ? "Closure requires review" : "Period requires review", { id: "bank-rec-lifecycle", description: receipt.message + (receipt.blockers?.length ? ` ${receipt.blockers.join(" ")}` : ""), duration: 6000 });
+    } else {
+      toast.success(action === "reopen" ? "Period reopened" : action === "next-period" ? "Next period started" : "Period closed", { id: "bank-rec-lifecycle", description: action === "next-period" ? `${receipt.carriedCount ?? 0} outstanding item(s) carried forward.` : action === "reopen" ? "Transactions and posted journals were retained." : `Closure revision ${receipt.revision ?? 1} preserved.` });
+    }
+    await onDone(receipt.periodId);
+  }
   async function execute(retry = false) {
     if (busy) return; setBusy(true); setError("");
     try {
@@ -24,18 +35,18 @@ export function PeriodLifecycle({ period, workspace, eligibility, disabled, read
       const request = retry ? pending : dialog ? { action: dialog, command: { requestId: bankReconciliationRequestId(), version: latest?.version ?? period.version, ...(dialog === "reopen" ? { reason: reason.trim() } : {}) } } : null;
       if (!request) return;
       remember(request); await complete(await runLifecycleCommand(period.id, request.action, request.command));
-    } catch (e) { setDialog(null); if (e instanceof SetupError && e.status < 500) { remember(null); if (e.status === 409) await onDone(period.id); } setError(e instanceof Error ? e.message : "The result is not confirmed. Check this request before continuing."); }
+    } catch (e) { setDialog(null); if (e instanceof SetupError && e.status < 500) { remember(null); if (e.status === 409) await onDone(period.id); } const message = e instanceof Error ? e.message : "The result is not confirmed. Check this request before continuing."; setError(message); toast.error("Lifecycle action failed", { id: "bank-rec-lifecycle-error", description: message, duration: 6000 }); }
     finally { setBusy(false); }
   }
   async function check() {
     if (!pending || busy) return; setBusy(true); setError("");
     try { await complete(await getLifecycleReceipt(period.id, pending.command.requestId)); }
-    catch (e) { if (e instanceof SetupError && e.status === 404) { remember(null); await onDone(period.id); setMessage("This request was not committed. Review the period before trying again."); } else setError(e instanceof Error ? e.message : "Unable to confirm the request."); }
+    catch (e) { if (e instanceof SetupError && e.status === 404) { remember(null); await onDone(period.id); setMessage("This request was not committed. Review the period before trying again."); toast.info("Request not committed", { id: "bank-rec-lifecycle", description: "Review the period before trying again." }); } else { const message = e instanceof Error ? e.message : "Unable to confirm the request."; setError(message); toast.error("Unable to confirm lifecycle request", { id: "bank-rec-lifecycle-error", description: message, duration: 6000 }); } }
     finally { setBusy(false); }
   }
   return <section aria-label="Period lifecycle" hidden={readUnavailable && !pending && !error && !message} className="space-y-3 rounded-lg border bg-card p-4 text-sm">
     <div hidden={readUnavailable} className="space-y-3">
-    {closed ? <p><strong>Closed snapshot · revision {state?.revision}</strong>{state?.closedAt && ` · ${state.closedAt.replace("T", " ")}`}{state?.closedBy && ` · ${state.closedBy.name}`}. Financial data is preserved as of closure.</p> : <p>{state?.previousPeriodId ? `Continuing period #${state.previousPeriodId}. Choose a period end in ${state.nextAllowedMonth}. Statement balances start blank.` : "Close the period in Posting after reviewing the reconciliation and confirmed GL entries."}</p>}
+    {closed ? <p><strong>Closed snapshot · revision {state?.revision ?? "unavailable"}</strong>{state?.closedAt && ` · ${exportTime(state.closedAt)}`}{state?.closedBy && ` · ${state.closedBy.name}`}. Financial data is preserved as of closure.</p> : <p>{state?.previousPeriodId ? `Continuing period #${state.previousPeriodId}. Choose a period end in ${state.nextAllowedMonth}. Statement balances start blank.` : "Close the period in Posting after reviewing the reconciliation and confirmed GL entries."}</p>}
     {state?.historical && <p className="text-muted-foreground">This is an earlier closure revision. Open the working period from Saved periods for current changes.</p>}
     {closed && state?.successorId && <p className="text-muted-foreground">A successor has started. Record earlier-period corrections in the current open period.</p>}
     {workspace === "posting" && !closed && eligibility?.blockers.map(issue => <p key={issue} className="text-amber-700 dark:text-amber-400">{issue}</p>)}
