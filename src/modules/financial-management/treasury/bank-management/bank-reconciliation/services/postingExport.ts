@@ -1,7 +1,7 @@
 import type { PostingEntry, PostingExportData } from "../posting-types";
 import { exportTime } from "./reconcileExport";
 
-export const JOURNAL_TOTALS_NOTE = "Totals include every displayed entry in every status, including withdrawn attempts and reversals. Confirmed net cash effect uses only posted GL journals, with confirmed reversals applied.";
+export const JOURNAL_TOTALS_NOTE = "Totals include every entry in the selected period in every status, including withdrawn attempts and reversals, before screen filters. Confirmed net cash effect uses only posted GL journals, with confirmed reversals applied.";
 export const POSTING_TOTAL_NOTE = `${JOURNAL_TOTALS_NOTE} This report is not a GL import file.`;
 export function postingStatus(entry: PostingEntry) {
   if (entry.reversedByNumber) return `Reversed by ${entry.reversedByNumber}`;

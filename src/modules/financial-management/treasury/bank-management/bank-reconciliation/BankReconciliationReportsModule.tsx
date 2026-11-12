@@ -26,6 +26,8 @@ export default function BankReconciliationReportsModule() {
     return () => controller.abort();
   }, []);
   const reports = useFinancialReports(context !== null), { data, loading } = reports, period = data?.period;
+  const [historyPeriodId, setHistoryPeriodId] = useState<number | null>(null);
+  if (data && data.period.id !== historyPeriodId) setHistoryPeriodId(data.period.id);
   const exports = useReportsExports(period), exporting = Boolean(exports.busy);
   const fileFeedback = exports.action === "xlsx" || exports.action === "pdf";
   const copy = (key: ReportKey, name: string) => <CopyReportButton id={`copy-report-${key}`} name={name} busy={exports.busy === key} disabled={!data || loading || exporting} feedback={exports.action === key ? exports : undefined} onClick={() => void exports.run(key)} onRetry={() => void exports.run(key)} onRefresh={reports.refresh} />;
@@ -74,8 +76,9 @@ export default function BankReconciliationReportsModule() {
         </tr>)}</Fragment>) : <tr><td colSpan={7} className="p-4 text-muted-foreground">No adjusting entries this period.</td></tr>}</tbody><tfoot><tr className="border-t font-semibold"><td colSpan={3} className="p-2">Totals</td><td className="whitespace-nowrap p-2 text-right tabular-nums">{money(data.journal.totals.debit)}</td><td className="whitespace-nowrap p-2 text-right tabular-nums">{money(data.journal.totals.credit)}</td><td colSpan={2} /></tr></tfoot></table></div>
         <p className="text-xs text-muted-foreground">{POSTING_TOTAL_NOTE}</p>
       </section>
-      <AuditTrailReport periodId={data.period.id} copyButton={copy("audit", "Audit trail")} />
-      <ClosedPeriodsReport periodId={data.period.id} onView={viewRevision} copyButton={copy("closedPeriods", "Closed periods")} />
     </>}
+    {/* Keep full-period Audit filters and its boundary while a financial revision reloads. */}
+    {historyPeriodId !== null && <div hidden={!data || loading}><AuditTrailReport key={historyPeriodId} periodId={historyPeriodId} copyButton={copy("audit", "Audit trail")} /></div>}
+    {data && !loading && <ClosedPeriodsReport periodId={data.period.id} onView={viewRevision} copyButton={copy("closedPeriods", "Closed periods")} />}
   </section>;
 }
